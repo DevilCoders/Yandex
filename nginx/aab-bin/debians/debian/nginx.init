@@ -1,0 +1,155 @@
+#! /bin/sh
+
+### BEGIN INIT INFO
+# Provides:          nginx
+# Required-Start:    $local_fs $remote_fs $network $syslog $named
+# Required-Stop:     $local_fs $remote_fs $network $syslog $named
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: starts the nginx web server
+# Description:       starts nginx using start-stop-daemon
+### END INIT INFO
+
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+DAEMON=/usr/sbin/nginx
+NAME=nginx
+DESC=nginx
+
+test -x $DAEMON || exit 0
+
+SLEEPSEC=${SLEEPSEC:-1}
+UPGRADEWAITLOOPS=${UPGRADEWAITLOOPS:-5}
+
+# Include nginx defaults if available
+if [ -f /etc/default/nginx ] ; then
+        . /etc/default/nginx
+fi
+
+set -e
+
+. /lib/lsb/init-functions
+
+if [ -f /etc/nginx/nginx.conf ]; then
+        NGINX_CONF="/etc/nginx/nginx.conf"
+        DAEMON_OPTS="$DAEMON_OPTS -c $NGINX_CONF"
+else
+        NGINX_CONF="/etc/nginx/nginx-default.conf"
+        DAEMON_OPTS="$DAEMON_OPTS -c $NGINX_CONF"
+fi
+
+test -n "$GRACEFUL_STOP_TIMEOUT" || GRACEFUL_STOP_TIMEOUT=30
+test -n "$STOP_SCHEDULE" || STOP_SCHEDULE="QUIT/5/TERM/5/KILL/5"
+PIDFILE="/var/run/$NAME.pid"
+
+test_config() {
+        # Test the nginx configuration
+        $DAEMON -t -c $NGINX_CONF >/dev/null 2>&1
+}
+
+start_nginx() {
+        start-stop-daemon --start --quiet --pidfile $PIDFILE \
+	        --exec $DAEMON -- $DAEMON_OPTS
+}
+
+stop_nginx() {
+        start-stop-daemon --stop --quiet --pidfile $PIDFILE \
+                 --oknodo --retry=$STOP_SCHEDULE --exec $DAEMON
+}
+
+reload_nginx() {
+        start-stop-daemon --stop --quiet --pidfile $PIDFILE \
+	        --signal HUP --exec $DAEMON
+}
+
+graceful_stop() {
+        start-stop-daemon --stop --quiet --pidfile $PIDFILE \
+	        --signal QUIT --retry=$GRACEFUL_STOP_TIMEOUT \
+                --exec $DAEMON
+}
+
+logrotate() {
+        start-stop-daemon --stop --quiet --pidfile $PIDFILE \
+                --signal USR1 --exec $DAEMON || true
+}
+
+upgrade_nginx() {
+    OLDBINPIDFILE=$PIDFILE.oldbin
+
+    test_config -q || return 6
+    start-stop-daemon --stop --signal USR2 --quiet --pidfile $PIDFILE
+    RETVAL="$?"
+
+    for i in `/usr/bin/seq  $UPGRADEWAITLOOPS`; do
+        sleep $SLEEPSEC
+        if [ -f $OLDBINPIDFILE -a -f $PIDFILE ]; then
+            start-stop-daemon --stop --signal QUIT --quiet --pidfile $OLDBINPIDFILE
+            RETVAL="$?"
+            return
+        fi
+    done
+
+    echo $"Upgrade failed!"
+    RETVAL=1
+    return $RETVAL
+}
+
+
+case "$1" in
+  start)
+        echo -n "Starting $DESC: "
+        start_nginx
+        echo "$NAME."
+        ;;
+  stop)
+        echo -n "Stopping $DESC: "
+        stop_nginx
+        echo "$NAME."
+        ;;
+  graceful-stop)
+        echo -n "Gracefully stopping $DESC: "
+        graceful_stop
+        echo "$NAME."
+        ;;
+  restart|force-reload)
+      echo -n "Restarting $DESC: "
+      # Check configuration file
+      if ! test_config; then
+              echo "Configuration file check failed!"
+              exit 1
+      fi
+      stop_nginx
+      start_nginx
+      echo "$NAME."
+      ;;
+
+  reload)
+      echo -n "Reloading $DESC configuration: "
+      # Check configuration file
+      if ! test_config; then
+              echo "Configuration file check failed!"
+              exit 1
+      fi
+      reload_nginx
+      echo "$NAME."
+      ;;
+  upgrade)
+      echo -n "Upgrading $DESC: "
+      upgrade_nginx
+      echo "$NAME."
+      ;;
+  logrotate)
+      echo -n "Rotating $DESC logs: "
+      logrotate
+      echo "$NAME."
+      ;;
+  status)
+      status_of_proc -p $PIDFILE "$DAEMON" nginx && exit 0 || exit $?
+      ;;
+  *)
+        N=/etc/init.d/$NAME
+        echo "Usage: $N {start|stop|graceful-stop|restart|reload|force-reload|logrotate|status|upgrade}" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

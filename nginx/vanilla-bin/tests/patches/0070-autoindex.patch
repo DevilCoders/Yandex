@@ -1,0 +1,56 @@
+Index: nginx/vanilla-bin/tests/autoindex.t
+===================================================================
+--- nginx/vanilla-bin/tests/autoindex.t	(revision 123)
++++ nginx/vanilla-bin/tests/autoindex.t	(revision 456)
+@@ -59,18 +59,18 @@
+ symlink("$d/test-file", "$d/test-file-link");
+ 
+ $t->write_file('test-colon:blah', '');
+-$t->write_file('test-long-' . ('0' x 50), '');
+-$t->write_file('test-long-' . ('>' x 50), '');
++$t->write_file('test-long-' . ('0' x 120), '');         # 120: length('test-long-' . ('0' x 120)) > NGX_HTTP_AUTOINDEX_NAME_LEN (120)
++$t->write_file('test-long-' . ('>' x 120), '');         # 120: ... the same
+ $t->write_file('test-escape-url-%', '');
+ $t->write_file('test-escape-url2-?', '');
+ $t->write_file('test-escape-html-<>&', '');
+ 
+ mkdir($d . '/utf8');
+ $t->write_file('utf8/test-utf8-' . ("\xd1\x84" x 3), '');
+-$t->write_file('utf8/test-utf8-' . ("\xd1\x84" x 45), '');
++$t->write_file('utf8/test-utf8-' . ("\xd1\x84" x 120), '');                     # 120: ... the same
+ $t->write_file('utf8/test-utf8-<>&-' . "\xd1\x84", '');
+-$t->write_file('utf8/test-utf8-<>&-' . ("\xd1\x84" x 45), '');
+-$t->write_file('utf8/test-utf8-' . ("\xd1\x84" x 3) . '-' . ('>' x 45), '');
++$t->write_file('utf8/test-utf8-<>&-' . ("\xd1\x84" x 120), '');                 # 120: ... the same
++$t->write_file('utf8/test-utf8-' . ("\xd1\x84" x 3) . '-' . ('>' x 120), '');   # 120: ... the same
+ 
+ mkdir($d . '/test-dir-escape-<>&');
+ 
+@@ -86,22 +86,22 @@
+ like($r, qr!href="test-dir-link/"!ms, 'symlink to directory');
+ 
+ unlike($r, qr!href="test-colon:blah"!ms, 'colon not scheme');
+-like($r, qr!test-long-0{37}\.\.&gt;!ms, 'long name');
++like($r, qr!test-long-0{107}\.\.&gt;!ms, 'long name');                          # 107 == 120 - length('test-long-') - length('..>')
+ 
+ like($r, qr!href="test-escape-url-%25"!ms, 'escaped url');
+ like($r, qr!href="test-escape-url2-%3f"!msi, 'escaped ? in url');
+ like($r, qr!test-escape-html-&lt;&gt;&amp;!ms, 'escaped html');
+-like($r, qr!test-long-(&gt;){37}\.\.&gt;!ms, 'long escaped html');
++like($r, qr!test-long-(&gt;){107}\.\.&gt;!ms, 'long escaped html');             # 107 == 120 - length('test-long-') - length('..>')
+ 
+ $r = http_get('/utf8/');
+ 
+ like($r, qr!test-utf8-(\xd1\x84){3}</a>!ms, 'utf8');
+-like($r, qr!test-utf8-(\xd1\x84){37}\.\.!ms, 'utf8 long');
++like($r, qr!test-utf8-(\xd1\x84){107}\.\.!ms, 'utf8 long');                     # 107 == 120 - length('test-utf8-') - length('..>')
+ 
+ like($r, qr!test-utf8-&lt;&gt;&amp;-\xd1\x84</a>!ms, 'utf8 escaped');
+-like($r, qr!test-utf8-&lt;&gt;&amp;-(\xd1\x84){33}\.\.!ms,
++like($r, qr!test-utf8-&lt;&gt;&amp;-(\xd1\x84){103}\.\.!ms,                     # 103 == 120 - length('test-utf8-<>&-') - length('..>')
+ 	'utf8 escaped long');
+-like($r, qr!test-utf8-(\xd1\x84){3}-(&gt;){33}\.\.!ms, 'utf8 long escaped');
++like($r, qr!test-utf8-(\xd1\x84){3}-(&gt;){103}\.\.!ms, 'utf8 long escaped');   # 103 == 120 - length('test-utf8-???-') - length('..>')
+ 
+ like(http_get('/test-dir-escape-<>&/'), qr!test-dir-escape-&lt;&gt;&amp;!ms,
+ 	'escaped title');

@@ -1,0 +1,10 @@
+RECURSE(
+    aab-bin
+    bin
+    bin-noperl
+    module_gen
+    modules
+    qloud-bin
+    strm-bin
+    vanilla-bin
+)

@@ -1,0 +1,42 @@
+description     "nginx http server"
+
+start on (filesystem and net-device-up IFACE=lo)
+stop on runlevel [!2345]
+
+env DAEMON=/usr/sbin/nginx
+env PID=/var/run/nginx.pid
+
+respawn
+respawn limit 10 5
+
+limit nofile 38192 38192
+
+kill signal SIGQUIT
+kill timeout 30
+
+pre-start script
+    $DAEMON -t
+    if [ $? -ne 0 ]
+        then exit $?
+    fi
+    set -ex
+
+    sleep_limit=3
+    counter=0
+    check_file() {
+        counter=$((counter+1))
+        if [ $counter -le $sleep_limit ]; then
+            if [ $(find /etc/nginx/sites-enabled -type f | wc -l) -gt 0 ]; then
+                return
+            else
+                sleep 120
+                check_file
+            fi
+        else
+            exit 1
+        fi
+    }
+    check_file
+end script
+
+exec $DAEMON

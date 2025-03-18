@@ -1,0 +1,14 @@
+RECURSE(
+    antirobot
+    filesub
+    force_gunzip
+    geobase
+    icookie
+    nginx-fwmark
+    nginx-tcp-congestion
+    sdch
+    small
+    strm_packager
+    strm_lua_bundle
+    p0f
+)
