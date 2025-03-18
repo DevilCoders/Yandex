@@ -1,0 +1,131 @@
+meta:
+    account_id: "abc:service:1526"
+    acl:
+        -   action: "allow"
+            permissions:
+                - "read"
+                - "read_secrets"
+                - "write"
+                - "create"
+                - "ssh_access"
+                - "root_ssh_access"
+            subjects:
+                - "robot-drug-deploy"
+    effective_account_id: null
+    id: "antiadb-aabot-{{ namespace }}"
+    inherit_acl: true
+    project_id: "antiadb-bot"
+    type: "stage"
+spec:
+    deploy_units:
+        bot-unit:
+            images_for_boxes:
+                aabot-box:
+                    name: "antiadb/aabot"
+                    registry_host: "registry.yandex.net"
+                    tag: "{{ docker_tag }}"
+            multi_cluster_replica_set:
+                replica_set:
+                    clusters:
+                        -   cluster: "sas"
+                            spec:
+                                replica_count: 1
+#                        -   cluster: "vla"
+#                            spec:
+#                                replica_count: 1
+                    deployment_strategy:
+                        max_tolerable_downtime_pods: 1
+                        max_tolerable_downtime_seconds: 3600
+                        max_unavailable: 1
+                    pod_template_spec:
+                        spec:
+                            disk_volume_requests:
+                                -   id: "disk-0"
+                                    labels:
+                                        used_by_infra: true
+                                        mount_path: "/perm"
+                                        volume_type: "persistent"
+                                    quota_policy:
+                                        bandwidth_guarantee: 1048576
+                                        bandwidth_limit: 2097152
+                                        capacity: 10737418240
+                                    storage_class: "hdd"
+                            host_infra:
+                                monitoring:
+                                    labels:
+                                        itype: "aabot"
+                                    unistats:
+                                        -   labels:
+                                                itype: "aabot"
+                                            workload_id: "aabot"
+                            pod_agent_payload:
+                                spec:
+                                    boxes:
+                                        -   env:
+                                                -   name: "AABOT_TVM_SECRET"
+                                                    value:
+                                                        secret_env:
+                                                            alias: "tvm.secret.2019101"
+                                                            id: "client_secret"
+                                                -   name: "YT_TOKEN"
+                                                    value:
+                                                        secret_env:
+                                                            alias: "robot-antiadb-tokens"
+                                                            id: "yt-token"
+                                                -   name: "TELEGRAM_TOKEN"
+                                                    value:
+                                                        secret_env:
+                                                            alias: "bot_token"
+                                                            id: "token"
+                                                -   name: "TOOLS_TOKEN"
+                                                    value:
+                                                        secret_env:
+                                                            alias: "robot-antiadb-tokens"
+                                                            id: "tools-token"
+                                                -   name: "AAB_ADMIN_TVM_CLIENT_ID"
+                                                    value:
+                                                        literal_env:
+                                                            value: "{{ aab_admin_tvm_client_id }}"
+                                                -   name: "AAB_ADMIN_HOST"
+                                                    value:
+                                                        literal_env:
+                                                            value: "{{ aab_admin_host }}"
+                                            id: "aabot-box"
+                                            rootfs: { }
+                                            volumes:
+                                                -   mode: "read_write"
+                                                    mount_point: "/perm"
+                                                    volume_ref: "perm"
+                                    mutable_workloads:
+                                        -   workload_ref: "aabot"
+                                    resources: { }
+                                    volumes:
+                                        -   generic: { }
+                                            id: "perm"
+                                    workloads:
+                                        -   box_ref: "aabot-box"
+                                            id: "aabot"
+                                            start:
+                                                command_line: "aabot/aabot"
+                                            transmit_logs: true
+                            resource_requests:
+                                memory_guarantee: {{ ram }}
+                                memory_limit: {{ ram }}
+                                vcpu_guarantee: {{ cores }}000
+                                vcpu_limit: {{ cores }}000
+                            secrets:
+                                bot_token:
+                                  delegation_token: "lmMQKxD-qdTp-2oa9v5Xaiwf13L760x92xMreyVzv24.1.8019afd0833f1929"
+                                  secret_id: "sec-01f0axb1rj27gfn87qckm6vqbh"
+                                  secret_version: "ver-01f0axb1s71shr6cppj8gwys4b"
+                                robot-antiadb-tokens:
+                                  delegation_token: "yRQ0YtdnHdz1MiXg39pUcYY-lvqlcXjBSufPKpzjUuQ.1.679719fbf8ac8b66"
+                                  secret_id: "sec-01crfs4yjd29hardw658g1qk84"
+                                  secret_version: "ver-01d2cszn06ss8dj38597h3g7y0"
+                                tvm.secret.2019101:
+                                  delegation_token: "7tBwG4dwjGs_JjLJokYt4r2XSx3Us3OZGW42ia4pUFU.1.e1fb1d9ad8555b47"
+                                  secret_id: "sec-01e39qc2v0z66nekdd5g79z6nq"
+                                  secret_version: "ver-01e39qc2w01vy1f2kbwt2sh88c"
+
+            network_defaults:
+                network_id: "_ANTIADBNETS_"

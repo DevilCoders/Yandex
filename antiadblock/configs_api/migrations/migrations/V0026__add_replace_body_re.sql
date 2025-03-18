@@ -1,0 +1,2 @@
+update public.configs set data = jsonb_set(data, '{REPLACE_BODY_RE}', jsonb_strip_nulls(data->'CRYPT_BODY_RE')) WHERE data -> 'CRYPT_BODY_RE' != '{}'::jsonb;
+update public.configs set data = jsonb_set(data, '{CRYPT_BODY_RE}', case when (select jsonb_agg(key) from jsonb_each_text(data -> 'CRYPT_BODY_RE') where value is null) is null then '{}'::jsonb else (select jsonb_agg(key) from jsonb_each_text(data -> 'CRYPT_BODY_RE') where value is null) end) where (data -> 'CRYPT_BODY_RE') != '{}'::jsonb

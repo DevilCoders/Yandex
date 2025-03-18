@@ -1,0 +1,336 @@
+meta:
+  account_id: "{{ service_id }}"
+  acl:
+    - action: "allow"
+      permissions:
+        - "read"
+        - "write"
+        - "create"
+        - "ssh_access"
+        - "root_ssh_access"
+        - "read_secrets"
+      subjects:
+        - "robot-drug-deploy"
+        - "{{ service_id }}"
+  id: "{{ stage_id }}"
+  project_id: "{{ stage_id }}"
+  inherit_acl: true
+spec:
+  deploy_units:
+    DataNodes:
+      endpoint_sets:
+        - port: 80
+      images_for_boxes:
+        DataNodeBox:
+          name: "{{ elastic_docker_name }}"
+          registry_host: "registry.yandex.net"
+          tag: "{{ elastic_docker_tag }}"
+      network_defaults:
+        network_id: "{{ nets }}"
+      multi_cluster_replica_set:
+        replica_set:
+          clusters: {% for dc in DCs %}
+          - cluster: {{ dc }}
+            spec:
+              constraints:
+                antiaffinity_constraints:
+                - key: "rack"
+                  max_pods: {{ data_nodes_per_cluster }}
+              replica_count: {{ data_nodes_per_cluster }}  {% endfor %}
+          deployment_strategy:
+            max_unavailable: 1
+          pod_template_spec:
+            spec:
+              disk_volume_requests:
+                - id: "data-nodes-stage-disk"
+                  labels:
+                    mount_path: "/perm"
+                    used_by_infra: true
+                    volume_type: "persistent"
+                  quota_policy:
+                    capacity: {{ data_node_disk_volume }}
+                    bandwidth_guarantee: {{ data_node_disk_bandwidth }}
+                    bandwidth_limit: {{ data_node_disk_bandwidth }}
+                  storage_class: "ssd"
+              host_infra:
+                monitoring: {}
+              ip6_address_requests:
+                - enable_dns: true
+                  network_id: "{{ nets }}"
+                  vlan_id: "backbone"
+                - enable_dns: true
+                  network_id: "{{ nets }}"
+                  vlan_id: "fastbone"
+              pod_agent_payload:
+                spec:
+                  boxes:
+                    - id: "DataNodeBox"
+                      rootfs: {}
+                      static_resources:
+                        - mount_point: "/solomon-agent-bin"
+                          resource_ref: "solomon-agent"
+                      volumes:
+                        - mode: "read_write"
+                          mount_point: "/perm"
+                          volume_ref: "perm"
+                  mutable_workloads:
+                    - workload_ref: "ElasticNode"
+                    - workload_ref: "Solomon-Agent"
+                    - workload_ref: "DeployUnitResolver"
+                  resources:
+                    static_resources:
+                      - id: "solomon-agent"
+                        url: "rbtorrent:9ba78e9ffa03e0e9cc30f870b47b62e083bfdb70"
+                        verification:
+                          check_period_ms: 180000
+                          checksum: "EMPTY:"
+                  volumes:
+                    - generic: {}
+                      id: "perm"
+                  workloads:
+                    - box_ref: "DataNodeBox"
+                      id: "ElasticNode"
+                      readiness_check:
+                        container:
+                          command_line: "bash /launch/readiness_probe.sh"
+                      liveness_check:
+                        container:
+                          command_line: "bash /launch/readiness_probe.sh"
+                          time_limit:
+                            initial_delay_ms: 900000
+                            min_restart_period_ms: 120000
+                            max_restart_period_ms: 180000
+                      init:
+                        - command_line: "chmod 777 /perm"
+                      start:
+                        command_line: "su elasticsearch -c /launch/launch_data_nodes.sh"
+                      transmit_logs: true
+                    - box_ref: "DataNodeBox"
+                      id: "Solomon-Agent"
+                      readiness_check:
+                        tcp_check:
+                          port: 9666
+                      start:
+                        command_line: "/solomon-agent-bin/solomon-agent --config=/solomon-agent/agent.conf"
+                      transmit_logs: true
+                    - box_ref: "DataNodeBox"
+                      id: "DeployUnitResolver"
+                      start:
+                        command_line: "bash -c 'while true; do deploy_unit_resolver --deploy_units=DataNodes,MasterNodes --mkfile --clusters=man,sas,vla && sleep 600; done'"
+                      transmit_logs: true
+              resource_requests:
+                memory_guarantee: {{ data_node_RAM }}
+                memory_limit: {{ data_node_RAM }}
+                vcpu_guarantee: {{ CPU }}
+                vcpu_limit: {{ CPU }}
+      tvm_config: {}
+    MasterNodes:
+      endpoint_sets:
+        - port: 80
+      images_for_boxes:
+        MasterNodeBox:
+          name: "{{ elastic_docker_name }}"
+          registry_host: "registry.yandex.net"
+          tag: "{{ elastic_docker_tag }}"
+      network_defaults:
+        network_id: "{{ nets }}"
+      multi_cluster_replica_set:
+        replica_set:
+          clusters: {% for dc in DCs %}
+          - cluster: {{ dc }}
+            spec:
+              constraints:
+                antiaffinity_constraints:
+                - key: "rack"
+                  max_pods: {{ master_nodes_per_cluster }}
+              replica_count: {{ master_nodes_per_cluster }}  {% endfor %}
+          deployment_strategy:
+            max_unavailable: 1
+          pod_template_spec:
+            spec:
+              disk_volume_requests:
+                - id: "master-nodes-stage-disk"
+                  labels:
+                    mount_path: "/perm"
+                    used_by_infra: true
+                    volume_type: "persistent"
+                  quota_policy:
+                    capacity: {{ no_data_disk_volume }}
+                    bandwidth_guarantee: {{ no_data_node_disk_bandwidth }}
+                    bandwidth_limit: {{ no_data_node_disk_bandwidth }}
+                  storage_class: "ssd"
+              host_infra:
+                monitoring: {}
+              ip6_address_requests:
+                - enable_dns: true
+                  network_id: "{{ nets }}"
+                  vlan_id: "backbone"
+                - enable_dns: true
+                  network_id: "{{ nets }}"
+                  vlan_id: "fastbone"
+              pod_agent_payload:
+                spec:
+                  boxes:
+                    - id: "MasterNodeBox"
+                      rootfs: {}
+                      static_resources:
+                        - mount_point: "/solomon-agent-bin"
+                          resource_ref: "solomon-agent"
+                      volumes:
+                        - mode: "read_write"
+                          mount_point: "/perm"
+                          volume_ref: "perm"
+                  mutable_workloads:
+                    - workload_ref: "ElasticNode"
+                    - workload_ref: "Solomon-Agent"
+                    - workload_ref: "DeployUnitResolver"
+                  resources:
+                    static_resources:
+                      - id: "solomon-agent"
+                        url: "rbtorrent:9ba78e9ffa03e0e9cc30f870b47b62e083bfdb70"
+                        verification:
+                          check_period_ms: 180000
+                          checksum: "EMPTY:"
+                  volumes:
+                    - generic: {}
+                      id: "perm"
+                  workloads:
+                    - box_ref: "MasterNodeBox"
+                      id: "ElasticNode"
+                      readiness_check:
+                        container:
+                          command_line: "bash /launch/readiness_probe.sh"
+                      liveness_check:
+                        container:
+                          command_line: "bash /launch/readiness_probe.sh"
+                          time_limit:
+                            initial_delay_ms: 900000
+                            min_restart_period_ms: 120000
+                            max_restart_period_ms: 180000
+                      init:
+                        - command_line: "chmod 777 /perm"
+                      start:
+                        command_line: "su elasticsearch -c /launch/launch_master_nodes.sh"
+                      transmit_logs: true
+                    - box_ref: "MasterNodeBox"
+                      id: "Solomon-Agent"
+                      readiness_check:
+                        tcp_check:
+                          port: 9666
+                      start:
+                        command_line: "/solomon-agent-bin/solomon-agent --config=/solomon-agent/agent.conf"
+                      transmit_logs: true
+                    - box_ref: "MasterNodeBox"
+                      id: "DeployUnitResolver"
+                      start:
+                        command_line: "bash -c 'while true; do deploy_unit_resolver --mkfile --deploy_units=DataNodes,MasterNodes --clusters=man,sas,vla && sleep 600; done'"
+                      transmit_logs: true
+              resource_requests:
+                memory_guarantee: {{ master_node_RAM }}
+                memory_limit: {{ master_node_RAM }}
+                vcpu_guarantee: {{ CPU }}
+                vcpu_limit: {{ CPU }}
+      tvm_config: {}
+    SearchNodes:
+      endpoint_sets:
+        - port: 80
+      images_for_boxes:
+        SearchNodesBox:
+          name: "{{ elastic_docker_name }}"
+          registry_host: "registry.yandex.net"
+          tag: "{{ elastic_docker_tag }}"
+        KibanaBox:
+          name: "{{ kibana_docker_name }}"
+          registry_host: "registry.yandex.net"
+          tag: "{{ kibana_docker_tag }}"
+      network_defaults:
+        network_id: "{{ nets }}"
+      multi_cluster_replica_set:
+        replica_set:
+          clusters: {% for dc in DCs %}
+          - cluster: {{ dc }}
+            spec:
+              constraints:
+                antiaffinity_constraints:
+                - key: "rack"
+                  max_pods: 1
+              replica_count: 1  {% endfor %}
+          deployment_strategy:
+            max_unavailable: 1
+          pod_template_spec:
+            spec:
+              disk_volume_requests:
+                - id: "kibana-stage-disk"
+                  labels:
+                    mount_path: "/perm"
+                    used_by_infra: true
+                    volume_type: "persistent"
+                  quota_policy:
+                    capacity: {{ no_data_disk_volume }}
+                    bandwidth_guarantee: {{ no_data_node_disk_bandwidth }}
+                    bandwidth_limit: {{ no_data_node_disk_bandwidth }}
+                  storage_class: "ssd"
+              host_infra:
+                monitoring: {}
+              ip6_address_requests:
+                - enable_dns: true
+                  network_id: "{{ nets }}"
+                  vlan_id: "backbone"
+                - enable_dns: true
+                  network_id: "{{ nets }}"
+                  vlan_id: "fastbone"
+              pod_agent_payload:
+                spec:
+                  boxes:
+                    - id: "KibanaBox"
+                      rootfs: {}
+                    - id: "SearchNodesBox"
+                      rootfs: {}
+                      volumes:
+                        - mode: "read_write"
+                          mount_point: "/perm"
+                          volume_ref: "perm"
+                  mutable_workloads:
+                    - workload_ref: "ElasticWorkload"
+                    - workload_ref: "DeployUnitResolver"
+                    - workload_ref: "KibanaWorkload"
+                  resources: {}
+                  volumes:
+                    - generic: {}
+                      id: "perm"
+                  workloads:
+                    - box_ref: "SearchNodesBox"
+                      id: "ElasticWorkload"
+                      init:
+                        - command_line: "chmod 777 /perm"
+                      readiness_check:
+                        container:
+                          command_line: "bash /launch/readiness_probe.sh"
+                      liveness_check:
+                        container:
+                          command_line: "bash /launch/readiness_probe.sh"
+                          time_limit:
+                            initial_delay_ms: 900000
+                            min_restart_period_ms: 120000
+                            max_restart_period_ms: 180000
+                      start:
+                        command_line: "su elasticsearch -c /launch/launch_search_nodes.sh"
+                      transmit_logs: true
+                    - box_ref: "SearchNodesBox"
+                      id: "DeployUnitResolver"
+                      # Deploy Unit Resolver is writtig lost names into file /usr/share/elasticsearch/config/unicast_hosts.txt
+                      start:
+                        command_line: "bash -c 'while true; do deploy_unit_resolver --deploy_units=DataNodes,MasterNodes --clusters=man,sas,vla --add_port 8991 --mkfile && sleep 600; done'"
+                      transmit_logs: true
+                    - box_ref: "KibanaBox"
+                      id: "KibanaWorkload"
+                      start:
+                        command_line: "/usr/share/kibana/bin/kibana -c /configs/kibana.yml -e http://localhost:8890 --allow-root"
+                        user: "root" # do not remove
+                      transmit_logs: true
+              resource_requests:
+                memory_guarantee: {{ search_node_RAM }}
+                memory_limit: {{ search_node_RAM }}
+                vcpu_guarantee: {{ CPU }}
+                vcpu_limit: {{ CPU }}
+      tvm_config: {}

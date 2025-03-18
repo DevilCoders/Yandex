@@ -1,0 +1,76 @@
+// https://razladki-wow.n.yandex-team.ru/workspace/1699/version/3
+// * Complex algorithm [Bool]
+// ***** Load series array
+let __all_requests___input = {project='Antiadblock', cluster='cryprox-prod', service='cryprox_actions', service_id='*', action='check_uid_cookies', host='cluster', tag='*', uid_cookie_present='*'};
+// **** Aggregate timeseries array
+let __all_requests__input = group_lines('sum', __all_requests___input);
+let __all_requests___aggregated = last(__all_requests__input);
+// *** Downsample timeseries
+let __all_requests = drop_tail(group_by_time(300s, 'avg', __all_requests__input), 1);
+let __all_requests__downsample = last(__all_requests);
+// ****** Load series array
+let __cookie_absent____input = {project='Antiadblock', cluster='cryprox-prod', service='cryprox_actions', service_id='*', action='check_uid_cookies', host='cluster', tag='*', uid_cookie_present='0'};
+// ***** Aggregate timeseries array
+let __cookie_absent___input = group_lines('sum', __cookie_absent____input);
+let __cookie_absent____aggregated = last(__cookie_absent___input);
+// **** Replace NaNs
+let __cookie_absent__input = replace_nan(__cookie_absent___input, 0.0);
+let __cookie_absent___replaced = last(__cookie_absent__input);
+// *** Downsample timeseries
+let __cookie_absent = drop_tail(group_by_time(300s, 'avg', __cookie_absent__input), 1);
+let __cookie_absent__downsample = last(__cookie_absent);
+// **** From var [Timeseries]
+let __cookie_percent__numer = __cookie_absent;
+// **** From var [Timeseries]
+let __cookie_percent__denom = __all_requests;
+// *** Quotient of two timeseries
+let __cookie_percent = __cookie_percent__numer / __cookie_percent__denom + 0 * (__cookie_percent__numer + __cookie_percent__denom);
+let __cookie_percent__quot = last(__cookie_percent);
+// ****** From var [Timeseries]
+let __threshold____input = __cookie_percent;
+// ***** Tail
+let __threshold___input = tail(__threshold____input, 600s);
+// **** SimpleThreshold
+let __threshold___lower_crit = 0.0;
+let __threshold___lower_bad_crit = transform(__threshold___lower_crit - __threshold___input, 'heaviside');
+let __threshold___upper_crit = 0.05;
+let __threshold___upper_bad_crit = transform(__threshold___input - __threshold___upper_crit, 'heaviside');
+let __threshold___out_crit = __threshold___lower_bad_crit + __threshold___upper_bad_crit;
+let __threshold___out_warn = __threshold___lower_bad_crit + __threshold___upper_bad_crit;
+let __threshold__viol = __threshold___out_warn + __threshold___out_crit;
+// *** Simple algorithm [Bool]
+let __threshold__crit = 0.5 * sum(__threshold__viol * (__threshold__viol - 1));
+let __threshold = __threshold__crit > 1.0 * count(__threshold__viol);
+// ****** From var [Timeseries]
+let __razladka___i_input = __cookie_percent;
+// ***** Tail
+let __razladka___input_vec = tail(__razladka___i_input, 600s);
+// ******* From var [Timeseries]
+let __razladka___s__input = __cookie_percent;
+// ****** Drop tail
+let __razladka___s_train = drop_tail(__razladka___s__input, 43200s);
+// ***** Windowed avg/std
+let __razladka___mean_vec = avg(__razladka___s_train) + 0 * __razladka___input_vec;
+let __razladka___std_vec = std(__razladka___s_train) + 0 * __razladka___input_vec;
+// **** LearnThreshold
+let __razladka___mean = last(__razladka___mean_vec);
+let __razladka___lower_vec_crit = __razladka___mean_vec + (-3.0) * __razladka___std_vec;
+let __razladka___upper_vec_crit = __razladka___mean_vec + (3.0) * __razladka___std_vec;
+let __razladka___lower_crit = last(__razladka___lower_vec_crit);
+let __razladka___upper_crit = last(__razladka___upper_vec_crit);
+let __razladka___lower_bad_crit = transform(__razladka___lower_vec_crit - __razladka___input_vec, 'heaviside');
+let __razladka___upper_bad_crit = transform(__razladka___input_vec - __razladka___upper_vec_crit, 'heaviside');
+let __razladka___out_crit = __razladka___lower_bad_crit + __razladka___upper_bad_crit;
+let __razladka___out_warn = __razladka___lower_bad_crit + __razladka___upper_bad_crit;
+let __razladka__viol = __razladka___out_warn + __razladka___out_crit;
+// *** Simple algorithm [Bool]
+let __razladka__crit = 0.5 * sum(__razladka__viol * (__razladka__viol - 1));
+let __razladka = __razladka__crit > 0.8 * count(__razladka__viol);
+// **** From var [Bool]
+let __result__arg1 = __razladka;
+// **** From var [Bool]
+let __result__arg2 = __threshold;
+// *** Logic [Bool]
+let __result = __result__arg1 && __result__arg2;
+let status = __result;
+alarm_if(status);

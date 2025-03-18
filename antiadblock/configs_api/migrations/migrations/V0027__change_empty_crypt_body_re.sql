@@ -1,0 +1,1 @@
+update public.configs set data = jsonb_set(data, '{CRYPT_BODY_RE}', '[]'::jsonb) where data -> 'CRYPT_BODY_RE' = '{}'::jsonb;

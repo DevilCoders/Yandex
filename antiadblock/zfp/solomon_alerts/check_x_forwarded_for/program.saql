@@ -1,0 +1,8 @@
+let all_requests = group_lines('sum', group_by_time(5m, 'sum', {cluster="cryprox-prod", host="cluster", service="cryprox_actions",
+tag="*", action="check_ip_headers", "x-forwarded-for"="*", "x-real-ip"="*", service_id="*"}));
+let internal_requests = group_lines('sum', group_by_time(5m, 'sum', {cluster="cryprox-prod", host="cluster", service="cryprox_actions",
+tag="*", action="check_ip_headers", "x-forwarded-for"="internal", "x-real-ip"="*", service_id="*"}));
+let internal_level = internal_requests/all_requests;
+// 10 RPM threshold
+let status = sum(all_requests) > 500 && (sum(heaviside(0.05 - internal_level)) == 0);
+alarm_if(status);

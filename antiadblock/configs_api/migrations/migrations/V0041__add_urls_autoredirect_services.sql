@@ -1,0 +1,1 @@
+ALTER TABLE public.autoredirect_services ADD COLUMN urls jsonb NOT NULL DEFAULT '[]'::jsonb

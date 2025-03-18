@@ -1,0 +1,40 @@
+service: antiadblock
+title: Alerts ZFP calculation
+ci:
+  release-title-source: flow
+  secret: sec-01evxgabdwyeb183v8p4exxsry
+  runtime:
+    sandbox-owner: ANTIADBLOCK
+
+  triggers:
+    - on: pr
+      flow: run_calc
+
+  flows:
+    run_calc:
+      title: ZFP Solomon alert razladki_599_crit
+      jobs:
+
+        build_job:
+          title: Build Aab ZFP Package
+          stage: build-stage
+          task: common/arcadia/ya_package_2
+          input:
+            packages: antiadblock/zfp/packages.json
+            resource_type: AAB_ZFP_PACKAGE
+            package_type: tarball
+            package_ttl: 4
+
+        run_calc_job:
+          title: Run calculation
+          needs: build_job
+          task: projects/antiadblock/zfp/run_calc
+          stage: run-calc-stage
+          input:
+            alert_ids:
+              - razladki_5xx_crit
+              - razladki_599_crit
+              - errors_5XX_per_dc
+            juggler_hosts:
+              - antiadb_5xx_errors
+            zfp_package_resource: ${(tasks.build_job.resources[?type == 'AAB_ZFP_PACKAGE'])[0].id}

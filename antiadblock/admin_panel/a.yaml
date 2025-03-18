@@ -1,0 +1,184 @@
+service: antiadblock
+title: antiadb-frontend
+shared:
+  runtime: &runtime
+    sandbox: &runtime-sandbox
+      kill-timeout: 1h
+  requirements: &requirements
+    cores: 16
+    ram: 32 GB
+    disk: 40GB
+    sandbox: &requirements-sandbox
+      privileged: true
+      client_tags: GENERIC & LINUX & SSD & LXC
+      container_resource: 3098984739
+      dns: dns64
+      priority: &requirements-sandbox-priority
+        class: SERVICE
+        subclass: NORMAL
+  arc_mount_config: &arc_mount_config
+      enabled: true
+  logs_config: &logs_config
+    redirect_stderr_to_stdout: true
+    stdout_ci_badge: true
+  environment_variables: &environment_variables
+    - key: PROJECT_DIR
+      value: antiadblock/admin_panel
+  jobs:
+    deploy: &deploy-job
+      title: Deploy
+      task: common/deploy/create_release
+      input:
+        config:
+          stage_id: ${flow-vars.STAGE_ID}
+          patches:
+            - docker:
+                docker_image_ref:
+                  deploy_unit_id: NodeJS
+                  box_id: NodeJSBox
+                image_name: antiadb/front:${context.target_revision.hash}
+
+ci:
+  release-title-source: flow
+  secret: sec-01evxgabdwyeb183v8p4exxsry
+  runtime:
+    sandbox:
+      owner: ANTIADBLOCK
+      priority:
+        class: SERVICE
+        subclass: LOW
+      notifications:
+        - statuses: [TIMEOUT, FAILURE, EXCEPTION]
+          transport: email
+          recipients:
+            - antiadb@yandex-team.ru
+  releases:
+    release:
+      title: AAB_FRONTEND_RELEASE
+      flow: release-flow
+      flow-vars:
+        STAGE_ID: antiadb-front-production
+  actions:
+    dev-action:
+      flow: dev-flow
+      triggers:
+        - on: pr
+      flow-vars:
+        STAGE_ID: antiadb-front-develop
+    preprod-action:
+      flow: preprod-flow
+      triggers:
+        - on: commit
+          into:
+            - trunk
+      flow-vars:
+        STAGE_ID: antiadb-front-preprod
+
+  flows:
+    preprod-flow:
+      title: AAB_FRONTEND Preprod build
+      jobs:
+        units: &units-job
+          title: Unit tests
+          task: common/misc/run_command
+          requirements: *requirements
+          input:
+            config:
+              environment_variables: *environment_variables
+              arc_mount_config: *arc_mount_config
+              logs_config: *logs_config
+              cmd_line: |
+                cd $PROJECT_DIR
+                npm install
+                npm run jest-coverage-not-silent
+        linter: &linter-job
+          title: Linter
+          task: common/misc/run_command
+          requirements: *requirements
+          input:
+            config:
+              environment_variables: *environment_variables
+              arc_mount_config: *arc_mount_config
+              logs_config: *logs_config
+              cmd_line: |
+                cd $PROJECT_DIR
+                npm install
+                npm run lint
+        docker: &docker-job
+          title: Build docker image
+          task: common/arcadia/ya_package_2
+          needs:
+            - units
+            - linter
+          input:
+            packages: antiadblock/admin_panel/build.json
+            package_type: docker
+            docker_image_repository: antiadb
+            docker_user: robot-antiadb
+            docker_token_vault_name: ANTIADBLOCK_REGISTRY_ACCESS_KEY
+            docker_push_image: true
+            custom_version: ${context.target_revision.hash}
+        deploy:
+          <<: *deploy-job
+          needs:
+            - docker
+
+    dev-flow:
+      title: AAB_FRONTEND Dev build
+      jobs:
+        units: *units-job
+        linter: *linter-job
+        docker: *docker-job
+        deploy:
+          <<: *deploy-job
+          needs:
+            - docker
+
+    release-flow:
+      title: Release
+      jobs:
+        create-release-ticket:
+          title: Create release ticket
+          task: common/tracker/create_issue
+          input:
+            config:
+              secret:
+                key: startrek.token
+              link:
+                queues:
+                  - ANTIADB
+            template:
+              queue: ANTIADB
+              summary: Release admin_panel ${context.title}
+              components:
+                - frontend
+                - admin
+              linked:
+                transition:
+                  status: Готов к выкладке
+                  ignore_no_transition: true
+                comment: Запущен релиз admin_panel ${context.version_info.full}
+        deploy:
+          <<: *deploy-job
+          needs:
+            - create-release-ticket
+        close-release-ticket:
+          title: Close release ticket
+          task: common/tracker/transit_issue
+          needs:
+            - deploy
+          input:
+            config:
+              secret:
+                key: startrek.token
+              link:
+                queues:
+                  - ANTIADB
+            transition:
+              status: Закрыт
+              resolution: Решен
+            update_template:
+              linked:
+                transition:
+                  status: Закрыт
+                  resolution: Решен

@@ -1,0 +1,35 @@
+pipeline:
+    tox:
+        when:
+            event: push
+        image: python:2.7-alpine
+        commands:
+            - pip install tox==2.9.1
+            - tox
+    docker:
+        image: docker
+        commands:
+            - docker login -u $${DOCKER_USERNAME} -p $${DOCKER_PASSWORD} registry.yandex.net
+            - docker build -t registry.yandex.net/antiadb/qloud-clean-plugin:${DRONE_BRANCH}-${DRONE_BUILD_NUMBER} .
+            - docker push registry.yandex.net/antiadb/qloud-clean-plugin:${DRONE_BRANCH}-${DRONE_BUILD_NUMBER}
+        when:
+            event: push
+        volumes:
+           - /var/run/docker.sock:/var/run/docker.sock
+        secrets: [ docker_username, docker_password ]
+    publish:
+        image: docker
+        environment:
+            - VERSION=v0.4
+        commands:
+            - docker login -u $${DOCKER_USERNAME} -p $${DOCKER_PASSWORD} registry.yandex.net
+            - docker tag registry.yandex.net/antiadb/qloud-clean-plugin:${DRONE_BRANCH}-${DRONE_BUILD_NUMBER} registry.yandex.net/antiadb/qloud-clean-plugin:$${VERSION}
+            - docker tag registry.yandex.net/antiadb/qloud-clean-plugin:${DRONE_BRANCH}-${DRONE_BUILD_NUMBER} registry.yandex.net/antiadb/qloud-clean-plugin:latest
+            - docker push registry.yandex.net/antiadb/qloud-clean-plugin:$${VERSION}
+            - docker push registry.yandex.net/antiadb/qloud-clean-plugin:latest
+        when:
+            event: push
+            branch: master
+        volumes:
+           - /var/run/docker.sock:/var/run/docker.sock
+        secrets: [ docker_username, docker_password ]

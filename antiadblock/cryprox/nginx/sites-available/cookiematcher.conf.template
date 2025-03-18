@@ -1,0 +1,51 @@
+proxy_cache_path /tmp/cookiematcher_cache levels=1:2 keys_zone=cm_zone:10m inactive=30m max_size=100M;
+
+limit_req_zone $http_x_forwarded_for zone=cm_perip:100m rate=800r/s;
+
+server {
+    listen                      0.0.0.0:80;
+    listen                      [::]:80;
+
+    resolver                    [::1];
+    log_subrequest on;
+
+    server_name                 partner-webmon.yandex.ru real-ping-mon.yandex.ru cluster-webstatus.yandex.ru http-check-headers.yandex.ru;
+
+    proxy_buffering             on;
+    proxy_buffer_size           8k;
+    proxy_buffers               8 8k;
+    proxy_busy_buffers_size     8k;
+    proxy_max_temp_file_size    0;
+    merge_slashes               off;
+    proxy_connect_timeout       5s;
+    proxy_read_timeout          5s;
+    proxy_send_timeout          5s;
+    large_client_header_buffers 4 16k;
+
+    limit_req zone=cm_perip burst=200;
+
+    # by default
+    location / {
+        proxy_pass                  http://${CRYPROX};
+        proxy_ignore_client_abort   off;
+        proxy_set_header            Host                  $host;
+        ${PROXY_ADD_X_FORWARDED_FOR}
+        proxy_set_header            X-AAB-RequestId       $aab_requestid;
+        proxy_http_version 1.1;
+
+        proxy_cache cm_zone;
+        proxy_cache_key "$cookie_yandexuid|$request_uri";
+        proxy_cache_min_uses 1;
+        proxy_cache_valid 200 1h;
+        proxy_cache_use_stale error timeout updating;
+
+        add_header Cache-Control "max-age=3600,private";
+
+        # Cause client browser expecting Access-Control-Allow-Origin and Access-Control-Allow-Credentials headers when using withCredentials
+        if ($http_origin) {
+            add_header Access-Control-Allow-Origin $http_origin always;
+            add_header Access-Control-Allow-Credentials "true" always;
+        }
+    }
+
+}

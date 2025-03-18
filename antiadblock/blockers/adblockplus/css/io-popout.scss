@@ -1,0 +1,361 @@
+/*
+ * This file is part of Adblock Plus <https://adblockplus.org/>,
+ * Copyright (C) 2006-present eyeo GmbH
+ *
+ * Adblock Plus is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 3 as
+ * published by the Free Software Foundation.
+ *
+ * Adblock Plus is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Adblock Plus.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+@import "z-index.scss";
+
+io-popout
+{
+  --background-color: #FFF;
+  --border: 1px solid #0797E1;
+  --icon-margin: 0.4rem;
+  --icon-size-inner: 1rem;
+  --icon-size-outer: calc(var(--icon-size-inner) + var(--icon-margin));
+  --pointer-size: 10px;
+  --pointer-offset-out: calc(var(--pointer-size) / -2 - 1px);
+  --pointer-offset-start: calc(
+    var(--icon-size-outer) + var(--pointer-offset-out)
+  );
+  --content-offset-out: calc(-0.5 * var(--icon-size-outer));
+  --content-offset-start: calc(var(--icon-size-outer) + 2 * var(--icon-margin));
+}
+
+io-popout[type="dialog"]
+{
+  --icon-size-inner: 3rem;
+}
+
+/*
+ * This component is not keyboard-accessible yet but we need it to be focusable
+ * to detect when we can close it
+ */
+io-popout:focus
+{
+  outline: none;
+}
+
+/* Prevent pre-rendered content to show up before component has loaded */
+io-popout > :not(.wrapper)
+{
+  display: none;
+}
+
+/*******************************************************************************
+ * Z-Index
+ ******************************************************************************/
+
+/*
+ * z-index on custom elements seem to be ignored, so that
+ * this extra z-index for io-popout > .wrapper is needed to avoid issues
+ */
+io-popout,
+io-popout > .wrapper
+{
+  z-index: var(--z-popout);
+}
+
+/* Ensures that expanded popouts are always shown on top of other popouts */
+io-popout[expanded],
+io-popout[expanded] > .wrapper
+{
+  /*
+   * We can't use calc() for setting the z-index yet because support for it was
+   * only added in Firefox 57. Therefore we have to hardcode its value for now.
+   * https://developer.mozilla.org/en-US/docs/Mozilla/Firefox/Releases/57#Quantum_CSS_notes
+   */
+  z-index: var(--z-popout-active);
+}
+
+/*
+ * We need to ensure that any content overlays the anchor pointer or otherwise
+ * its inner half becomes visible when the content's background color changes
+ */
+io-popout > .wrapper > [role] *
+{
+  z-index: 1;
+}
+
+/*******************************************************************************
+ * Anchor
+ ******************************************************************************/
+
+io-popout > .wrapper
+{
+  display: inline-block;
+  position: relative;
+  vertical-align: middle;
+}
+
+io-popout > .wrapper::before
+{
+  width: var(--icon-size-inner);
+  height: var(--icon-size-inner);
+  cursor: pointer;
+}
+
+io-popout[anchor-icon] > .wrapper::before
+{
+  border-radius: 50%;
+  background-color: #0797E1;
+  background-repeat: no-repeat;
+  background-size: 40%;
+  background-position: center;
+  box-shadow: 0 5px 10px rgba(0, 0, 0, 0.2);
+  transition: background-color 100ms,
+    box-shadow 100ms;
+}
+
+io-popout[anchor-icon][expanded] > .wrapper::before
+{
+  background-color: #4A4A4A;
+  box-shadow: none;
+  animation-name: tap;
+  animation-duration: 500ms;
+}
+
+io-popout[type="menubar"] > .wrapper::before
+{
+  background-image: url(icons/gear.svg?default#default);
+}
+
+io-popout[type="tooltip"] > .wrapper::before
+{
+  background-image: url(icons/tooltip.svg);
+}
+
+io-popout[anchor-icon="heart"] > .wrapper::before
+{
+  background-image: url(icons/heart.svg);
+}
+
+/*******************************************************************************
+ * Anchor pointer
+ ******************************************************************************/
+
+io-popout > .wrapper > [role]::before
+{
+  display: block;
+  position: absolute;
+  width: var(--pointer-size);
+  height: var(--pointer-size);
+  border: var(--border);
+  border-right: none;
+  border-bottom: none;
+  background-color: var(--background-color);
+  content: "";
+}
+
+io-popout:not([expanded]) > .wrapper > [role]::before,
+io-popout[expanded="above"] > .wrapper > [role]::before,
+io-popout[expanded="below"] > .wrapper > [role]::before
+{
+  right: var(--pointer-offset-start);
+}
+
+html[dir="rtl"] io-popout:not([expanded]) > .wrapper > [role]::before,
+html[dir="rtl"] io-popout[expanded="above"] > .wrapper > [role]::before,
+html[dir="rtl"] io-popout[expanded="below"] > .wrapper > [role]::before
+{
+  right: auto;
+  left: var(--pointer-offset-start);
+}
+
+io-popout:not([expanded]) > .wrapper > [role]::before,
+io-popout[expanded="below"] > .wrapper > [role]::before
+{
+  top: var(--pointer-offset-out);
+  transform: rotate(45deg);
+}
+
+io-popout[expanded="above"] > .wrapper > [role]::before
+{
+  bottom: var(--pointer-offset-out);
+  transform: rotate(-135deg);
+}
+
+io-popout[expanded="start"] > .wrapper > [role]::before
+{
+  top: var(--pointer-offset-start);
+  right: var(--pointer-offset-out);
+  transform: rotate(135deg);
+}
+
+html[dir="rtl"] io-popout[expanded="start"] > .wrapper > [role]::before
+{
+  right: auto;
+  left: var(--pointer-offset-out);
+  transform: rotate(-45deg);
+}
+
+/*******************************************************************************
+ * Content
+ ******************************************************************************/
+
+io-popout > .wrapper > [role]
+{
+  position: absolute;
+  box-sizing: border-box;
+  border: var(--border);
+  border-radius: var(--border-radius);
+  background-color: var(--background-color);
+  box-shadow: 0 5px 10px rgba(0, 0, 0, 0.2);
+  cursor: default;
+}
+
+io-popout [aria-hidden="true"]
+{
+  display: none;
+}
+
+io-popout:not([expanded]) > .wrapper > [role],
+io-popout[expanded="above"] > .wrapper > [role],
+io-popout[expanded="below"] > .wrapper > [role]
+{
+  right: var(--content-offset-out);
+}
+
+html[dir="rtl"] io-popout:not([expanded]) > .wrapper > [role],
+html[dir="rtl"] io-popout[expanded="above"] > .wrapper > [role],
+html[dir="rtl"] io-popout[expanded="below"] > .wrapper > [role]
+{
+  right: auto;
+  left: var(--content-offset-out);
+}
+
+io-popout:not([expanded]) > .wrapper > [role],
+io-popout[expanded="below"] > .wrapper > [role]
+{
+  top: var(--content-offset-start);
+}
+
+io-popout[expanded="above"] > .wrapper > [role]
+{
+  bottom: var(--content-offset-start);
+}
+
+io-popout[expanded="start"] > .wrapper > [role]
+{
+  top: var(--content-offset-out);
+  right: var(--content-offset-start);
+}
+
+html[dir="rtl"] io-popout[expanded="start"] > .wrapper > [role]
+{
+  right: auto;
+  left: var(--content-offset-start);
+}
+
+io-popout > .wrapper > [role="dialog"]
+{
+  width: 12rem;
+  padding: 20px;
+}
+
+io-popout > .wrapper > [role="menubar"]
+{
+  width: 12.2rem;
+}
+
+io-popout > .wrapper > [role="tooltip"]
+{
+  width: 15rem;
+}
+
+io-popout .close
+{
+  position: absolute;
+  top: 10px;
+}
+
+io-popout .close:focus
+{
+  outline: none;
+}
+
+io-popout p
+{
+  padding: 0.2rem 1rem;
+}
+
+io-popout [role="dialog"] p
+{
+  padding: 1em 0;
+  margin: 0;
+  font-size: 0.9em;
+}
+
+io-popout [role="tooltip"] p
+{
+  overflow-y: auto;
+  /* Approximated to achieve a total tooltip height of 12.5em without
+  hiding overflowing anchor pointer */
+  max-height: 9em;
+  line-height: 1.5rem;
+}
+
+html[dir="ltr"] io-popout button.close
+{
+  right: 10px;
+  left: auto;
+}
+
+html[dir="rtl"] io-popout button.close
+{
+  right: auto;
+  left: 10px;
+}
+
+io-popout .close + *
+{
+  margin-top: 2em;
+}
+
+html[dir="ltr"] io-popout button.close
+{
+  right: 10px;
+  left: auto;
+}
+
+html[dir="rtl"] io-popout button.close
+{
+  right: auto;
+  left: 10px;
+}
+
+/*******************************************************************************
+ * Animations
+ ******************************************************************************/
+
+@keyframes tap
+{
+  0%
+  {
+    background-position: center;
+    background-size: 40%;
+  }
+
+  20%
+  {
+    background-position: center 40%;
+    background-size: 50%;
+  }
+
+  100%
+  {
+    background-position: center;
+    background-size: 40%;
+  }
+}

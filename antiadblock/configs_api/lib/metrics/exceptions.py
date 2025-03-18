@@ -1,0 +1,2 @@
+class ElasticApiFetchException(Exception):
+    pass

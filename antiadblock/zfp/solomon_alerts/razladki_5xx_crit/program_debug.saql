@@ -1,0 +1,76 @@
+// https://razladki-wow.test.n.yandex-team.ru/workspace/248/version/3
+// * Complex algorithm [Bool]
+// ***** Load series array
+let __requests_all___input = {project='Antiadblock', cluster='cryprox-prod', service='antiadblock_nginx', service_id='*', host='cluster', browser='ALL', sensor='request_aggregate', status='2XX_sum'};
+// **** Aggregate timeseries array
+let __requests_all__input = group_lines('sum', __requests_all___input);
+let __requests_all___aggregated = last(__requests_all__input);
+// *** Downsample timeseries
+let __requests_all = drop_tail(group_by_time(60s, 'avg', __requests_all__input), 1);
+let __requests_all__downsample = last(__requests_all);
+// ****** Load series array
+let __requests_5xx____input = {project='Antiadblock', cluster='cryprox-prod', service='antiadblock_nginx', service_id='*', host='cluster', browser='ALL', sensor='request_aggregate', status='5XX_sum'};
+// ***** Aggregate timeseries array
+let __requests_5xx___input = group_lines('sum', __requests_5xx____input);
+let __requests_5xx____aggregated = last(__requests_5xx___input);
+// **** Replace NaNs
+let __requests_5xx__input = replace_nan(__requests_5xx___input, 0.0);
+let __requests_5xx___replaced = last(__requests_5xx__input);
+// *** Downsample timeseries
+let __requests_5xx = drop_tail(group_by_time(60s, 'avg', __requests_5xx__input), 1);
+let __requests_5xx__downsample = last(__requests_5xx);
+// **** From var [Timeseries]
+let __part_5xx__numer = __requests_5xx;
+// **** From var [Timeseries]
+let __part_5xx__denom = __requests_all;
+// *** Quotient of two timeseries
+let __part_5xx = __part_5xx__numer / __part_5xx__denom + 0 * (__part_5xx__numer + __part_5xx__denom);
+let __part_5xx__quot = last(__part_5xx);
+// ****** From var [Timeseries]
+let __threshold_learn___i_input = __part_5xx;
+// ***** Tail
+let __threshold_learn___input_vec = tail(__threshold_learn___i_input, 600s);
+// ******* From var [Timeseries]
+let __threshold_learn___s__input = __part_5xx;
+// ****** Drop tail
+let __threshold_learn___s_train = drop_tail(__threshold_learn___s__input, 43200s);
+// ***** Seasonal
+let __threshold_learn___mean_vec = seasonal_mean(__threshold_learn___s_train, __threshold_learn___input_vec, 6, 'anyday', 0h, 0.0);
+let __threshold_learn___std_vec = transform(seasonal_variance(__threshold_learn___s_train, __threshold_learn___input_vec, 6, 'anyday', 0h, 0.0), 'sqrt');
+// **** LearnThreshold
+let __threshold_learn___mean = last(__threshold_learn___mean_vec);
+let __threshold_learn___lower_vec_crit = __threshold_learn___mean_vec + (-7.0) * __threshold_learn___std_vec;
+let __threshold_learn___upper_vec_crit = __threshold_learn___mean_vec + (7.0) * __threshold_learn___std_vec;
+let __threshold_learn___lower_crit = last(__threshold_learn___lower_vec_crit);
+let __threshold_learn___upper_crit = last(__threshold_learn___upper_vec_crit);
+let __threshold_learn___lower_bad_crit = transform(__threshold_learn___lower_vec_crit - __threshold_learn___input_vec, 'heaviside');
+let __threshold_learn___upper_bad_crit = transform(__threshold_learn___input_vec - __threshold_learn___upper_vec_crit, 'heaviside');
+let __threshold_learn___out_crit = __threshold_learn___lower_bad_crit + __threshold_learn___upper_bad_crit;
+let __threshold_learn___out_warn = __threshold_learn___lower_bad_crit + __threshold_learn___upper_bad_crit;
+let __threshold_learn__viol = __threshold_learn___out_warn + __threshold_learn___out_crit;
+// *** Simple algorithm [Bool]
+let __threshold_learn__crit = 0.5 * sum(__threshold_learn__viol * (__threshold_learn__viol - 1));
+let __threshold_learn = __threshold_learn__crit > 0.5 * count(__threshold_learn__viol);
+// ****** From var [Timeseries]
+let __threshold_fixed____input = __part_5xx;
+// ***** Tail
+let __threshold_fixed___input = tail(__threshold_fixed____input, 600s);
+// **** SimpleThreshold
+let __threshold_fixed___lower_crit = 0.0;
+let __threshold_fixed___lower_bad_crit = transform(__threshold_fixed___lower_crit - __threshold_fixed___input, 'heaviside');
+let __threshold_fixed___upper_crit = 0.05;
+let __threshold_fixed___upper_bad_crit = transform(__threshold_fixed___input - __threshold_fixed___upper_crit, 'heaviside');
+let __threshold_fixed___out_crit = __threshold_fixed___lower_bad_crit + __threshold_fixed___upper_bad_crit;
+let __threshold_fixed___out_warn = __threshold_fixed___lower_bad_crit + __threshold_fixed___upper_bad_crit;
+let __threshold_fixed__viol = __threshold_fixed___out_warn + __threshold_fixed___out_crit;
+// *** Simple algorithm [Bool]
+let __threshold_fixed__crit = 0.5 * sum(__threshold_fixed__viol * (__threshold_fixed__viol - 1));
+let __threshold_fixed = __threshold_fixed__crit > 0.5 * count(__threshold_fixed__viol);
+// **** From var [Bool]
+let __result__arg1 = __threshold_learn;
+// **** From var [Bool]
+let __result__arg2 = __threshold_fixed;
+// *** Logic [Bool]
+let __result = __result__arg1 || __result__arg2;
+let status = __result;
+alarm_if(status);

@@ -1,0 +1,75 @@
+service: antiadblock
+title: antiadb-blocker-ublock
+
+shared:
+  requirements: &requirements
+    cores: 4
+    ram: 8 GB
+    disk: 10GB
+    sandbox:
+      client_tags: GENERIC & LINUX & SSD & LXC
+      container_resource: 3242186178
+      dns: dns64
+
+ci:
+  secret: sec-01evxgabdwyeb183v8p4exxsry
+  runtime:
+    sandbox:
+      owner: ANTIADBLOCK
+
+  releases:
+    release:
+      title: AAB_BLOCKER_UBLOCK
+      flow: build-and-upload
+
+  actions:
+    build:
+      flow: build
+      triggers:
+        - on: pr
+
+    build-and-upload:
+      flow: build-and-upload
+      triggers:
+        - on: commit
+          into: trunk
+
+  flows:
+    build:
+      title: Blocker uBlock CI build
+      jobs:
+        main:
+          title: Build
+          task: common/misc/run_command
+          requirements: *requirements
+          input:
+            config:
+              arc_mount_config:
+                enabled: true
+              cmd_line: |
+                set -e
+                cd ./antiadblock/blockers/ublock
+                ./build_all.sh
+
+    build-and-upload:
+      title: Blocker uBlock build and upload resource
+      jobs:
+        main:
+          title: Build and upload
+          task: common/misc/run_command
+          requirements: *requirements
+          input:
+            config:
+              secret_environment_variables:
+                - key: SANDBOX_TOKEN
+                  secret_spec:
+                    uuid: sec-01crfs4yjd29hardw658g1qk84
+                    key: ANTIADBLOCK_SANDBOX_TOKEN
+              arc_mount_config:
+                enabled: true
+              cmd_line: |
+                set -e
+                cd ./antiadblock/blockers/ublock
+                ./build_all.sh
+                ya upload dist/build/uBlock0.chromium.zip --type UBLOCK_CHROME_EXTENSION --owner ANTIADBLOCK --token $SANDBOX_TOKEN
+                ya upload dist/build/uBlock0.firefox.xpi --type UBLOCK_FIREFOX_EXTENSION --owner ANTIADBLOCK --token $SANDBOX_TOKEN

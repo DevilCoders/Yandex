@@ -1,0 +1,36 @@
+RECURSE(
+    autoredirect_data
+    bs_dsp_money
+    bypass_uids_stat
+    change_current_cookie
+    cookies_list
+    decrypt_url_configs
+    detect_verification
+    experiments
+    gdpr_aab_cookies
+    generate_ammo_stub_table
+    money_by_service_id
+    money_inapp
+    money_monitoring
+    money_vh
+    monitoring_update
+    monitoring_stats
+    morda_aab_cookies
+    morda_awaps
+    morda_awaps_by_templates
+    support_money_loss
+    tools
+    turbo_money
+    games_money
+    update_bypass_uids
+    money_tickets_updater
+    pcode_versions_dashboard
+    startrek_duty
+    sla_pinger
+    update_lj_custom_domains
+    popup_blocked_domains
+    regex_stat_retriever
+    performance_shoots_log_analyzer
+    push_balancer_crypto_settings
+    argus_test_run
+)

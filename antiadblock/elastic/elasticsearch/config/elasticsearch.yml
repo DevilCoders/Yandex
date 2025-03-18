@@ -1,0 +1,63 @@
+cluster:
+  name: elastic_cluster
+  remote:
+    initial_connect_timeout: 300s
+# Making Elastic aware of different clusters.
+# So it can distribute the primary shard and its replica shards to minimise the risk of losing all shard copies in the event of a failure.
+# Documentation link: https://www.elastic.co/guide/en/elasticsearch/reference/current/allocation-awareness.html
+  routing.allocation:
+    awareness:
+      attributes: zone
+      force.zone.values: sas,vla,iva,myt
+    disk.watermark:
+      low: 90%
+      high: 95%
+      flood_stage: 98%
+
+network:
+  host: '[::]'
+
+# Http.port allows to expose Elasticsearch APIs, example https://www.elastic.co/guide/en/elasticsearch/reference/current/docs.html.
+# Filebeat uses this http.port.
+http:
+  port: 8890
+
+# Transport module is used for internal communication between nodes within the cluster.
+transport:
+  connect_timeout: 60s
+  port: 8991
+  host: ${RESOLVED_HOST_NAME}
+
+# About the process of discovery: https://www.elastic.co/guide/en/elasticsearch/reference/current/modules-discovery-hosts-providers.html
+# file unicast_hosts.txt will contain fqdns
+discovery:
+  seed_providers: file
+  seed_resolver:
+    max_concurrent_resolvers: 32
+    timeout: "15s"
+
+# Search node cannot contain data or be elected master
+node:
+  name: ${RESOLVED_HOST_NAME}
+  roles: ${ROLES}
+  processors: ${CPU_COUNT} # override cpu count setting since elastic takes host machine cpu count, but not container cpu count
+  attr:
+    zone: ${DATACENTER} # sas/vla/man
+
+# Persistent volume used by elastic to store indexes and settings
+path.data: /perm
+xpack:
+  security.enabled: false
+  monitoring.collection.enabled: true # https://www.elastic.co/guide/en/elasticsearch/reference/current/esms.html
+
+# The indexing buffer is used to store newly indexed documents.
+# When it fills up, the documents in the buffer are written to a segment on disk.
+indices:
+  memory.index_buffer_size: 20%
+  breaker.request.limit: 80%
+  recovery:
+    max_bytes_per_sec: "80mb"
+    max_concurrent_file_chunks: 4
+
+logger.org.elasticsearch: info
+

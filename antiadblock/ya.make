@@ -1,0 +1,19 @@
+OWNER(g:antiadblock)
+
+RECURSE(
+    analytics_service
+    argus
+    argus/tasks
+    configs_api
+    cryprox
+    encrypter
+    encrypter/ut
+    postgres_local
+    postgres_local/recipe
+    monrelay
+    monrelay/samogon
+    adblock_rule_sonar
+    tasks
+    libs
+    zfp
+)

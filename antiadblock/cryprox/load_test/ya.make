@@ -1,0 +1,3 @@
+RECURSE(
+    stub_generator
+)

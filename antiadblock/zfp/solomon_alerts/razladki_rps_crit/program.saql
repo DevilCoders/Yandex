@@ -1,0 +1,28 @@
+// https://razladki-wow.n.yandex-team.ru/workspace/1694/version/3
+let __data__input = single({project='Antiadblock', cluster='cryprox-prod', service='antiadblock_nginx', service_id='*', host='cluster', browser='ALL', sensor='request_aggregate', status='2XX_sum'});
+let __data = drop_tail(group_by_time(60s, 'avg', __data__input), 1);
+let __has_h_data__input = __data;
+let __has_h_data = last(get_timestamps(__has_h_data__input)) + 3600 > time_interval_end();
+let __has_m_data__input = __data;
+let __has_m_data = last(get_timestamps(__has_m_data__input)) + 600 > time_interval_end();
+let __rps___i_input = __data;
+let __rps___input_vec = tail(__rps___i_input, 1200s);
+let __rps___s__input = __data;
+let __rps___s_train = drop_tail(__rps___s__input, 86400s);
+let __rps___adj_vec = seasonal_adjusted(__rps___s_train, __rps___input_vec, 12, 'work', 10800s, 0.0);
+let __rps___lower_bad_crit = transform((-6.0) - __rps___adj_vec, 'heaviside');
+let __rps___upper_bad_crit = transform(__rps___adj_vec - (4.0), 'heaviside');
+let __rps___out_crit = __rps___lower_bad_crit + __rps___upper_bad_crit;
+let __rps___out_warn = __rps___lower_bad_crit + __rps___upper_bad_crit;
+let __rps__viol = __rps___out_warn + __rps___out_crit;
+let __rps__crit = 0.5 * sum(__rps__viol * (__rps__viol - 1));
+let __rps = __rps__crit > 0.999 * count(__rps__viol);
+let __result__cond = __has_h_data;
+let __result__t_cond = __has_m_data;
+let __result__t_tval = __rps;
+let __result__t_fval = true;
+let __result__tval = __result__t_cond ? __result__t_tval : __result__t_fval;
+let __result__fval = false;
+let __result = __result__cond ? __result__tval : __result__fval;
+let status = __result;
+alarm_if(status);

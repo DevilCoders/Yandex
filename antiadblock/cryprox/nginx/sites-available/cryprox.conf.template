@@ -1,0 +1,186 @@
+limit_req_zone $binary_remote_addr zone=perip:10m rate=600r/s;
+
+upstream cryprox_upstream {
+    server ${CRYPROX} max_fails=500 fail_timeout=10;
+}
+
+server {
+    listen                      0.0.0.0:80 rcvbuf=512k sndbuf=512k default_server;
+    listen                      [::]:80 rcvbuf=512k sndbuf=512k default_server;
+
+    resolver                    [::1];
+    log_subrequest on;
+
+    proxy_buffering             on;
+    proxy_buffer_size           64k;
+    proxy_buffers               8 16k;
+    proxy_busy_buffers_size     64k;
+    proxy_max_temp_file_size    0;
+    merge_slashes               off;
+    proxy_connect_timeout       60s;
+    proxy_read_timeout          60s;
+    proxy_send_timeout          60s;
+    large_client_header_buffers 4 16k;
+    client_body_buffer_size     2m;
+    client_max_body_size        2m;
+
+    ${RATELIMIT}
+
+    set $action "no_action";
+    # bamboozled flag
+    if ($http_x_aab_http_check) {
+        set $action "bamboozled";
+    }
+
+    set $cookies $http_cookie;
+
+    # Cache for cookie_of_the_day
+    location ~ ^/cookie_of_the_day {
+        proxy_pass http://cryprox_upstream;
+        proxy_set_header Host aab-pub.s3.yandex.net;
+        proxy_cache detect_zone;
+        proxy_cache_key "$http_x_aab_partnertoken";
+        proxy_cache_min_uses 1;
+        proxy_cache_valid 200 1m;
+        proxy_cache_use_stale error timeout updating;
+    }
+
+    # For static-mon lib download accel-redirect
+    location ~ /proxy/https://static-mon.yandex.net/.* {
+        internal;
+        rewrite /proxy/https://static-mon.yandex.net(/.*) $1 break;
+        proxy_pass                  http://[::1];
+        proxy_cache                 off;
+        proxy_ignore_client_abort   off;
+        proxy_pass_request_body     on;
+        proxy_intercept_errors      on;
+        proxy_set_header            x-aab-proxy         0;
+        proxy_set_header            Host                static-mon.yandex.net;
+        proxy_set_header            X-Forwarded-Proto   $http_x_forwarded_proto;
+    }
+
+    location ~ /proxy/https://static-mon.yandex-net.ru/.* {
+        internal;
+        rewrite /proxy/https://static-mon.yandex-net.ru(/.*) $1 break;
+        proxy_pass                  http://[::1];
+        proxy_cache                 off;
+        proxy_ignore_client_abort   off;
+        proxy_pass_request_body     on;
+        proxy_intercept_errors      on;
+        proxy_set_header            x-aab-proxy         0;
+        proxy_set_header            Host                static-mon.yandex-net.ru;
+        proxy_set_header            X-Forwarded-Proto   $http_x_forwarded_proto;
+    }
+
+    # For Internal Accel-Redirect
+    location ~ ^/proxy/(.*) {
+        internal;
+        set $is_accel_redirect 1;
+        set $decrypted_url $1;
+        set $response_body "";
+        body_filter_by_lua_block {
+            if ngx.ctx.loggable == 1 then
+                local resp_body = string.sub(ngx.arg[1], 1)
+                ngx.ctx.buffered = (ngx.ctx.buffered or "") .. resp_body
+                if ngx.arg[2] then
+                    ngx.var.response_body = ngx.ctx.buffered
+                end
+            end
+        }
+        # Внутренних партнеров резолвим через NAT64 DNS, т.к. IPv4 тунель не пропускает запросы внутри сети
+        # Здесь в качестве резолвера используется ip-адрес ns64-cache.yandex.net
+        resolver ${EXTERNAL_RESOLVER} ipv6=on;
+        ${ACCELREDIRECT_TARGET}
+        proxy_cache                 off;
+        proxy_ignore_client_abort   off;
+        proxy_pass_request_body     on;
+        proxy_intercept_errors      on;
+        proxy_set_header            x-aab-proxy 1;
+        error_page 301 302 307 = @handle_redirects;
+    }
+
+    location @handle_redirects {
+        # Внутренних партнеров резолвим через NAT64 DNS, т.к. IPv4 тунель не пропускает запросы внутри сети
+        # Здесь в качестве резолвера используется ip-адрес ns64-cache.yandex.net
+        resolver ${EXTERNAL_RESOLVER} ipv6=on;
+        set $saved_redirect_location     '$upstream_http_location';
+        proxy_set_header                 x-aab-proxy 1;
+        proxy_pass                       $saved_redirect_location;
+    }
+
+    # For Partners Accel-Redirects
+    location ~ ^(/aab-accel-redirect/.*) {
+        internal;
+        add_header X-Accel-Redirect $1$is_args$args;
+        return 200;
+    }
+
+
+    # Should be placed before default, otherwise proxy_pass messes with lua
+    location ~ /solomon_(?<metric_type>.+)/ {
+        access_log off;
+        content_by_lua_block {
+            ngx.say(get_solomon_metrics(ngx.var.metric_type))
+            return ngx.exit(200)
+        }
+    }
+
+
+    set $host_for_cryprox $host;
+    if ($http_x_aab_host) {
+        set $host_for_cryprox $http_x_aab_host;
+    }
+
+    # by default
+    location / {
+        set_by_lua_file $service_id 'jwt_partner.lua';  # need $service_id for bamboozled and brotli for turbo
+        if ($service_id ~ (^test$|turbo\.yandex\.ru|^e1$)) {
+            brotli on;
+        }
+
+        # cycle requests protection
+        if ($http_x_aab_proxy = "1") {
+            return 400;
+        }
+        if ($request_method = 'OPTIONS') {
+            add_header 'Access-Control-Allow-Origin' $http_origin always;
+            add_header 'Access-Control-Allow-Credentials' 'true' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, OPTIONS, HEAD' always;
+            add_header 'Access-Control-Allow-Headers' Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,X-AAB-HTTP-Check,X-AAB-JSTracer,Yandex-Preload,downlink,Device-Memory,ect,rtt always;
+            add_header 'Access-Control-Max-Age' 1728000 always;
+            add_header 'Content-Type' 'text/plain charset=UTF-8' always;
+            add_header 'Content-Length' 0 always;
+            return 200;
+        }
+
+        # bamboozled flag
+        if ($action = "bamboozled") {
+            set $is_bamboozled true;
+            echo_read_request_body;
+        }
+
+        proxy_pass                  http://cryprox_upstream;
+        proxy_cache                 off;
+        proxy_ignore_client_abort   off;
+        proxy_set_header            Host                  $host_for_cryprox;
+        ${PROXY_ADD_X_FORWARDED_FOR}
+        proxy_set_header            X-AAB-RequestId       $aab_requestid;
+        proxy_set_header            X-AAB-Loggablefull    $loggable;
+        proxy_set_header            Cookie                $cookies;
+        proxy_pass_request_body     on;
+
+        proxy_http_version          1.1;
+    }
+
+    # handy nginx status information page
+    # http://nginx.org/en/docs/http/ngx_http_stub_status_module.html
+    location ~ /stub_status {
+        stub_status on;
+        allow ::1;
+        allow 127.0.0.1;
+        deny all;
+    }
+
+    include sites-available/cryprox-ping-location.conf;
+
+}

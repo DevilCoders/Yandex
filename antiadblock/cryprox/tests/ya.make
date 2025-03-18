@@ -1,0 +1,5 @@
+RECURSE(
+    unit
+    lib
+    functional
+)

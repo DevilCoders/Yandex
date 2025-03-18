@@ -1,0 +1,33 @@
+#!/usr/bin/python -u
+# -*- coding: utf-8 -*-
+"""
+This script applied to the log records by push-client before it sends data to LogBroker.
+https://wiki.yandex-team.ru/logbroker/docs/push-client/config/#pipe
+"""
+import re
+import sys
+import json
+import time
+import socket
+
+
+spec_symbols_re = re.compile('^((?:[^;]+;){3}).*')  # при передаче записи лога из push-client к pipe к каждой строке вначале добавляется x;y;z; , где x,y,z -- числа. Данные числа ни в коем случае нельзя убирать!
+
+while True:
+    line = sys.stdin.readline()
+    if line == '':
+        break
+    spec_symbols_matcher = spec_symbols_re.search(line)
+    try:
+        spec_symbols = spec_symbols_matcher.group(1)
+        read_line = line[len(spec_symbols):-1]
+
+        record = dict(
+            timestamp=time.time() * 1000,
+            host=socket.gethostname().split('.')[0],
+            message=read_line
+        )
+
+        print spec_symbols + json.dumps(record)
+    except:
+        pass

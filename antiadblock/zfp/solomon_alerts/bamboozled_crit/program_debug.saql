@@ -1,0 +1,82 @@
+// https://razladki-wow.n.yandex-team.ru/workspace/1697/version/3
+// * Complex algorithm [Bool]
+// ***** Load series array
+let __try_to_load___input = {project='Antiadblock', cluster='cryprox-prod', service='bamboozled', service_id='*', app='ALL', sensor='bamboozled', browser='ALL', device='pc', action='try_to_load'};
+// **** Aggregate timeseries array
+let __try_to_load__input = group_lines('sum', __try_to_load___input);
+let __try_to_load___aggregated = last(__try_to_load__input);
+// *** Downsample timeseries
+let __try_to_load = drop_tail(group_by_time(300s, 'avg', __try_to_load__input), 1);
+let __try_to_load__downsample = last(__try_to_load);
+// ***** Load series array
+let __confirm_block___input = {project='Antiadblock', cluster='cryprox-prod', service='bamboozled', service_id='*', app='ALL', sensor='bamboozled', browser='ALL', device='pc', action='confirm_block'};
+// **** Aggregate timeseries array
+let __confirm_block__input = group_lines('sum', __confirm_block___input);
+let __confirm_block___aggregated = last(__confirm_block__input);
+// *** Downsample timeseries
+let __confirm_block = drop_tail(group_by_time(300s, 'avg', __confirm_block__input), 1);
+let __confirm_block__downsample = last(__confirm_block);
+// **** From var [Timeseries]
+let __bamboozled__numer = __confirm_block;
+// **** From var [Timeseries]
+let __bamboozled__denom = __try_to_load;
+// *** Quotient of two timeseries
+let __bamboozled = __bamboozled__numer / __bamboozled__denom + 0 * (__bamboozled__numer + __bamboozled__denom);
+let __bamboozled__quot = last(__bamboozled);
+// ****** From var [Timeseries]
+let __bamboozled_status___i_input = __bamboozled;
+// ***** Tail
+let __bamboozled_status___input_vec = tail(__bamboozled_status___i_input, 1200s);
+// ******** From var [Timeseries]
+let __bamboozled_status___s___input = __bamboozled;
+// ******* Tail
+let __bamboozled_status___s__input = tail(__bamboozled_status___s___input, 86400s);
+// ****** Drop tail
+let __bamboozled_status___s_train = drop_tail(__bamboozled_status___s__input, 3600s);
+// ***** Windowed avg/std
+let __bamboozled_status___mean_vec = avg(__bamboozled_status___s_train) + 0 * __bamboozled_status___input_vec;
+let __bamboozled_status___std_vec = std(__bamboozled_status___s_train) + 0 * __bamboozled_status___input_vec;
+// **** LearnThreshold
+let __bamboozled_status___mean = last(__bamboozled_status___mean_vec);
+let __bamboozled_status___lower_vec_crit = __bamboozled_status___mean_vec + (-5.0) * __bamboozled_status___std_vec;
+let __bamboozled_status___upper_vec_crit = __bamboozled_status___mean_vec + (5.0) * __bamboozled_status___std_vec;
+let __bamboozled_status___lower_crit = last(__bamboozled_status___lower_vec_crit);
+let __bamboozled_status___upper_crit = last(__bamboozled_status___upper_vec_crit);
+let __bamboozled_status___lower_bad_crit = transform(__bamboozled_status___lower_vec_crit - __bamboozled_status___input_vec, 'heaviside');
+let __bamboozled_status___upper_bad_crit = transform(__bamboozled_status___input_vec - __bamboozled_status___upper_vec_crit, 'heaviside');
+let __bamboozled_status___out_crit = __bamboozled_status___lower_bad_crit + __bamboozled_status___upper_bad_crit;
+let __bamboozled_status___out_warn = __bamboozled_status___lower_bad_crit + __bamboozled_status___upper_bad_crit;
+let __bamboozled_status__viol = __bamboozled_status___out_warn + __bamboozled_status___out_crit;
+// *** Simple algorithm [Bool]
+let __bamboozled_status__crit = 0.5 * sum(__bamboozled_status__viol * (__bamboozled_status__viol - 1));
+let __bamboozled_status = __bamboozled_status__crit > 0.999 * count(__bamboozled_status__viol);
+// ****** From var [Timeseries]
+let __confirmblock_status___i_input = __confirm_block;
+// ***** Tail
+let __confirmblock_status___input_vec = tail(__confirmblock_status___i_input, 1800s);
+// ******* From var [Timeseries]
+let __confirmblock_status___s__input = __confirm_block;
+// ****** Drop tail
+let __confirmblock_status___s_train = drop_tail(__confirmblock_status___s__input, 43200s);
+// ***** Seasonal
+let __confirmblock_status___mean_vec = seasonal_mean(__confirmblock_status___s_train, __confirmblock_status___input_vec, 12, 'work', 10800s, 0.1);
+let __confirmblock_status___std_vec = transform(seasonal_variance(__confirmblock_status___s_train, __confirmblock_status___input_vec, 12, 'work', 10800s, 0.1), 'sqrt');
+// **** LearnThreshold
+let __confirmblock_status___mean = last(__confirmblock_status___mean_vec);
+let __confirmblock_status___lower_vec_crit = __confirmblock_status___mean_vec + (-5.0) * __confirmblock_status___std_vec;
+let __confirmblock_status___lower_crit = last(__confirmblock_status___lower_vec_crit);
+let __confirmblock_status___lower_bad_crit = transform(__confirmblock_status___lower_vec_crit - __confirmblock_status___input_vec, 'heaviside');
+let __confirmblock_status___out_crit = __confirmblock_status___lower_bad_crit;
+let __confirmblock_status___out_warn = __confirmblock_status___lower_bad_crit;
+let __confirmblock_status__viol = __confirmblock_status___out_warn + __confirmblock_status___out_crit;
+// *** Simple algorithm [Bool]
+let __confirmblock_status__crit = 0.5 * sum(__confirmblock_status__viol * (__confirmblock_status__viol - 1));
+let __confirmblock_status = __confirmblock_status__crit > 0.999 * count(__confirmblock_status__viol);
+// **** From var [Bool]
+let __result__arg1 = __confirmblock_status;
+// **** From var [Bool]
+let __result__arg2 = __bamboozled_status;
+// *** Logic [Bool]
+let __result = __result__arg1 || __result__arg2;
+let status = __result;
+alarm_if(status);

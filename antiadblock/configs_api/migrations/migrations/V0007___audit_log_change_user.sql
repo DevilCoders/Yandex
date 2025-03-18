@@ -1,0 +1,9 @@
+UPDATE public.audit_log SET user_id=598686045 WHERE user_id=1120000000039889; --yndx-ddemidov
+UPDATE public.audit_log SET user_id=539446614 WHERE user_id=1120000000037745; --yndx.sotskov
+UPDATE public.audit_log SET user_id=393530940 WHERE user_id=1120000000008902; --yndx.mkhardin
+UPDATE public.audit_log SET user_id=609573294 WHERE user_id=1120000000044504; --yndx-aab-admin-solovyev
+UPDATE public.audit_log SET user_id=45974892  WHERE user_id=1120000000038827; --lawyard
+UPDATE public.audit_log SET user_id=570377437 WHERE user_id=1120000000068159; --lexx-evd
+UPDATE public.audit_log SET user_id=544175550 WHERE user_id=1120000000042058; --yndx.simonovin
+UPDATE public.audit_log SET user_id=592498701 WHERE user_id=1120000000070839; --tzapil
+UPDATE public.audit_log SET user_id=95491511  WHERE user_id=1120000000010664; --m.mavlyutov

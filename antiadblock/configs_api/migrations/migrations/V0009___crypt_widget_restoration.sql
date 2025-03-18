@@ -1,0 +1,3 @@
+UPDATE public.configs SET data = jsonb_set(data, '{CRYPT_URL_RE}', (data->'CRYPT_URL_RE') - '(?:[\w-]+\.)?smi2\.(?:ru|net)/.*?') WHERE data::jsonb ? 'CRYPT_WIDGETS' and data->'CRYPT_WIDGETS' ?| array['SMI2'];
+UPDATE public.configs SET data = jsonb_set(data, '{FOLLOW_REDIRECT_URL_RE}', (data->'FOLLOW_REDIRECT_URL_RE') - '(?:https?://)?(?:[\w-]+\.)?smi2\.(?:ru|net)/.*?') WHERE data::jsonb ? 'CRYPT_WIDGETS' and data->'CRYPT_WIDGETS' ?| array['SMI2'];
+UPDATE public.configs SET data = jsonb_set(data, '{CRYPT_BODY_RE}', (data->'CRYPT_BODY_RE') - '\bsmi2adblock[-\w]+?\b') WHERE data::jsonb ? 'CRYPT_WIDGETS' and data->'CRYPT_WIDGETS' ?| array['SMI2'];

@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+
+# Script for closing ping url path to mark real as failed and stop traffic on it
+
+mkdir -p /etc/nginx/sites-enabled
+
+if [[ $1 == "close" ]]; then
+    echo "Closing real for SLB"
+    ln -s -f /etc/nginx/sites-available/cryprox-ping-closed.conf /etc/nginx/sites-available/cryprox-ping-location.conf
+    nginx -s reload
+    sleep 5
+    echo "Checking..."
+    if [[ `curl http://[::1]/ping -s` == "Closed." ]]; then
+        echo "Successfully closed"
+    else
+        echo "FAIL: Real was not closed for SLB."
+        exit 1
+    fi
+elif [[ $1 == "open" ]]; then
+    echo "Open real for SLB"
+    ln -s -f /etc/nginx/sites-available/cryprox-ping-opened.conf /etc/nginx/sites-available/cryprox-ping-location.conf
+    nginx -s reload
+    echo "Checking..."
+    sleep 1
+    if [[ `curl http://[::1]/ping -s` == "Ok." ]]; then
+        echo "Successfully opened"
+    else
+        echo "FAIL: Real was not opened for SLB."
+        exit 1
+    fi
+elif [[ $1 == "ensure_open" ]]; then
+    echo "Open real for SLB no nginx reload no check"
+    ln -s -f /etc/nginx/sites-available/cryprox-ping-opened.conf /etc/nginx/sites-available/cryprox-ping-location.conf
+elif [[ $1 == "status" ]]; then
+    out_readlink=`readlink /etc/nginx/sites-available/cryprox-ping-location.conf`
+    if [[ $out_readlink == "/etc/nginx/sites-available/cryprox-ping-opened.conf" ]]; then
+        echo "open"
+    else
+        echo "close"
+    fi
+else
+    echo "FAIL: Unknown command. Use 'open', 'close' or 'status' only."
+    exit 1
+fi

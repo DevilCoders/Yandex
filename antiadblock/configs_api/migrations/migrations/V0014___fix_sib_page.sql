@@ -1,0 +1,1 @@
+UPDATE services SET domain = 'adb.buglloc.com' WHERE id = 'yandex_sib_test';

@@ -1,0 +1,117 @@
+user www-data;
+worker_processes ${WORKERS_COUNT};
+worker_rlimit_nofile 64000;
+# store master-process pid for logrotate
+pid /var/run/nginx.pid;
+
+events {
+    worker_connections 16000;
+    multi_accept on;
+    use epoll;
+}
+
+http {
+
+    lua_shared_dict numeric_metrics 40M;
+
+    # init unistat timer
+    init_worker_by_lua_file worker.lua;
+
+    log_format json_by_lua escape=none $log_record_by_lua;
+    log_format request_by_lua escape=none $request_log_record_by_lua;
+    access_log /logs/nginx/access.log json_by_lua;
+    access_log /logs/nginx/request.log request_by_lua if=$loggable;
+    error_log /logs/nginx/error.log warn;
+
+    disable_symlinks if_not_owner;
+    ignore_invalid_headers on;
+    server_tokens off;
+    keepalive_timeout 60s 65s;
+
+    client_header_timeout 1s;
+    client_body_timeout 1s;
+
+    map_hash_max_size 9192;
+    map_hash_bucket_size 9192;
+
+    reset_timedout_connection on;
+    send_timeout 20s;
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+
+    default_type text/plain;
+
+    gzip on;
+    gzip_vary on;
+    gzip_disable "msie6";
+    gzip_types text/plain text/css application/json application/x-javascript text/xml application/xml application/xml+rss text/javascript application/javascript text/x-js image/x-icon image/bmp application/x-html application/x-mixed-iframe-html application/x-iframe-html;
+
+    brotli off;
+    brotli_comp_level 6;
+    brotli_types text/plain text/css text/javascript text/xml application/javascript application/json image/svg+xml application/xml+rss;
+
+    map $http_x_aab_requestid $aab_requestid {
+        default $request_length$request_id;
+        ~(.+) $http_x_aab_requestid;
+    }
+
+    map $host $is_accel_redirect {
+        default 0;  # default value to avoid error log records
+    }
+    map $host $log_record_by_lua {
+        default "{}";
+    }
+    map $host $request_log_record_by_lua {
+        default "{}";
+    }
+    map $host $loggable {
+        default 0;
+    }
+    map $host $is_bamboozled {
+        default false;
+    }
+    map $host $service_id {
+        default "unknown";
+    }
+    header_filter_by_lua_block {
+        if ngx.header["x-aab-serviceid"] ~= nil then
+            ngx.var.service_id = ngx.header["x-aab-serviceid"]
+            ngx.header["x-aab-serviceid"] = nil
+        end
+    }
+
+    lua_shared_dict internal_keys 32768;
+    init_by_lua_block {
+        local keys = ngx.shared.internal_keys
+        public_key = io.open("/etc/nginx/conf.d/key.pub", "r")
+        if public_key == nil then
+            error("No encryption key found")
+        end
+        keys:set("public_encryption_key", public_key:read("*all"))
+        public_key:close()
+    }
+    access_by_lua_block{
+        ngx.var.loggable = 0
+        ngx.ctx.loggable = 0
+        if ngx.var.request_uri ~= "/ping" or ngx.var.service_id ~= "unknown" then
+            if check_additional_loggable(${PROBABILITY_SEED}) then
+                ngx.var.loggable = 1
+                ngx.ctx.loggable = 1
+            end
+        end
+    }
+    log_by_lua_block {
+        ngx.var.loggable = 0
+        if ngx.var.request_uri ~= "/ping" or ngx.var.service_id ~= "unknown" then
+            prepare_log_info()
+            if ngx.ctx.loggable == 1 then
+                ngx.var.loggable = 1
+                prepare_request_log_info()
+            end
+        end
+    }
+    include /etc/nginx/sites-enabled/*;
+    include /etc/nginx/mime.types;
+
+}

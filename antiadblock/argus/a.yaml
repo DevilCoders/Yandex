@@ -1,0 +1,82 @@
+service: antiadblock
+title: Build Argus
+ci:
+  release-title-source: flow
+  secret: sec-01evxgabdwyeb183v8p4exxsry
+  runtime:
+    sandbox:
+      owner: ANTIADBLOCK
+      priority:
+        class: SERVICE
+        subclass: LOW
+      notifications:
+        - statuses: [TIMEOUT, FAILURE, EXCEPTION]
+          transport: email
+          recipients:
+            - antiadb@yandex-team.ru
+  actions:
+    build-action:
+      flow: build_antiadblock_argus
+      triggers:
+        - on: commit
+          filters:
+            - discovery: dir
+              abs-paths:
+                [
+                  "antiadblock/argus/bin/*",
+                  "antiadblock/argus/bin/utils/**",
+                  "antiadblock/libs/adb_selenium_lib/**",
+                  "antiadblock/libs/utils/**",
+                ]
+    test-action:
+      flow: antiadblock_argus_test_run
+      triggers:
+        - on: pr
+          required: false
+
+  flows:
+    build_antiadblock_argus:
+      title: Antiadblock Build Argus binary
+      jobs:
+        build:
+          title: Build Argus binary with ya make
+          task: common/arcadia/ya_make
+          input:
+            result_rt: ANTIADBLOCK_ARGUS_BIN
+            result_rd: antiadblock argus
+            result_attrs:
+              release: stable
+            result_ttl: inf
+            kill_timeout: 3600
+            result_single_file: true
+            targets: antiadblock/argus/bin
+            arts: antiadblock/argus/bin/argus
+
+    antiadblock_argus_test_run:
+      title: Antiadblock Argus test run
+      jobs:
+        launch:
+          title: Run Argus test
+          task: dummy
+          manual: true
+        build:
+          needs: launch
+          title: Build Argus test binary with ya make
+          task: common/arcadia/ya_make
+          input:
+            result_rt: ANTIADBLOCK_ARGUS_BIN
+            result_rd: antiadblock argus
+            result_attrs:
+              release: test
+            result_ttl: "1"
+            kill_timeout: 3600
+            result_single_file: true
+            targets: antiadblock/argus/bin
+            arts: antiadblock/argus/bin/argus
+        run_test:
+          needs: build
+          title: Run test version of Argus with default profile
+          task: projects/antiadblock/argus/run_test
+          input:
+            pr_description: ${context.launch_pull_request_info.pull_request.description}
+            argus_resource_id: ${(tasks.build.resources[?type == 'ANTIADBLOCK_ARGUS_BIN'])[0].id}
