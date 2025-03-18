@@ -1,0 +1,144 @@
+import "library/cpp/getoptpb/proto/confoption.proto";
+
+// Default behavior is:
+//  - take all fields of supported types
+//  - use lowercased field name as --long-option name
+//  - use protobuf default value as cmdline default value
+//  - for nested types --parent-child option is generated
+//
+// Custom options are:
+//   Descr    - cmdline option description to show in help
+//   Long     - use custom long option instead of field lowercase name
+//   Short    - add one-symbol option alias
+//   Type     - use custom type description instead of protobuf type names
+//   Ignore   - don't map this field to a cmdline option
+//
+// Types supported:
+//  - all plain protobuf types (numeric, bool, string)
+//  - enums (matches values case-insensitively against name, (NGetoptPb.Conf).Val and number)
+//  - messages (no recursion)
+// Types not supported:
+//  - repeated fields
+//  - extensions
+//  - unknown fields
+
+message TTestConfig {
+    option (NGetoptPb.Title) = "this is a title for usage info";
+
+    optional string     HomeDir     = 1 [ default=".",
+                                         (NGetoptPb.Conf).Descr  = "home path",
+                                         (NGetoptPb.Conf).Short  = 'h',
+                                         (NGetoptPb.Conf).Long   = "home",
+                                         (NGetoptPb.Conf).Type   = "<path>"
+                                        ];
+
+    optional uint32     NumThreads  = 2 [ default=8,
+                                         (NGetoptPb.Conf).Descr  = "number of threads",
+                                         (NGetoptPb.Conf).Long   = "nthreads"
+                                        ];
+
+    optional bool       GodMode     = 3 [(NGetoptPb.Conf).Descr  = "run in god-mode",
+                                         (NGetoptPb.Conf).Short  = 'g',
+                                         (NGetoptPb.Conf).Long   = "god-mode"
+                                        ];
+
+    // If a default value for bool field is false - a no-argument option is generated
+    // otherwise bool argument is required (yes|on|1|no|off|0|...)
+    optional bool       AnotherBool = 4 [ default=true,
+                                         (NGetoptPb.Conf).Type   = "on|off"
+                                        ];
+
+                                        // protobuf can understand this notation as well
+    required double     MaxSize     = 5 [(NGetoptPb.Conf) = {
+                                            Descr: "maximum size"
+                                            Long: "max-size"
+                                        }];
+
+    optional bool       NotAnOption = 6 [(NGetoptPb.Conf).Ignore = true ];
+
+    enum ETestEnum {
+        TE_ONE = 0      [(NGetoptPb.Val) = "one"];
+        TE_TWO = 1      [(NGetoptPb.Val) = "two"];   // "Te_tWo", "TwO", or "1" will be recognized
+        TE_THREE = 2    [(NGetoptPb.Val) = "three"];
+        TE_WITHOUT_VAL = 3;
+    }
+
+    repeated ETestEnum  TestEnum = 7   [ (NGetoptPb.Conf) = {
+                                             Descr: "test enum value"
+                                        }];
+
+    message TCalcOptions {
+        optional string Host = 1 [ default = "localhost",
+                                  (NGetoptPb.Conf).Descr = "calc host"
+                                 ];
+        optional uint32 Port = 2 [ default = 8080,
+                                  (NGetoptPb.Conf).Descr = "calc port"
+                                 ];
+        required TTestConfig RRRRRRecursion = 3;
+    }
+
+    required TCalcOptions Calc  = 11;
+    optional TCalcOptions Calc2 = 12; // for empty-message test
+    optional TCalcOptions Calc3 = 14    [ (NGetoptPb.Conf).Path = "" ];
+    optional TCalcOptions Calc4 = 15    [ (NGetoptPb.Conf).Path = "c-" ];
+
+    repeated uint32       TestRepeatedOpt       = 13;
+    repeated string       RepeatedButUnset      = 17;
+    repeated TCalcOptions RepeatedButIgnored    = 16;
+
+    message TSubCommand1 {
+        required uint32 A    = 1;
+        optional string B    = 2;
+        repeated string Free = 3 [ (NGetoptPb.Conf).FreeArg = true ];
+    }
+    message TSubCommand2 {
+        optional double A          = 1;
+        required uint32 B          = 2;
+        required string FreeText   = 3 [ default = "aa",  (NGetoptPb.Conf).FreeArg = true ];
+        required uint32 FreeInt    = 4 [ default = 1000,  (NGetoptPb.Conf).FreeArg = true ];
+        required bool   FreeBool   = 5 [ default = false, (NGetoptPb.Conf).FreeArg = true ];
+        required double FreeDouble = 6 [ default = 0.01,  (NGetoptPb.Conf).FreeArg = true ];
+        optional string FreeText2  = 7 [ (NGetoptPb.Conf).FreeArg = true ];
+    }
+    message TSubCommand3 {
+        required string Free = 1 [ (NGetoptPb.Conf).FreeArg = true ];
+    }
+    oneof SubCommand {
+        TSubCommand1   Cmd1 = 20 [ (NGetoptPb.Conf).SubCommand = true ];
+        TSubCommand2   Cmd2 = 21 [ (NGetoptPb.Conf).SubCommand = true ];
+        TSubCommand3   Cmd3 = 22 [ (NGetoptPb.Conf).SubCommand = true ];
+    }
+
+    extensions 100 to 200;
+}
+
+extend TTestConfig {
+    optional uint32 ExtField = 100;
+}
+
+message TSmallTestConfig {
+    required string Host = 1;
+    optional uint32 Port = 2;
+    optional string Path = 3;
+}
+
+message TMapTestConfig {
+    map<string,  string> KeyValue = 1;
+}
+
+message TTestInheritSubcommand {
+    optional string Config = 1;
+}
+
+message TTestInheritMain {
+    oneof SubCommand {
+        TTestInheritSubcommand Sub = 1 [(NGetoptPb.Conf).SubCommand = true];
+    }
+}
+
+message TTestMixedFreeArgs {
+    required string A = 1 [ (NGetoptPb.Conf).FreeArg = true ];
+    required string B = 2 [ default = "default", (NGetoptPb.Conf).FreeArg = true ];
+    optional string C = 3 [ (NGetoptPb.Conf).FreeArg = true ];
+    repeated string D = 4 [ (NGetoptPb.Conf).FreeArg = true ];
+}

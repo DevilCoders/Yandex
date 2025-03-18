@@ -1,0 +1,12 @@
+RECURSE(
+    folding
+    folding/ut
+    normalization
+    punycode
+    set
+    set/ut
+    utf8_char
+    utf8_char/ut
+    utf8_iter
+    utf8_iter/ut
+)

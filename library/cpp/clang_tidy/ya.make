@@ -1,0 +1,3 @@
+RECURSE(
+    arcadia_checks
+)

@@ -1,0 +1,9 @@
+RECURSE(
+    benchmark
+    dns
+    dns/example
+    engine
+    listener
+    test
+    util
+)

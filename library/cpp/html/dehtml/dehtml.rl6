@@ -1,0 +1,298 @@
+#include <library/cpp/html/dehtml/dehtml.h>
+
+#include <library/cpp/html/entity/htmlentity.h>
+
+#include <library/cpp/charset/recyr.hh>
+#include <util/charset/wide.h>
+#include <util/generic/algorithm.h>
+#include <util/stream/mem.h>
+#include <util/system/defaults.h>
+
+#ifdef _MSC_VER
+#   pragma warning(push)
+#   pragma warning(disable:4702) /*unreachable code*/
+#endif
+
+%%{
+
+    machine HtmlStripper;
+    alphtype unsigned char;
+
+    word = [A-Za-z][0-9A-Za-z\-]*;
+    value = (["] any* :>> ["])
+           | (['] any* :>> ['])
+           | ((any - space)+);
+    comment = space* '!--' any* :>> '--' space*;
+
+    tagbody = space* word (space+ word "=" value)* space*;
+    tag := ('<' (('/'? tagbody) | (tagbody '/') | comment) '>')
+           >~{ sp = p + 1; }
+           %~{ if (!(Mode & HSM_NO_SPACE_INSERT)) emit(" ", 1); fgoto main; }
+           %/{ if (!(Mode & HSM_TRASH)) emit.Lt(), emit(sp + 1, pe - sp - 1); }
+           $!{ if (!(Mode & HSM_TRASH)) p = sp + 1, emit.Lt(); fhold; fgoto main; };
+
+    entity := ('&' (word | ('#' digit{1,6}) | ('#' ('x' | 'X') xdigit{1,5})) ';')
+           >~{ sp = p + 1; }
+           %~{ emit(sp, p - sp + 1); fgoto main; }
+           %/{ if (!(Mode & HSM_TRASH)) emit.Amp(), emit(sp + 1, pe - sp - 1); }
+           $!{ if (!(Mode & HSM_TRASH)) p = sp + 1, emit.Amp(); fhold; fgoto main; };
+
+    special = ('>' >{ if (!(Mode & HSM_TRASH)) emit.Gt(); })
+            | (0)
+            ;
+
+    main := ( ('<' >4 >{ fhold; fgoto tag; })
+            | ('&' >4 >{ if (Mode & HSM_ENTITY) { fhold; fgoto entity; } else emit.Amp(); })
+            | (special >3)
+            | (space >2 >{ emit(" ", 1); })
+            | (any >1 >{ emit(p, 1); })
+            )*;
+
+}%%
+
+namespace {
+
+class TLazyStringWriter: public IOutputStream {
+public:
+    TLazyStringWriter(TString& dest, const TStringBuf& src);
+
+    virtual void DoWrite(const void* buf, size_t len);
+
+    virtual void DoFinish() {
+        if (!Wrote() && Src.size() != CurSrcPos)
+            Dest.assign(Src.data(), CurSrcPos),
+            CurSrcPos = NoPos;
+    }
+
+    bool Wrote() const {
+        return CurSrcPos == NoPos;
+    }
+
+    bool Changed() const {
+        return Wrote() || Src.size() != CurSrcPos;
+    }
+
+    TString GetString() const {
+        return Dest;
+    }
+
+protected:
+    TString& Dest;
+    TStringBuf Src;
+    size_t CurSrcPos;
+    static const size_t NoPos = static_cast<size_t>(-1);
+};
+
+class TWriterAdapter {
+public:
+    TWriterAdapter(int mode, ECharset encoding, IOutputStream& writer);
+
+    void operator()(const char* buf, size_t len);
+    void operator()(const unsigned char* buf, size_t len) {
+        return operator()(reinterpret_cast<const char*>(buf), len);
+    }
+
+    void Lt() {
+        if (Mode & HSM_ENTITY)
+            (*this)("&lt;", 4);
+        else
+            (*this)("<", 1);
+    }
+
+    void Gt() {
+        if (Mode & HSM_ENTITY)
+            (*this)("&gt;", 4);
+        else
+            (*this)(">", 1);
+    }
+
+    void Amp() {
+        if (Mode & HSM_ENTITY)
+            (*this)("&amp;", 5);
+        else
+            (*this)("&", 1);
+    }
+
+private:
+    // write levels
+    void WriteEntities(const char* buf, size_t len);
+    void WriteSemicolons(const char* buf, size_t len);
+    void WriteSpaces(const char* buf, size_t len);
+    void WriteFinal(const char* buf, size_t len);
+
+private:
+    int Mode;
+    ECharset Encoding;
+    IOutputStream& Writer;
+    char PrevSpace; // ' ' or ',' or '\0'
+    bool Written; // for spaces in the beginning of input
+};
+
+TLazyStringWriter::TLazyStringWriter(TString& dest, const TStringBuf& src)
+    : Dest(dest)
+    , Src(src)
+    , CurSrcPos(0)
+{
+}
+
+void TLazyStringWriter::DoWrite(const void* buf, size_t len) {
+    TStringBuf input(reinterpret_cast<const char*>(buf), len);
+    if (!Wrote()) {
+        if (TStringBuf(Src).SubStr(CurSrcPos, len)  == input) // SubStr() will check boundaries and operator==() will compare buffer sizes
+            CurSrcPos += len;
+        else
+            Dest.reserve(Src.length() + 1),
+            Dest.assign(Src.data(), CurSrcPos),
+            Dest.append(input),
+            CurSrcPos = NoPos;
+    } else {
+        Dest.append(input);
+    }
+}
+
+TWriterAdapter::TWriterAdapter(int mode, ECharset encoding, IOutputStream& writer)
+    : Mode(mode)
+    , Encoding(encoding)
+    , Writer(writer)
+    , PrevSpace('\0')
+    , Written(false)
+{
+}
+
+void TWriterAdapter::operator()(const char* buf, size_t len) {
+    WriteEntities(buf, len);
+}
+
+void TWriterAdapter::WriteEntities(const char* buf, size_t len) {
+    if (Mode & HSM_ENTITY && len > 1) {
+#if defined (C_LOCALE)
+        Y_ASSERT(strcmp(setlocale(LC_CTYPE, NULL), "C") == 0);
+#endif
+        const unsigned char* begin = reinterpret_cast<const unsigned char*>(buf);
+        const unsigned char* const end = begin + len;
+
+        while (begin < end) {
+            const wchar32 c = HtEntOldDecodeStep(Encoding, begin, end - begin, NULL);
+            char outbuf[6];
+            size_t read = 0;
+            size_t written = 0;
+            RecodeFromUnicode(Encoding, &c, outbuf, 1, Y_ARRAY_SIZE(outbuf), read, written);
+            Y_ASSERT(written);
+            Y_ASSERT(read == 1);
+            WriteSemicolons(outbuf, written);
+        }
+
+    } else {
+        WriteSemicolons(buf, len);
+    }
+}
+
+void TWriterAdapter::WriteSemicolons(const char* buf, size_t len) {
+    if (Mode & HSM_SEMICOLON) {
+        const char* begin = buf;
+        const char* const end = begin + len;
+        do {
+            const char* semicolon = Find(begin, end, ';');
+            WriteSpaces(begin, semicolon - begin);
+            if (semicolon != end)
+                WriteSpaces(",", 1);
+            begin = semicolon + 1;
+        } while (begin < end);
+    } else {
+        WriteSpaces(buf, len);
+    }
+}
+
+bool IsSpaceOrColon(char c) {
+    return c == ' ' || c == ',';
+}
+
+bool IsSpace(char c) {
+    return c == ' ';
+}
+
+void TWriterAdapter::WriteSpaces(const char* buf, size_t len) {
+    if (Mode & HSM_SPACE) {
+        bool (&IsSpaceSymbol)(char) = Mode & HSM_DELIMSPACE ? IsSpaceOrColon : IsSpace;
+        const char* begin = buf;
+        const char* const end = begin + len;
+
+        while (begin < end) {
+            if (!PrevSpace && IsSpaceSymbol(*begin))
+                PrevSpace = *begin++;
+
+            while (begin < end && IsSpaceSymbol(*begin))
+                ++begin;
+
+            if (begin < end) {
+                if (PrevSpace && Written)
+                    WriteFinal(&PrevSpace, 1);
+                PrevSpace = '\0';
+
+                const char* oldBegin = begin;
+                WriteFinal(oldBegin, (begin = FindIf(begin, end, IsSpaceSymbol)) - oldBegin);
+            }
+        }
+    } else {
+        WriteFinal(buf, len);
+    }
+}
+
+void TWriterAdapter::WriteFinal(const char* buf, size_t len) {
+    Written = true;
+    Writer.Write(buf, len);
+}
+
+} // anonymous namespace
+
+THtmlStripper::THtmlStripper(const int mode, const ECharset encoding)
+    : Mode(mode)
+    , Encoding(encoding)
+{
+}
+
+void THtmlStripper::operator()(const TStringBuf& html, IOutputStream& writer) const {
+    TWriterAdapter emit(Mode, Encoding, writer);
+
+    int cs;
+
+    %%write data noerror nofinal;
+    %%write init;
+
+    const unsigned char* p = reinterpret_cast<const unsigned char*>(html.data());
+    const unsigned char* pe = p + html.size();
+    const unsigned char* eof = pe;
+    const unsigned char* sp = NULL;
+
+    %%write exec;
+
+    (void) HtmlStripper_en_tag;
+    (void) HtmlStripper_en_main;
+    (void) HtmlStripper_en_entity;
+
+    writer.Finish();
+}
+
+TString THtmlStripper::operator()(const TString& html) const {
+    TString buffer;
+    TLazyStringWriter writer(buffer, html);
+    operator()(html, writer);
+    return writer.Changed() ? writer.GetString() : html;
+}
+
+bool THtmlStripper::operator()(const TStringBuf& html, TString& out) const {
+    TLazyStringWriter writer(out, html);
+    operator()(html, writer);
+    return writer.Changed();
+}
+
+void THtmlStripper::Strip(const int mode, char* out, size_t& out_len, const char* text, size_t len, ECharset enc) {
+    THtmlStripper stripper(mode, enc);
+    TMemoryWriteBuffer writer(out, out_len);
+    stripper(TStringBuf(text, len), writer);
+    out_len = writer.Len();
+}
+
+#ifdef _MSC_VER
+#   pragma warning(pop)
+#endif

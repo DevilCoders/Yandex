@@ -1,0 +1,16 @@
+RECURSE(
+    brotli
+    base64
+    brotli
+    bzip2
+    factory
+    fields_io
+    growing_file_input
+    lz
+    lzma
+    lzop
+    special
+    xz
+    zc_memory_input
+    zstd
+)

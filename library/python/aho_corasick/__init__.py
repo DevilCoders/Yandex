@@ -1,0 +1,3 @@
+from .__aho_corasick import SimpleInMemoryAhoCorasick
+
+SimpleInMemoryAhoCorasick

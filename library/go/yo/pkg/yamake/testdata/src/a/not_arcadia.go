@@ -1,0 +1,3 @@
+// +build !arcadia
+
+package a

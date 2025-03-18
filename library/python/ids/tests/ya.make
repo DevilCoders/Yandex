@@ -1,0 +1,73 @@
+PY23_LIBRARY()
+
+OWNER(g:tools-python)
+
+PEERDIR(
+    library/python/ids
+    contrib/python/mock
+    contrib/python/pretend
+    contrib/python/responses
+    contrib/python/ipython
+)
+
+TEST_SRCS(
+    __init__.py
+    helpers.py
+    abc/__init__.py
+    abc/test_pagination.py
+    abc/test_api_versions.py
+    calendar/__init__.py
+    calendar/test_holidays_repo.py
+    calendar_internal/__init__.py
+    calendar_internal/test_calendar_internal.py
+    common/__init__.py
+    common/test_lib/__init__.py
+    common/test_lib/test_linked_pagination.py
+    common/test_lib/test_paging_api.py
+    common/test_base_connector.py
+    common/test_oauth.py
+    common/test_plugins_lib.py
+    common/test_registry.py
+    common/test_repository_base.py
+    common/test_repository_bound_base.py
+    common/test_util_fields_mapping.py
+    common/test_util_lookup_applying.py
+    directory/__init__.py
+    directory/test_users.py
+    gap/__init__.py
+    gap/test_gap_integration.py
+    gap/test_utils.py
+    geobase/__init__.py
+    geobase/test_repository_geobase.py
+    formatter/__init__.py
+    formatter/test_utils.py
+    formatter/test_structure.py
+    inflector/__init__.py
+    inflector/test_inflector.py
+    inflector/test_inflector_integration.py
+    inflector/helpers.py
+    orange/__init__.py
+    orange/test_simple_notification_integration.py
+    plan/__init__.py
+    plan/test_plan_connector.py
+    startrek/test_repository_bound_comments.py
+    startrek/test_repository_bound_issue_events.py
+    startrek/test_repository_issue_types.py
+    startrek/test_repository_priorities.py
+    startrek/test_repository_issues.py
+    startrek/test_repository_queues.py
+    startrek/test_startrek_connector.py
+    startrek2/__init__.py
+    startrek2/test_connector.py
+    uatraits/__init__.py
+    uatraits/test_repository_detect.py
+    staff/test_repository_staff.py
+)
+
+END()
+
+RECURSE(
+    py2
+    py3
+)
+

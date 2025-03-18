@@ -1,0 +1,4 @@
+UNION()
+OWNER(g:kernel)
+FROM_SANDBOX(1450945730 OUT rootfs.img AUTOUPDATED rootfs.img)
+END()

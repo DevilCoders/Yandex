@@ -1,0 +1,12 @@
+RECURSE(
+    custom_devices
+    exectest
+    go_testing
+    library_ut
+    pass_env
+    py3test
+    py3test_with_network
+    pytest
+    pytest_runner
+    tmpfs_test
+)

@@ -1,0 +1,5 @@
+RECURSE(
+    build
+    introspect
+    lib
+)

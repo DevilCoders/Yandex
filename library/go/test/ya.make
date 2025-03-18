@@ -1,0 +1,20 @@
+OWNER(
+    prime
+    g:go-library
+)
+
+RECURSE(
+    assertpb
+    canon
+    checks
+    go_toolchain
+    grpctest
+    mutable_testdata
+    output
+    portmanager
+    recipe
+    requirepb
+    testhelpers
+    uuidtest
+    yatest
+)

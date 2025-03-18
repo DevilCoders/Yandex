@@ -1,0 +1,7 @@
+PY3_PROGRAM()
+
+PY_MAIN(main)
+
+PY_SRCS(TOP_LEVEL main.py)
+
+END()

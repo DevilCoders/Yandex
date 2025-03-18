@@ -1,0 +1,58 @@
+service: nirvana  # Сервис в https://abc.yandex-team.ru/
+title: Nirvana API
+
+ci:
+  release-title-source: flow
+  secret: sec-01ezs2hk5xd2sm3hbejfcsqz08
+  runtime:
+    sandbox-owner: NIRVANA_FRONT
+
+  autocheck:
+    fast-targets:
+      - library/python/nirvana_api
+
+  actions:
+     upload-to-pypi:
+        flow: upload-to-pypi
+        triggers:
+          - on: commit
+            into: trunk
+
+  flows:
+    upload-to-pypi:
+      title: Upload to internal pypi
+      jobs:
+        upload-to-pypi:
+          title: Upload to pypi
+          task: common/misc/run_command
+          requirements:
+            cores: 4
+            sandbox:
+              client_tags: GENERIC & LINUX & SSD # Теги Sandbox, позволяющие выбрать конкретные агенты
+              container_resource: 2304762809 # Ресурс, из которого запускается LXC-окружение задачи
+              dns: dns64 # Использовать NAT64
+              priority:
+                class: SERVICE
+                subclass: LOW
+          input:
+            config:
+              cmd_line: |
+                cd $ARCADIA_PATH/library/python/nirvana_api
+                python3.9 -m pip install twine
+                SVN_REVISION=${context.target_revision.number} python3.9 setup.py sdist
+                python3.9 -m twine upload --repository-url https://pypi.yandex-team.ru/simple/ dist/*
+              arc_mount_config:
+                enabled: true
+              secret_environment_variables:
+                - key: YA_TOKEN
+                  secret_spec:
+                    uuid: ${context.secret_uid}
+                    key: ci.token
+                - key: TWINE_USERNAME
+                  secret_spec:
+                    uuid: ${context.secret_uid}
+                    key: pypi.access.key
+                - key: TWINE_PASSWORD
+                  secret_spec:
+                    uuid: ${context.secret_uid}
+                    key: pypi.secret.key

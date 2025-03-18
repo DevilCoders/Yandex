@@ -1,0 +1,10 @@
+RECURSE(
+    socket
+    socket/ut
+    socket/with_nalf
+    v6
+    v6/with_nalf
+    v12
+    v12/ut
+    v12/with_nalf
+)

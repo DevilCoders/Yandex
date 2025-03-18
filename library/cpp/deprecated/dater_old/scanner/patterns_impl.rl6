@@ -1,0 +1,423 @@
+#if 0
+%%{
+#common
+    machine date_parser_common;
+    alphtype unsigned short;
+    getkey wchar16(*(ctx.p));
+    access ctx.;
+
+#actions
+    action begin {ctx.SetBegin();}
+    action enddig {ctx.PushNum();}
+    action onsep {ctx.OnSep();}
+    action checksep {ctx.CheckSep();}
+
+    action ondate_xmxy {TDateCoord d = ctx.OnDateXMXY(); if(d) return d;}
+    action ondate_xmxd {TDateCoord d = ctx.OnDateXMXD(); if(d) return d;}
+    action ondate_dmy {TDateCoord d = ctx.OnDateDMY(); if(d) return d;}
+    action ondate_mdy {TDateCoord d = ctx.OnDateMDY(); if(d) return d;}
+    action ondate_ymd {TDateCoord d = ctx.OnDateYMD(); if(d) return d;}
+    action ondate_ydm {TDateCoord d = ctx.OnDateYDM(); if(d) return d;}
+    action ondate_my  {TDateCoord d = ctx.OnDateMY();  if(d) return d;}
+    action ondate_ym  {TDateCoord d = ctx.OnDateYM();  if(d) return d;}
+    action ondate_y   {TDateCoord d = ctx.OnDateY();   if(d) return d;}
+    action ondate_6   {TDateCoord d = ctx.OnDate6();   if(d) return d;}
+    action ondate_8   {TDateCoord d = ctx.OnDate8();   if(d) return d;}
+
+    action jan {ctx.PushNum(1);}
+    action feb {ctx.PushNum(2);}
+    action mar {ctx.PushNum(3);}
+    action apr {ctx.PushNum(4);}
+    action may {ctx.PushNum(5);}
+    action jun {ctx.PushNum(6);}
+    action jul {ctx.PushNum(7);}
+    action aug {ctx.PushNum(8);}
+    action sep {ctx.PushNum(9);}
+    action oct {ctx.PushNum(10);}
+    action nov {ctx.PushNum(11);}
+    action dec {ctx.PushNum(12);}
+#endactions
+
+#dict
+    copy_sign = 0x00a9;
+    ru_A = 0x0430 | 0x0410;
+    ru_B = 0x0431 | 0x0411;
+    ru_V = 0x0432 | 0x0412;
+    ru_G = 0x0433 | 0x0413;
+    ru_D = 0x0434 | 0x0414;
+    ru_Ye = 0x0435 | 0x0415 | 0x0401 | 0x0451;
+    ru_Zh = 0x0436 | 0x0416;
+    ru_Z = 0x0437 | 0x0417;
+    ru_I = 0x0438 | 0x0418;
+    ru_J = 0x0439 | 0x0419;
+    ru_K = 0x043A | 0x041A;
+    ru_L = 0x043B | 0x041B;
+    ru_M = 0x043C | 0x041C;
+    ru_N = 0x043D | 0x041D;
+    ru_O = 0x043E | 0x041E;
+    ru_P = 0x043F | 0x041F;
+    ru_R = 0x0440 | 0x0420;
+    ru_S = 0x0441 | 0x0421;
+    ru_T = 0x0442 | 0x0422;
+    ru_U = 0x0443 | 0x0423;
+    ru_F = 0x0444 | 0x0424;
+    ru_H = 0x0445 | 0x0425;
+    ru_C = 0x0446 | 0x0426;
+    ru_Ch = 0x0447 | 0x0427;
+    ru_Sh = 0x0448 | 0x0428;
+    ru_Sch = 0x0449 | 0x0429;
+    ru_Y = 0x044A | 0x042A;
+    ru_Yy = 0x044B | 0x042B;
+    ru_y = 0x044C | 0x042C;
+    ru_E = 0x044D | 0x042D;
+    ru_Yu = 0x044E | 0x042E;
+    ru_Ya = 0x044F | 0x042F;
+
+    ru_letter = ru_A | ru_B | ru_V | ru_G | ru_D | ru_Ye | ru_Zh | ru_Z | ru_I | ru_J | ru_K
+            | ru_L | ru_M | ru_N | ru_O | ru_P | ru_S | ru_T | ru_U | ru_F | ru_H | ru_C
+            | ru_Ch | ru_Sh | ru_Sch | ru_Y | ru_Yy | ru_y | ru_E | ru_Yu | ru_Ya;
+
+    dig1_1 = digit {1} > begin % enddig %/enddig;
+    dig1_2 = digit {1,2} > begin % enddig %/enddig;
+    dig1_4 = ( digit {1} | digit {2} | digit {4} ) > begin % enddig %/enddig;
+    dig2_2 = digit {2} > begin % enddig %/enddig;
+    dig2_4 = ( digit {2} | digit {4} ) > begin % enddig %/enddig;
+    dig_year2_4 = ( [0189][0-9] | ('1'[0-9]|'20')[0-9][0-9] ) > begin % enddig %/ enddig;
+    dig_year3_4 = ( [89][0-9] | ('1'[0-9]|'20')[0-9][0-9] ) > begin % enddig %/ enddig;
+    dig_year4_4 = ( '1'[0-9][0-9][0-9] | '20'[0-9][0-9] ) > begin % enddig %/ enddig;
+    dig_year2000 = ( ( '199' | '20'[01] ) [0-9] ) > begin % enddig %/ enddig;
+    dig_year00 = ( '19'?'9'[0-9] | '20'?[01][0-9] ) > begin % enddig %/ enddig;
+    dig_day1_2 = ( '0'?[1-9] | [12][0-9] | '3'[01] ) > begin % enddig %/ enddig;
+    dig4_4 = digit {4}> begin % enddig %/enddig;
+    dig6 = digit {6}> begin % enddig %/enddig;
+    dig8 = digit {8,28}> begin % enddig %/enddig;
+
+    dash = '-' | 0x2013 | 0x2014;
+    wspace = space | 0x00A0;
+    wpunct = punct | 0x00AB | 0x00BB | 0x2018 | 0x2019 | 0x201C | 0x201D | 0x2026 | '<' | '>' | '[' | ']' | '(' | ')';
+    wbound = ^( alnum | ru_letter );
+
+    jan_en = ((/jan/i %/ jan % jan) ('.' | /uary/i)?) > begin;
+    feb_en = ((/feb/i %/ feb % feb) ('.' | /r/i /uary/i?)?) > begin;
+    mar_en = ((/mar/i %/ mar % mar) ('.' | /ch/i?)?) > begin;
+    apr_en = ((/apr/i %/ apr % apr) ('.' | /il/i?)?) > begin;
+    may_en = (/may/i %/ may % may) > begin;
+    jun_en = ((/jun/i %/ jun % jun) ('.' | /e/i)?) > begin;
+    jul_en = (/j/i ( /ul/i %/ jul % jul ('.' | /y/i)? | /ly/i %/ jul % jul '.'?)) > begin ;
+    aug_en = ((/aug/i %/ aug % aug) ('.' | /ust/i)?) > begin;
+    sep_en = ((/sep/i %/ sep % sep) ('.' | /t/i ('.' | /ember/i)?)?) > begin;
+    oct_en = ((/oct/i %/ oct % oct) ('.' | /ober/i)?) > begin;
+    nov_en = ((/nov/i %/ nov % nov) ('.' | /ember/i)?) > begin;
+    dec_en = ((/dec/i %/ dec % dec) ('.' | /ember/i)?) > begin;
+
+    jan_ru = ((ru_Ya ru_N ru_V %/ jan % jan) ('.' | ru_A ru_R (ru_y | ru_Ya))?) > begin;
+    feb_ru = ((ru_F ru_Ye ru_V %/ feb % feb) ('.' | ru_R ('.' | ru_A ru_L (ru_y | ru_Ya))?)?) > begin;
+    mar_ru = ((ru_M ru_A ru_R %/ mar % mar) ('.' | ru_T ru_A?)?) > begin;
+    apr_ru = ((ru_A ru_P ru_R %/ apr % apr) ('.' | ru_Ye ru_L (ru_y | ru_Ya))?) > begin;
+    may_ru = (ru_M ru_A (ru_J | ru_Ya) %/ may % may) > begin;
+    jun_ru = ((ru_I ru_Yu ru_N %/ jun % jun) ('.' | ru_y | ru_Ya)?) > begin;
+    jul_ru = ((ru_I ru_Yu ru_L %/ jul % jul) ('.' | ru_y | ru_Ya)?) > begin;
+    aug_ru = ((ru_A ru_V ru_G %/ aug % aug) ('.' | ru_U ru_S ru_T ru_A?)?) > begin;
+    sep_ru = ((ru_S ru_Ye ru_N %/ sep % sep) ('.' | ru_T ('.' | ru_Ya ru_B ru_R (ru_y | ru_Ya))?)?) > begin;
+    oct_ru = ((ru_O ru_K ru_T %/ oct % oct) ('.' | ru_Ya ru_B ru_R (ru_y | ru_Ya))?) > begin;
+    nov_ru = ((ru_N ru_O ru_Ya %/ nov % nov) ('.' | ru_B ('.' | ru_R (ru_y | ru_Ya))?)?) > begin;
+    dec_ru = ((ru_D ru_Ye ru_K %/ dec % dec) ('.' | ru_A ru_B ru_R (ru_y | ru_Ya))?) > begin;
+
+    mon_en = jan_en | feb_en | mar_en | apr_en | may_en | jun_en
+            | jul_en | aug_en | sep_en | oct_en | nov_en | dec_en;
+    mon_ru = jan_ru | feb_ru | mar_ru | apr_ru | may_ru | jun_ru
+            | jul_ru | aug_ru | sep_ru | oct_ru | nov_ru | dec_ru;
+
+    beg_en = ('the' wspace)?;
+    end_en = wspace* (dash|"'")? wspace* (/st/i | /nd/i | /rd/i | /th/i | /s/i)? (wspace+ 'of')?;
+
+    end_ru = wspace* dash? wspace* (
+            ( ru_G | ru_O | ru_D | ru_Yy | ru_I | ru_Ye | ru_y | ru_J) {1,4}
+            | 'st' | 'nd' | 'rd' | 'th')? '.'?;
+
+    sep_url = (^[0-9%] | '%'([uU][0-9a-fA-F]{2})?[0-9a-fA-F]{2} );
+    sep_text = wbound;
+    sep_comma = wspace* ([,/] | dash | wspace) wspace*;
+#enddict
+#endcommon
+}%%
+#endif
+;
+#include <library/cpp/deprecated/dater_old/scanner/patterns_impl.h>
+namespace NDater {
+namespace NPrivate {
+
+template <typename Char>
+TDateCoord UrlDigPatternImpl(const Char*&p, const Char*pe) {
+    TScanContext<Char, true> ctx(p, pe);
+    const Char* eof = pe;
+#if 0
+    %%{
+        machine date_urldig_pattern;
+        include date_parser_common;
+
+        sep_a = [_.\-/ ] > begin % onsep;
+        sep_b = [_.\-/ ] > begin % checksep;
+
+        pattern_1 = (( sep_url? dig1_2 sep_a dig1_2 sep_b dig_year2000 ) %/ ondate_dmy ) sep_url @ ondate_dmy;
+        pattern_2 = (( sep_url? dig_year2000 sep_a dig1_2 sep_b dig1_2 ) %/ ondate_ymd ) sep_url @ ondate_ymd;
+        pattern_3 = (( (sep_url - '/')? dig2_4 sep_a dig2_2 sep_b dig2_4 ) %/ ondate_xmxd ) sep_url @ ondate_xmxd;
+        pattern_4 = (( '/' dig2_4 '/' dig2_2 '/' dig2_4 ) %/ ondate_xmxy ) wbound @ ondate_xmxy;
+        pattern_5 = (( sep_url? dig8 ) %/ ondate_8) sep_url @ ondate_8;
+
+        main := pattern_1 | pattern_2 | pattern_3 | pattern_4 | pattern_5;
+    }%%
+#endif
+    %%{
+        write data noerror nofinal;
+        write init;
+        write exec;
+    }%%
+    ;
+
+    (void)date_urldig_pattern_en_main;
+    return TDateCoord();
+}
+
+TDateCoord UrlDigPattern(const char*&p, const char*pe) {
+    return UrlDigPatternImpl(p, pe);
+}
+
+TDateCoord UrlDigPatternWide(const wchar16*&p, const wchar16*pe) {
+    return UrlDigPatternImpl(p, pe);
+}
+
+template <typename Char>
+TDateCoord UrlWordPatternImpl(const Char*&p, const Char*pe) {
+    TScanContext<Char, true> ctx(p, pe);
+    const Char* eof = pe;
+#if 0
+    %%{
+        machine date_urlword_pattern;
+        include date_parser_common;
+
+        main := (( sep_url? dig1_4 (^alnum)? mon_en (^alnum)? dig1_4 ) %/ ondate_xmxd) sep_url? @ ondate_xmxd;
+    }%%
+#endif
+    %%{
+        write data noerror nofinal;
+        write init;
+        write exec;
+    }%%
+    ;
+
+    (void)date_urlword_pattern_en_main;
+    return TDateCoord();
+}
+
+TDateCoord UrlWordPattern(const char*&p, const char*pe) {
+    return UrlWordPatternImpl(p, pe);
+}
+
+TDateCoord UrlWordPatternWide(const wchar16*&p, const wchar16*pe) {
+    return UrlWordPatternImpl(p, pe);
+}
+
+template <typename Char>
+TDateCoord UrlXXPatternImpl(const Char*&p, const Char*pe) {
+    TScanContext<Char, true> ctx(p, pe);
+     const Char* eof = pe;
+#if 0
+    %%{
+        machine date_urlxx_pattern;
+        include date_parser_common;
+
+        pattern_0 = ((sep_url? dig_year2000 [./\-] dig1_2 ) %/ ondate_ym) wbound? @ ondate_ym;
+        pattern_1 = ((wbound? dig1_2 [./\-] dig_year2000 ) %/ ondate_my) wbound? @ ondate_my;
+        pattern_2 = ((sep_url? dig_year00 [./\-]? mon_en ) %/ ondate_ym) wbound? @ ondate_ym;
+        pattern_3 = ((wbound? mon_en [./\-]? dig_year00 ) %/ ondate_my) wbound? @ ondate_my;
+
+        main := pattern_0 | pattern_1 | pattern_2 | pattern_3;
+    }%%
+#endif
+    %%{
+        write data noerror nofinal;
+        write init;
+        write exec;
+    }%%
+    ;
+
+    (void)date_urlxx_pattern_en_main;
+    return TDateCoord();
+}
+
+TDateCoord UrlXXPattern(const char*&p, const char*pe) {
+    return UrlXXPatternImpl(p, pe);
+}
+
+TDateCoord UrlXXPatternWide(const wchar16*&p, const wchar16*pe) {
+    return UrlXXPatternImpl(p, pe);
+}
+
+TDateCoord TextDigPattern(const wchar16*&p, const wchar16*pe) {
+    TScanContext<wchar16> ctx(p, pe);
+    const wchar16* eof = pe;
+#if 0
+    %%{
+        machine date_textdig_pattern;
+        include date_parser_common;
+
+    #dig
+        sep_dig = wspace | wpunct | dash;
+        sep_dig_dot = sep_dig - '.';
+        sep_dig_dash = sep_dig - dash;
+        sep_dig_slash = sep_dig - '/';
+
+        sep_dot = (wspace+ "." wspace+) | ".";
+        sep_dash = dash | wspace+ "." | "." wspace+;
+        sep_slash = wspace* "/" wspace*;
+
+        sep_dot_a = sep_dot > begin % onsep;
+        sep_dot_b = sep_dot > begin % checksep;
+        sep_dash_a = sep_dash > begin % onsep;
+        sep_dash_b = sep_dash > begin % checksep;
+        sep_slash_a = sep_slash > begin % onsep;
+        sep_slash_b = sep_slash > begin % checksep;
+
+        pattern_dig_dot1 = ((sep_dig_dot? dig1_2 sep_dot_a dig1_2 sep_dot_b dig_year4_4 end_ru) %/ ondate_dmy) ^digit @ ondate_dmy;
+        pattern_dig_dot2 = ((sep_dig_dot? dig_year4_4 sep_dot_a dig1_2 sep_dot_b dig1_2) %/ ondate_ymd) sep_dig_dot @ ondate_ymd;
+
+        pattern_dig_dot3 = ((sep_dig_dot? dig2_2 sep_dot_a dig2_2 sep_dot_b dig2_2 end_ru) %/ ondate_xmxd) sep_dig_dot @ ondate_xmxd;
+
+        pattern_dig_dot4 = ((sep_dig_dot? dig1_1 sep_dot_a dig2_2 sep_dot_b dig2_2 end_ru) %/ ondate_xmxd) sep_dig_dot @ ondate_xmxd;
+        pattern_dig_dot5 = ((sep_dig_dot? dig2_2 sep_dot_a dig1_1 sep_dot_b dig2_2 end_ru) %/ ondate_xmxd) sep_dig_dot @ ondate_xmxd;
+        pattern_dig_dot6 = ((sep_dig_dot? dig2_2 sep_dot_a dig2_2 sep_dot_b dig1_1 end_ru) %/ ondate_xmxd) sep_dig_dot @ ondate_xmxd;
+
+        pattern_dig_dash1 = ((sep_dig_dash? dig_year4_4 sep_dash_a dig2_2 sep_dash_b dig2_2) %/ ondate_ymd) sep_dig_dash @ ondate_ymd;
+        pattern_dig_dash2 = ((sep_dig_dash? dig2_2 sep_dash_a dig2_2 sep_dash_b dig_year4_4  end_ru) %/ ondate_dmy) ^digit @ ondate_dmy;
+
+        pattern_dig_slash1 = ((sep_dig_slash? dig_year4_4 sep_slash_a dig1_2 sep_slash_b dig1_2) %/ ondate_ymd) sep_dig_slash @ ondate_ymd;
+        pattern_dig_slash2 = ((sep_dig_slash? dig1_2 sep_slash_a dig1_2 sep_slash_b dig_year2_4 end_ru) %/ ondate_dmy) sep_dig_slash @ ondate_dmy;
+
+        main := pattern_dig_dot1 | pattern_dig_dot2 | pattern_dig_dot3 | pattern_dig_dot4 | pattern_dig_dot5
+                | pattern_dig_dot6 | pattern_dig_dash1 | pattern_dig_dash2 | pattern_dig_slash1 | pattern_dig_slash2;
+    #enddig
+    }%%
+#endif
+    %%{
+        write data noerror nofinal;
+        write init;
+        write exec;
+    }%%
+    ;
+    (void)date_textdig_pattern_en_main;
+    return TDateCoord();
+}
+
+TDateCoord TextWordPattern(const wchar16*&p, const wchar16*pe) {
+    TScanContext<wchar16> ctx(p, pe);
+    const wchar16* eof = pe;
+#if 0
+    %%{
+        machine date_textword_pattern;
+        include date_parser_common;
+
+        pattern_0 = (sep_text?
+                        dig_day1_2 (end_ru|end_en) sep_comma?
+                        beg_en (mon_ru|mon_en) end_en sep_comma?
+                        beg_en dig_year3_4 (end_ru|end_en)
+                %/ ondate_dmy) ^digit @ ondate_dmy;
+        pattern_1 = (sep_text?
+                        dig_year3_4 (end_ru|end_en) sep_comma?
+                        beg_en (mon_ru|mon_en) end_en sep_comma?
+                        beg_en dig_day1_2 (end_ru|end_en)
+                %/ ondate_ymd) sep_text @ ondate_ymd;
+        pattern_2 = (sep_text?
+                        (mon_ru|mon_en) end_en sep_comma?
+                        beg_en dig_day1_2 (end_ru|end_en) sep_comma
+                        beg_en dig_year3_4 (end_ru|end_en)
+                %/ ondate_mdy) ^digit @ ondate_mdy;
+        pattern_3 = (sep_text?
+                        dig_year3_4 (end_ru|end_en) sep_comma
+                        beg_en dig_day1_2 (end_ru|end_en) sep_comma?
+                        beg_en (mon_ru|mon_en)
+                %/ ondate_ydm) sep_text @ ondate_ydm;
+
+        main := pattern_0 | pattern_1 | pattern_2 | pattern_3;
+    }%%
+#endif
+    %%{
+        write data noerror nofinal;
+        write init;
+        write exec;
+    }%%
+    ;
+    (void)date_textword_pattern_en_main;
+    return TDateCoord();
+}
+
+TDateCoord TextXXPattern(const wchar16*&p, const wchar16*pe) {
+    TScanContext<wchar16> ctx(p, pe);
+    const wchar16* eof = pe;
+#if 0
+    %%{
+        machine date_textxx_pattern;
+        include date_parser_common;
+
+        pattern_0 = (sep_text? dig_year3_4 (end_en|end_ru) sep_comma? beg_en (mon_en|mon_ru) end_en
+                %/ ondate_ym) sep_text @ ondate_ym;
+        pattern_1 = (sep_text? (mon_en|mon_ru) end_en sep_comma? beg_en dig_year3_4 (end_ru|end_en)
+                %/ ondate_my) ^digit @ ondate_my;
+
+        main := pattern_0 | pattern_1;
+    }%%
+#endif
+    %%{
+        write data noerror nofinal;
+        write init;
+        write exec;
+    }%%
+    ;
+    (void)date_textxx_pattern_en_main;
+    return TDateCoord();
+}
+
+TDateCoord TextYPattern(const wchar16*&p, const wchar16*pe) {
+    TScanContext<wchar16> ctx(p, pe);
+    const wchar16* eof = pe;
+#if 0
+    %%{
+        machine date_texty_pattern;
+        include date_parser_common;
+        ysep = ^(digit | digit wspace* ".");
+        main := (ysep? dig_year2000 %/ ondate_y) ^(digit) @ ondate_y;
+    }%%
+#endif
+    %%{
+        write data noerror nofinal;
+        write init;
+        write exec;
+    }%%
+    ;
+    (void)date_texty_pattern_en_main;
+    return TDateCoord();
+}
+
+TDateCoord HostYPattern(const char*&p, const char*pe) {
+    TScanContext<char> ctx(p, pe);
+    const char* eof = pe;
+#if 0
+    %%{
+        machine date_urly_pattern;
+        include date_parser_common;
+        ysep = ^digit;
+        main := (ysep? dig_year2000 %/ ondate_y) ysep @ ondate_y;
+    }%%
+#endif
+    %%{
+        write data noerror nofinal;
+        write init;
+        write exec;
+    }%%
+    ;
+    (void)date_urly_pattern_en_main;
+    return TDateCoord();
+}
+
+}
+}

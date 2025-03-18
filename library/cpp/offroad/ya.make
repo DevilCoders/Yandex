@@ -1,0 +1,33 @@
+RECURSE(
+    byte_stream
+    byte_stream/ut
+    codec
+    codec/ut
+    custom
+    custom/ut
+    fat
+    fat/ut
+    flat
+    flat/benchmark
+    flat/ut
+    key
+    key/ut
+    minhash
+    offset
+    standard
+    streams
+    streams/ut
+    sub
+    sub/ut
+    test
+    tools
+    trie
+    trie/ut
+    tuple
+    tuple/benchmark
+    tuple/ut
+    utility
+    wad
+    keyinv
+    keyinv/ut
+)

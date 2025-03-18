@@ -1,0 +1,28 @@
+RECURSE(
+    ascii_encode
+    ascii_encode/ut
+    base64
+    csv
+    csv/bench
+    csv/ut
+    col_diff
+    col_diff/ut
+    indent_text
+    levenshtein_diff
+    old_url_normalize
+    old_url_normalize/ut
+    parse_size
+    parse_vector
+    parse_vector/ut
+    secret_string
+    quote
+    relaxed_escaper
+    scan
+    subst_buf
+    subst_buf/ut
+    tskv_format
+    tskv_format/ut
+    tskv_format/fuzz
+    url
+    ztstrbuf
+)

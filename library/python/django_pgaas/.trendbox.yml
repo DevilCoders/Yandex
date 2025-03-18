@@ -1,0 +1,31 @@
+language: python
+
+sandbox:
+  container_resource: 704816667
+  vault:
+    group: TOOLS
+
+env:
+  - TRENDBOX_JOB_NAME="django_pgaas unit tests" SANDBOX_PRIVILEGED_CONTAINER=1
+
+install:
+  - echo -e $TOOLS_CI_ROBOT_REGISTRY_KEY | docker login -u robot-tools-sox --password-stdin https://registry.yandex.net;
+  - docker-compose build
+
+script:
+  - docker-compose -f docker-compose.yml -f docker-compose.trendbox.yml run testapp tox
+  - docker cp sources_testapp_run_1:/reports ./
+  - ls -1 reports/* | xargs -L1 trendbox publish-report
+
+triggers:
+- github.branch:
+    filters:
+      actions:
+        only:
+        - created
+        - updated
+- github.pull_request:
+    filters:
+      actions:
+        only:
+        - opened

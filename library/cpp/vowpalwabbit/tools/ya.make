@@ -1,0 +1,3 @@
+RECURSE(
+    vw_ops
+)

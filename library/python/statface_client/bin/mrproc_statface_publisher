@@ -1,0 +1,139 @@
+#!/usr/bin/env python
+# coding: utf-8
+import argparse
+import logging
+import sys
+import traceback
+
+sys.stderr = sys.stdout
+
+import statinfra.logging  # pylint: disable=import-error,wrong-import-position
+from statface_client import (  # pylint: disable=wrong-import-position
+    StatfaceClient,
+    STATFACE_SCALES,
+    StatfaceClientDataUploadError,
+)
+
+logger = logging.getLogger('mrproc_statface_publisher')
+statinfra.logging.basic_config(level=logging.DEBUG)
+
+
+def upload_config(client_params, path, config_upload_params):
+    client = StatfaceClient(**client_params)
+    report = client.get_report(path)
+    report.upload_config(**config_upload_params)
+
+
+def upload_config_and_data(client_params, path, config_and_data_upload_params):
+    client = StatfaceClient(**client_params)
+    report = client.get_report(path)
+    report._api.upload_config_and_data(**config_and_data_upload_params)
+
+
+def upload_data(client_params, path, data_upload_params):
+    client = StatfaceClient(**client_params)
+    report = client.get_report(path)
+    report._api.upload_data(**data_upload_params)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('path', help='report path')
+    parser.add_argument('--scale', choices=STATFACE_SCALES)
+    parser.add_argument('--data_filepath', type=argparse.FileType('rb'))
+    parser.add_argument('--title', required=True)
+    # NOTE: the `config` must be a user_config, i.e. `{"dimensions": ..., "measures": ..., ...}`
+    parser.add_argument(
+        '--config_filepath', required=False, type=argparse.FileType('r')
+    )
+    # `initial_owners` and `initial_access_by_list` could be supported here,
+    # but this script is supposed to be deprecated.
+    parser.add_argument('--publishing_server', required=True, dest='host')
+    parser.add_argument('--publishing_user', dest='username')
+    parser.add_argument('--publishing_pass', dest='password')
+    parser.add_argument('--publishing_token', dest='token')
+    parser.add_argument('--replace_mask', action='append')
+    parser.add_argument('--job')
+    parser.add_argument('--allow_change_job', type=int, default=0)
+    parser.add_argument('--uuid')
+    parser.add_argument('--user')
+    args = parser.parse_args()
+
+    client_params = dict(
+        username=args.username,
+        password=args.password,
+        oauth_token=args.token,
+        host=args.host
+    )
+    params = dict(title=args.title)
+    if args.config_filepath:
+        params['config'] = args.config_filepath.read()
+    if args.user:
+        params['user'] = args.user
+    if args.job:
+        params['job'] = args.job
+    if args.allow_change_job:
+        params['_allow_change_job'] = 1
+
+    data = args.data_filepath.read() if args.data_filepath else None
+    if data:
+        # NOTE: effectively, this is `tskv_data`.
+        params['data'] = data
+        logger.debug('data size {} bytes'.format(len(data)))
+        if not args.scale:
+            raise argparse.ArgumentTypeError(
+                'For data upload specify the scale parameter'
+            )
+        params['scale'] = args.scale
+        if args.replace_mask:
+            params['replace_mask'] = args.replace_mask
+        if args.uuid:
+            params['uuid'] = args.uuid
+
+    if 'config' in params:
+        action = upload_config
+        if data:
+            action = upload_config_and_data
+            params['format'] = 'tskv'
+    elif data:
+        action = upload_data
+        params['format'] = 'tskv'
+    else:
+        raise argparse.ArgumentTypeError(
+            'No data or config specified. No idea why you exec me'
+        )
+
+    action(client_params, args.path, params)
+
+
+def error_forward_excepthook(etype, value, tb):
+    class FakeResponse(object):  # pylint: disable=too-few-public-methods
+        def __init__(self, status_code, reason):
+            self.status_code = status_code
+            self.reason = reason
+
+    if isinstance(value, StatfaceClientDataUploadError):
+        error = value.message.lower()
+        if 'yt' in error or 'transaction' in error:
+            value.response = FakeResponse(500, 'Internal Server Error')
+        else:
+            value.response = FakeResponse(400, 'Bad Request')
+
+    try:
+        message = '{} {}\n'.format(
+            value.response.status_code,
+            value.response.reason
+        )
+    except AttributeError:
+        message = ''
+    message += ''.join(
+        traceback.format_exception_only(etype, value) + ['\n'] +
+        traceback.format_tb(tb)
+    )
+    sys.__stderr__.write(message)
+    sys.exit(1)
+
+
+if __name__ == '__main__':
+    sys.excepthook = error_forward_excepthook
+    main()

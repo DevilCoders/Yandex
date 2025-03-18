@@ -1,0 +1,19 @@
+IF (NOT OS_WINDOWS)
+    RECURSE(
+        allure
+        clickhouse
+        common
+        docker_compose
+        docker_compose_healthcheck
+        gdal_proj_data
+        kafka
+        postgresql
+        qemu_kvm
+        s3mds
+        tirole
+        tvmapi
+        tvmtool
+        zookeeper
+        zookeeper/package
+    )
+ENDIF()

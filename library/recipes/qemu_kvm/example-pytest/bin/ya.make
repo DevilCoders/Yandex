@@ -1,0 +1,4 @@
+PACKAGE()
+OWNER(dmtrmonakhov)
+FROM_SANDBOX(888416083 OUT_NOAUTO pytest)
+END()

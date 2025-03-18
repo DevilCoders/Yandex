@@ -1,0 +1,15 @@
+GO_LIBRARY()
+
+OWNER(
+    gzuykov
+    buglloc
+    g:go-library
+)
+
+SRCS(resolver.go)
+
+GO_XTEST_SRCS(resolver_test.go)
+
+END()
+
+RECURSE(gotest)

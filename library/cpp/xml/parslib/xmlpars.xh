@@ -1,0 +1,279 @@
+#ifndef xmlpars_h_%%RandomCookie%%
+#define xmlpars_h_%%RandomCookie%%
+
+#include <cstdlib>
+#include <cstdio>
+#include <cstring>
+#include <algorithm>
+#include <util/generic/strfcpy.h>
+
+#include <library/cpp/logger/all.h> // ELogPriority
+
+#include <library/cpp/packedtypes/longs.h>
+
+#include <library/cpp/xml/parslib/xmlsax.h>
+
+template <class Registrar
+          , class TXmlHolder %%HolderValueClass%%
+          >
+class %%ClassName%% : public Registrar {
+
+    typedef Registrar R;
+
+public:
+
+    bool Failed() {
+        return ErrorCount;
+    }
+
+protected:
+
+    void OnDocumentStart() {
+        InitParser();
+        *BadTag = '\0';
+        ErrorCount = 0;
+    }
+
+    void OnDocumentEnd() {
+    }
+
+    void OnTagError(const char* name) {
+        R::ErrMessage(TLOG_ERR, "Lexer error: unknown tag <%s>\n", name);
+    }
+
+    void OnAttrError(const char* name) {
+        if ((memcmp(name, "xmlns", 5) == 0) && ((name[5] == '\0') || (name[5] == ':')))
+            return;
+        R::ErrMessage(TLOG_WARNING, "Lexer warning: unknown attribute %s=\n", name);
+    }
+
+    void OnParseError(const unsigned event, const char* help, const char* dataptr, const size_t datalen) {
+        if (! help)
+            help = "n/a";
+        char* buf = (dataptr && datalen) ? (char*)alloca(datalen + 4) : const_cast<char*>("");
+        if (dataptr && datalen) {
+            buf[0] = '[';
+            memcpy(buf + 1, dataptr, datalen);
+            strcpy(buf + datalen + 1, "]\n");
+        }
+        R::ErrMessage(TLOG_ERR, "Parse error: unexpected event [%u] (%s)\n%s", event, help, buf);
+    }
+
+    void OnElementStart(const xmlChar* name, const xmlChar** args) {
+        if (*BadTag)
+            return;
+        FirstText = true;
+        SpaceLen = 0;
+        unsigned lex = Lex((const char*)name);
+        if (! lex) {
+            OnTagError((const char*)name);
+            strncpy(BadTag, (const char*)name, sizeof(BadTag));
+            return;
+        }
+        if (! Parse(lex, NULL, 0, (const char*)name)) {
+            strncpy(BadTag, (const char*)name, sizeof(BadTag));
+            return;
+        }
+        if (! args)
+            return;
+        for (; *args; args += 2) {
+            unsigned lexa = LexA((const char*)*args);
+            if (lexa) {
+                char buf[64<<10];
+                const char * text = (const char*)*(args+1);
+                strfcpy(buf, text, sizeof(buf));
+                char * val = buf;
+
+                LTrim(val);
+                RTrim(val);
+                Parse(lexa, val, 0, (const char*)*args);
+            } else {
+                OnAttrError((const char*)*args);
+            }
+        }
+    }
+
+    void OnElementEnd(const xmlChar* name) {
+        if (! *BadTag) {
+            unsigned lex = Lex((const char*)name);
+            if (lex) {
+                if (! Parse(lex + CloseDelta, NULL, 0, (const char*)name))
+                    ++ErrorCount;
+            } else {
+                OnTagError((const char*)name);
+                ++ErrorCount;
+            }
+        } else {
+            if (! strcmp(BadTag, (const char*)name)) {
+                *BadTag = '\0';
+            }
+        }
+        FirstText = true;
+    }
+
+    void OnText(const xmlChar* text, int len) {
+        if (*BadTag)
+            return;
+
+        char buf[64<<10];
+        size_t reclen = sizeof(buf) < (size_t)len ? sizeof(buf) : len ;
+        strncpy(buf, (const char*)text, reclen);
+        buf[sizeof(buf) - 1] = 0;
+        char* rectext = buf;
+        if (FirstText) {
+            LTrim(rectext, reclen);
+            SpaceLen = 0;
+        } else {
+            if (SpaceLen)
+                Parse(0, SpaceBuf, SpaceLen);
+        }
+        RTrimWithSpace(rectext, reclen);
+        if (reclen) {
+            Parse(0, rectext, reclen);
+            FirstText = false;
+        }
+    }
+
+private:
+
+    bool FirstText;
+    char SpaceBuf[128];
+    size_t SpaceLen;
+
+    bool IsSpace(const char c) {
+        switch (c) {
+            case ' ':
+            case '\t':
+            case '\r':
+            case '\n':
+                return true;
+            default:
+                break;
+        }
+        return false;
+    }
+
+    void LTrim(char*& text, size_t& len) {
+        while (len && IsSpace(*text)) {
+            ++text;
+            --len;
+        }
+    }
+
+    void LTrim(char*& text) {
+        size_t foo = strlen(text);
+        LTrim(text, foo);
+    }
+
+    void RTrim(char*& text, size_t& len) {
+        while (len && IsSpace(text[len - 1])) {
+            --len;
+        }
+    }
+
+    void RTrim(char*& text) {
+        size_t len = strlen(text);
+        RTrim(text, len);
+        text[len] = '\0';
+    }
+
+    void RTrimWithSpace(char*& text, size_t& len) {
+        SpaceLen = len;
+        RTrim(text, len);
+        SpaceLen -= len;
+        SpaceLen = std::min(SpaceLen, sizeof(SpaceBuf));
+        if (SpaceLen)
+            memcpy(SpaceBuf, text + len, SpaceLen);
+    }
+
+private:
+
+    char BadTag[128];
+
+    static unsigned Lex(const char* token) {
+        int cs;
+        const char* p = token;
+        %%{
+            machine Lex;
+            alphtype char;
+            write data noerror nofinal;
+            write init;
+            write exec noend;
+
+            %%% LEXER %%%
+
+        }%%
+        (void) Lex_start;
+        (void) Lex_en_main;
+        return 0;
+    }
+
+    static unsigned LexA(const char* token) {
+        int cs;
+        const char* p = token;
+        %%{
+            machine LexA;
+            alphtype char;
+            write data noerror nofinal;
+            write init;
+            write exec noend;
+
+            %%% ATTRLEXER %%%
+
+        }%%
+        (void) LexA_start;
+        (void) LexA_en_main;
+        return 0;
+    }
+
+private:
+
+    %%{
+        machine Parser;
+        alphtype unsigned int;
+        access ParserState_;
+
+        %%% PARSER %%%
+
+    }%%
+
+    void InitParser() {
+        %% write data nofinal;
+        %% write init;
+        (void) Parser_start;
+        (void) Parser_en_main;
+        (void) Parser_error;
+    }
+
+    bool Parse(const unsigned event, const char* dataptr, size_t datalen, const char* help = NULL) {
+        const unsigned* p = &event;
+        const unsigned* pe = p + 1;
+        int undo = ParserState_cs;
+        %% getkey (event);
+        %% write data nofinal;
+        %% write exec;
+        if (ParserState_cs == Parser_error) {
+            OnParseError(event, help, dataptr, datalen);
+            ParserState_cs = undo;
+            return false;
+        }
+        (void) Parser_start;
+        (void) Parser_en_main;
+        return true;
+    }
+
+private:
+
+    static const unsigned int CloseDelta = %%CloseDelta%%;
+
+    int ParserState_cs;
+
+    unsigned ErrorCount;
+
+    TXmlHolder Holder; %%HolderValueClass%%
+
+    %%% CODE %%%
+
+};
+
+#endif //xmlpars_h_%%RandomCookie%%

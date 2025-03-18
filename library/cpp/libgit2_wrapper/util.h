@@ -1,0 +1,18 @@
+#pragma once
+
+#include "apply.h"
+#include "auth.h"
+#include "callbacks.h"
+#include "commit.h"
+#include "diff.h"
+#include "exception.h"
+#include "holder.h"
+#include "index.h"
+#include "object_id.h"
+#include "object_db.h"
+#include "patch.h"
+#include "reference.h"
+#include "repository.h"
+#include "revwalk.h"
+#include "signature.h"
+#include "tree.h"

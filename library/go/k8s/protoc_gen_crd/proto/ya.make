@@ -1,0 +1,9 @@
+PROTO_LIBRARY()
+
+OWNER(g:infractl)
+
+INCLUDE_TAGS(GO_PROTO)
+
+SRCS(crd.proto)
+
+END()

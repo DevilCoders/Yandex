@@ -1,0 +1,15 @@
+RECURSE(
+    core
+    core/ut
+    generator
+    generator/ut
+    library
+    open_street_map
+    yandex_map
+    yandex_map/ut
+    proto
+    proto_library
+    tool
+    test
+    draft
+)

@@ -1,0 +1,21 @@
+OWNER(
+    g:go-library
+    gzuykov
+)
+
+RECURSE(
+    copyproto
+    deepequalproto
+    errcheck
+    exhaustivestruct
+    importcheck
+    naming
+    nogen
+    nolint
+    printf
+    protonaming
+    scopelint
+    structtagcase
+    testifycheck
+    ytcheck
+)

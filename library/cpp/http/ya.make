@@ -1,0 +1,16 @@
+RECURSE(
+    client
+    client/cookies
+    cookies
+    coro
+    examples
+    fetch
+    fetch_gpl
+    io
+    misc
+    multipart
+    push_parser
+    server
+    simple
+    static
+)

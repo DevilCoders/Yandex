@@ -1,0 +1,3 @@
+RECURSE(
+    setup_environment
+)

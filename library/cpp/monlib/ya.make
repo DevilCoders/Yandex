@@ -1,0 +1,31 @@
+OWNER(
+    g:solomon
+    jamel
+)
+
+RECURSE(
+    consumers
+    counters
+    deprecated
+    dynamic_counters
+    encode
+    encode/buffered
+    encode/fake
+    encode/json
+    encode/legacy_protobuf
+    encode/prometheus
+    encode/protobuf
+    encode/spack
+    encode/text
+    encode/unistat
+    example
+    exception
+    libtimestats
+    metrics
+    messagebus
+    push_client
+    service
+    service/auth/tvm
+    service/pages
+    service/pages/tablesorter
+)

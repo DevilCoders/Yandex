@@ -1,0 +1,62 @@
+PY23_LIBRARY()
+
+OWNER(g:tools-python)
+
+VERSION(0.16)
+
+PEERDIR(
+    contrib/python/cached-property
+    contrib/python/monotonic
+    contrib/python/six
+)
+
+PY_SRCS(
+    TOP_LEVEL
+    tools_structured_logs/__init__.py
+    tools_structured_logs/helpers/__init__.py
+    tools_structured_logs/helpers/flask/__init__.py
+    tools_structured_logs/helpers/flask/flask_application.py
+    tools_structured_logs/helpers/requests/__init__.py
+    tools_structured_logs/helpers/requests/info_provider.py
+    tools_structured_logs/helpers/requests/session_class/__init__.py
+    tools_structured_logs/helpers/requests/session_class/instrumenter.py
+    tools_structured_logs/helpers/requests/session_class/session_class_wrapper.py
+    tools_structured_logs/helpers/requests/session_object/__init__.py
+    tools_structured_logs/helpers/requests/session_object/instrumenter.py
+    tools_structured_logs/logic/__init__.py
+    tools_structured_logs/logic/common_log_fields/__init__.py
+    tools_structured_logs/logic/common_log_fields/composer.py
+    tools_structured_logs/logic/common_log_fields/field_structure/__init__.py
+    tools_structured_logs/logic/common_log_fields/field_structure/auth.py
+    tools_structured_logs/logic/common_log_fields/field_structure/b2b.py
+    tools_structured_logs/logic/common_log_fields/field_structure/base.py
+    tools_structured_logs/logic/common_log_fields/field_structure/endpoint.py
+    tools_structured_logs/logic/common_log_fields/field_structure/profiling_uuid.py
+    tools_structured_logs/logic/common_log_fields/field_structure/request.py
+    tools_structured_logs/logic/configuration/__init__.py
+    tools_structured_logs/logic/configuration/application_hooks/__init__.py
+    tools_structured_logs/logic/configuration/application_hooks/interface.py
+    tools_structured_logs/logic/configuration/config/__init__.py
+    tools_structured_logs/logic/configuration/config/interface.py
+    tools_structured_logs/logic/configuration/library.py
+    tools_structured_logs/logic/errors/__init__.py
+    tools_structured_logs/logic/errors/base.py
+    tools_structured_logs/logic/errors/configuration.py
+    tools_structured_logs/logic/errors/runtime.py
+    tools_structured_logs/logic/log_records/__init__.py
+    tools_structured_logs/logic/log_records/total_vendor_info.py
+    tools_structured_logs/logic/log_records/vendors/__init__.py
+    tools_structured_logs/logic/log_records/vendors/base_info_provider.py
+    tools_structured_logs/logic/log_records/vendors/base_recorder.py
+    tools_structured_logs/logic/log_records/vendors/base_vendor.py
+    tools_structured_logs/logic/log_records/vendors/http/__init__.py
+    tools_structured_logs/logic/log_records/vendors/http/info_provider.py
+    tools_structured_logs/logic/log_records/vendors/http/recorder.py
+    tools_structured_logs/logic/log_records/vendors/sql/__init__.py
+    tools_structured_logs/logic/log_records/vendors/sql/info_provider.py
+    tools_structured_logs/logic/log_records/vendors/sql/recorder.py
+    tools_structured_logs/logic/logger.py
+    tools_structured_logs/logic/state.py
+)
+
+END()

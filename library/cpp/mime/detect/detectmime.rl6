@@ -1,0 +1,444 @@
+#include <library/cpp/mime/detect/detectmime.h>
+
+#include <cstdio>
+
+#ifdef _MSC_VER
+#   pragma warning(push)
+#   pragma warning(disable:4702) /*unreachable code*/
+#endif
+
+#if defined(__GNUC__)
+#   pragma GCC diagnostic push
+#   pragma GCC diagnostic ignored "-Wsign-compare"
+#endif
+
+#ifdef __clang__
+#   pragma clang diagnostic push
+#   pragma clang diagnostic ignored "-Wsign-compare"
+#endif
+
+enum boms {
+    BOM_NOBOM = 0,
+    BOM_UTF8,
+    BOM_UTF16BE,
+    BOM_UTF16LE,
+    BOM_UTF32BE,
+    BOM_UTF32LE
+};
+
+%%{
+    machine BinDetector;
+    alphtype unsigned char;
+
+    feff = 0xEF 0xBB 0xBF; # utf-8 mark (see http://en.wikipedia.org/wiki/Byte-order_mark)
+
+    xmlheader = (space* '<?' 'XML'i  any* :>> '?>')+ @{ Result(MIME_XML); };
+    doctype = ('<!' 'DOCTYPE'i space+);
+    endtag = (space | '>');
+
+    htmlcomment = (('<!--' any* :>> '-->') | space)+;
+
+    htmlheader = space* (
+        (doctype 'HTML'i endtag) |
+        ('<HTML'i  endtag) |
+        ('<BODY'i  endtag) |
+        ('<FRAMESET'i endtag) |
+        ('<FORM'i endtag) |
+        ('<HEAD'i  endtag) |
+        ('<TITLE'i endtag) |
+        ('<STYLE'i endtag) |
+        ('<BASE'i  endtag) |
+        ('<SCRIPT'i endtag) |
+        ('<IFRAME'i endtag) |
+        ('<META'i  endtag)
+    ) @{ Result(MIME_HTML); fbreak; };
+
+    wmlheader = space* (
+        (doctype 'WML'i endtag) |
+        ('<WML'i endtag)
+    ) @{ Result(MIME_WML); fbreak; };
+
+    rssheader = space * (
+        ('<RSS'i endtag) |
+        ('<CHANNEL'i endtag) |
+        ('<FEED'i endtag)
+    ) @{ Result(MIME_RSS); fbreak; };
+
+    xlsheader = space* '<?mso-application'i space+ 'progid' space* '=' space* '"Excel.Sheet"' space* '?>' @{ Result(MIME_XLS); fbreak; };
+    xlssubheader = (0x09 0x08 0x10 0x00 0x00 0x06 0x05 0x00);
+
+    msdf = (0xD0 0xCF 0x11 0xE0 0xA1 0xB1 0x1A 0xE1); #"Microsoft Compound Document File Format" magic
+
+    word20 = (0xDB 0xA5 0x2D 0x00); # winword 2.0
+    #wordsubheader = (0xEC 0xA5 (0xC1 | 0xC0) 0x00) ;
+    #msdfword = msdf any{504} wordsubheader;
+
+    word = (msdf|word20);
+
+
+    msdfxls = msdf any{504} xlssubheader;
+
+    xls = (xlsheader|(0x09 (0x02 | 0x04) 0x06 0x00 0x00 0x00 0x10 0x00)|msdfxls);
+
+    bmp = "BM" any{12} (12 | 64 | 40 | 108 | 124);
+    webp = "RIFF" any{4} "WEBP";
+    jpeg = ( 0xFF 0xD8 0xFF );     # (0x00 0x00 0x00 0x0C 0x6A 0x50 0x20 0x20 0x0D 0x0A 0x87 0x0A ) for jpeg2000
+    tiff = ( "II" 0x2A 0x00 | "MM" 0x00 0x2A );
+    pnm_size = [0-9]+ " " [0-9]+;
+    pnm = "P" [1-7]{1} ( "\n#" | ("\n" pnm_size) | (" " pnm_size) );
+
+    svgtag = ("<" "SVG"i endtag);
+    svgdoctype = ("<!" "DOCTYPE SVG"i /[^\n]*\n/{1});
+    svg = feff* htmlcomment? (svgtag | svgdoctype htmlcomment? svgtag);
+
+    png = 0x89 'PNG' 0x0D 0x0A 0x1A 0x0A;     # PNG
+    gif = 'GIF8' ( '7' | '9') 'a';
+
+    # rather weak signature for ico; look for 4 always known bytes
+    # in ICONDIR and 3 more always known bytes in first ICONDIRENTRY
+    # https://en.wikipedia.org/wiki/ICO_(file_format)
+    # Note that there are 24bpp icons which do not follow that specification,
+    # for instance there's case with "color planes" and "bits per pixel"
+    # both set to 24 (0x18)
+    ico = 0x00 0x00 0x01 0x00 any{5} 0x00 (0x00 | 0x01 | 0x18) 0x00;
+
+    pdf = '%PDF-';
+    rtf = '{\\rtf';
+    swf = ([CF] 'WS');
+
+    mpeg = (0x00* 0xFF ( 0xE2..0xE3 | 0xF2..0xF7 | 0xFA..0xFD ) 0x10..0xEF) | "ID3" | "RIFF" any{4} "RMP3";
+    wave = "RIFF" any{4} "WAVE";
+    asf = (0x30 0x26 0xB2 0x75); #TODO add this
+
+    # archives
+
+    any257 = any >{ Cnt = 1;} (any when { Cnt++ < 257 })*; # otherwize, any{257} (combined with all previously specified alternatives) creates toooo many machine states
+
+    arch_zip = ("PK" 0x03 0x04) @{ Result(MIME_ARCHIVE); };
+
+    zipped_office = arch_zip any{26} (
+        ("[Content_Types].xml" | "_rels/.rels" | "styles.xml") @{ Result(MIME_DOCX); fbreak;} | # ooxml (docx, xslx, pptx) filename marker
+        "mimetypeapplication/vnd.oasis.opendocument." (
+            "text" @{ Result(MIME_ODT); fbreak;} |
+            "presentation" @{ Result(MIME_ODP); fbreak;} |
+            "spreadsheet" @{ Result(MIME_ODS); fbreak;} |
+            "graphics" @{ Result(MIME_ODG); fbreak;}
+        )
+    );
+
+    apk = arch_zip any{26} (
+        "AndroidManifest.xml" @{ Result(MIME_APK); fbreak; }
+    );
+
+    epub = arch_zip any{26} (
+        "mimetypeapplication/epub+zip" @{ Result(MIME_EPUB); fbreak;}
+    );
+
+    fb2zip = arch_zip any{26} ascii{1,100} (
+        ".fb2" @{ Result(MIME_FB2ZIP); fbreak;}
+    );
+
+    archive =
+        (0x1F (0x1E | 0x9D | 0x8B)) @{ Result(MIME_GZIP); fbreak;} |
+        (any257 <: "ustar" |
+        0x60 0xEA |
+        "Rar!" |
+        "BZh" | "LZIP" | "RZIP" |
+        "7z" 0xBC 0xAF 0x27 0x1C ) @{ Result(MIME_ARCHIVE); fbreak; };
+
+    exec = ("MZ") @{ Result(MIME_EXE); fbreak; };
+
+    djvu = "AT&TFORM";
+
+    chm = "ITSF" (0x03 0x00 0x00 0x00 0x60 0x00 0x00 0x00 | 0x02 0x00 0x00 0x00 0x58 0x00 0x00 0x00);
+
+    main := [\r\n]* (
+        (feff* htmlcomment? xmlheader? htmlcomment? (htmlheader | wmlheader | rssheader | xlsheader)) |
+
+        bmp  @{ Result(MIME_IMAGE_BMP);     fbreak; } |
+        jpeg @{ Result(MIME_IMAGE_JPG);     fbreak; } |
+        png  @{ Result(MIME_IMAGE_PNG);     fbreak; } |
+        gif  @{ Result(MIME_IMAGE_GIF);     fbreak; } |
+        webp @{ Result(MIME_IMAGE_WEBP);    fbreak; } |
+        tiff @{ Result(MIME_IMAGE_TIFF);    fbreak; } |
+        pnm  @{ CanBePNM = true;            fbreak; } |
+        svg  @{ Result(MIME_IMAGE_SVG);     fbreak; } |
+
+        pdf  @{ Result(MIME_PDF);           fbreak; } |
+        rtf  @{ Result(MIME_RTF);           fbreak; } |
+        swf  @{ Result(MIME_SWF);           fbreak; } |
+
+        mpeg @{ Result(MIME_MPEG);          fbreak; } |
+        wave @{ Result(MIME_WAV);           fbreak; } |
+
+        xls  @{ Result(MIME_XLS);           fbreak; } |
+        word @{ Result(MIME_DOC);           fbreak; } |
+
+        djvu @{ Result(MIME_DJVU);          fbreak; } |
+
+        chm  @{ Result(MIME_CHM);           fbreak; } |
+
+        zipped_office |
+        apk |
+        epub |
+        archive |
+        exec |
+        fb2zip |
+
+        # lowest priority due to not completely reliable signature
+        ico  @{ Result(MIME_IMAGE_ICON);    fbreak; }
+    );
+}%%
+
+%% write data;
+
+enum byte_types {
+    btN = 0, //non-printable
+    btS = 1, //spaces + punctuation
+    btL = 2, //letters (+digits?)
+    btC = 3, //non-ascii
+};
+
+const unsigned char bytetype_table[256] = {
+    btN, btN, btN, btN, btN, btN, btN, btN,   btN, btS, btS, btN, btN, btS, btN, btN,     // 00 .. 0F
+    btN, btN, btN, btN, btN, btN, btN, btN,   btN, btN, btN, btN, btN, btN, btN, btN,     // 10 .. 1F
+    btS, btS, btS, btS, btS, btS, btS, btS,   btS, btS, btS, btS, btS, btS, btS, btS,     // 20 .. 2F
+    btL, btL, btL, btL, btL, btL, btL, btL,   btL, btL, btS, btS, btS, btS, btS, btS,     // 30 .. 3F
+    btS, btL, btL, btL, btL, btL, btL, btL,   btL, btL, btL, btL, btL, btL, btL, btL,     // 40 .. 4F
+    btL, btL, btL, btL, btL, btL, btL, btL,   btL, btL, btL, btS, btS, btS, btS, btS,     // 50 .. 5F
+    btS, btL, btL, btL, btL, btL, btL, btL,   btL, btL, btL, btL, btL, btL, btL, btL,     // 60 .. 6F
+    btL, btL, btL, btL, btL, btL, btL, btL,   btL, btL, btL, btS, btS, btS, btS, btN,     // 70 .. 7F
+
+    btC, btC, btC, btC, btC, btC, btC, btC,   btC, btC, btC, btC, btC, btC, btC, btC,     // 80 .. 8F
+    btC, btC, btC, btC, btC, btC, btC, btC,   btC, btC, btC, btC, btC, btC, btC, btC,     // 90 .. 9F
+    btC, btC, btC, btC, btC, btC, btC, btC,   btC, btC, btC, btC, btC, btC, btC, btC,     // A0 .. AF
+    btC, btC, btC, btC, btC, btC, btC, btC,   btC, btC, btC, btC, btC, btC, btC, btC,     // B0 .. BF
+    btC, btC, btC, btC, btC, btC, btC, btC,   btC, btC, btC, btC, btC, btC, btC, btC,     // C0 .. CF
+    btC, btC, btC, btC, btC, btC, btC, btC,   btC, btC, btC, btC, btC, btC, btC, btC,     // D0 .. DF
+    btC, btC, btC, btC, btC, btC, btC, btC,   btC, btC, btC, btC, btC, btC, btC, btC,     // E0 .. EF
+    btC, btC, btC, btC, btC, btC, btC, btC,   btC, btC, btC, btC, btC, btC, btC, btC,     // F0 .. FF
+};
+
+%%{
+    machine GarbageCheck;
+    alphtype unsigned char;
+
+    bom = 0xEF 0xBB 0xBF @{ Bom = BOM_UTF8; } |
+          0xFE 0xFF @{ Bom = BOM_UTF16BE; } |
+          0xFF 0xFE @{ Bom = BOM_UTF16LE; };
+          #0x00 0x00 0xFE 0xFF @{ bom = BOM_UTF32BE; } |
+          #0xFF 0xFE 0x00 0x00 @{ bom = BOM_UTF32LE; };
+
+    utf8char = (0x00..0x7F)                                                         @{ Utf8Bytes += 1; }
+             | (0xC0..0xDF 0x80..0xBF)                                              @{ Utf8Bytes += 2; }
+             | (0xE0..0xEF 0x80..0xBF 0x80..0xBF)                                   @{ Utf8Bytes += 3; }
+             | (0xF0..0xF7 0x80..0xBF 0x80..0xBF 0x80..0xBF)                        @{ Utf8Bytes += 4; };
+#             | (0xF8..0xFB 0x80..0xBF 0x80..0xBF 0x80..0xBF 0x80..0xBF)             @{ Utf8Bytes += 5; }
+#             | (0xFC..0xFD 0x80..0xBF 0x80..0xBF 0x80..0xBF 0x80..0xBF 0x80..0xBF)  @{ Utf8Bytes += 6; };
+
+    utf8text = (utf8char @{ Utf8Chars++; } | any)+;
+
+    notz = any ${ Ch = *p; } - 0x00;
+
+    utf16char = (
+                 (0x00 0x00)    %{ ByteStat16[btN * 2]++; ByteStat16[btN * 2 + 1]++; } |
+                 (0x00 notz)    %{ ByteStat16[bytetype_table[Ch] * 2]++; } |
+                 (notz 0x00)    %{ ByteStat16[bytetype_table[Ch] * 2 + 1]++; } |
+                 (notz notz)
+                );
+
+    utf16text = utf16char+;
+
+    tagname = (
+                'HTML'i | 'HEAD'i | 'TITLE'i | 'META'i | 'BODY'i | 'STYLE'i |
+                'SCRIPT'i | 'FRAMESET'i | 'IFRAME'i | 'TABLE'i | 'LINK'i |
+                'TABLE'i | 'TR'i | 'TD'i | 'TH'i | 'A'i | 'IMG'i |
+                'P'i | 'DIV'i | 'SPAN'i | 'BR'i | 'CENTER'i |
+                'B'i | 'U'i | 'I'i | 'UL'i | 'OL'i | 'LI'i | 'HR'i |
+                'FORM'i | 'INPUT'i | 'TEXTAREA'i
+               );
+
+    htmltag = '<' '/'? tagname (space | '/'? '>');
+
+    htmlcheck = (htmltag @{ NumTags++; } | any)*;
+
+    alnum_u = alnum | "_";
+    tex_name = "allowbreak" |
+        "abstract" |
+        "ast" |
+        "author" |
+        "begin" |
+        "bf" |
+        "bib" |
+        "bigskip" |
+        "break" |
+        "by" |
+        "catcode" |
+        "chapter" |
+        "def" |
+        "documentclass" |
+        "documentstyle" |
+        "emph" |
+        "end" |
+        "endref" |
+        "font" |
+        "hskip" |
+        "hspace" |
+        "index" |
+        "input" |
+        "item" |
+        "label" |
+        "latex" |
+        "let" |
+        "newcommand" |
+        "nobreak" |
+        "noindent" |
+        "number" |
+        "paper" |
+        "par" |
+        "part" |
+        "section" |
+        "special" |
+        "subsection" |
+        "tex" |
+        "textit" |
+        "textbf" |
+        "title" |
+        "url" |
+        "usepackage" |
+        "vspace" |
+        "year" |
+        "yr";
+    tex_known_keyword = "\\" tex_name @{ ++TexKnownCounter; };
+    tex_unknown_keyword = "\\" (alnum_u @{ ++TexUnknownCounter; }) alnum_u**;
+    texcheck = (tex_known_keyword | tex_unknown_keyword | any)**;
+
+    main := bom? <: (utf8text | utf16text | htmlcheck | texcheck);
+}%%
+
+%% write data;
+
+void TMimeDetector::Reset() {
+    {
+        int &cs = CsBin;
+        %% machine BinDetector;
+        %% write init;
+    }
+    {
+        int &cs = CsText;
+        %% machine GarbageCheck;
+        %% write init;
+    }
+    MimeState = MIME_UNKNOWN;
+    NeedMore = true;
+    NeedMoreBin = true;
+    BytesRead = 0;
+
+    Utf8Chars = 0;
+    Utf8Bytes = 0;
+    Bom = BOM_NOBOM;
+    memset(ByteStat, 0, sizeof(ByteStat));
+    memset(ByteStat16, 0, sizeof(ByteStat16));
+    ByteStat[btS] = ByteStat16[btS * 2] = ByteStat16[btS * 2 + 1] = 1;
+
+    NumTags = 0;
+
+    TexKnownCounter = 0;
+    TexUnknownCounter = 0;
+}
+
+Y_NO_SANITIZE("alignment")
+bool TMimeDetector::FeedBinDetector(const unsigned char *p, const unsigned char *pe) {
+    int &cs = CsBin;
+    %% machine BinDetector;
+    %% write exec;
+    if (cs >= BinDetector_first_final || cs == BinDetector_error)
+        return false;
+    return true;
+}
+
+void TMimeDetector::FeedTextDetector(const unsigned char *p, const unsigned char *pe) {
+    int &cs = CsText;
+    const unsigned char *eof = pe;
+
+    for (const unsigned char *pp = p; pp < pe; pp++) {
+        ByteStat[bytetype_table[*pp]]++;
+    }
+
+    %% machine GarbageCheck;
+    %% write exec;
+}
+
+void TMimeDetector::PrintByteStat() const {
+    printf("ByteStat: Chars: %" PRISZT ". [ ", BytesRead);
+    for (unsigned i = 0; i < sizeof(ByteStat) / sizeof(ByteStat[0]); i++)
+        printf("%i ", ByteStat[i]);
+    printf("]\n");
+    printf("ByteStat16: WChars: %" PRISZT ". [ ", BytesRead / 2);
+    for (unsigned i = 0; i < sizeof(ByteStat16) / sizeof(ByteStat16[0]); i++)
+        printf("%i ", ByteStat16[i]);
+    printf("]\n");
+    printf("Utf8 chars: %" PRISZT ", errors: %" PRISZT "\n", Utf8Chars, BytesRead - Utf8Bytes);
+    printf("HTML tags: %" PRISZT "\n", NumTags);
+}
+
+bool TMimeDetector::IsText() const {
+    if (!BytesRead)
+      return true;
+    //Let's examine character frequencies distribution
+    //TODO: maybe use Bom?
+    if (ByteStat[btN] * NonPrintableRatio < BytesRead &&
+        ByteStat[btS] * DelimitersRatio > BytesRead) {
+        // Looks like a valid 1-byte text
+        return true;
+    } else if ((BytesRead - Utf8Bytes) * Utf8ErrorsRatio < Utf8Chars &&
+               ByteStat[btN] * NonPrintableRatio < Utf8Chars &&
+               ByteStat[btS] * DelimitersRatio > Utf8Chars) {
+        // Looks like a valid utf8 text
+        return true;
+    } else if (ByteStat16[btN * 2] * NonPrintableRatio * 2 < BytesRead &&
+               ByteStat16[btS * 2] * DelimitersRatio * 2 > BytesRead) {
+        // Looks like an utf16be text
+        return true;
+    } else if (ByteStat16[btN * 2 + 1] * NonPrintableRatio * 2 < BytesRead &&
+               ByteStat16[btS * 2 + 1] * DelimitersRatio * 2 > BytesRead) {
+        // Looks like an utf16le text
+        return true;
+    }
+    return false;
+}
+
+bool TMimeDetector::FeedDetector(const unsigned char *p, const unsigned char *pe) {
+    Y_ASSERT(p <= pe);
+    if (!NeedMore)
+        return false;
+
+    if (BytesRead + (unsigned)(pe - p) > MaxBytesToRead)
+        pe = p + MaxBytesToRead - BytesRead;
+
+    if (NeedMoreBin)
+        NeedMoreBin = FeedBinDetector(p, pe);
+
+    FeedTextDetector(p, pe);
+
+    BytesRead += (pe - p);
+
+    if (BytesRead >= MaxBytesToRead) {
+        Y_ASSERT(BytesRead == MaxBytesToRead);
+        NeedMore = false;
+    }
+
+    return NeedMore;
+}
+
+#ifdef __clang__
+#   pragma clang diagnostic pop
+#endif
+
+#if defined(__GNUC__)
+#   pragma GCC diagnostic pop
+#endif
+
+#ifdef _MSC_VER
+#   pragma warning(pop)
+#endif

@@ -1,0 +1,50 @@
+LIBRARY()
+
+OWNER(
+    elric
+    sankear
+    g:base
+)
+
+SRCS(
+    private/encoder_table.h
+    private/decoder_table.h
+    private/histogram.h
+    private/prefix_group.h
+    private/binary_search_prefix_group_builder.h
+    private/greedy_prefix_group_builder.h
+    private/greedy_prefix_vec4_group_builder.h
+    private/utility.h
+    bit_sampler_16.h
+    bit_sampler_16.cpp
+    bit_decoder_16.h
+    bit_encoder_16.h
+    decoder_16.h
+    decoder_64.h
+    encoder_16.h
+    encoder_64.h
+    fwd.h
+    interleaved_decoder.h
+    interleaved_encoder.h
+    interleaved_model.h
+    interleaved_sampler.h
+    interleaved_table.h
+    model_16.h
+    model_64.h
+    serializable_model.cpp
+    multi_table.h
+    sampler_16.cpp
+    sampler_64.cpp
+    standard_sampler.h
+    table_16.h
+    table_64.h
+)
+
+PEERDIR(
+    library/cpp/vec4
+    library/cpp/offroad/offset
+    library/cpp/offroad/streams
+    library/cpp/offroad/utility
+)
+
+END()

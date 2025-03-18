@@ -1,0 +1,71 @@
+service: passport_infra
+title: tvmauth (java)
+
+
+arcanum:
+  review:
+     auto_assign: true
+
+     groups:
+        - name: backend-developers
+          roles: developer
+
+     rules:
+        - reviewers:
+            name: backend-developers
+            ship: 2
+            assign: 2
+
+  auto_merge:
+    requirements:
+      - system: pciexpress
+        type: PCI-DSS integrity
+
+
+ci:
+  release-title-source: flow
+  autocheck:
+    fast-targets:
+      - library/java/tvmauth
+    strong: true
+
+  runtime:
+    sandbox-owner: PASSPORT
+  secret: sec-01ekz37bg804cbcsqeftv8v8ec
+
+  releases:
+    tvmauth-java-release:
+      title: tvmauth-java
+      flow: tvmauth-java-release-flow
+      stages:
+        - id: build
+          title: Build
+      branches:
+        pattern: releases/passport/tvmauth-java-${version}
+        auto-create: true
+      filters:
+        - discovery: dir
+          abs-paths:
+            - library/cpp/tvmauth/**
+            - library/java/tvmauth/**
+
+  flows:
+    tvmauth-java-release-flow:
+      jobs:
+        build_jar:
+          title: Сборка пакетов
+          task: common/arcadia/ya_package_2
+          stage: build
+          input:
+            packages: library/java/tvmauth/build_jar_with_so/jar.json
+            publish_to: library/java/tvmauth/build_jar_with_so/settings.xml
+            package_type: tarball
+            artifactory_password: sec-01d0yh2ccgxvmkxbqpcpygy3vc#password
+            # TODO: PASSP-37792
+            # run_tests: true
+            # run_medium_tests: true
+            key_user: robot-passp-sandbox
+            artifactory: true
+          requirements:
+            sandbox:
+              dns: dns64

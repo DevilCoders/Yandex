@@ -1,0 +1,105 @@
+// content filters in xpath-like ragel sequences
+
+%%{
+    machine HtmlDetect;
+    include HtmlDetect "def.rli";
+
+    detect_metric =     any* "mc.yandex.ru";
+    detect_context =    any* "an.yandex.ru";
+    detect_frame =      any* Tag HT_FRAMESET any* Tag HT_FRAME;
+    detect_rdf =        any* Markup "rdf:";
+
+    ## microformats
+    detect_recipe =     any* Name Attr HA_class Value avWordPrefix "hrecipe" avWordSuffix endVal;
+    detect_review =     any* Name Attr HA_class Value avWordPrefix "hreview" avWordSuffix endVal;
+    detect_vcard =      any* Name Attr HA_class Value avWordPrefix "vcard" avWordSuffix endVal;
+    detect_vcard_org =  detect_vcard any* Name Attr HA_class Value ((avWordPrefix "org" avWordSuffix) & (avWordPrefix "fn" avWordSuffix)) endVal;
+    detect_vcard_n =    detect_vcard any* Name Attr HA_class Value avWordPrefix "n"   avWordSuffix endVal;
+
+    ## microdata
+    detect_sorg = any* Tag (
+          ( anyMarkup* Name Attr HA_itemtype Value "http://schema.org/" rest)
+	| ( HT_SCRIPT anyMarkup* Name "type" Value "application/ld+json"i rest)
+	);
+
+    detect_sorg_org = any* Tag (
+          (anyMarkup* Name Attr HA_itemscope rest)
+        & (anyMarkup* Name Attr HA_itemtype Value "http://schema.org/Organization"i rest)
+    ) End;
+
+    detect_article =    any* Tag (
+          (anyMarkup* Name Attr HA_itemscope rest)
+        & (anyMarkup* Name Attr HA_itemtype Value "http://webmaster.yandex.ru/vocabularies/enc-article.xml" rest)
+    ) End;
+    detect_termdef =    any* Tag (
+          (anyMarkup* Name Attr HA_itemscope rest)
+        & (anyMarkup* Name Attr HA_itemtype Value "http://webmaster.yandex.ru/vocabularies/term-def.xml" rest)
+    );
+    detect_ogp = any* (Tag HT_META anyMarkup* Name "property" Value ( "og:" | "ya:" ) anyAttrVal* endVal);
+
+    youtube_addr_prefix = "http://" ("www.")? "youtube.com/";
+    vk_prefix = "http://" ( "vk.com" | "vkontakte.ru" ) "/video_ext.php?";
+    sibnet_prefix = "http://video.sibnet.ru/shell.swf?";
+    detect_video =      any* (
+          #( Tag (
+                # this is likely to be too acceptive
+                # | HT_EMBED | HT_OBJECT
+          #  ) )
+        # general video
+           ( Tag HT_VIDEO )
+         | ( Tag HT_SOURCE )
+         | ( Tag HT_LINK anyMarkup* Name "rel" Value "video_src" endVal)
+         | ( Tag HT_META anyMarkup* Name ( "name" | "property" ) Value "og:video" )
+         | ( Tag HT_META (
+                  (anyMarkup* Name ( "name" | "property") Value ( "medium" | "og:type" ) anyMarkup*)
+                & (anyMarkup* Name "content" Value ( "video" | "tv_show" | "movie" ) rest) )
+                End)
+        # youtube objects
+         | ( Tag HT_EMBED (
+                  (anyMarkup* Name "src"  Value youtube_addr_prefix anyMarkup*)
+                & (anyMarkup* Name "type" Value "application/x-shockwave-flash" rest) )
+             End )
+         | ( Tag HT_IFRAME anyMarkup* Name "src"  Value youtube_addr_prefix)
+        # vkontakte video
+         | ( Tag HT_IFRAME anyMarkup* Name "src" Value vk_prefix )
+        # sibnet video
+         | ( Tag HT_EMBED (
+                  (anyMarkup* Name "src" Value sibnet_prefix anyMarkup*)
+                & (anyMarkup* Name "type" Value "application/x-shockwave-flash" rest) )
+             End)
+    );
+
+    ## debug detectors (use tags around 127 to test if tag ids are signed - they should not be)
+    # detect_html =  any* Tag HT_HTML  @{ r.Set("html"); };
+    # detect_thead = any* Tag HT_THEAD @{ r.Set("thead"); };
+    # detect_time =  any* Tag HT_TIME  @{ r.Set("time"); };
+    # debug_charsign = detect_html | detect_thead | detect_time;
+
+    # physical detector machines
+    DetectFirst =
+          detect_metric    @{ r.Set("metric"); }
+        | detect_context   @{ r.Set("context"); }
+        | detect_frame     @{ r.Set("frame"); }
+        | detect_rdf       @{ r.Set("rdf"); }
+        | detect_recipe    @{ r.Set("recipe"); }
+        | detect_review    @{ r.Set("review"); }
+        | detect_vcard     @{ r.Set("vcard"); }
+        | detect_vcard_org @{ r.Set("vcard-org"); }
+        | detect_vcard_n   @{ r.Set("vcard-n"); }
+        ;
+
+    ## microdata
+    DetectSecond =
+          detect_article   @{ r.Set("enc-article"); }
+        | detect_termdef   @{ r.Set("enc-termdef"); }
+        | detect_sorg      @{ r.Set("sorg"); }
+        | detect_sorg_org  @{ r.Set("sorg-org"); }
+        | detect_ogp       @{ r.Set("ogp");}
+     #   | detect_video     @{ r.Set("video"); }
+        ;
+    DetectThird =
+          detect_video     @{ r.Set("video"); }
+        ;
+
+
+}%%

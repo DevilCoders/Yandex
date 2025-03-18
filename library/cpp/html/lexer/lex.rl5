@@ -1,0 +1,567 @@
+#include <util/system/defaults.h>
+#include <util/system/yassert.h>
+#include <library/cpp/html/lexer/lex.h>
+#include <library/cpp/html/spec/tags.h>
+
+#ifdef _MSC_VER
+#pragma warning(disable: 4702)  // unreachable code
+#endif
+
+#if 0 // syntax highlighting in ide feels better
+%%{
+        machine HTLexer;
+        alphtype unsigned char;
+
+        ### Actions
+        # Fix tag names and carry on to OnToken()
+        action a_markup {
+            // show_lex_pos("markup");
+            HTLEX_TYPE type = HTLEX_START_TAG;
+            switch (*(p_tokstart+1)) {
+                case '/':
+                    // compat hack
+                    namestart--;
+                    namelen++;
+                    type = HTLEX_END_TAG;
+                    break;
+                case '!':
+                    type = HTLEX_MD;
+                    namestart = p_tokstart+1;
+                    namelen = 1;
+                    break;
+                case '?':
+                    type = HTLEX_PI;
+                    namestart = p_tokstart+1;
+                    namelen = 1;
+                    break;
+                case '%':
+                    type = HTLEX_ASP;
+                    namestart = p_tokstart+1;
+                    namelen = 1;
+                    break;
+            }
+            OnToken(lio, type, p - p_tokstart);
+        }
+        action a_tag {
+            // show_lex_pos("tag");
+            OnToken(lio, HTLEX_START_TAG, p - p_tokstart);
+
+            switch (Ctx.HTag->id()){
+                case HT_SCRIPT:
+                    fhold;
+                    fgoto cdata_script;
+                case HT_STYLE:
+                    fhold;
+                    fgoto cdata_style;
+                case HT_TITLE:
+                    fhold;
+                    fgoto cdata_title;
+                case HT_COMMENT:
+                    fhold;
+                    fgoto cdata_comment;
+                case HT_XMP:
+                    fhold;
+                    fgoto cdata_xmp;
+                case HT_PLAINTEXT:
+                    fhold;
+                    fgoto cdata_plaintext;
+                case HT_TEXTAREA:
+                    fhold;
+                    fgoto cdata_textarea;
+                case HT_XML:
+                    fhold;
+                    fgoto cdata_xml;
+                default:
+                    break;
+            }
+
+        }
+
+        action a_text      { OnToken(lio, HTLEX_TEXT, p - p_tokstart);     }
+        action a_comment   { OnToken(lio, HTLEX_COMMENT, p - p_tokstart); }
+
+        # action a_tag_open  { OnToken(lio, HTLEX_START_TAG, namestart, namelen, p_tokstart, fpc - p_tokstart);}
+        # action a_tag_close { OnToken(lio, HTLEX_END_TAG, namestart, namelen, p_tokstart, fpc - p_tokstart);}
+        # action a_md              { OnToken(lio, HTLEX_PI, "!", 1, p_tokstart, fpc - p_tokstart);}
+        # action a_pi              { OnToken(lio, HTLEX_PI, "?", 1, p_tokstart, fpc - p_tokstart);}
+        # action a_asp             { OnToken(lio, HTLEX_ASP, "%", 1, p_tokstart, fpc - p_tokstart);}
+
+        # start new tag - reset state
+        action a_start {
+            // Cdbg << "a_start" << Endl;
+            p_tokstart = fpc;
+            // reset
+            Ctx.InComment = false;
+            Ctx.InMarkup = false;
+            Ctx.InASP = false;
+            Ctx.InCDATA = false;
+            Ctx.QuotedGt = false;
+            Ctx.InReopenScript = false;
+            Ctx.Iws = false;
+
+            Ctx.HTag = 0;
+            Ctx.AttCnt = 0;
+        }
+        action start_name {
+            // Cdbg << "start_name at: " << fpc - p_tokstart << Endl;
+            namestart = fpc;
+        }
+        action end_name {
+            namelen = fpc - namestart;
+            Ctx.HTag = &NHtml::FindTag((const char*)namestart, namelen);
+            /*
+            Cdbg << "end_name at: " << fpc - p_tokstart << ' ';
+            Cdbg.write((char*)namestart, namelen);
+            Cdbg << Endl;
+            Cdbg << "HTag: " << Ctx.HTag->id() << Endl;
+            */
+        }
+        # Attributes: start & end of name & value
+        action a_ASN {
+#ifdef HT_LDEBUG
+            Cdbg << "a_ASN: AttCnt=" << Ctx.AttCnt << ", at " << fpc - p_tokstart << Endl;
+#endif
+            if (Ctx.AttCnt < ATTCNT)
+                Ctx.AttCnt++;
+            AttStore[Ctx.AttCnt - 1].Name.Start = fpc - p_tokstart;
+            AttStore[Ctx.AttCnt - 1].Name.Leng = 0; // will be set later
+            AttStore[Ctx.AttCnt - 1].Value.Start = 0;
+            AttStore[Ctx.AttCnt - 1].Value.Leng = 0;
+            AttStore[Ctx.AttCnt - 1].Quot = '\0';
+        }
+        action a_AEN {
+#ifdef HT_LDEBUG
+            Cdbg << "a_AEN: AttCnt=" << Ctx.AttCnt << ", at " << fpc - p_tokstart << Endl;
+#endif
+            AttStore[Ctx.AttCnt - 1].Name.Leng  = fpc - p_tokstart - AttStore[Ctx.AttCnt - 1].Name.Start;
+        }
+        action a_ASV {
+#ifdef HT_LDEBUG
+             Cdbg << "a_ASV: AttCnt=" << Ctx.AttCnt << ", at " << fpc - p_tokstart << Endl;
+#endif
+            AttStore[Ctx.AttCnt - 1].Value.Start= fpc - p_tokstart;
+        }
+        action a_AEV {
+#ifdef HT_LDEBUG
+            Cdbg << "a_AEV: AttCnt=" << Ctx.AttCnt << ", at " << fpc - p_tokstart << Endl;
+#endif
+            // unsigned char c=*(fpc-1);
+            unsigned char c = *(p_tokstart + AttStore[Ctx.AttCnt-1].Value.Start);
+            if(c == '"' || c == '\'') {
+                AttStore[Ctx.AttCnt - 1].Quot = c;
+                AttStore[Ctx.AttCnt - 1].Value.Start++;
+                AttStore[Ctx.AttCnt - 1].Value.Leng = fpc - p_tokstart - AttStore[Ctx.AttCnt-1].Value.Start - 1;
+            } else
+                AttStore[Ctx.AttCnt - 1].Value.Leng = fpc - p_tokstart - AttStore[Ctx.AttCnt-1].Value.Start;
+        }
+
+        # CDATA support
+        action a_in_cdata {
+            Ctx.InCDATA = true;
+            start_cs = fcurs;
+#ifdef HT_LDEBUG
+            Cdbg << "a_in_cdata, cs = " << (int)fcurs << Endl;
+#endif
+        }
+        action a_cdata_text {
+#ifdef HT_LDEBUG
+            Cdbg << "a_cdata_text, cs = " << (int)fcurs << Endl;
+            show_lex_pos("a_cdata_text");
+#endif
+            p_cdata_text_end = p;
+        }
+        action a_cdata {
+            // p_tokstart .. p+1 region is divided into
+            // p_tokstart .. p_cdata_text_end   - cdata text
+            // p_cdata_text_end .. p+1          - end cdata tag
+#ifdef HT_LDEBUG
+            Cdbg << "a_cdata" << Endl;
+            show_lex_pos("a_cdata");
+#endif
+            // first cdata text
+            if (p_cdata_text_end > p_tokstart)
+                OnToken(lio, HTLEX_TEXT, p_cdata_text_end - p_tokstart);
+            // then finish tag
+            p_tokstart = p_cdata_text_end;
+            // compat hack
+            namestart--;
+            namelen++;
+            OnToken(lio, HTLEX_END_TAG, p - p_tokstart + 1);
+
+            fgoto fin;
+        }
+
+        # CDATA-Comment-EOF specific
+        action a_cdata_in_comment {
+#ifdef HT_LDEBUG
+            Cdbg << "cdata_in_comment" << Endl;
+            show_lex_pos("cdata_in_comment");
+#endif
+            Ctx.InComment = true;
+        }
+        action a_cdata_comment_end {
+#ifdef HT_LDEBUG
+            Cdbg << "cdata_comment_end" << Endl;
+            show_lex_pos("cdata_comment_end");
+#endif
+            Ctx.InComment = false;
+        }
+        action a_cdata_close {
+#ifdef HT_LDEBUG
+            Cdbg << "cdata_close" << Endl;
+            show_lex_pos("cdata_close");
+#endif
+            if (!Ctx.InComment || Ctx.BrokenComment)
+                fgoto cdata_finish;
+        }
+
+        # script-comment specific
+        # <script><!--<script>x</script>y</script>z -- y is in script text, z is not
+        action a_script_in_comment {
+            Ctx.InComment = true;
+        }
+        action a_script_comment_end {
+            Ctx.InComment = false;
+            Ctx.InReopenScript = false;
+        }
+        action a_script_reopen {
+            if (Ctx.InComment)
+                Ctx.InReopenScript = true;
+        }
+        action a_script_close {
+            if (Ctx.InReopenScript)
+                Ctx.InReopenScript = false;
+            else
+                fgoto cdata_finish;
+        }
+
+        # EOF situation related
+        action a_in_comment {
+            // Cdbg << "in_comment" << Endl;
+            if (!Ctx.BrokenComment)
+                Ctx.InComment = true;
+            Ctx.InMarkup = false;
+        }
+        action a_in_markup {
+            // Cdbg << "in_markup" << Endl;
+            Ctx.InMarkup = true;
+        }
+        action a_in_asp {
+            if (Ctx.BrokenASP) {
+                // Cdbg << "met BrokenASP: is text" << Endl;
+                OnToken(lio, HTLEX_TEXT, p - p_tokstart + 1);
+                fgoto fin;
+            }
+            // Cdbg << "in_asp" << Endl;
+            Ctx.InASP = true;
+            Ctx.InMarkup = false;
+        }
+
+        action a_QGt {
+            // Cdbg << "met QuotedGt" << Endl;
+            Ctx.QuotedGt = true;
+        }
+
+        action a_check_comment {
+            // Cdbg << "checking comment..." << Endl;
+            if (Ctx.BrokenComment) {
+                // Cdbg << "met BrokenComment: is MD" << Endl;
+                OnToken(lio, HTLEX_MD, p - p_tokstart+1);
+                fgoto fin;
+            }
+        }
+
+        # Tag error recovery
+        action a_not_markup {
+            // a_text
+            // Cdbg << "ERROR in tag" << Endl;
+            OnToken(lio, HTLEX_TEXT, p - p_tokstart);
+            fhold;
+            fgoto fin;
+        }
+
+        ### HTML grammar elements
+        # Tag name
+        GI = alpha ( ( any - space - '/' - '>' - 0 )** );
+        name = GI $1 %0 >start_name %end_name;
+
+        # Attributes
+        # *_int machines do the same but don't call actions
+        # they are used in 'internal' to lex closing tags
+
+        # Attribues: the same once again
+        string = (
+                ( '"' (any* :>> '"' ) ) | # double quote
+                ( "'" (any* :>> "'" ) )   # single quote
+            );
+
+        # name cannot be empty, it cat start from '=' and be just '='
+        attr_name_int = ('='? ( any - space - [=/>] )*) & (any+);
+        attr_name = attr_name_int >a_ASN %a_AEN <^a_AEN;
+
+        attr_val_str = string | ( ( any - space - '>' )+ - (['"] any* ) ); # " fix highlight
+        attr_val_int = '=' space** attr_val_str?;
+        attr_val = '=' space** ( attr_val_str >a_ASV %a_AEV )? ;
+        attr_space = (space | '/');
+
+        attrs =
+            attr_space+ (
+                attr_name space** ( attr_val space** )? attr_space*
+            )**;
+
+        # non-opening tag contents: what follows name - the same as attrs with no actions
+        internal =
+            attr_space+ (
+                attr_name_int space** (attr_val_int space**)? attr_space*
+            )**;
+
+        # CDATA Instantiation
+        gi_end_letter = space | 0 | '>' | '/';
+        gi_end = gi_end_letter ${ fhold; };
+        cdata_finish := (internal? '>') @a_cdata @/a_text;
+        # no comments in usual cdata tags
+        cdata_comments = empty;
+        script_comments = ( '<!--' @a_script_in_comment  )  |
+                         ( any {0,2} '-'+ '->'  @a_script_comment_end );
+
+        # Script is special: <script><!--<script>x</script>y</script>z -- y is in script text
+        cdata_script := (any* (
+            script_comments |
+            (/<script/i gi_end_letter @a_script_reopen) |
+            ("</" >a_cdata_text /script/i >start_name %end_name gi_end @a_script_close)
+        ))+ >a_start >a_in_cdata $/a_text;
+
+
+        # explicit CDATA entry <!CDATA[ ... ]]>
+        cdata_mark = '[' /CDATA/i '[';
+        cdata_str =  '<!' cdata_mark (any* :>> ']]>');
+
+        # Match HTML comment or MD
+        comment_s = '<!--' ((( '-'* '>' ) | ( any* :>> ('--' ('!'?) '>'))) $/a_comment);
+        md_s = '<!' ((any - '>')* - ('--' any*) - (cdata_mark any*)) $/a_markup '>';
+        pi_s = '<?' (any - '>')* $/a_markup '>';
+
+        include "cdata.rli";
+
+        # Match any tag-like structure
+
+        # This line is correct
+        # tag =       ( '<'  name ( (internal | attrs) $1 %0 ) '>' )
+        # This is backward-compatible error implementation
+        tag =       ( '<'  name ( attrs $1 %0 )? '>' )
+            >a_start >a_in_markup %a_tag  %/a_markup @!a_not_markup;
+
+        tag_close = ( '</' </a_text name internal? '>' );
+        md =        md_s;
+        pi =        pi_s;
+
+        # comment, also emit on eof
+        comment = comment_s
+            >a_start %a_comment;
+
+        cdata = cdata_str $0 %1
+            >a_start %a_comment;
+
+        markup = ( tag_close | md | pi )
+            >a_start >a_in_markup %a_markup  %/a_markup @!a_not_markup;
+
+        # Match text outside of any tags
+        text = ( [^<]+ $1 %0 >a_start %a_text %/a_text ) &
+            ( ( space** >{ Ctx.Iws = true; } (any - space)* >{ Ctx.Iws = false; } )? any* );
+
+        # Or together all the lanuage elements...
+        entry = ( tag | markup | comment | cdata | text ) $0 %1;
+
+        # In a row...
+        fin = entry*;
+
+        # And instantiate:
+        main := fin;
+}%%
+#endif
+
+%% write data;
+
+namespace NHtmlLexer {
+
+TLexer::TLexer(const char* b, size_t len, size_t maxChunkSize /*= 0*/) {
+    %% write init;
+
+    Y_UNUSED(HTLexer_en_cdata_finish);
+    Y_UNUSED(HTLexer_en_cdata_script);
+    Y_UNUSED(HTLexer_en_cdata_style);
+    Y_UNUSED(HTLexer_en_cdata_title);
+    Y_UNUSED(HTLexer_en_cdata_comment);
+    Y_UNUSED(HTLexer_en_cdata_xmp);
+    Y_UNUSED(HTLexer_en_cdata_plaintext);
+    Y_UNUSED(HTLexer_en_cdata_textarea);
+    Y_UNUSED(HTLexer_en_cdata_xml);
+    Y_UNUSED(HTLexer_en_main);
+    Y_UNUSED(HTLexer_en_main_fin);
+
+    p = (const unsigned char*)b;
+    BufferEnd = p + len;
+    MaxChunkSize = maxChunkSize;
+    pe = p;
+
+    p_tokstart = namestart = p_cdata_text_end = 0;
+    toklen = namelen = 0;
+}
+
+int TLexer::MaybeExecuteAgain(TResult* lio) {
+    int st = 0;
+    do {
+#ifdef HT_LDEBUG
+        Cdbg << "entering MaybeExecuteAgain cycle" << Endl;
+#endif
+        Y_ASSERT(p == pe);
+        if (cs == HTLexer_error)
+            return -1;
+        else if (cs >= HTLexer_first_final)
+            break; // rely on eof action (to provide last token)
+
+        // we are not in final state
+        if ( false
+                    || (Ctx.InMarkup && !Ctx.QuotedGt)
+                    || (Ctx.InASP & Ctx.BrokenASP)
+                 )
+            break; // rely on eof action (to provide last token as text)
+        else if (Ctx.InMarkup) {
+            // we are not in final state and QuotedGt
+            // so emit '<' as text and proceed as usual
+            ///@todo maybe rollback pe
+            OnToken(lio, HTLEX_TEXT, 1 );
+            p = p_tokstart + 1;
+            p_tokstart = namestart = 0;
+            namelen = 0;
+            cs = HTLexer_start;  // fgoto fin
+        } else if (Ctx.InASP) {
+            ///@todo maybe rollback pe
+            p = p_tokstart;
+            Ctx.BrokenASP = true;
+            cs = HTLexer_start;  // fgoto fin
+        } else if (Ctx.InComment) {
+            ///@todo maybe rollback pe
+            if (Ctx.InCDATA) {
+                // comment was started inside cdata
+                if (Ctx.BrokenComment)
+                    break; // as text
+                p = p_tokstart;
+                Ctx.BrokenComment = true;
+                cs = start_cs; // start_cs is always set with InCDATA
+            } else {
+                p = p_tokstart;
+                Y_ASSERT(!Ctx.BrokenComment);
+                Ctx.BrokenComment = true;
+                cs = HTLexer_start;  // fgoto fin
+            }
+        }
+        else if(Ctx.InCDATA) {
+            // !InComment
+            // there is a possibility of 'squared rollbacks' here in cases like <title> <title> .. eof
+            // but we dont want to store a hash of broken cdata tags in ctx
+            p = p_tokstart;
+            cs = HTLexer_start;
+        }
+        // else if we are still at end, proceed to eof
+        if (p == pe)
+            break;
+
+        // if (!InCDATA)            // else preserve state
+        //    cs = HTLexer_start;  // fgoto fin (p != pe)
+
+        show_position("exec again");
+        st = ExecuteStep(lio);
+    } while (true);
+    return st;
+}
+
+int TLexer::ExecuteEof(TResult* lio) {
+
+    MaybeExecuteAgain(lio);
+
+#ifdef HT_LDEBUG
+    Cdbg << "excuting at eof" << Endl;
+#endif
+
+    %% write eof;
+
+#ifdef HT_LDEBUG
+    show_exec_results("eof");
+#endif
+
+    if (cs == HTLexer_error)
+        return -1;
+    if (cs >= HTLexer_first_final)
+        return 1;
+    // EOF (non-final state) is not an error. Token cut is considered text for now
+    // return 0;
+    return 1;
+}
+
+int TLexer::ExecuteStep(TResult* lio) {
+
+    show_position("exec step");
+
+    Y_ASSERT(p || BufferEnd == p);
+
+    if (pe < BufferEnd) {
+        if (MaxChunkSize) {
+            pe += MaxChunkSize;
+            if (pe > BufferEnd)
+                pe = BufferEnd;
+        } else {
+            pe = BufferEnd;
+        }
+    }
+
+    while (p != pe) {    // handle CDATA
+        %% write exec;
+#ifdef HT_LDEBUG
+        show_exec_results("step");
+#endif
+    }
+
+    if (cs == HTLexer_error)
+        return -1;
+    if (cs >= HTLexer_first_final)
+        return 1;
+    // EOF (non-final state) is not an error. Token cut is considered text for now
+    // return 0;
+    return 0;
+
+}
+
+TContext::TContext()
+  : BrokenASP(false)     // <% ... <EOF> sequence met
+  , BrokenComment(false) // <!-- ... <EOF> sequence met
+  , BrokenTag(false)     // < ... <EOF> sequence met
+  , QuotedGt(false)      // '..>..' met in attribute name/value
+  , InComment(false)     // <!-- ...
+  , InMarkup(false)      // < ...
+  , InASP(false)         // <% ...
+  , InCDATA(false)       // <lit_tag> ...
+  , Iws(false)           // Is WhiteSpace only token
+  , HTag(0)
+  , AttCnt(0)
+{
+}
+
+#ifdef HT_LDEBUG
+
+void TLexer::show_exec_results ( const char* id )
+{
+    if ( cs == HTLexer_error ) {
+        Cdbg << id;
+        show_position ( " error" );
+    } else if ( cs >= HTLexer_first_final ) {
+        Cdbg << id << " finished at final state" << Endl;
+    } else {
+        Cdbg << id << " finished at non-final state" << Endl;
+    }
+}
+
+#endif
+
+}
+

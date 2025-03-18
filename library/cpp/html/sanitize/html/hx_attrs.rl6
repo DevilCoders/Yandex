@@ -1,0 +1,332 @@
+#include <library/cpp/html/entity/htmlentity.h>
+#include <library/cpp/html/sanitize/html/hx_sanitize.h>
+#include <util/string/util.h>
+#include <util/generic/noncopyable.h>
+
+const char _Dd = 'a' -'A';
+#define _TO_LWR(c) if ('A'<=(c) && (c)<= 'Z') c+=_Dd;
+
+enum _hxAttrState
+{
+    _HX_A_STATE_NOPE = 0,
+    _HX_A_STATE_PENDING,
+    _HX_A_STATE_URL,
+    _HX_A_STATE_OK,
+    _HX_A_STATE_BAD
+};
+
+
+/*
+ * Attention: finishing of the machine in a bad state is legal and OK.
+ *   The main result of parse is in mCheckState
+ */
+
+
+struct hxAttrStandardChecker
+{
+        HXAttributeChecker& mMaster;
+        const ECharset&    mCodePage;
+        TString&             mUrlBufValue;
+
+        _hxAttrState        mCheckState;
+        bool                mGoodName;
+        bool                mNeedsValue;
+        bool                mCheckURL;
+
+        int cs; //!< variable required for ragel
+
+        hxAttrStandardChecker
+            (HXAttributeChecker& master,
+             const ECharset&    codePage,
+             TString&             urlBufValue):
+            mMaster     (master),
+            mCodePage   (codePage),
+            mUrlBufValue(urlBufValue),
+            mCheckState(_HX_A_STATE_NOPE),
+            mGoodName(false),
+            mNeedsValue(false),
+            mCheckURL(false),
+            cs(0)
+        {
+        }
+
+        bool check
+            (const char*&    nameStart,
+             int&            nameLength,
+             const char*&    valStart,
+             int&            valLength);
+
+        void init();
+        int execute(const char* data, int len, bool last = false);
+};
+
+%%{
+    machine AttrStandardChecker;
+
+    #=========================================
+    # Actions
+
+    action doValue   { mNeedsValue = true; }
+    action goodName  { mGoodName   = true; }
+    action makeBad   { mCheckState = _HX_A_STATE_BAD; }
+    action makeOK    { mCheckState = _HX_A_STATE_OK;  }
+    action makePend  { mCheckState = _HX_A_STATE_PENDING; }
+
+    action makeURL
+        { mCheckState = _HX_A_STATE_URL;
+          mNeedsValue = false; }
+    action checkURL
+        { mCheckURL   = true;
+          mCheckState = _HX_A_STATE_URL;
+          mNeedsValue = false; }
+
+    #=========================================
+    # URL (pre-)check
+
+    urlWhiteProtocol = space* .
+         ( "ed2k"    | "file"   | "ftp"    |
+           "gopher"  | "http"   | "https"  | "mailto" |
+           "news"    | "nntp"   | "telnet" | "webcal" |
+           "cid"     | "callto" | "xmpp"   | "irc"    |
+           "tel"     | "mms"    | "skype"  | "browser"|
+           "settings"| "jabber" | "consultantplus")
+         ( ":" >makeURL );
+
+    urlSafeDataProtocol = space* "data" space* ":" space* "image/" ( "gif" | "jpeg" | "png" ) >makeURL;
+
+    urlNoProtocol = ( [a-z0-9_]* ([^:a-z0-9_] any* | null) ) %checkURL;
+    urlValue    = urlSafeDataProtocol  | urlWhiteProtocol  | urlNoProtocol | (null %checkURL);
+    urlOptValue = urlSafeDataProtocol | urlWhiteProtocol  | urlNoProtocol | (null %makeOK);
+
+    #=========================================
+    # Style check
+
+    blackProtocol =
+        ( "about"     | "chrome"     | "disk"        | "feed"   |
+          "hcp"       | "help"       | "javascript"  | "livescript"  |
+          "lynxcgi"   | "lynxexec"   | "ms-help"     | "ms-its"      |
+          "mhtml"     | "mocha"      | "opera"       | "res"         |
+          "resource"  | "shell"      | "vbscript"    | "view-source" |
+          "vnd.ms.radio"   | "wysiwyg" ) @1 . ":";
+
+    badMargin = ( "margin" | "margin-left" | "margin-right" | "margin-top" |
+                  "margin-bottom" ) . space* . ":" . space* . "-";
+
+    badStyleRule = "$" . "[" . any* . "]";
+
+    badWord =
+      ( "javascript"   | "absolute"   | "behavior" | "behaviour"      |  "content" | badStyleRule |
+        "expression" | "fixed"    | "include-source" | "binding" | badMargin ) @1;
+
+    badTerm = ( blackProtocol | badWord ) %makeBad;
+
+    styleValue =  ( any* $0 . badTerm . any* );
+
+    #=========================================
+    # attribute names and main
+
+    _is_ = "=" >doValue;
+
+    dangerAttr = ( "dynsrc=" | "on" | ("data" . [a-z]) ) @makeBad;
+
+    styleAttr  = "style" _is_ styleValue;
+
+    urlOptAttr = ( "action" | "background" | "formaction" ) ( _is_ @makePend ) urlOptValue;
+
+    urlAttr    = ( "codebase" | "href" | "lowsrc" | "src" | "data" | "ping") ( _is_ @makePend ) urlValue;
+
+    properName = [a-z] [a-z0-9\-]* ( "=" >goodName );
+
+    main := dangerAttr      |
+            styleAttr       |
+            urlOptAttr      |
+            urlAttr         |
+            properName;
+
+    write data;
+}%%
+
+void hxAttrStandardChecker::init() {
+
+    mCheckState = _HX_A_STATE_NOPE;
+    mNeedsValue = false;
+    mCheckURL   = false;
+    mGoodName   = false;
+
+    %% write init;
+
+}
+
+int hxAttrStandardChecker::execute(const char* data, int len, bool last) {
+    const char* p = data;
+    const char* pe = p + len;
+    const char* eof = last ? pe : NULL;
+
+    %% write exec;
+
+    return (cs == AttrStandardChecker_error ? -1 : 0);
+}
+
+/********************************************************/
+bool hxAttrStandardChecker::check
+    (const char*&    nameStart,
+     int&            nameLength,
+     const char*&    valStart,
+     int&            valLength)
+{
+    if(nameLength>=40)
+        return false;
+
+    TString nm(nameStart, nameLength);
+    nm.to_lower();
+    if ((nm == "href") && (valStart[0] == '#'))
+        return true;
+    if (nm == "style")
+        {
+        for (int i = 1; i < valLength; ++i)
+             {
+             if (valStart[i - 1] == '\\')
+                 {
+                 char c = valStart[i]; _TO_LWR(c);
+
+                 for (int j = 0; j < 10; ++j)
+                     if (c == '0' + j)
+                         return false;
+
+                 for (int j = 0; j < 6; ++j)
+                     if (c == 'a' + j)
+                         return false;
+                 }
+             if ((valStart[i - 1] == '/') && (valStart[i] == '*'))
+                 return false;
+             if ((valStart[i - 1] == '*') && (valStart[i] == '/'))
+                 return false;
+             }
+        }
+
+    init();
+    execute((char*)(nameStart), nameLength);
+    execute((char*)"=", 1);
+
+    if(!mGoodName)
+        mCheckState = _HX_A_STATE_BAD;
+
+    if (mNeedsValue)
+    {
+        if(!mCheckState)
+        {
+            wchar32  w;
+            const unsigned char *s   = (const unsigned char*)(valStart);
+            const unsigned char *end = s + valLength;
+
+            while(s<end && mCheckState!=_HX_A_STATE_BAD && mNeedsValue)
+            {
+                w = HtEntOldDecodeStep(mCodePage, s, end - s, 0);
+
+                if (w < ' ' || w > 127)
+                    continue;
+
+                char c = (char)w; _TO_LWR(c);
+
+                if(c == '\\')
+                    continue;
+                if( c == '/' && s<end && s[0]=='*')
+                {
+                    //Work with comments
+                    mCheckState = _HX_A_STATE_BAD;
+                    while((++s)<end)
+                    {
+                        if(s[0]=='*' && s+1<end && s[1]=='/')
+                        {
+                            mCheckState = _HX_A_STATE_NOPE;
+                            s+=2;
+                            break;
+                        }
+                    }
+                    continue;
+                }
+
+                if(execute(&c, 1)<0)
+                    break;
+            }
+            execute("\0", 1);
+        } else  if (mCheckState == _HX_A_STATE_PENDING)
+                {
+                    // href, action, etc. go here
+                    TString val;
+                    wchar32 w;
+                    const unsigned char *s   = (const unsigned char*)(valStart);
+                    const unsigned char *end = s + valLength;
+
+                    while(s<end)
+                    {
+                        w = HtEntOldDecodeStep(mCodePage, s, end - s, 0);
+                        if (w < ' ' || w > 127)
+                            continue;
+                        char c = (char)w;
+                        _TO_LWR(c);
+                        val+= c;
+                    }
+
+                    execute(val.c_str(), (int)val.size(), true);
+                }
+    }
+
+    if(mCheckState == _HX_A_STATE_PENDING  ||
+        mCheckState == _HX_A_STATE_BAD)
+    {
+        return false;
+    }
+
+    if(mCheckURL)
+    {
+        if(!mCheckState) {
+            return false;
+        }
+
+        TString  v(valStart, 0, valLength);
+        v = LegacySubstr(v, v.find_first_not_of(" \n\r\t\f\v"));
+        valStart = v.c_str();
+        valLength = (int)v.size();
+        return mMaster.checkURL (valStart, valLength, mUrlBufValue);
+    }
+
+    return true;
+}
+
+/********************************************************/
+/********************************************************/
+class HXAttrStandardChecker: public HXAttributeChecker, TNonCopyable
+{
+    protected:
+        hxAttrStandardChecker mChecker;
+        TString                mUrlBufValue;
+
+    public:
+
+    HXAttrStandardChecker (const char*         baseURL):
+        HXAttributeChecker (baseURL),
+        mChecker (*this, mCodePage, mUrlBufValue)
+    {}
+
+    virtual ~HXAttrStandardChecker (){}
+
+    virtual bool check
+        (const char*&    nameStart,
+         int&            nameLength,
+         const char*&    valStart,
+         int&            valLength)
+    {
+        return mChecker.check
+            (nameStart, nameLength, valStart, valLength);
+    }
+};
+
+/********************************************************/
+HXAttributeChecker* hxMakeAttributeChecker
+        (const char*         baseURL)
+{
+    return new HXAttrStandardChecker(baseURL);
+}
+
+/********************************************************/

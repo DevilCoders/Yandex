@@ -1,0 +1,52 @@
+LIBRARY()
+
+OWNER(kmosienko)
+
+PEERDIR(
+    library/cpp/pop_count
+    library/cpp/deprecated/fgood
+    library/cpp/digest/md5
+    library/cpp/digest/old_crc
+    library/cpp/html/face/blob
+    library/cpp/html/html5
+    library/cpp/html/spec
+    library/cpp/numerator
+    util/draft
+)
+
+SRCS(
+    algorithms.h
+    bittrie.h
+    bittrie.algorithms.h
+    bittrie.base_stuff.h
+    bittrie.common_interface.h
+    bittrie.memory_management.h
+    bittrie.special_interface.h
+    bittrie.types.h
+    clusterer.h
+    clusterer_stats.h
+    clusterer.small_group.h
+    clusterer.ordinar.h
+    common.h
+    compbittrie.h
+    compbittriebundle.h
+    html_digest.h
+    math_util.h
+    ngrammers.h
+    probability_search.h
+    randoms.h
+    simhash_calculator.h
+    simhash_index.h
+    simhashnumerate.h
+    stopwords.h
+    time_util.h
+    vectorizers.h
+    version.h
+    html_digest.cpp
+    probability_search.cpp
+    randoms.cpp
+    stopwords.cpp
+    simhash_data.proto
+)
+
+END()
