@@ -1,0 +1,120 @@
+service: mdadm
+title: Cloud API
+
+ci:
+  secret: sec-01fvfdc31pdn34ms1ecb25bgkp
+  runtime:
+    sandbox-owner: CDN
+
+  releases:
+    cloud_api:
+      title: Cloud API
+      flow: cloud_api_release
+      auto: no
+      filters:
+      - discovery: dir
+      - discovery: graph
+        sub-paths: ["cmd/**"]
+      stages:
+        - id: build
+          title: Build
+        - id: testing
+          title: Testing
+        - id: production
+          title: Production
+
+  flows:
+    cloud_api_release:
+      title: Cloud API
+      jobs:
+        build_resource:
+          title: Build cloud resource
+          stage: build
+          task: common/arcadia/ya_make
+          input:
+            targets: cdn/cloud_api/cmd/cloud_api
+            arts: cdn/cloud_api/cmd/cloud_api
+
+            result_single_file: yes
+            result_rd: "CDN Cloud API release #${to_string(context.launch_number)} r${to_string(context.target_revision.number)}"
+            result_rt: CDN_CLOUD_API
+            result_ttl: "30"
+
+        migrate_database_testing:
+          title: Migrate Database
+          stage: testing
+          task: common/misc/run_command
+          needs: build_resource
+          input:
+            config:
+              cmd_line: |
+                ./ya make contrib/python/yandex-pgmigrate/bin
+                mkdir -p ~/.postgresql; cp certs/yandex_internal.pem ~/.postgresql/root.crt
+                contrib/python/yandex-pgmigrate/bin/pgmigrate migrate -vvv \
+                  -c "host=c-mdbqg5kb0j0pprfk1mdi.rw.db.yandex.net port=6432 dbname=cloudapi user=cloudapi target_session_attrs=read-write sslmode=verify-full" \
+                  -d cdn/cloud_api \
+                  -t latest
+              arc_mount_config:
+                enabled: true
+              secret_environment_variables:
+                - key: PGPASSWORD
+                  secret_spec:
+                    uuid: sec-01fzb9trbny5xzq1t6nmhj4pwj
+                    key: password
+              logs_config:
+                stdout_ci_badge: true
+                stderr_ci_badge: true
+
+        deploy_testing:
+          title: Deploy to testing
+          needs: migrate_database_testing
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: cdn-cloud-api-testing
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CDN_CLOUD_API
+                    static:
+                      deploy_unit_id: app
+                      static_resource_ref: cloud_api
+
+        migrate_database_production:
+          title: Migrate Database
+          stage: production
+          task: common/misc/run_command
+          needs: deploy_testing
+          manual: yes
+          input:
+            config:
+              cmd_line: |
+                ./ya make contrib/python/yandex-pgmigrate/bin
+                mkdir -p ~/.postgresql; cp certs/yandex_internal.pem ~/.postgresql/root.crt
+                contrib/python/yandex-pgmigrate/bin/pgmigrate migrate -vvv \
+                  -c "host=c-mdb0na57prjkknhhn7p0.rw.db.yandex.net port=6432 dbname=cloudapi user=cloudapi target_session_attrs=read-write sslmode=verify-full" \
+                  -d cdn/cloud_api \
+                  -t latest
+              arc_mount_config:
+                enabled: true
+              secret_environment_variables:
+                - key: PGPASSWORD
+                  secret_spec:
+                    uuid: sec-01fzdpdkzwejfn6f21wzrdd38e
+                    key: password
+              logs_config:
+                stdout_ci_badge: true
+                stderr_ci_badge: true
+
+        deploy_production:
+          title: Deploy to production
+          needs: migrate_database_production
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: cdn-cloud-api-production
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CDN_CLOUD_API
+                    static:
+                      deploy_unit_id: app
+                      static_resource_ref: cloud_api
