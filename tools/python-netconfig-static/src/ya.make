@@ -1,0 +1,56 @@
+PY2_LIBRARY(netconfig)
+
+OWNER(
+    g:marketsre
+)
+
+PEERDIR(
+    contrib/python/ipaddr
+    contrib/python/dnspython/py2
+)
+
+PY_SRCS(
+    TOP_LEVEL
+    generate_interfaces.py
+    interfaces/__init__.py
+    interfaces/address.py
+    interfaces/bridge_interface.py
+    interfaces/cdn_loopback_interface.py
+    interfaces/conductor.py
+    interfaces/dns_mock.py
+    interfaces/docker_bridge_interface.py
+    interfaces/generation_parameters.py
+    interfaces/generators/__init__.py
+    interfaces/generators/additional_iface_generator.py
+    interfaces/generators/balancer_iface_generator.py
+    interfaces/generators/bonding_iface_generator.py
+    interfaces/generators/cdn_iface_generator.py
+    interfaces/generators/docker_iface_generator.py
+    interfaces/generators/fastbone_iface_generator.py
+    interfaces/generators/hadoop_generator.py
+    interfaces/generators/interfaces_generator.py
+    interfaces/generators/loopback_iface_generator.py
+    interfaces/generators/openstack_generator.py
+    interfaces/generators/plain_iface_generator.py
+    interfaces/generators/tunnel_iface_generator.py
+    interfaces/generators/vlan_iface_generator.py
+    interfaces/interface.py
+    interfaces/interface_action.py
+    interfaces/interface_utils.py
+    interfaces/interfaces_group.py
+    interfaces/ipcalc.py
+    interfaces/iptables.py
+    interfaces/loopback_interface.py
+    interfaces/network_info.py
+    interfaces/output/__init__.py
+    interfaces/output/formats.py
+    interfaces/resolver.py
+    interfaces/route.py
+    interfaces/rule.py
+    interfaces/tunnel_interface.py
+    interfaces/utils/__init__.py
+    interfaces/utils/local.py
+)
+
+END()
+

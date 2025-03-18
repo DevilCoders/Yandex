@@ -1,0 +1,11 @@
+#pragma once
+
+#include <tools/clustermaster/common/precomputed_task_ids.h>
+#include <tools/clustermaster/common/precomputed_task_ids_group.h>
+
+class TMasterTargetType;
+struct TMasterGraphTypes;
+
+typedef TDependSourceTypeTargetType<TMasterTargetType> TMasterDependSourceTypeTargetType;
+typedef TPrecomputedTaskIdsInitializerGroup<TMasterGraphTypes, TParamsByTypeOrdinary> TMasterPrecomputedTaskIdsInitializerGroup;
+typedef TPrecomputedTaskIdsContainerGroup<TMasterGraphTypes, TParamsByTypeOrdinary> TMasterPrecomputedTaskIdsContainerGroup;

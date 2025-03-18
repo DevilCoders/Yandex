@@ -1,0 +1,3 @@
+RECURSE(
+    fmlconfig_test
+)

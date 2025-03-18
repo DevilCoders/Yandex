@@ -1,0 +1,104 @@
+{% load i18n %}
+{% load regionname %}
+{% load hidereferer %}
+{% load crit_name_cleaner %}
+
+{% cycle snip_pool_1 snip_pool_2 as snip_pool silent %}
+{% for as_est, aggr_vals in assessor_ests %}
+<div class="row row-padded">
+    <div class="span12 span span-focused">
+        <span class="property" title="{% trans 'Request' %}"><i class="icon icon-search"></i> {{ task.request }}</span>
+        <span class="property" title="{% trans 'Region' %}"><i class="icon icon-globe"></i> {{ task.region|regionname }}</span>
+    </div>
+</div>
+
+<div class="row row-padded">
+{% for snip_tpl, tpl in snip_tpls_ext %}
+    <div class="span4">
+        {% with snippet=snip_tpl.snip tpl=tpl %}
+            <a style="text-decoration: none; color: #0088cc;" target="_blank" href="{{ snip_tpl.snip.data.url|hidereferer }}">
+                {{ snip_tpl.render_title|safe }}
+            </a>
+        {% endwith %}
+        <br />
+        {{ snip_tpl.render_green_url|safe }}
+        <br />
+        <p>
+            {{ snip_tpl.render_text|safe }}
+        </p>
+        {% if viewing_user.role != yauser.core_user.Role.ASSESSOR and snip_pool %}
+            <br />
+            {% trans 'Pool' %}:
+            <a href="{% url 'core:snippets_default' snip_pool.storage_id %}">
+                {{ snip_pool.title }} ({{ tpl }})
+            </a>
+        {% endif %}
+        {% cycle snip_pool %}
+    </div>
+{% endfor %}
+    <table class="span4">
+        <colgroup>
+            <col span="1">
+            <col span="1">
+        </colgroup>
+        <tbody>
+            <tr>
+                <td>
+                    {% trans 'Estimation date' %}:
+                </td>
+                <td>
+                    {{ as_est.complete_time }}
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    {% trans 'Correction date' %}:
+                </td>
+                <td>
+                    {{ as_est.correction.time }}
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    {% trans 'Corrected by' %}:
+                </td>
+                <td>
+                    {{ aadmin_est.user }}
+                </td>
+            </tr>
+        {% if viewing_user.role != yauser.core_user.Role.ASSESSOR %}
+            <tr>
+                <td>
+                    {% trans 'Estimation made by' %}:
+                </td>
+                <td>
+                    {{ as_est.user }}
+                </td>
+            </tr>
+        {% endif %}
+            <tr>
+                <td>
+                    {% trans 'Comment' %}:
+                </td>
+                <td>
+                    {{ aadmin_est.comment }}
+                </td>
+            </tr>
+            <tr style="height: 10px;"></tr>
+        {% for crit_name, val, aa_val, sign_err in aggr_vals %}
+            <tr>
+                <td>
+                    {% trans crit_name|crit_name_cleaner|capfirst %}:
+                </td>
+                <td style="background-color: transparent; border: 0px;{% if sign_err %} color: #ff0000;{% endif %}">
+                    {% trans val|title %}
+                {% if val != aa_val %}
+                    &rarr; {% trans aa_val|title %}
+                {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endfor %}

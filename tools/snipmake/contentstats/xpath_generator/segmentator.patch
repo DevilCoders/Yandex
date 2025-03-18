@@ -1,0 +1,282 @@
+Index: doc_node.cpp
+===================================================================
+--- doc_node.cpp	(revision 999990)
++++ doc_node.cpp	(working copy)
+@@ -83,9 +83,35 @@
+     Props.AddedToContent = 0;
+ }
+ 
+-TDocNode* MakeNode(TDocNode* node, TDocNode* parent) {
+-    if (parent)
++TDocNode* MakeNode(TDocNode* node, TDocNode* parent, TString className, TString id) {
++    if (parent) {
+         parent->PushBack(node);
++        TString tagName(NHtml::FindTag(node->Props.Tag).lowerName);
++        node->XPathStr = parent->XPathStr;
++
++        if (!tagName.empty()) {
++            int index = 0;
++            for (TDocNode::iterator it = parent->Begin(); it != parent->End(); ++it) {
++                if ((*it).Props.Tag == node->Props.Tag)
++                    ++index;
++                if (&*it == node)
++                    break;
++            }
++            node->XPathStr += "/" + tagName + "[";
++            if (!className.empty()) {
++                node->XPathStr += "@class='" + className + "'";
++            }
++            if (!id.empty()) {
++                if (!className.empty())
++                    node->XPathStr += " or ";
++                node->XPathStr += "@id='" + id + "'";
++            }
++            if (className.empty() && id.empty()) {
++                node->XPathStr += " position()=" + ToString(index);
++            }
++            node->XPathStr += "]";
++        }
++    }
+     return node;
+ }
+ 
+@@ -96,14 +122,14 @@
+     node->Props.NWords = nWords;
+     node->Props.BoldDistance = dist;
+ 
+-    return MakeNode(node, parent);
++    return MakeNode(node, parent, "", "");
+ }
+ 
+ TDocNode* MakeBreak(TSegMemoryPool& pool, TAlignedPosting pos, TDocNode* parent, ETagBreakLevel lev) {
+     TDocNode* node = new (pool) TDocNode(DNT_BREAK, parent, pos, pos);
+     node->Props.Level = lev;
+ 
+-    return MakeNode(node, parent);
++    return MakeNode(node, parent, "", "");
+ }
+ 
+ TDocNode* MakeBreak(TSegMemoryPool& pool, TAlignedPosting pos, TDocNode* parent, HT_TAG tag) {
+@@ -113,16 +139,16 @@
+ TDocNode* MakeInput(TSegMemoryPool& pool, TAlignedPosting pos, TDocNode* parent, ui32 nInputs) {
+     TDocNode* node = new (pool) TDocNode(DNT_INPUT, parent, pos, pos);
+     node->Props.NInputs = nInputs;
+-    return MakeNode(node, parent);
++    return MakeNode(node, parent, "", "");
+ }
+ 
+-TDocNode* MakeBlock(TSegMemoryPool& pool, TAlignedPosting begin, TDocNode* parent, HT_TAG tag) {
++TDocNode* MakeBlock(TSegMemoryPool& pool, TAlignedPosting begin, TDocNode* parent, HT_TAG tag, TString className, TString id) {
+     VERIFY(!parent || IsA<DNT_BLOCK> (parent), " ");
+     TDocNode* node = new (pool) TDocNode(DNT_BLOCK, parent, begin, begin);
+     node->Props.Tag = tag;
+     node->GenerateSignature();
+     node->Props.NodeLevel = parent ? parent->Props.NodeLevel + 1 : 0;
+-    return MakeNode(node, parent);
++    return MakeNode(node, parent, className, id);
+ }
+ 
+ TDocNode* MakeLink(TSegMemoryPool& pool, TAlignedPosting begin, TDocNode* parent, ELinkType linktype, ui32 domain) {
+@@ -130,7 +156,7 @@
+     TDocNode* node = new (pool) TDocNode(DNT_LINK, parent, begin, begin);
+     node->Props.LinkType = linktype;
+     node->Props.Domain = domain;
+-    return MakeNode(node, parent);
++    return MakeNode(node, parent, "", "");
+ }
+ 
+ bool IsEmpty(TDocNode* node) {
+Index: doc_node.h
+===================================================================
+--- doc_node.h	(revision 999990)
++++ doc_node.h	(working copy)
+@@ -81,6 +81,8 @@
+     };
+ 
+     TProps Props;
++    TString XPathStr;
++    TUtf16String Text;
+ 
+     const EDocNodeType Type;
+ 
+@@ -283,13 +285,13 @@
+                     ? currentNode->Back() : 0;
+ }
+ 
+-TDocNode* MakeNode (TDocNode* node, TDocNode* parent);
++TDocNode* MakeNode (TDocNode* node, TDocNode* parent, TString className, TString id);
+ TDocNode* MakeText (TSegMemoryPool& pool, TAlignedPosting beg, TAlignedPosting end, TDocNode* parent, ui32 nWords,
+                         TBoldDistance dist = TBoldDistance());
+ TDocNode* MakeBreak(TSegMemoryPool& pool, TAlignedPosting pos, TDocNode* parent, ETagBreakLevel lev);
+ TDocNode* MakeBreak(TSegMemoryPool& pool, TAlignedPosting pos, TDocNode* parent, HT_TAG tag);
+ TDocNode* MakeInput(TSegMemoryPool& pool, TAlignedPosting pos, TDocNode* parent, ui32 nInputs);
+-TDocNode* MakeBlock(TSegMemoryPool& pool, TAlignedPosting beg, TDocNode* parent, HT_TAG tag);
++TDocNode* MakeBlock(TSegMemoryPool& pool, TAlignedPosting beg, TDocNode* parent, HT_TAG tag, TString className, TString id);
+ TDocNode* MakeLink (TSegMemoryPool& pool, TAlignedPosting beg, TDocNode* parent, ELinkType type, ui32 domain);
+ 
+ 
+Index: process_markup.cpp
+===================================================================
+--- process_markup.cpp	(revision 999990)
++++ process_markup.cpp	(working copy)
+@@ -21,6 +21,19 @@
+ 
+ }
+ 
++void GetClassAndId(const THtmlChunk& htev, TString& className, TString& id) {
++    for (size_t i = 0; i != htev.AttrCount; ++i ) {
++        const NHtml::TAttribute & attr = htev.Attrs[i];
++        TString name(htev.text + attr.Name.Start, attr.Name.Leng);
++        TString value(htev.text + attr.Value.Start, attr.Value.Leng);
++        if (name == "id") {
++            id = value;
++        } else if (name == "class") {
++            className = value;
++        }
++    }
++}
++
+ void TSegmentator::ProcessMarkup(const THtmlChunk& htev, const TNumerStat& stat) {
+     if (!htev.Tag || htev.leng <= 2)
+         return;
+@@ -31,7 +44,11 @@
+     const bool invalid = MARKUP_IGNORED == htev.flags.markup; //the tag is discarded
+     const bool close = '/' == htev.text[1]; //the tag is closing
+     const bool selfclose = '/' == htev.text[htev.leng - 2];
+-
++    
++    TString className;
++    TString id;
++    GetClassAndId(htev, className, id);
++    
+     //Processing bolds, closing blockbolds if open.
+     //Bolds are always ignored although do have effect on boldness.
+     BoldDistance.RenewIrregular(httag, close);
+@@ -113,11 +130,11 @@
+         if (IsHxTag(httag) && IsHxTag(lastTag))
+             closeParent = true;
+ 
+-        OpenBlockNode(stat, httag, closeParent);
++        OpenBlockNode(stat, httag, closeParent, className, id);
+     }
+ }
+ 
+-void TSegmentator::OpenBlockNode(const TNumerStat& stat, HT_TAG tag, bool closeLast) {
++void TSegmentator::OpenBlockNode(const TNumerStat& stat, HT_TAG tag, bool closeLast, TString className, TString id) {
+     if (closeLast)
+         CloseBlockNode(stat, CurrentBlockNode()->Props.Tag);
+ 
+@@ -141,7 +158,7 @@
+         NodeCount++;
+ 
+         VERIFY(IsA<DNT_BLOCK> (CurrentNode), " ");
+-        CurrentNode = MakeBlock(Ctx->Pool, stat.TokenPos.Pos, CurrentNode, tag);
++        CurrentNode = MakeBlock(Ctx->Pool, stat.TokenPos.Pos, CurrentNode, tag, className, id);
+         Ctx->BlockStack.push_back(TTagItem(tag, CurrentNode));
+         AttributeExpectation = ExpectAttrBlock;
+ 
+Index: segmentator.cpp
+===================================================================
+--- segmentator.cpp	(revision 999990)
++++ segmentator.cpp	(working copy)
+@@ -1,5 +1,6 @@
+ #include "segmentator.h"
+ #include "structfinder.h"
++#include <queue>
+ 
+ #include <kernel/segmentator/classification.h>
+ #include <kernel/segmentator/main_header_impl.h>
+@@ -27,6 +28,7 @@
+     , SkipMainHeader()
+     , SkipMainContent()
+ {
++    Groups.clear();
+ }
+ 
+ typedef ylist<TSegmentSpan, TLightPoolAllocator<POOL_BLOCK_SIZE> > TSSpanPooledList;
+@@ -66,6 +68,23 @@
+     return ctx;
+ }
+ 
++void BFS(TDocNode* root, THashMap<TString, TVector<TUtf16String> >& groups) {
++    std::queue<TDocNode*> q;
++    q.push(root);
++
++    while(!q.empty()) {
++        TDocNode* cur = q.front();
++        
++        if (!cur->Text.empty())
++            groups[strip(cur->XPathStr)].push_back(cur->Text);
++        q.pop();
++        
++        for (TDocNode::iterator it = cur->Begin(); it != cur->End(); ++it) {
++            q.push(&*it);
++        }
++    }
++}
++
+ void TSegmentator::ProcessTextEnd(const TNumerStat& stat) {
+     CheckTextAndReset();
+     VERIFY(Ctx->BlockStack.size(), " ");
+@@ -77,6 +96,8 @@
+ 
+     VERIFY(Root->NodeEnd >= Root->NodeStart, "%u < %u", (TPosting)Root->NodeEnd, (TPosting)Root->NodeStart);
+ 
++    BFS(Root, Groups);
++
+     TStructFinder lfinder(Ctx);
+     lfinder.FindAndFillCtx(Root);
+ 
+Index: segmentator.h
+===================================================================
+--- segmentator.h	(revision 999990)
++++ segmentator.h	(working copy)
+@@ -134,6 +134,7 @@
+     TDocContext DocContext;
+ 
+ public:
++    THashMap<TString, TVector<TUtf16String> > Groups;
+     TSegmentator();
+ 
+     void SetStorer(IStorer* callback) {
+@@ -144,7 +145,7 @@
+         Ctx = ctx;
+         Ctx->Clear();
+ 
+-        Root = MakeBlock(Ctx->Pool, TAlignedPosting(1,1), 0, HT_any);
++        Root = MakeBlock(Ctx->Pool, TAlignedPosting(1,1), 0, HT_any, "", "");
+         CurrentNode = Root;
+         Ctx->BlockStack.push_back(TTagItem(HT_any, Root));
+         NodeCount = 1;
+@@ -297,6 +298,7 @@
+ 
+             Ctx->Tokens.back().Link = IsInsideLink();
+             last->Props.NWords += 1;
++            last->Text.append(UTF8ToWide(" ")).append(w.Token, w.Leng);
+             last->NodeEnd = TAlignedPosting(stat.TokenPos.Pos).NextWord();
+             Ctx->CurrentText.append(w.Token, w.Leng);
+         }
+@@ -392,7 +394,7 @@
+     void ProcessImgAttribute  (ETagAttributeType type, const char* attr, ui32 len, const TNumerStat&);
+     void ProcessInlineBlockAttribute(ETagAttributeType type, const char* attr, ui32 len, const TNumerStat&);
+ 
+-    void OpenBlockNode(const TNumerStat&, HT_TAG tag, bool closeLast = false);
++    void OpenBlockNode(const TNumerStat&, HT_TAG tag, bool closeLast, TString className, TString id);
+     void CloseBlockNode(const TNumerStat&, HT_TAG tag);
+ 
+     void OpenLinkNode(const TNumerStat&, const TString& url);
+Index: segnumerator.h
+===================================================================
+--- segnumerator.h	(revision 999990)
++++ segnumerator.h	(working copy)
+@@ -151,6 +151,10 @@
+         return Segmentator.GetSegmentSpans();
+     }
+ 
++    THashMap<TString, TVector<TUtf16String> > GetGroups() {
++        return Segmentator.Groups;
++    }
++    
+     const TUrlInfo& GetOwnerInfo() const {
+         return Segmentator.GetOwnerInfo();
+     }

@@ -1,0 +1,166 @@
+{% load i18n %}
+{% load yauth %}
+{% load regionname %}
+{% load safemarkup %}
+{% load hidereferer %}
+{% load percentage %}
+{% load unquote %}
+
+{% trans 'both'|title as both %}
+{% cycle taskpool.second_pool.title taskpool.first_pool.title both as est_title silent %}
+{% for login, aggregated_counts, different, opposite, est_infos, has_comments in user_aggregated %}
+    {% with user_est_count=est_infos|length %}
+        <tr id="{{ login }}_header_tr">
+            <td style="text-align: left;">
+                <a href="#" class="unfold_link" id="{{ login }}_unfolder">
+                    <i class="icon-plus-sign"></i>
+                </a>
+                <a href="{% url 'core:user_info' login %}">
+                    {{ login }}
+                </a>
+            </td>
+            <td colspan="2">
+                {% trans 'Request count' %}:
+                {{ user_est_count }}
+            </td>
+        {% if yauser.core_user.role == yauser.core_user.Role.ANALYST %}
+            <td>
+            {% for est_val, est_icon in user_aggregated.0.4.0.0.VALUE_ICONS %}
+                <div>
+                    {% cycle est_title %}
+                    <i class="{{ est_icon }}" title="{{ est_title }}"></i>
+                </div>
+            {% endfor %}
+            </td>
+            {% for criterion, counter in aggregated_counts %}
+                <td>
+                {% for digit, count in counter %}
+                    <div>
+                        {{ count }}
+                        {{ count|percentage:user_est_count }}
+                    </div>
+                {% endfor %}
+                </td>
+            {% endfor %}
+            <td>
+                {% if has_comments %}
+                    {% trans 'Has comment' %}
+                {% endif %}
+            </td>
+        {% else %}
+            <td colspan="4" style="margin: 0px; padding: 0px;">
+                {% for criterion, counter in aggregated_counts %}
+                    <div style="width: 100%; left: 0px; text-align: center; float: left;">
+                        <div style="display: inline-block; width: 24%; left: 0px; text-align: center; float: left;">
+                            {% trans criterion|title|slice:'1' %}:
+                        </div>
+                    {% for digit, count in counter %}
+                        <div style="display: inline-block; width: 24%; text-align: center; float: left;">
+                            {{ count }}
+                            {{ count|percentage:user_est_count }}
+                        </div>
+                    {% endfor %}
+                    </div>
+                {% endfor %}
+            </td>
+            <td>
+            {% for diff in different %}
+                <div>
+                    {{ diff }}
+                    {{ diff|percentage:user_est_count }}
+                </div>
+            {% endfor %}
+            </td>
+            <td>
+            {% for opp in opposite %}
+                <div>
+                    {{ opp }}
+                    {{ opp|percentage:user_est_count }}
+                </div>
+            {% endfor %}
+            </td>
+        {% endif %}
+        </tr>
+        <tr id="{{login}}_fake_color"></tr>
+
+        {% for est, est_diff, est_opp in est_infos %}
+            <tr style="display: none;" data-login="{{ login }}">
+                <td></td>
+                <td>
+                    <a href="{% url 'core:estimation' est.id %}">
+                        {{ est.task.request }}
+                    </a>
+                    ({{ est.task.region|regionname }})
+                </td>
+                <td{% if yauser.core_user.role == yauser.core_user.Role.ANALYST %} colspan="2"{% endif %}>
+                    <a href="{{ est.task.first_snippet.data.url|hidereferer }}">
+                        {% if est.task.first_snippet.data.hilitedurl %}{{ est.task.first_snippet.data.hilitedurl|safemarkup }}{% else %}{{ est.task.first_snippet.data.url|unquote }}{% endif %}
+                    </a>
+                </td>
+            {% if yauser.core_user.role == yauser.core_user.Role.ANALYST %}
+                {% for digit in est.digits %}
+                <td>
+                {% for possible_digit, icon_name in est.VALUE_ICONS %}
+                    {% cycle est_title %}
+                    {% if digit == possible_digit  %}
+                        <i class="{{ icon_name }}" title="{{ est_title }}"></i>
+                    {% endif %}
+                {% endfor %}
+                </td>
+                {% endfor %}
+                <td>
+                    {{ est.comment }}
+                </td>
+            {% else %}
+                <td>
+                    {% for criterion in est.Criterion.NAMES %}
+                        <div>
+                            {% trans criterion|title|slice:'1' %}:
+                        </div>
+                    {% endfor %}
+                </td>
+                <td colspan="3" style="margin: 0px; padding: 0px;">
+                    {% with digits=est.digits %}
+                        {% for digit in digits %}
+                        {% with forloop.counter as digit_id %}
+                        <div style="width: 100%; text-align: center; left: 0px; float: left;">
+                            {% for possible_digit, val_name in est.VALUE_NAMES %}
+                            <div style="display: inline-block; width: 32%; text-align: center; float: left;">
+                            {% if digit == possible_digit %}
+                                1
+                            {% else %}
+                                {% for corr_digit in est.corrected_digits  %}
+                                    {% if forloop.counter == digit_id %}
+                                        {% if corr_digit == possible_digit %}
+                                            <span style="color: #ff0000">1</span>
+                                        {% else %}
+                                            0
+                                        {% endif %}
+                                    {% endif %}
+                                {% endfor %}
+                            {% endif %}
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endwith %}
+                        {% endfor %}
+                    {% endwith %}
+                </td>
+                <td>
+                    {% for diff in est_diff %}
+                        <div>{{ diff }}</div>
+                    {% endfor %}
+                </td>
+                <td>
+                    {% for opp in est_opp %}
+                        <div>{{ opp }}</div>
+                    {% endfor %}
+                </td>
+            {% endif %}
+            </tr>
+        {% endfor %}
+        {% if user_est_count|divisibleby:2 %}
+            <tr id="{{login}}_fake_odd"></tr>
+        {% endif %}
+    {% endwith %}
+{% endfor %}

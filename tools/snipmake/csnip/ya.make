@@ -1,0 +1,88 @@
+PROGRAM()
+
+OWNER(
+    divankov
+    g:snippets
+)
+
+ALLOCATOR(B)
+
+SRCS(
+    geobase.cpp
+    html_hilite.cpp
+    input.cpp
+    job.cpp
+    inforeq.cpp
+    lines_count.cpp
+    main.cpp
+    output.cpp
+    output_arc.cpp
+    output_csv.cpp
+    output_ctx.cpp
+    output_diff.cpp
+    output_dump.cpp
+    output_hr.cpp
+    output_hrsi.cpp
+    output_html.cpp
+    output_json.cpp
+    output_lossw.cpp
+    output_mr.cpp
+    output_print.cpp
+    output_serpf.cpp
+    output_sfh.cpp
+    output_utime.cpp
+    output_xml.cpp
+    pool_utils.cpp
+    range_time.cpp
+)
+
+PEERDIR(
+    contrib/libs/protobuf
+    extsearch/images/base/snippets/snippetizer
+    extsearch/video/base/snippets
+    kernel/dssm_applier/nn_applier/lib
+    kernel/groupattrs
+    kernel/lemmer/core
+    kernel/qtree/richrequest
+    kernel/relevfml/models_archive
+    kernel/snippets/base
+    kernel/snippets/config
+    kernel/snippets/dynamic_data
+    kernel/snippets/explain
+    kernel/snippets/hits
+    kernel/snippets/idl
+    kernel/snippets/iface
+    kernel/snippets/iface/archive
+    kernel/snippets/strhl
+    kernel/snippets/urlcut
+    kernel/snippets/urlmenu/dump
+    kernel/snippets/util
+    kernel/tarc/disk
+    library/cpp/charset
+    library/cpp/digest/sfh
+    library/cpp/getopt
+    library/cpp/html/entity
+    library/cpp/json/easy_parse
+    library/cpp/lua
+    library/cpp/mime/types
+    library/cpp/stopwords
+    library/cpp/string_utils/base64
+    library/cpp/string_utils/old_url_normalize
+    library/cpp/string_utils/quote
+    library/cpp/string_utils/relaxed_escaper
+    library/cpp/string_utils/url
+    library/cpp/svnversion
+    search/idl
+    search/reqparam
+    tools/snipmake/argv
+    tools/snipmake/common
+    tools/snipmake/cserp/idl
+    tools/snipmake/lib/job_processor
+    tools/snipmake/metasnip/jobqueue
+    tools/snipmake/snippet_xml_parser/cpp_writer
+    tools/snipmake/steam/snippet_json_iterator
+    tools/snipmake/stopwordlst
+    library/cpp/deprecated/atomic
+)
+
+END()

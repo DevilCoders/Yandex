@@ -1,0 +1,31 @@
+OWNER(
+    g:mstand
+)
+
+NO_NEED_CHECK()
+
+RECURSE(
+    abt
+    adminka
+    bin
+    cli_tools
+    correlations
+    criterias
+    experiment_pool
+    squeeze_lib
+    metrics_api
+    mstand_enums
+    mstand_structs
+    mstand_utils
+    nirvana_api
+    postprocessing
+    reports
+    sample_metrics
+    serp
+    session_local
+    session_metric
+    session_squeezer
+    session_yt
+    tests
+    user_plugins
+)

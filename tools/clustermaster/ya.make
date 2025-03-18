@@ -1,0 +1,22 @@
+OWNER(
+    g:clustermaster
+    g:kwyt
+)
+
+RECURSE(
+    bundle
+    common
+    hlconfig
+    libremote
+    local_cm
+    master
+    proto
+    remote
+    solver
+    speedtest
+    tests
+    ut
+    utils
+    worker
+    wsmasterlib
+)

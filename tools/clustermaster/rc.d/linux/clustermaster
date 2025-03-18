@@ -1,0 +1,272 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          clustermaster
+# Required-Start:    $remote_fs $network communism
+# Required-Stop:     $remote_fs $network communism
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Description:       Manage tasks on cluster.
+### END INIT INFO
+
+# Author: Ilyin Alexei <geolog@yandex-team.ru>
+
+NAME="clustermaster"
+SCRIPTNAME=/etc/init.d/$NAME
+CONF_DIR="/etc/$NAME.d"
+
+INSTANCE_ARGS="MASTER_ARGS MASTER_EXTRA_ARGS WORKER_ARGS WORKER_EXTRA_ARGS"
+INSTANCE_MANDATORY_ARGS="USERNAME MASTER_ENABLED MASTER_PROGRAM WORKER_ENABLED WORKER_PROGRAM"
+
+MASTER_MANDATORY_ARGS="MASTER_PID_FILE MASTER_SCRIPT MASTER_HTTP_PORT"
+MASTER_KNOWN_ARGS="P:MASTER_PID_FILE l:MASTER_LOG_FILE s:MASTER_SCRIPT c:MASTER_HOSTCFG w:WORKER_PORT a:MASTER_AUTH_FILE r:MASTER_NETWOR_RETRY b:MASTER_HEARTBEAT n:MASTER_NAME h:MASTER_HTTP_PORT H:MASTER_RO_PORT -proxy-http-timeout:PROXY_HTTP_TIMEOUT"
+
+WORKER_MANDATORY_ARGS="WORKER_PORT WORKER_PID_FILE WORKER_VAR_DIR"
+WORKER_KNOWN_ARGS="w:WORKER_PORT b:WORKER_HEARTBEAT r:WORKER_RES_HOST p:WORKER_RES_PRIO u:WORKER_URL_PREFIX v:WORKER_VAR_DIR a:WORKER_AUTH_FILE l:WORKER_LOG_FILE P:WORKER_PID_FILE"
+
+mk_cmd_line() {
+    local conf="$1"
+    shift
+    echo $@ | tr ': ' ' \n' | /bin/sh -c '. '"$conf"'; while read opt var; do val=$(eval echo -n \$$var); [ -n "$val" ] && echo "-$opt $val" || true; done' | xargs echo
+}
+
+var_value() {
+    local conf=$1
+    local var_name=$2
+    /bin/sh -c '. '"$conf"'; echo -n $'"$var_name"
+}
+
+clear_instance() {
+    unset $INSTANCE_ARGS $INSTANCE_MANDATORY_ARGS
+}
+
+init_instance() {
+    local instance=$1
+    local conf=$CONF_DIR/$instance.conf
+    
+    if [ -r $conf ]; then
+        . $conf
+    else
+        echo "Bad instance name: $instance." >&2
+        exit 1
+    fi
+
+    err="0"
+
+    for m in $MASTER_MANDATORY_ARGS $WORKER_MANDATORY_ARGS; do
+        value=$(var_value $conf $m)
+        if [ -z "$value" ]; then
+            echo "Mandatory variable $m is not specified in $conf ." >&2
+            err="1"
+        fi
+    done
+
+    for m in $INSTANCE_ARGS; do
+        value=$(var_value $conf $m)
+        eval m=$value
+    done
+
+    if [ -z "$MASTER_ARGS" ]; then
+        MASTER_ARGS="$(mk_cmd_line $conf $MASTER_KNOWN_ARGS) $MASTER_EXTRA_ARGS"
+        [ -n "$instance" ] && MASTER_ARGS="$MASTER_ARGS -n $instance" || true
+    fi
+
+    if [ -z "$WORKER_ARGS"]; then
+        WORKER_ARGS="$(mk_cmd_line $conf $WORKER_KNOWN_ARGS) $WORKER_EXTRA_ARGS"
+    fi
+
+    for m in $INSTANCE_MANDATORY_ARGS; do
+        value=$(var_value $conf $m)
+        if [ -z "$value" ]; then
+            echo "Mandatory variable $m is not specified in $conf ." >&2
+            err="1"
+        fi
+        eval m=$value
+    done
+
+    [ $err = "0" ] || exit 1
+}
+
+do_status_proc() {
+    # Return:
+    #   0   Program is running.
+    #   1   Program is not running and the pid file exists.
+    #   3   Program is not running.
+    #   4   Unable to determine program status.
+    local pidfile=$1 daemon=$2
+    start-stop-daemon --quiet --status --name $(basename $daemon) --pidfile $pidfile
+}
+
+do_status() {
+    case "$1" in
+    master) do_status_proc $MASTER_PID_FILE $MASTER_PROGRAM ;;
+    worker) do_status_proc $WORKER_PID_FILE $WORKER_PROGRAM ;;
+    *) return 4 ;;
+    esac
+}
+
+do_start_proc() {
+    # Return
+    #   0 if daemon has been started
+    #   1 if daemon was already running
+    #   2 if daemon could not be started
+    local pidfile=$1 daemon=$2 daemon_args="$3"
+    do_status_proc $pidfile $daemon
+    case "$?" in
+        0) return 1 ;;
+        1) rm -f $pidfile ;;
+        4) return 2 ;;
+    esac
+    start-stop-daemon --quiet --start --chuid $USERNAME \
+        --exec $daemon --pidfile $pidfile -- $daemon_args || return 3
+}
+
+do_start() {
+    case "$1" in
+    master)
+        if [ $MASTER_ENABLED = "YES" ] || [ $MASTER_ENABLED = "yes" ] ; then
+            do_start_proc $MASTER_PID_FILE $MASTER_PROGRAM "$MASTER_ARGS"
+        else
+            echo -n "(turned off in config file) "
+        fi
+        ;;
+    worker)
+        if [ $WORKER_ENABLED = "YES" ] || [ $WORKER_ENABLED = "yes" ] ; then
+            do_start_proc $WORKER_PID_FILE $WORKER_PROGRAM "$WORKER_ARGS"
+        else
+            echo -n "(turned off in config file) "
+        fi
+        ;;
+    *) return 2 ;;
+    esac
+}
+
+do_stop_proc() {
+    # Return
+    #   0 if daemon has been stopped or was already stopped
+    #   2 if daemon could not be stopped
+    local pidfile=$1 daemon=$2
+    if start-stop-daemon --quiet --oknodo --stop --retry 5 --exec $daemon --pidfile $pidfile; then
+        rm -f $pidfile
+        return 0
+    fi
+    return 2
+}
+
+do_stop() {
+    case "$1" in
+    master) do_stop_proc $MASTER_PID_FILE $MASTER_PROGRAM ;;
+    worker) do_stop_proc $WORKER_PID_FILE $WORKER_PROGRAM ;;
+    *) return 2 ;;
+    esac
+}
+
+usage() {
+    echo "Usage: $SCRIPTNAME {start|stop|status|restart|force-reload} {ALL|<instance>} [master|worker]" >&2
+    echo "Examples:\n\t$SCRIPTNAME start ALL - start all instances\n\t$SCRIPTNAME restart mascot worker - restart worker of mascot instance" >&2
+}
+
+if [ -z "$2" ]; then
+    usage
+    exit 1
+fi
+if [ $2 = ALL ]; then
+    INSTANCES=`{ ls -d $CONF_DIR/*.conf 2>/dev/null || true; } | while read f; do basename $f; done | sed -E 's/.conf$//' | xargs echo`
+else
+    INSTANCES=$2
+fi
+
+if [ -n "$3" ]; then
+    if [ $3 = "master" ] || [ $3 = "worker" ]; then
+        PROC=$3
+    else
+        echo "Instance process must be \"master\", \"worker\" or nothing for both." >&2
+        exit 1
+    fi
+else
+    PROC="master worker"
+fi
+
+case "$1" in
+    status)
+        echo "Determining status of $NAME..."
+        ret=0
+        for i in $INSTANCES; do
+            clear_instance
+            init_instance $i
+            for p in $PROC; do
+                echo -n "$i $p "
+                do_status $p
+                case "$?" in
+                    0) echo "OK" ;;
+                    1) echo "FAILED (process is dead but pid file exists)"; ret=1 ;;
+                    3) echo "FAILED";                                       ret=1 ;;
+                    4) echo "FAILED (unable to determine program status)";  ret=1 ;;
+                esac
+            done
+        done
+        [ $ret = 0 ] || exit $ret
+        ;;
+    start)
+        echo "Starting $NAME..."
+        ret=0
+        for i in $INSTANCES; do
+            clear_instance
+            init_instance $i
+            for p in $PROC; do
+                echo -n "$i $p "
+                do_start $p
+                case "$?" in
+                    0|1) echo "OK" ;;
+                    2)   echo "FAILED"; ret=1 ;;
+                esac
+            done
+        done
+        [ $ret = 0 ] || exit $ret
+        ;;
+    stop)
+        echo "Stopping $NAME..."
+        ret=0
+        for i in $INSTANCES; do
+            clear_instance
+            init_instance $i
+            for p in $PROC; do
+                echo -n "$i $p "
+                do_stop $p
+                case "$?" in
+                    0) echo "OK" ;;
+                    2) echo "FAILED"; ret=1 ;;
+                esac
+            done
+        done
+        [ $ret = 0 ] || exit $ret
+        ;;
+    restart|force-reload)
+        echo "Restarting $NAME..."
+        ret=0
+        for i in $INSTANCES; do
+            clear_instance
+            init_instance $i
+            for p in $PROC; do
+                echo -n "$i $p "
+                do_stop $p
+                case "$?" in
+                    0)
+                        do_start $p
+                        case "$?" in
+                            0) echo "OK" ;;
+                            1) echo "FAILED (can't stop)" ; ret=0 ;;
+                            *) echo "FAILED (can't start)"; ret=0 ;;
+                        esac
+                        ;;
+                    *) echo "FAILED"; ret=0 ;;
+                esac
+            done
+        done
+        [ $ret = 0 ] || exit $ret
+        ;;
+    *)
+        usage
+        exit 3
+        ;;
+esac
+

@@ -1,0 +1,98 @@
+{% load i18n %}
+<td>
+    <div class="row-fluid">
+        <div class="span12">
+        {% if hide_disabled_links and est.task.taskpool.status == est.task.taskpool.Status.DISABLED and est.status != est.Status.COMPLETE and est.status != est.Status.REJECTED and est.status != est.Status.TIMEOUT %}
+            {# est.status in (est.Status.ASSIGNED, est.Status.SKIPPED) #}
+            <i class="icon icon-lock" title="{% trans 'Disabled task' %}"></i>
+            <a href="#" class="disabled">{{ est }}</a>
+        {% else %}
+            {% if est.is_timeout %}
+                <i class="icon icon-time" title="{% trans 'Expired task' %}"></i>
+                <a href="#" class="expired">{{ est }}</a>
+            {% elif tab == 'finished' and user.role != user.Role.ASSESSOR and est.status == est.Status.COMPLETE and est.task.status != est.task.Status.REGULAR and est.task.taskpool.status == est.task.taskpool.Status.FINISHED %}
+                <i class="icon icon-ok-sign" title="{% trans 'Complete task' %}"></i>
+                <a href="{% url 'core:estimation_check' est.id %}">{{ est }}</a>
+            {% elif tab == 'checked' %}
+                <i class="icon icon-ok-sign" title="{% trans 'Complete task' %}"></i>
+                <a href="{% url 'core:corrections' 'all' est.task_id %}">{{ est }} - {{ est.task.request }}</a>
+            {% else %}
+                {% if est.status == est.Status.ASSIGNED %}
+                    <i class="icon icon-asterisk" title="{% trans 'Assigned task' %}"></i>
+                {% elif est.status == est.Status.COMPLETE %}
+                    <i class="icon icon-ok-sign" title="{% trans 'Complete task' %}"></i>
+                {% elif est.status == est.Status.REJECTED %}
+                    <i class="icon icon-remove-sign" title="{% trans 'Rejected task' %}"></i>
+                {% else %} {# est.status == est.Status.SKIPPED #}
+                    <i class="icon icon-question-sign" title="{% trans 'Task under question' %}"></i>
+                {% endif %}
+
+                <a href="{% url 'core:estimation' est.id %}"{% if est.status == est.Status.SKIPPED %} class="questioned"{% endif %}>{{ est }}</a>
+            {% endif %}
+        {% endif %}
+        </div>
+    </div>
+    {% if est.status == est.Status.ASSIGNED and est.comment %}
+        <div class="row-fluid">
+            <div class="span2 muted">{% trans 'Question' %}:</div>
+            <div class="span10 span span-overflow-ellipsis">{{ est.comment|truncatechars:100 }}</div>
+        </div>
+        {% if est.answer %}
+            <div class="row-fluid">
+                <div class="span2 muted">{% trans 'Answer' %}:</div>
+                <div class="span10 span span-overflow-ellipsis">{{ est.answer|truncatechars:100 }}</div>
+            </div>
+        {% endif %}
+    {% elif est.status == est.Status.SKIPPED %}
+        <div class="row-fluid">
+            <div class="span2 muted">{{ est.user.login }}:</div>
+            <div class="span10 span span-overflow-ellipsis">{{ est.comment|truncatechars:100 }}</div>
+        </div>
+    {% elif tab == 'checked' %}
+        <div class="row-fluid">
+            <div class="span3">
+                <table class="table table-bordered table-condensed">
+                    <colgroup>
+                        <col width="33%">
+                        <col width="33%">
+                        <col width="33%">
+                    </colgroup>
+                    <tbody>
+                        <tr>
+                            {% for crit_name, val, aa_val, sign_err in est.get_correction_value %}
+                                <td style="background-color: transparent;{% if sign_err %} color: #ff0000;{% endif %}">
+                                    <b>{% trans crit_name|capfirst|slice:":1" %}:</b>
+                                    {% trans val|title|slice:":1" %}
+                                    {% if val != aa_val %}
+                                        &rarr; {% trans aa_val|title|slice:":1" %}
+                                    {% endif %}
+                                </td>
+                            {% endfor %}
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="span9 span span-overflow-ellipsis muted">{{ est.correction.aadmin_est.comment }}</div>
+        </div>
+    {% endif %}
+</td>
+{% if tab == 'finished' %}
+    <td>
+        {% if est.is_timeout %}
+            {% trans 'Timeout' %}
+        {% else %}
+            {{ est.complete_time }}
+        {% endif %}
+    </td>
+{% elif tab == 'checked' %}
+    {% load regionname %}
+    <td>
+        {{ est.task.region|regionname }}
+    </td>
+    <td>
+        {{ est.comment }}
+    </td>
+    <td>
+        {{ est.correction.time }}
+    </td>
+{% endif %}

@@ -1,0 +1,10 @@
+{{CONSTRUCTOR_NAME}}();
+
+{{#EXPLICIT}}explicit {{/EXPLICIT}}{{CONSTRUCTOR_NAME}}({{#PARAM}}
+    {{#NOT_POD}}const {{/NOT_POD}}{{#LITE_FIELD}}{{TYPE}}{{/LITE_FIELD}}{{#BRIDGED_FIELD}}{{#OPTIONAL_FIELD}}{{#STD_OPTIONAL}}std::optional{{/STD_OPTIONAL}}{{#BOOST_OPTIONAL}}boost::optional{{/BOOST_OPTIONAL}}<{{/OPTIONAL_FIELD}}{{TYPE:x-strip-shared-ptr}}{{#OPTIONAL_FIELD}}>{{/OPTIONAL_FIELD}}{{/BRIDGED_FIELD}}{{#NOT_POD}}&{{/NOT_POD}} {{FIELD_NAME}}{{#PARAM_separator}},{{/PARAM_separator}}{{/PARAM}});
+
+{{CONSTRUCTOR_NAME}}(const {{CONSTRUCTOR_NAME}}& other){{#HAS_NO_BRIDGED_FIELDS}} = default{{/HAS_NO_BRIDGED_FIELDS}};
+{{CONSTRUCTOR_NAME}}({{CONSTRUCTOR_NAME}}&&) = default;
+
+{{CONSTRUCTOR_NAME}}& operator=(const {{CONSTRUCTOR_NAME}}& other){{#HAS_NO_BRIDGED_FIELDS}} = default{{/HAS_NO_BRIDGED_FIELDS}};
+{{CONSTRUCTOR_NAME}}& operator=({{CONSTRUCTOR_NAME}}&&) = default;

@@ -1,0 +1,9 @@
+RECURSE(
+    dater2_print
+    dater_server
+    forums
+    parsertest
+    segviewer
+    time_t_2_date
+    url_dates
+)

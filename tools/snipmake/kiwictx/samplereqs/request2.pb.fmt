@@ -1,0 +1,408 @@
+@URL AT_DOC_KEY;
+@HTML AT_BLOB;
+@ConvHTML AT_BLOB;
+@Encoding AT_I8;
+@Language AT_UI8;
+@MimeType AT_UI8;
+@HttpModTime AT_I32;
+@LastAccess AT_I32;
+@LangRegion AT_UI8;
+@TextCRC AT_UI64;
+@RedirTarget AT_DOC_KEY;
+@RelCanonicalTarget AT_STRING;
+@HTTPCode AT_UI32;
+@SourceId AT_UI8;
+@Flags AT_UI32;
+@DocId AT_UI32;
+@AddSearchZones AT_BLOB;
+@DocAttrs AT_BLOB;
+@NumeratorZonesIndex AT_UI8;
+@Language2 AT_UI8;
+@AspamPrevTmuData AT_BLOB;
+@HTTPCodeTimestamp AT_UI32;
+@RedirTargetTimestamp AT_UI32;
+@IsFake AT_BOOL;
+@IsLogical AT_UI8;
+
+isFake = @IsFake;
+originalDoc = @HTML;
+convHtml = @ConvHTML;
+htmlText = (if (SizeOf(convHtml)>0 && (@IsLogical == true || @MimeType != 2)) then convHtml else originalDoc);
+flags = (if IsNull(@Flags) then AT_UI32(0) else @Flags);
+enc = (if (SizeOf(convHtml) > 0) then AT_I8(13) else @Encoding);
+lang = @Language; # $Language AT_UI8
+baseUrl = @URL;
+url = @URL;
+mime = @MimeType; # $MimeType AT_UI8
+docId = @DocId; # UI32
+hostId = 0; # UI32
+modTime = @HttpModTime; # $HttpModTime AT_I32
+indexDate = @LastAccess; # I32
+newDoc = 1; # BOOL
+oldTokens = 0; # BOOL
+indexAttrs = 1; # BOOL
+
+indexingSource = IndexingSourceTrigger_format1("export");
+parserChunks = ParserTrigger_format1(htmlText, baseUrl);
+recognizerResult = RecognizerTrigger_format1(parserChunks, baseUrl, enc);
+useRecognizer = 0;
+charset = (if useRecognizer then recognizerResult[0] else enc);
+language = (if useRecognizer then recognizerResult[1] else lang);
+language2 = (if @Language2 then @Language2 else (if useRecognizer then recognizerResult[2] else AT_UI8(0)));
+
+zoneIndex = (if (IsNull(@NumeratorZonesIndex)) then 0 else @NumeratorZonesIndex);
+numeratorResult = NumeratorTrigger_format2(parserChunks, charset, language, baseUrl, false, zoneIndex, indexAttrs);
+numeratorEvents = numeratorResult[0];
+zoneData = numeratorResult[1];
+
+directTextResult = DirectTextTrigger_format1(numeratorEvents, zoneData, docId, flags, charset, language, language2, indexDate, mime, url, @AddSearchZones);
+directTextEntries = directTextResult[0];
+
+lowFreqWords = LowFreqWordsTrigger_format1(numeratorEvents);
+simhashResult = SimhashTrigger_format1(numeratorEvents, zoneData);
+md5 = MD5Trigger_format1(numeratorEvents, zoneData);
+eshopResult = EShopTrigger_format1(numeratorEvents);
+extBreakResult = ExtBreakTrigger_format1(numeratorEvents, zoneData);
+poetryResult = PoetryTrigger_format1(numeratorEvents);
+shingles = ShingleTrigger_format1(numeratorEvents);
+shopResult = ShopTrigger_format1(numeratorEvents);
+synonymResult = SynonymTrigger_format1(numeratorEvents);
+titleResult = TitleTrigger_format1(numeratorEvents, zoneData);
+titleRawResult = TitleRawUTF8Trigger_format1(numeratorEvents, zoneData);
+textFeatureResult = TextFeatureTrigger_format1(url, numeratorEvents, zoneData);
+documentDateResult = DocumentDateTrigger_format1(url, numeratorEvents);
+segmentatorResult = SegmentatorTrigger_format1(url, numeratorEvents, zoneData);
+forumResult = ForumTrigger_format1(numeratorEvents, url, language, indexDate);
+alternateZones = AlternateZoneTrigger_format1(numeratorEvents);
+
+grammarResult = GrammarTrigger_format1(directTextEntries);
+dateExtractorResult = DateExtractorTrigger_format1(directTextEntries, segmentatorResult[4]);
+nameExtractorResult = NameExtractorTrigger_format1(directTextEntries);
+phoneNumberResult = PhoneNumberTrigger_format1(directTextEntries);
+numberResult = NumberTrigger_format1(directTextEntries);
+priceResult = PriceTrigger_format1(directTextEntries);
+titleFeatureResult = TitleFeatureTrigger_format1(directTextEntries);
+reviewResult = ReviewTrigger_format1(directTextEntries, segmentatorResult[4]);
+queryFactorResult = QueryFactorTrigger_format1(directTextEntries);
+freqCalculatorResult = FreqCalculatorTrigger_format1(directTextEntries);
+faviconResult = FaviconTrigger_format1(numeratorEvents, zoneData, url);
+mergedArcZones = MergeDataContainers_format1(language, url, modTime, charset, numeratorEvents, zoneData, directTextEntries, segmentatorResult[4]);
+links = LinkExtractorTrigger_format1(directTextEntries, segmentatorResult[4], mergedArcZones, freqCalculatorResult[0], dateExtractorResult[5], nameExtractorResult, phoneNumberResult[0], reviewResult[6], forumResult[4]);
+xpathMarkerResult = XPathMarkerTrigger_format1(url, numeratorEvents, language);
+
+simpleArc = SimpleTextArcTrigger_format2(numeratorEvents, segmentatorResult[4]);
+disambMask = DisambMaskTrigger_format1(directTextEntries);
+indexPortions = PortionTrigger_format2(directTextEntries, disambMask, @DocAttrs, segmentatorResult[4], alternateZones, directTextResult[1], freqCalculatorResult[0], dateExtractorResult[5], nameExtractorResult, phoneNumberResult[0], numberResult, priceResult[0], reviewResult[6], forumResult[4], indexingSource, mergedArcZones, links);
+
+footertrigrams = SegmentTrigramTrigger_format1(directTextEntries, segmentatorResult[4]);
+contactPagesResult = ContactPageFinderTrigger_format1(links);
+contactExtractorResult = ContactExtractorTrigger_format1(directTextResult[0], segmentatorResult[4], phoneNumberResult[0]);
+semanticData2JSONResult = SemanticData2JSONTrigger_format1(url, enc, numeratorEvents);
+tagArchiveResult = TagArchiveTrigger_format1(flags, indexDate, language, language2, mime, enc, url, originalDoc, convHtml, docId,
+documentDateResult, # RecD
+eshopResult[0], # Eshop
+eshopResult[1], # EshopV
+extBreakResult[0], # Breaks
+extBreakResult[1], # LongText
+footertrigrams,
+grammarResult[0], # Soft404
+grammarResult[1], # NumeralsPortion
+grammarResult[2], # ParticlesPortion
+grammarResult[3], # AdjPronounsPortion
+grammarResult[4], # AdvPronounsPortion
+grammarResult[5], # VerbsPortion
+grammarResult[6], # FemAndMasNounsPortion
+grammarResult[7], # PornoV
+poetryResult[0], # Poetry
+poetryResult[1], # Poetry2
+queryFactorResult[0], # IsComm
+queryFactorResult[1], # HasPayments
+queryFactorResult[2], # IsSEO
+queryFactorResult[3], # IsPorno
+reviewResult[0], # HasUserReviewsL
+reviewResult[1], # HasUserReviewsH
+reviewResult[2], # NumXPathUserReviews
+reviewResult[3], # LastXPathUserReviewDate
+reviewResult[4], # AverageXPathUserReviewRate
+reviewResult[5], # MaxXPathUserReviewUsefulness
+segmentatorResult[0], # SegmentAuxSpacesInText
+segmentatorResult[1], # SegmentAuxAlphasInText
+segmentatorResult[2], # SegmentContentCommasInText
+segmentatorResult[3], #SegmentWordPortionFromMainContent
+shopResult[0], # IsShop
+shopResult[1], # IsReview
+synonymResult[0], # Syn7bV
+synonymResult[1], # Syn8bV
+synonymResult[2], # Syn9aV
+synonymResult[3], # SynPercentBadWordPairs
+synonymResult[4], # SynNumBadWordPairs
+synonymResult[5], # NumLatinLetters
+textFeatureResult[0], # TextF
+textFeatureResult[1], # TextL
+textFeatureResult[2], # RusWordsInText
+textFeatureResult[3], # RusWordsInTitle
+textFeatureResult[4], # MeanWordLength
+textFeatureResult[5], # PercentWordsInLinks
+textFeatureResult[6], # PercentVisibleContent
+textFeatureResult[7], # PercentFreqWords
+textFeatureResult[8], # PercentUsedFreqWords
+textFeatureResult[9], # TrigramsProb
+textFeatureResult[10], # TrigramsCondProb
+titleFeatureResult[0], # TitleComm
+titleFeatureResult[1], # TitleBM25Ex
+titleResult[0], # Title
+titleResult[1], # TitleCRC
+forumResult[0], # FirstPostDate
+forumResult[1], # LastPostDate
+forumResult[2], # NumForumPosts
+forumResult[3], # NumForumAuthors
+lowFreqWords); # LowFreqWords
+
+MIME_UNKNOWN    = 0;
+MIME_TEXT       = 1;
+MIME_HTML       = 2;
+MIME_PDF        = 3;
+MIME_RTF        = 4;
+MIME_DOC        = 5;
+MIME_MPEG       = 6;
+MIME_XML        = 7;
+MIME_WML        = 8;
+MIME_SWF        = 9;
+MIME_XLS        = 10;
+MIME_PPT        = 11;
+MIME_IMAGE_JPG  = 12;
+MIME_IMAGE_PJPG = 13;
+MIME_IMAGE_PNG  = 14;
+MIME_IMAGE_GIF  = 15;
+MIME_DOCX       = 16;
+MIME_ODT        = 17;
+MIME_ODP        = 18;
+MIME_ODS        = 19;
+MIME_IMAGE_BMP  = 21;
+MIME_WAV        = 22;
+MIME_ARCHIVE    = 23;
+MIME_EXE        = 24;
+MIME_ODG        = 25;
+MIME_GZIP       = 26;
+MIME_XLSX       = 27;
+MIME_PPTX       = 28;
+MIME_JAVASCRIPT = 29;
+MIME_EPUB       = 30;
+MIME_TEX        = 31;
+content_data = (if (mime == MIME_PDF
+|| mime == MIME_RTF
+|| mime == MIME_DOC
+|| mime == MIME_XML
+|| mime == MIME_WML
+|| mime == MIME_XLS
+|| mime == MIME_PPT
+|| mime == MIME_DOCX
+|| mime == MIME_ODT
+|| mime == MIME_ODP
+|| mime == MIME_ODS
+|| mime == MIME_ARCHIVE
+|| mime == MIME_GZIP
+|| mime == MIME_XLSX
+|| mime == MIME_PPTX)
+then convHtml else originalDoc);
+
+tmuRecalcResult = TmuRecalc_format1(url, content_data, mime, enc, lang, indexDate, 0, modTime, @LastAccess);
+tmuCalcResult     = TmuCalc_format1(url, content_data, mime, enc, lang, indexDate, 0, modTime, @LastAccess, @AspamPrevTmuData);
+canUseAspamPrevTmuData = !IsNull(@AspamPrevTmuData);
+tmuData          = (if canUseAspamPrevTmuData then tmuCalcResult[0] else tmuRecalcResult[0]);
+aspamLastCalcRev = (if canUseAspamPrevTmuData then tmuCalcResult[1] else tmuRecalcResult[1]);
+deduceData = DeduceCalc_format1(url, tmuData, AT_BLOB(""));
+
+DocSize = SizeOf(htmlText);
+MaxFreq = OxygenMaxFreqUDF_format1(freqCalculatorResult[1]);
+remappedTextFeatures = TextFeaturesRemapTrigger_format2(
+      language
+    , @HTTPCode
+    , eshopResult[0] # Eshop
+    , eshopResult[1] # EshopV
+    , extBreakResult[0] # Breaks
+    , extBreakResult[1] # LongText
+    , forumResult[2] # NumForumPosts
+    , forumResult[3] # NumForumAuthors
+    , grammarResult[0] # Soft404
+    , grammarResult[1] # NumeralsPortion
+    , grammarResult[2] # ParticlesPortion
+    , grammarResult[3] # AdjPronounsPortion
+    , grammarResult[4] # AdvPronounsPortion
+    , grammarResult[5] # VerbsPortion
+    , grammarResult[6] # FemAndMasNounsPortion
+    , grammarResult[7] # PornoV
+    , poetryResult[0] # Poetry
+    , poetryResult[1] # Poetry2
+    , queryFactorResult[0] # IsComm
+    , queryFactorResult[1] # HasPayments
+    , queryFactorResult[2] # IsSEO
+    , queryFactorResult[3] # IsPorno
+    , segmentatorResult[0] # SegmentAuxSpacesInText
+    , segmentatorResult[1] # SegmentAuxAlphasInText
+    , segmentatorResult[2] # SegmentContentCommasInText
+    , segmentatorResult[3] # SegmentWordPortionFromMainContent
+    , shopResult[0] # IsShop
+    , shopResult[1] # IsReview
+    , synonymResult[0] # Syn7bV
+    , synonymResult[1] # Syn8bV
+    , synonymResult[2] # Syn9aV
+    , synonymResult[3] # SynPercentBadWordPairs
+    , synonymResult[4] # SynNumBadWordPairs
+    , synonymResult[5] # NumLatinLetters
+    , textFeatureResult[0] # TextF
+    , textFeatureResult[1] # TextL
+    , textFeatureResult[2] # RusWordsInText
+    , textFeatureResult[3] # RusWordsInTitle
+    , textFeatureResult[4] # MeanWordLength
+    , textFeatureResult[5] # PercentWordsInLinks
+    , textFeatureResult[6] # PercentVisibleContent
+    , textFeatureResult[7] # PercentFreqWords
+    , textFeatureResult[8] # PercentUsedFreqWords
+    , textFeatureResult[9] # TrigramsProb
+    , textFeatureResult[10] # TrigramsCondProb
+    , titleFeatureResult[0] # TitleComm
+    , titleFeatureResult[1] # TitleBM25Ex
+    , "" # IsEbookForRead
+    , "" # SmartSoft404
+    , simhashResult[1] # simhash
+    , DocSize
+    , reviewResult[1] # HasUserReviewsH
+    , freqCalculatorResult[1]
+    , MaxFreq
+    , documentDateResult # RecD
+    , forumResult[0] # FirstPostDate
+    , forumResult[1] # LastPostDate
+    , dateExtractorResult[0] # DaterDate
+    , indexDate
+);
+
+nevascaResults = NevascaTrigger_format1(url, indexPortions[1]);
+nevascaLinks = NevascaLinksTrigger_format1(indexPortions[1]);
+newLinks = NevascaOLDConverterTrigger_format1(url, links);
+
+relCanonicalTarget = (if IsNull(@RelCanonicalTarget) then "" else @RelCanonicalTarget);
+canBeParsed = CanBeParsedInternal_format2(@URL, @HTTPCode, @HTML, @RedirTarget, @MimeType, @HTTPCodeTimestamp, @RedirTargetTimestamp);
+
+sentenceLengths = OxygenSentenceLengthsUDF_format1(directTextEntries);
+
+return
+(if canBeParsed then SizeOf(originalDoc) else NULL) as HtmlTextSize,
+(if canBeParsed then charset else NULL) as Charset,
+(if canBeParsed then @Encoding else NULL) as Encoding,
+(if canBeParsed then language else NULL) as Language,
+(if canBeParsed then url else NULL) as Url,
+(if canBeParsed then mime else NULL) as Mime,
+(if canBeParsed then modTime else NULL) as ModTime,
+(if canBeParsed then indexDate else NULL) as IndexDate,
+(if canBeParsed then @LangRegion else NULL) as LangRegion,
+(if canBeParsed then @TextCRC else NULL) as TextCRC,
+(if canBeParsed then relCanonicalTarget else NULL) as RelCanonicalTarget,
+(if canBeParsed then @HTTPCode else NULL) as HTTPCode,
+(if canBeParsed then @SourceId else NULL) as SourceId,
+(if canBeParsed then @Flags else NULL) as Flags,
+(if canBeParsed then indexPortions[0] else NULL) as keyinv,
+(if canBeParsed then indexPortions[1] else NULL) as arc,
+(if canBeParsed then md5 else NULL) as md5,
+(if canBeParsed then links else NULL) as links,
+(if canBeParsed then shingles else NULL) as Shingles,
+(if canBeParsed then tagArchiveResult else NULL) as tag,
+(if canBeParsed then simhashResult[0] else NULL) as SimhashVersion,
+(if canBeParsed then simhashResult[1] else NULL) as Simhash,
+(if canBeParsed then simhashResult[2] else NULL) as SimhashDocLength,
+(if canBeParsed then simhashResult[3] else NULL) as SimhashTitleHash,
+(if canBeParsed then documentDateResult else NULL) as RecD,
+(if canBeParsed then eshopResult[1] else NULL) as EshopV,
+(if canBeParsed then extBreakResult[0] else NULL) as Breaks,
+(if canBeParsed then extBreakResult[1] else NULL) as LongText,
+(if canBeParsed then footertrigrams else NULL) as FooterTrigrams,
+(if canBeParsed then grammarResult[0] else NULL) as Soft404,
+(if canBeParsed then grammarResult[1] else NULL) as NumeralsPortion,
+(if canBeParsed then grammarResult[2] else NULL) as ParticlesPortion,
+(if canBeParsed then grammarResult[3] else NULL) as AdjPronounsPortion,
+(if canBeParsed then grammarResult[4] else NULL) as AdvPronounsPortion,
+(if canBeParsed then grammarResult[5] else NULL) as VerbsPortion,
+(if canBeParsed then grammarResult[6] else NULL) as FemAndMasNounsPortion,
+(if canBeParsed then grammarResult[7] else NULL) as PornoV,
+(if canBeParsed then poetryResult[0] else NULL) as Poetry,
+(if canBeParsed then poetryResult[1] else NULL) as Poetry2,
+(if canBeParsed then queryFactorResult[0] else NULL) as IsComm,
+(if canBeParsed then queryFactorResult[1] else NULL) as HasPayments,
+(if canBeParsed then queryFactorResult[2] else NULL) as IsSEO,
+(if canBeParsed then queryFactorResult[3] else NULL) as IsPorno,
+(if canBeParsed then reviewResult[0] else NULL) as HasUserReviewsL,
+(if canBeParsed then reviewResult[1] else NULL) as HasUserReviewsH,
+(if canBeParsed then reviewResult[2] else NULL) as NumXPathUserReviews,
+(if canBeParsed then reviewResult[3] else NULL) as LastXPathUserReviewDate,
+(if canBeParsed then reviewResult[4] else NULL) as AverageXPathUserReviewRate,
+(if canBeParsed then reviewResult[5] else NULL) as MaxXPathUserReviewUsefulness,
+(if canBeParsed then segmentatorResult[0] else NULL) as SegmentAuxSpacesInText,
+(if canBeParsed then segmentatorResult[1] else NULL) as SegmentAuxAlphasInText,
+(if canBeParsed then segmentatorResult[2] else NULL) as SegmentContentCommasInText,
+(if canBeParsed then segmentatorResult[3] else NULL) as SegmentWordPortionFromMainContent,
+(if canBeParsed then shopResult[0] else NULL) as IsShop,
+(if canBeParsed then shopResult[1] else NULL) as IsReview,
+(if canBeParsed then synonymResult[0] else NULL) as Syn7bV,
+(if canBeParsed then synonymResult[1] else NULL) as Syn8bV,
+(if canBeParsed then synonymResult[2] else NULL) as Syn9aV,
+(if canBeParsed then synonymResult[3] else NULL) as SynPercentBadWordPairs,
+(if canBeParsed then synonymResult[4] else NULL) as SynNumBadWordPairs,
+(if canBeParsed then synonymResult[5] else NULL) as NumLatinLetters,
+(if canBeParsed then textFeatureResult[0] else NULL) as TextF,
+(if canBeParsed then textFeatureResult[1] else NULL) as TextL,
+(if canBeParsed then textFeatureResult[2] else NULL) as RusWordsInText,
+(if canBeParsed then textFeatureResult[3] else NULL) as RusWordsInTitle,
+(if canBeParsed then textFeatureResult[4] else NULL) as MeanWordLength,
+(if canBeParsed then textFeatureResult[5] else NULL) as PercentWordsInLinks,
+(if canBeParsed then textFeatureResult[6] else NULL) as PercentVisibleContent,
+(if canBeParsed then textFeatureResult[7] else NULL) as PercentFreqWords,
+(if canBeParsed then textFeatureResult[8] else NULL) as PercentUsedFreqWords,
+(if canBeParsed then textFeatureResult[9] else NULL) as TrigramsProb,
+(if canBeParsed then textFeatureResult[10] else NULL) as TrigramsCondProb,
+(if canBeParsed then titleFeatureResult[0] else NULL) as TitleComm,
+(if canBeParsed then titleFeatureResult[1] else NULL) as TitleBM25Ex,
+(if canBeParsed then titleResult[0] else NULL) as Title,
+(if canBeParsed then titleResult[1] else NULL) as TitleCRC,
+(if canBeParsed then forumResult[0] else NULL) as FirstPostDate,
+(if canBeParsed then forumResult[1] else NULL) as LastPostDate,
+(if canBeParsed then forumResult[2] else NULL) as NumForumPosts,
+(if canBeParsed then forumResult[3] else NULL) as NumForumAuthors,
+(if canBeParsed then lowFreqWords else NULL) as LowFreqWords,
+(if canBeParsed || isFake then tmuData else NULL) as TmuData,
+(if canBeParsed then remappedTextFeatures[7] else NULL) as RemappedTextFeatures,
+(if canBeParsed then eshopResult[0] else NULL) as Eshop,
+(if canBeParsed then phoneNumberResult[1] else NULL) as Phones,
+(if canBeParsed then priceResult[1] else NULL) as Prices,
+(if canBeParsed then faviconResult[0] else NULL) as FaviconUrl,
+(if canBeParsed then faviconResult[1] else NULL) as IsDefaultFavicon,
+(if canBeParsed then contactPagesResult else NULL) as ContactPages,
+(if canBeParsed then contactExtractorResult else NULL) as Contacts,
+(if canBeParsed then freqCalculatorResult[1] else NULL) as FreqData,
+(if canBeParsed then nevascaResults[0] else NULL) as OwnerId,
+(if canBeParsed then nevascaResults[1] else NULL) as PathId,
+(if canBeParsed then nevascaResults[2] else NULL) as NewShingles,
+(if canBeParsed then nevascaLinks else NULL) as DocRefs,
+(if canBeParsed then newLinks else NULL) as NewLinks,
+(if canBeParsed then dateExtractorResult[0] else NULL) as DaterDate,
+(if canBeParsed then dateExtractorResult[2] else NULL) as DaterStats,
+(if canBeParsed then dateExtractorResult[3] else NULL) as DaterStatsDM,
+(if canBeParsed then dateExtractorResult[4] else NULL) as DaterStatsMY,
+(if canBeParsed then sentenceLengths else NULL) as SentenceLengths,
+(if canBeParsed then language2 else NULL) as Language2,
+(if canBeParsed then nameExtractorResult else NULL) as NameExtractorResult,
+(if canBeParsed then aspamLastCalcRev else NULL) as AspamLastCalcRev,
+(if canBeParsed then titleRawResult else NULL) as TitleRawUTF8,
+(if canBeParsed then docId else NULL) as DocId,
+(if canBeParsed then simhashResult[4] else NULL) as SimhashHash,
+(if canBeParsed then semanticData2JSONResult else NULL) as SemanticData2JSON,
+(if canBeParsed then remappedTextFeatures[0] else NULL) as DocDateMonth,
+(if canBeParsed then remappedTextFeatures[1] else NULL) as DocDateYear,
+(if canBeParsed then remappedTextFeatures[2] else NULL) as DaterYear,
+(if canBeParsed then remappedTextFeatures[3] else NULL) as DaterMonth,
+(if canBeParsed then remappedTextFeatures[4] else NULL) as DaterDay,
+(if canBeParsed then remappedTextFeatures[5] else NULL) as DaterFrom,
+(if canBeParsed then remappedTextFeatures[6] else NULL) as DaterFrom1,
+canBeParsed as CanBeParsed,
+(if canBeParsed then deduceData else NULL) as DeduceData,
+(if canBeParsed then htmlText else NULL) as HtmlText,
+(if canBeParsed then simpleArc else NULL) as SimpleArc;

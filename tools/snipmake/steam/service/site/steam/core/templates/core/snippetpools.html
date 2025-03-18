@@ -1,0 +1,183 @@
+{% extends "core/index.html" %}
+{% load i18n %}
+
+{% block Title %}{% trans 'Snippet pools' %}{% endblock %}
+{% block Scripts %}
+    <script>
+
+        $(function () {
+            $("#tabs").tabs();
+            $("#serp_link").click(function () {
+                                $("#serp_link").parent().addClass("active");
+                                $("#upload_link").parent().removeClass("active");
+                                $("#id_upload_type").val("serp");
+                                return false;
+                             });
+            $("#upload_link").click(function () {
+                                $("#upload_link").parent().addClass("active");
+                                $("#serp_link").parent().removeClass("active");
+                                $("#id_upload_type").val("upload");
+                                return false;
+                             });
+            $("#id_host").change(function () {
+                                var host = $("#id_host").val();
+                                if (host != "Choose") {
+                                    $("#id_url").val(host);
+                                    $("#id_wizard_url").val("xmlsearch.hamster.yandex.ru");
+                                } else {
+                                    $("#id_url").val("");
+                                    $("#id_wizard_url").val("");
+                                }
+                             });
+            $("#{{ upload_type }}_link").click();
+          });
+
+    </script>
+{% endblock %}
+
+{% block Caption %}{% trans 'Snippet pools' %}{% endblock %}
+{% block Content %}
+    {% load popup %}
+    {% popup popup_info_struct %}
+        <div class="control-group">
+            {{ form.non_field_errors }}
+        </div>
+        <div class="control-group">
+            {{ form.title.errors }}
+            <label class="control-label" for="id_title">{{ form.title.label }}:</label>
+            <div class="controls">
+                {{ form.title }}
+            </div>
+        </div>
+        <div class="control-group">
+            {{ form.default_tpl.errors }}
+            <label class="control-label" for="id_default_tpl">{{ form.default_tpl.label }}:</label>
+            <div class="controls">
+                {{ form.default_tpl }}
+            </div>
+        </div>
+        <div id="tabs">
+            <ul class="nav nav-pills">
+                <li {% if upload_type == 'serp' %} class="active" {% endif %}>
+                    <a id="serp_link" href="#serp">{% trans 'Download serp' %}</a>
+                </li>
+                <li {% if upload_type == 'upload' %} class="active" {% endif %}>
+                    <a id="upload_link" href="#upload">{% trans 'Upload pool' %}</a>
+                </li>
+            </ul>
+            <div id="serp">
+                <div class="control-group">
+                    {{ form.querybin.errors }}
+                    <label class="control-label" for="id_querybin">{{ form.querybin.label }}:</label>
+                    <div class="controls">
+                        {{ form.querybin }}
+                    </div>
+                </div>
+                <div class="control-group">
+                    {{ form.host.errors }}
+                    <label class="control-label" for="id_host">{{ form.host.label }}:</label>
+                    <div class="controls">
+                        {{ form.host }}
+                    </div>
+                </div>
+                <div class="control-group">
+                    {{ form.url.errors }}
+                    <label class="control-label" for="id_url">{{ form.url.label }}:</label>
+                    <div class="controls">
+                        {{ form.url }}
+                    </div>
+                </div>
+                <div class="control-group">
+                    {{ form.wizard_url.errors }}
+                    <label class="control-label" for="id_wizard_url">{{ form.wizard_url.label }}:</label>
+                    <div class="controls">
+                        {{ form.wizard_url }}
+                    </div>
+                </div>
+                <div class="control-group">
+                    {{ form.cgi_params.errors }}
+                    <label class="control-label" for="id_cgi_params">{{ form.cgi_params.label }}:</label>
+                    <div class="controls">
+                        {{ form.cgi_params }}
+                    </div>
+                </div>
+            </div>
+            <div id="upload">
+                <div class="control-group">
+                    {{ form.pool_file.errors }}
+                    <label class="control-label" for="id_pool_file">{{ form.pool_file.label }}:</label>
+                    <div class="controls">
+                        {{ form.pool_file }}
+                    </div>
+                </div>
+                <div class="control-group">
+                    {{ form.json_pool.errors }}
+                    <label class="control-label" for="id_json_pool">{{ form.json_pool.label }}</label>
+                    <div class="controls">
+                        {{ form.json_pool }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {{ form.upload_type }}
+    {% endpopup %}
+
+    {% if snippet_pools %}
+        {% load paginator %}
+        {% url 'core:snippetpools_default' as page_url %}
+        {% paginator page_url pages as pg %}
+
+        {{ pg }}
+
+        <table class="table table-striped table-condensed table-fixed table-centered">
+            <colgroup>
+                <col width="2">
+                <col width="1">
+                <col width="1">
+                <col width="1">
+                <col width="1">
+                <col width="1">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th>{% trans 'Pool title' %}</th>
+                    <th>{% trans 'Default template' %}</th>
+                    <th>{% trans 'Snippet count' %}</th>
+                    <th>{% trans 'Upload date' %}</th>
+                    <th>{% trans 'User' %}</th>
+                    <th>{% trans 'Action' %}</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for pool in snippet_pools %}
+                <tr>
+                    <td>
+                        <a href="{% url 'core:snippets_default' pool.storage_id %}">{{ pool.title }}</a>
+                    </td>
+                    <td>{{ pool.tpl_str }}</td>
+                    <td>{{ pool.count }}</td>
+                    <td>{{ pool.upload_time }}</td>
+                    <td>{{ pool.user.login }}</td>
+                    <td>
+                        <a href="#"> {% trans 'Export' %}</a>
+                        {% if pool.can_delete %}
+                            <br />
+                            <a data-href="{% url 'core:delete_snippetpool' pool.storage_id pages.cur_page %}"
+                               data-toggle="confirmation"
+                               data-title="{% trans 'Are you sure?' %}"
+                               data-btnCancelLabel="{% trans 'No' %}"
+                               data-btnOkLabel="{% trans 'Yes' %}"
+                               data-btnOkClass="btn-danger">{% trans 'Delete' %}</a>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+
+        {{ pg }}
+
+    {% else %}
+        <p>{% trans 'No snippet pools are available.' %}</p>
+    {% endif %}
+{% endblock %}

@@ -1,0 +1,463 @@
+#!/bin/sh
+
+# PROVIDE: clustermaster
+# REQUIRE: NETWORKING DAEMON LOGIN FILESYSTEMS SERVERS
+# KEYWORD: nojail
+
+#
+# $Id$
+#
+
+# be able to find dot utility
+export PATH=/usr/local/bin:/Berkanavt/bin:$PATH
+
+. /etc/rc.subr
+
+name="clustermaster"
+rcvar=`set_rcvar`
+: ${clustermaster_enable:="NO"}
+extra_commands="masterstop masterstart masterrestart masterresurrect workerstop workerstart workerrestart workerresurrect resurrect check"
+start_cmd="start_all"
+stop_cmd="stop_all"
+resurrect_cmd="resurrect_all"
+masterstop_cmd="stop_masters"
+masterstart_cmd="start_masters"
+masterrestart_cmd="restart_masters"
+masterresurrect_cmd="resurrect_masters"
+workerstop_cmd="stop_workers"
+workerstart_cmd="start_workers"
+workerrestart_cmd="restart_workers"
+workerresurrect_cmd="resurrect_workers"
+check_cmd="check"
+
+export PATH="${PATH}:/usr/local/bin"
+
+: ${clustermaster_configdir="/usr/local/etc/clustermaster"}
+: ${lock_file="/var/tmp/clustermaster.rc.d.lock"}
+
+# Template for new instances
+# <name> (responsibles@)
+#   master: <master host>
+#   workers: <workers hosts>
+# cm_FILLME_user="REQUIRED"
+# cm_FILLME_authkey=""
+#
+# cm_FILLME_worker_controlport="REQUIRED"
+# cm_FILLME_worker_httpport=""
+# cm_FILLME_worker_extraargs=""
+# cm_FILLME_worker_logfile=""
+# cm_FILLME_worker_pidfile="REQUIRED"
+# cm_FILLME_worker_program="REQUIRED"
+# cm_FILLME_worker_vardir="REQUIRED"
+# cm_FILLME_worker_solver=""
+# cm_FILLME_worker_priority=""
+#
+# cm_FILLME_master_extraargs=""
+# cm_FILLME_master_hostcfg=""
+# cm_FILLME_master_hostlist=""
+# cm_FILLME_master_logfile=""
+# cm_FILLME_master_pidfile="REQUIRED"
+# cm_FILLME_master_program="REQUIRED"
+# cm_FILLME_master_script="REQUIRED"
+# cm_FILLME_master_httpport="REQUIRED"
+# cm_FILLME_master_ro_httpport=""
+# cm_FILLME_master_name=""
+# cm_FILLME_master_disable_graph=""
+
+check() {
+    set | grep ^clustermaster_ | sort
+    set | grep ^cm_ | sort
+}
+
+parse_configs() {
+    local _allvars='
+        user
+        authkey
+
+        worker_controlport
+        worker_httpport
+        worker_extraargs
+        worker_logfile
+        worker_pidfile
+        worker_program
+        worker_vardir
+        worker_solver
+        worker_priority
+        worker_env
+
+        master_extraargs
+        master_hostcfg
+        master_hostlist
+        master_logfile
+        master_pidfile
+        master_program
+        master_script
+        master_vardir
+        master_httpport
+        master_ro_httpport
+        master_name
+        master_env
+        proxy_http_timeout
+    '
+
+    cm_all_instances=''
+
+    test -z "$clustermaster_configdir" -o ! -d "$clustermaster_configdir" && return
+
+    for file in $(find ${clustermaster_configdir} -name '*.conf'); do
+        _conf="$(cat $file | perl -lne 'm/^\s*([a-z_]+="[\s\w-\/.,=:]*")?\s*(?:#.*)?$/ || die "Bad syntax in file '"$file"': $_"; print $1 if $1')"
+        test $? -ne 0 && continue
+        _instance=$(basename -s .conf $file | tr -Cd '[a-z0-9_-]')
+        cm_all_instances="$cm_all_instances $_instance"
+        for var in $_allvars; do
+            _value=$(printf '%s' "$_conf" | grep "^$var=" | sed -e 's/^[^=]*=//; s/^"//; s/"$//')
+            eval cm_${_instance}_${var}=\"\$_value\"
+        done
+    done
+}
+
+lock_run() {
+    touch $lock_file
+    chmod 0777 $lock_file
+    (flock 9; $@) 9>$lock_file
+    rm -f $lock_file
+}
+
+unlock_run() {
+    ($@) 9>&-
+}
+
+echo_resurrect() {
+    if [ -n "$resurrect" ]; then
+        echo "$@"
+    fi
+}
+
+echo_noresurrect() {
+    if [ -z "$resurrect" ]; then
+        echo "$@"
+    fi
+}
+
+init_variables() {
+    _i="$1"
+
+    if [ -z "$_i" ]; then
+        warn "init_variables: you must specify an instance"
+        return
+    fi
+
+    eval _user=\"\$cm_${_i}_user\"
+    eval _authkey=\"\$cm_${_i}_authkey\"
+    eval _worker_controlport=\"\$cm_${_i}_worker_controlport\"
+    eval _worker_httpport=\"\$cm_${_i}_worker_httpport\"
+    eval _worker_extraargs=\"\$cm_${_i}_worker_extraargs\"
+    eval _worker_logfile=\"\$cm_${_i}_worker_logfile\"
+    eval _worker_pidfile=\"\$cm_${_i}_worker_pidfile\"
+    eval _worker_program=\"\$cm_${_i}_worker_program\"
+    eval _worker_vardir=\"\$cm_${_i}_worker_vardir\"
+    eval _worker_solver=\"\$cm_${_i}_worker_solver\"
+    eval _worker_priority=\"\$cm_${_i}_worker_priority\"
+    eval _worker_env=\"\$cm_${_i}_worker_env\"
+
+    eval _master_extraargs=\"\$cm_${_i}_master_extraargs\"
+    eval _master_hostcfg=\"\$cm_${_i}_master_hostcfg\"
+    eval _master_hostlist=\"\$cm_${_i}_master_hostlist\"
+    eval _master_logfile=\"\$cm_${_i}_master_logfile\"
+    eval _master_pidfile=\"\$cm_${_i}_master_pidfile\"
+    eval _master_program=\"\$cm_${_i}_master_program\"
+    eval _master_script=\"\$cm_${_i}_master_script\"
+    eval _master_vardir=\"\$cm_${_i}_master_vardir\"
+    eval _master_httpport=\"\$cm_${_i}_master_httpport\"
+    eval _master_urlprefix=\"\$cm_${_i}_master_urlprefix\"
+    eval _master_ro_httpport=\"\$cm_${_i}_master_ro_httpport\"
+    eval _master_ro_urlprefix=\"\$cm_${_i}_master_ro_urlprefix\"
+    eval _master_name=\"\$cm_${_i}_master_name\"
+    eval _master_env=\"\$cm_${_i}_master_env\"
+    eval _master_disable_graph=\"\$cm_${_i}_master_disable_graph\"
+    eval _proxy_http_timeout=\"\$cm_${_i}_proxy_http_timeout\"
+}
+
+start_workers() {
+    lock_run start_workers_impl
+}
+
+start_workers_impl() {
+    test -z "${clustermaster_workers}" && return
+
+    cd /
+    echo_noresurrect -n "Starting clustermaster workers:"
+    for _worker in ${clustermaster_workers}
+    do
+        init_variables ${_worker}
+
+        # check variables
+        test -z "${_user}" && err 3 "${name}: No user defined for ${_worker}"
+        test -z "${_worker_controlport}" && err 3 "${name}: No worker control port defined for ${_worker}"
+        test -z "${_worker_pidfile}" && err 3 "${name}: No worker pidfile defined for ${_worker}"
+        test -z "${_worker_program}" && err 3 "${name}: No worker program defined for ${_worker}"
+        test -z "${_worker_vardir}" && err 3 "${name}: No worker vardir defined for ${_worker}"
+
+        # construct command line
+        local _commandline="$(printf '%s' "${_worker_env}" | awk 'BEGIN{RS=",";ORS=" "}/^[A-Z][A-Z0-9_]*=.*$/{print $0}')"
+        _commandline="${_commandline} ${_worker_program} -v ${_worker_vardir} -P ${_worker_pidfile} -w ${_worker_controlport}"
+        test -n "${_authkey}" && _commandline="${_commandline} -a ${_authkey}"
+        test -n "${_worker_logfile}" && _commandline="${_commandline} -l ${_worker_logfile}"
+        test -n "${_worker_solver}" && _commandline="${_commandline} -r ${_worker_solver}"
+        test -n "${_worker_priority}" && _commandline="${_commandline} -p ${_worker_priority}"
+        test -n "${_worker_httpport}" && _commandline="${_commandline} -h ${_worker_httpport}"
+        _commandline="${_commandline} ${_worker_extraargs}"
+
+        # change user if needed
+        _commandline="su ${_user} -c 'sh -c \"${_commandline}\"'"
+
+        # check if it already runs
+        _pid=`check_pidfile $_worker_pidfile $_worker_program`
+        if [ ! -z "$_pid" ]; then
+            echo_noresurrect -n " (${_worker} already running? (pid=$_pid))"
+            continue
+        else
+            if [ -n "$resurrect" ]; then
+                # resurrect only after unclean shutdown (pid file not removed)
+                if [ -e $_worker_pidfile ]; then
+                    echo "Resurrected worker ${_worker}!"
+                else
+                    continue
+                fi
+            fi
+        fi
+
+        debug "clustermaster_start: ${_commandline}"
+        ( # subshell
+            # prepare environement
+            umask 0002;
+            eval `limits -eB -U "${_user}" | sed -e 's|;$| 2>/dev/null&|'`;
+            # run worker
+            unlock_run eval ${_commandline}
+        )
+
+        # check status
+        if [ "$?" -eq 0 ]; then
+            echo_noresurrect -n " ${_worker}"
+        else
+            warn "${_worker}: cannot start"
+        fi
+    done
+    echo_noresurrect '.'
+}
+
+start_masters() {
+    lock_run start_masters_impl
+}
+
+start_masters_impl() {
+    test -z "${clustermaster_masters}" && return
+
+    cd /
+    echo_noresurrect -n "Starting clustermaster masters:"
+    for _master in ${clustermaster_masters}
+    do
+        init_variables ${_master}
+
+        # check variables
+        test -z "${_user}" && err 3 "${name}: No user defined for ${_master}"
+        test -z "${_worker_controlport}" && err 3 "${name}: No worker control port defined for ${_master}"
+
+        test -z "${_master_script}" && err 3 "${name}: No script defined for ${_master}"
+        test -z "${_master_pidfile}" && err 3 "${name}: No master pidfile defined for ${_master}"
+        test -z "${_master_program}" && err 3 "${name}: No master program defined for ${_master}"
+        test -z "${_master_httpport}" && err 3 "${name}: No master HTTP port defined for ${_master}"
+
+        # construct command line
+        local _commandline="$(printf '%s' "${_master_env}" | awk 'BEGIN{RS=",";ORS=" "}/^[A-Z][A-Z0-9_]*=.*$/{print $0}')"
+        _commandline="${_commandline} ${_master_program} -P ${_master_pidfile} -h ${_master_httpport} -w ${_worker_controlport} -s ${_master_script}"
+        test -n "${_authkey}" && _commandline="${_commandline} -a ${_authkey}"
+        test -n "${_master_logfile}" && _commandline="${_commandline} -l ${_master_logfile}"
+        test -n "${_master_hostcfg}" && _commandline="${_commandline} -c ${_master_hostcfg}"
+        test -n "${_master_hostlist}" && _commandline="${_commandline} -C ${_master_hostlist}"
+        test -n "${_master_ro_httpport}" && _commandline="${_commandline} -H ${_master_ro_httpport}"
+        # TODO: this is legacy; remove when all masters updated
+        test -n "${_master_vardir}" && _commandline="${_commandline} -v ${_master_vardir}"
+        # TODO: this is legacy; remove when all masters updated
+        test -n "${_master_urlprefix}" && _commandline="${_commandline} -u ${_master_urlprefix}"
+        # TODO: this is legacy; remove when all masters updated
+        test -n "${_master_ro_urlprefix}" && _commandline="${_commandline} -U ${_master_ro_urlprefix}"
+
+        test -n "${_master_name}" && _commandline="${_commandline} -n \\\"${_master_name}\\\""
+        test -n "${_master_disable_graph}" && _commandline="${_commandline} -G"
+
+        test -n "${_proxy_http_timeout}" && _commandline="${_commandline} --proxy-http-timeout ${_proxy_http_timeout}"
+        _commandline="${_commandline} ${_master_extraargs}"
+
+        # change user if needed
+        _commandline="su ${_user} -c 'sh -c \"${_commandline}\"'"
+
+        # check if it already runs
+        _pid=`check_pidfile $_master_pidfile $_master_program`
+        if [ ! -z "$_pid" ]; then
+            # already running
+            echo_noresurrect -n " (${_master} already running? (pid=$_pid))"
+            continue
+        else
+            if [ -n "$resurrect" ]; then
+                # resurrect only after unclean shutdown (pid file is left)
+                if [ -e $_master_pidfile ]; then
+                    echo "Resurrected master ${_master}!"
+                else
+                    continue
+                fi
+            fi
+        fi
+
+        debug "clustermaster_start: ${_commandline}"
+        ( # subshell
+            # prepare environement
+            umask 0002;
+            eval `limits -eB -U "${_user}" | sed -e 's|;$| 2>/dev/null&|'`;
+            # run master
+            unlock_run eval ${_commandline}
+        )
+
+        # check status
+        if [ "$?" -eq 0 ]; then
+            echo_noresurrect -n " ${_master}"
+        else
+            warn "${_master}: cannot start"
+        fi
+    done
+    echo_noresurrect '.'
+}
+
+stop_workers() {
+    lock_run stop_workers_impl
+}
+
+stop_workers_impl() {
+    test -z "${clustermaster_workers}" && return
+
+    _all_pids=
+    _all_pidfiles=
+
+    echo -n "Stopping clustermaster workers:"
+    for _worker in ${clustermaster_workers}
+    do
+        init_variables ${_worker}
+
+        _pid=`check_pidfile $_worker_pidfile $_worker_program`
+        if [ -z "$_pid" ]; then
+            echo -n " (${_worker} not running?)"
+            continue
+        fi
+
+        if su -m ${_user} -c "kill -TERM $_pid"; then
+            _all_pids="$_all_pids $_pid"
+            _all_pidfiles="$_all_pidfiles $_worker_pidfile"
+            echo -n " ${_worker}"
+        else
+            echo -n " (couldn't kill ${_worker})"
+        fi
+    done
+    echo '.'
+
+    wait_for_pids $_all_pids
+    rm -f $_all_pidfiles
+}
+
+stop_masters() {
+    lock_run stop_masters_impl
+}
+
+stop_masters_impl() {
+    test -z "${clustermaster_masters}" && return
+
+    _all_pids=
+    _all_pidfiles=
+
+    echo -n "Stopping clustermaster masters:"
+    for _master in ${clustermaster_masters}
+    do
+        init_variables ${_master}
+
+        _pid=`check_pidfile $_master_pidfile $_master_program`
+        if [ -z "$_pid" ]; then
+            echo -n " (${_master} not running?)"
+            continue
+        fi
+
+        if su -m ${_user} -c "kill -TERM $_pid"; then
+            _all_pids="$_all_pids $_pid"
+            _all_pidfiles="$_all_pidfiles $_master_pidfile"
+            echo -n " ${_master}"
+        else
+            echo -n " (couldn't kill ${_master})"
+        fi
+    done
+    echo '.'
+
+    wait_for_pids $_all_pids
+    rm -f $_all_pidfiles
+}
+
+resurrect_masters() {
+    resurrect=1
+    start_masters
+}
+
+resurrect_workers() {
+    resurrect=1
+    start_workers
+}
+
+resurrect_all() {
+    resurrect_workers
+    resurrect_masters
+}
+
+start_all() {
+    start_workers
+    start_masters
+}
+
+stop_all() {
+    stop_workers
+    stop_masters
+}
+
+restart_workers() {
+    stop_workers
+    sleep 1 # give sockets some time to die
+    start_workers
+}
+
+restart_masters() {
+    stop_masters
+    sleep 1 # give sockets some time to die
+    start_masters
+}
+
+load_rc_config $name
+
+parse_configs
+
+cmd="$1"
+if [ $# -gt 0 ]; then
+    shift
+fi
+if [ -n "$*" ]; then
+    _instances=''
+
+    for _i in $*; do
+        if printf "%s" "$cm_all_instances" | grep -Eq "\b$_i\b"; then
+            _instances="$_instances $_i"
+        else
+            warn "There is no configuration for instance \"$_i\""
+            warn "Configurations found for instances: $cm_all_instances"
+        fi
+    done
+
+    test -z "$_instances" && exit 3
+
+    clustermaster_workers="$_instances"
+    clustermaster_masters="$_instances"
+fi
+run_rc_command "${cmd}"

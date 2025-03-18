@@ -1,0 +1,1 @@
+{{#CUSTOM_TYPE}}decode({{/CUSTOM_TYPE}}proto{{PB_TYPE_NAME}}.{{PB_FIELD_NAME}}(){{#CUSTOM_TYPE}}){{/CUSTOM_TYPE}}

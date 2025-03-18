@@ -1,0 +1,3 @@
+RECURSE (
+    normalize_query
+)

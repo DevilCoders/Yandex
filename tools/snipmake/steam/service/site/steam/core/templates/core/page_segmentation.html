@@ -1,0 +1,126 @@
+{% extends "core/index.html" %}
+{% load i18n %}
+{% load hidereferer %}
+{% load unquote %}
+{% load staticfiles %}
+{% load yauth %}
+
+{% block Title %}{% trans 'Page segmentation' %}{% if stage %}: {% trans stage %}{% endif %}{% endblock %}
+{% block Scripts %}
+    <script type="text/javascript" src="{% static 'core/js/highlight.js' %}"></script>
+    <script type="text/javascript" src="{% static 'core/js/page_segmentation_tree_processing.js' %}"></script>
+    <script type="text/javascript" src="{% static 'core/js/page_segmentation.js' %}"></script>
+    <script>
+        {% if stage != 'diff' %}
+            {% include 'core/timer_script.js' %}
+        {% endif %}
+        {% include 'core/page_segmentation_generated_data.js' %}
+        $(function () {
+            $("#html_page").load(CommonHandlers.htmlPageLoad);
+            {% if stage != 'diff' %}
+                {% include 'core/est_buttons_script.html' %}
+                tick();
+            {% endif %}
+        });
+    </script>
+
+{% endblock %}
+
+{% block Content %}
+<div id="show_navbar" style="width: 100%; height: 10px; top: 0px; position: fixed"></div>
+<div>
+    {% trans 'Original page' %}:
+    <a href="{{ url|hidereferer }}" target="_blank">{{ url|unquote }}</a>
+    <div class="timer muted" id="timer">00:00:00</div>
+</div>
+<div style="float: left; width: 100%;">
+    <div style="float: left; width: 70%;">
+        <iframe sandbox="allow-same-origin" id="html_page" src="{{ html_url }}" style="width: 100%; height: 100%; border: 10px;"></iframe>
+    </div>
+    <div id="right_pane" style="float: left; width: 30%; text-align: center;">
+        <div id="instrumental_pane" style="position: relative; top: 0px; height: 90px; border: 4px double black; padding-bottom: 5px; padding-top: 5px">
+            <div id="split_buttons" style="width: 30%; border-right: 4px double black;">
+                <input type="button" class="btn" id="split_btn" value="{% trans 'Split' %}" />
+                <input type="button" class="btn" id="join_btn" value="{% trans 'Join' %}"/>
+            </div>
+            <div id="annotate_buttons" style="width: 70%; position:absolute; top:0; right:0;">
+                <input type="button" value="{% trans 'View content' %}" class="btn view_button" id="viewButton" style="margin-top: 5px; padding-top: 4px;"/>
+                <div id="selector" style="text-align: center; padding-bottom: 5px;">
+                    {% for group in est.SegmentName.grouped_names %}
+                        <div>
+                        {% for seg_name, seg_label, color in group %}<a href="#" title="{% trans seg_label %}" style="background-image: linear-gradient(to top, {{ color }}, #d0d0d0); background-color: {{ color }}; width: 35px; text-align: center; color: #000000; opacity: 0.5; display: inline-block;" class="annot_button" id="annot_{{ seg_name }}">{{ seg_name }}</a>{% endfor %}
+                        </div>
+                     {% endfor %}
+                </div>
+            </div>
+        </div>
+        <div id="list_segments" style="background-color: #ffffff; overflow-y: scroll; ">
+            <div id="chosen" style="text-align: left; margin: 5px; padding-bottom: 5px; border-bottom: 1px solid #000000; position: relative;">
+            </div>
+        {% if stage != 'diff' %}
+            <div id="show_form_container">
+                <input type="button" id="show_form" value="Show form" class="btn" />
+                <br />
+                <br />
+            </div>
+            <form method="post" action="{% if stage == 'view' %}{% url 'core:segmentation_view' est_id login %}{% else %}{% url 'core:page_segmentation' est_id %}{% endif %}" id="form" style="display: none">
+            {% if stage != 'view' %}
+                {{ form.choice }}
+                {{ form.merge }}
+            {% endif %}
+                <div class="control-group">
+                {% if form.comment.errors %}
+                    <span class="help-inline">{{ form.comment.errors }}</span>
+                    <br />
+                {% endif %}
+                    {{ form.comment }}
+                </div>
+                {{ form.time_elapsed }}
+                {% csrf_token %}
+                <input type="hidden" id="id_skipped" name="skipped" value="False" />
+                <input type="hidden" id="id_stage" name="stage" value="{% if stage == 'view' %}merge{% else %}{{ stage }}{% endif %}" />
+                <div class="control-group">
+                    <input type="submit" id="submit" value="{% trans 'Submit estimation' %}" class="btn btn-primary" />
+                {% if stage != 'view' %}
+                    <br />
+                    <br />
+                    <input type="button" id="reject" value="{% trans 'Reject this task' %}" class="btn" />
+                    <br />
+                    <br />
+                    <a href="{% url 'core:segmentation_delete' est_id yauser.core_user %}" class="btn btn-danger">
+                        Delete estimation
+                    </a>
+                {% endif %}
+                </div>
+            </form>
+        {% else %}
+            <form method="post" action="{% url 'core:segmentation_diff' docid login1 login2 %}" id="form" style="display: none">
+                <input type="submit" id="submit" value="{% trans 'Resolve diff' %}" class="btn btn-primary" />
+                {% csrf_token %}
+            </form>
+            <div>
+                {% if est1.comment %}
+                    {{ login1 }}:
+                    <br />
+                    {{ est1.comment }}
+                    <br />
+                    <br />
+                {% endif %}
+                {% if est2.comment %}
+                    {{ login2 }}:
+                    <br />
+                    {{ est2.comment }}
+                {% endif %}
+            </div>
+        {% endif %}
+        </div>
+        <div id="content" style="padding: 10px; display:none; border-radius: 6px; background-color: rgba(0, 0, 0, 0.8); position: fixed; color: #ffffff; text-align: left; z-index: 11;">
+            <div style="height: 40px;">
+                <a class="close pull-right" href="#" style="color: #ffffff;">&times;</a>
+            </div>
+            <div id="content_container" style="max-height: 400px; overflow-y: scroll;">
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

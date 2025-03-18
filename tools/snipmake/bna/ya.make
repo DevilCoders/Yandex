@@ -1,0 +1,3 @@
+RECURSE(
+    white_list
+)

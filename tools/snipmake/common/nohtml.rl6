@@ -1,0 +1,56 @@
+#include <tools/snipmake/common/nohtml.h>
+#include <library/cpp/html/entity/htmlentity.h>
+#include <library/cpp/charset/recyr.hh>
+
+%%{
+    machine nohtml;
+    alphtype unsigned char;
+    word    = [A-Za-z]+;
+    value   = (["] any* :>> ["]) | (['] any* :>> [']) | ((any - space - '>')+);
+    tagpart = word (space+ word "=" value)* space*;
+    tagbody = ('/'? tagpart) | (tagpart '/');
+
+    main    := |*
+                ("&lt;" tagbody :>> "&gt;") | ('<' tagbody '>') | ("<!--" (any+ - (any* "-->" any*)) "-->")  => {fgoto main;};
+                "&amp;" => {emit("&", 1);};
+                any {emit(ts, te - ts);};
+                *|;
+}%%
+
+struct THtmlFilter {
+    TString Text;
+    void operator()(const char* buf, size_t len) {
+        if (len)
+            Text.append(buf, len);
+    }
+    void operator()(const unsigned char* buf, size_t len) {
+        operator()((const char*) buf, len);
+    }
+};
+
+TUtf16String HtmlEscape(const char* text, size_t len) {
+    TCharTemp wide(len * 2); // if we have 1-byte charset that's all mapped to pairs
+    size_t outLen = HtEntDecodeToChar(CODES_UTF8, text, len, wide.Data());
+    return TUtf16String(wide.Data(), outLen);
+}
+
+TUtf16String NoHtml(const char* text, size_t len) {
+    THtmlFilter emit;
+    int cs, act;
+    const unsigned char *ts, *te;
+
+    %%write data;
+    %%write init;
+
+    const unsigned char* p = (const unsigned char*) text;
+    const unsigned char* pe = p + len;
+    const unsigned char* eof = pe;
+
+    %%write exec;
+
+    Y_UNUSED(act);
+    Y_UNUSED(nohtml_first_final);
+    Y_UNUSED(nohtml_error);
+    Y_UNUSED(nohtml_en_main);
+    return HtmlEscape(emit.Text.data(), emit.Text.size());
+}

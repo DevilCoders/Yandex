@@ -1,0 +1,12 @@
+{{#NON_FWD_DECL_ABLE_TYPE}}{{>NON_FWD_DECL_ABLE_TYPE}}
+
+{{/NON_FWD_DECL_ABLE_TYPE}}{{>DOCS}}YRT_EXPORT @interface {{TYPE_NAME}} : NSObject{{#FIELD}}
+
+{{>FIELD_DOCS}}@property (nonatomic, readonly{{#OPTIONAL}}, nullable{{/OPTIONAL}}{{#NON_OPTIONAL}}, nonnull{{/NON_OPTIONAL}}) {{FIELD_TYPE}}{{#POD}} {{/POD}}{{FIELD_NAME}};{{/FIELD}}
+
+{{#CTORS}}
+{{>CTORS}}{{/CTORS}}{{#LITE}}{{#HAVE_DEFAULT_VALUE}}
+
+- ({{#OPTIONAL_RESULT}}nullable{{/OPTIONAL_RESULT}}{{#NON_OPTIONAL_RESULT}}nonnull{{/NON_OPTIONAL_RESULT}} {{TYPE_NAME}} *)init;{{/HAVE_DEFAULT_VALUE}}{{/LITE}}
+
+@end

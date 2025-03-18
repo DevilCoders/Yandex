@@ -1,0 +1,56 @@
+OWNER(g:snippets)
+
+RECURSE(
+    argv
+    avatars
+    avatars/ut
+    bna
+    common/ut
+    contentpreview
+    contentstats
+    cserp
+    csnip
+    download_contexts
+    dump_factsnip_factor
+    fatinv
+    filterctx
+    hebe
+    imgfml
+    gtametricsapp
+    kiwictx
+    kiwisnip
+    kiwiupload
+    learning
+    localbase
+    localmap
+    metasnip
+    middlesnip
+    preview_calcer
+    extrasnippet_tester
+    printctxarc
+    printmaincontent
+    protosnip
+    docinfos_modify
+    rawhits
+    read_more_statistics
+    reqrestr
+    rewrite_factors
+    rca/rca_comparer
+    rpsfetch
+    sbs
+    seqhashgen
+    snipdat
+    snipdatapp
+    snippet_kpi
+    snipmetrics
+    snipmetricsapp
+    snipmetricstests
+    steam
+    stopwordlst
+    uppersnip
+    urlcut
+    urlcut_test
+    xmlutils
+    yaca
+    zorathumb
+)

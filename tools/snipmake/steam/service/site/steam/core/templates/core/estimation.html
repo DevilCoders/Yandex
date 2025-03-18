@@ -1,0 +1,204 @@
+{% extends "core/index.html" %}
+{% load i18n %}
+
+{% block Title %}{% trans 'Estimation' %}{% endblock %}
+{% block Scripts %}
+    <script>
+
+        {% include 'core/timer_script.js' %}
+
+        $(function() {
+          {% if est.status == est.Status.ASSIGNED or est.status == est.Status.SKIPPED %}
+              $("#hotkeys_popover").popover();
+
+              $(document).keydown(
+                  function(e) {
+                      if (e.shiftKey || e.altKey || e.target.tagName.toLowerCase() == "textarea") {
+                          return;
+                      }
+                      if (e.ctrlKey && e.which == 32) {
+                              $("#submit").click();
+                      }
+                      if (!e.ctrlKey) {
+                          $(".hotkeys_" + e.which).prop("checked", true);
+                      }
+                  }
+              );
+              {% include 'core/est_buttons_script.html' %}
+          {% endif %}
+              $(".snippet-title-link, .snippet-link").mousedown(function() {
+                                                                    $("#id_linked").val("1");
+                                                                });
+              tick();
+          });
+
+    </script>
+
+{% endblock %}
+
+{% block Caption %}{% trans 'Estimation' %}{% endblock %}
+{% block Content %}
+<div class="row row-padded">
+    <div>
+        <div class="timer muted" id="timer">00:00:00</div>
+        {{ task.taskpool.kind_pool }}
+    {% with task=est.task snip_tpls_ext=snip_tpls_ext %}
+        {% if task.taskpool.kind == task.taskpool.Type.BLIND and yauser.core_user == est.user %}
+            {% if task.taskpool.kind_pool == task.taskpool.TypePool.RCA %}
+                {% with show_pools=False showMediaContent=True %}
+                    {% include 'core/snippet_pair.html' %}
+                {% endwith %}
+            {% else %}
+                {% with show_pools=False showMediaContent=False %}
+                    {% include 'core/snippet_pair.html' %}
+                {% endwith %}
+            {% endif %}
+        {% else %}
+            {% if task.taskpool.kind_pool == task.taskpool.TypePool.RCA %}
+                {% with show_pools=True showMediaContent=True %}
+                    {% include 'core/snippet_pair.html' %}
+                {% endwith %}
+            {% else %}
+                {% with show_pools=True showMediaContent=False %}
+                    {% include 'core/snippet_pair.html' %}
+                {% endwith %}
+            {% endif %}
+        {% endif %}
+    {% endwith %}
+
+        {% if yauser.core_user != est.user %}
+            {% trans 'Task pool' %}: <a href={% url 'core:tasks_default' est.task.taskpool.pk 'all' 'alphabet' %}>{{ est.task.taskpool.title }}</a>
+        {% endif %}
+
+    </div>
+</div>
+<div class="row">
+    {% if est.comment %}
+        <div class="row span12">
+            <div class="alert alert-success">
+                <div class="span2">
+                    {% if est.answer or est.status == est.Status.SKIPPED %}
+                        {% trans 'Question' %}:
+                    {% else %}
+                        {% trans 'Comment' %}:
+                    {% endif %}
+                </div>
+                {{ est.comment }}
+            </div>
+        </div>
+        {% if est.answer and est.status != est.Status.SKIPPED %}
+        <div class="row span12">
+            <div class="alert alert-success">
+                <div class="span2">{% trans 'Answer' %}:</div>
+                {{ est.answer }}
+            </div>
+        </div>
+        {% endif %}
+    {% endif %}
+    {% if est.status == est.Status.ASSIGNED or est.status == est.Status.SKIPPED %}
+        {% if yauser.core_user != est.user and est.status == est.Status.SKIPPED %}
+            <div class="row span12">
+                <div class="alert alert-success">
+                    {% trans 'Skipped by' %}
+                    {{ est.user.login }}
+                </div>
+            </div>
+            <div class="row span12">
+                <form method="post" action="{% url 'core:estimation' est.id %}">
+                    <div style="text-align: center;">
+                        {{ est_form }}
+                        <div class="control-group">
+                            <input type="submit" id="submit" value="{% trans 'Submit' %}" class="btn" />
+                        </div>
+                    </div>
+                    {% csrf_token %}
+                </form>
+            </div>
+        {% else %}
+            <div class="row span12">
+                <form method="post" action="{% if criterion %}{% url 'core:estimation' est.id criterion %}{% else %}{% url 'core:estimation' est.id %}{% endif %}">
+                    <div style="text-align: center;">
+                        <i class="icon-info-sign" id="hotkeys_popover" style="position:relative; float:right;"
+                            data-title="<b>{% trans 'Hotkeys' %}</b>"
+                            data-content="<center>q, w, e<br />Ctrl + Space &mdash; {% trans 'Submit estimation' %}</center>"
+                            data-html="true"
+                            data-placement="left"
+                            data-trigger="hover"></i>
+                        {% include 'core/estimation_form.html' %}
+                        <div class="control-group">
+                            <input type="button" id="reject" value="{% trans 'Reject this task' %}" class="btn"
+                                   data-title="{% trans 'Are you sure?' %}"
+                                   data-btnCancelLabel="{% trans 'No' %}"
+                                   data-btnOkLabel="{% trans 'Yes' %}" />
+                            <input type="button" id="question" value="{% trans 'Ask a question and skip' %}" class="btn" />
+                            <input type="submit" id="submit" value="{% trans 'Submit estimation' %}" class="btn" />
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="row span12">
+                {% if prev_criterion %}
+                    <div style="float: left;">
+                        <a href="{% url 'core:estimation' est.id prev_criterion %}">
+                            <i class="icon icon-backward" title="{% trans 'Previous criterion' %}"></i>
+                        </a>
+                    </div>
+                {% endif %}
+                {% if next_criterion %}
+                    <div style="float: right;">
+                        <a href="{% url 'core:estimation' est.id next_criterion %}">
+                            <i class="icon icon-forward" title="{% trans 'Next criterion' %}"></i>
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        {% endif %}
+    {% elif est.status == est.Status.COMPLETE %}
+    <div class="row span12">
+        <div class="alert alert-success">
+            {% if yauser.core_user == est.user %}
+                {% trans 'You have already solved this task.' %}
+            {% else %}
+                {% trans 'Estimation made by' %}
+                {{ est.user.login }}
+            {% endif %}
+        </div>
+    </div>
+    <div class="row span12">
+        <div class="span3 offset4-5">
+            {% load crit_name_cleaner %}
+            {% if est_can_be_changed %}
+                <div style="text-align: center">
+                    <form method="post" action="{% url 'core:estimation' est.id %}">
+                        {% include 'core/estimation_form.html' %}
+                        <div class="control-group">
+                            <input type="submit" id="submit" value="{% trans 'Change estimation' %}" class="btn" />
+                        </div>
+                    </form>
+                </div>
+            {% else %}
+                {% with value=est.unpack_value %}
+                    {% for crit, crit_val in value %}
+                        <div class="row span12">
+                            <div class="span2">{% trans crit|crit_name_cleaner|capfirst %}:</div>
+                            <div class="span1">{% trans crit_val|title %}</div>
+                        </div>
+                    {% endfor %}
+                {% endwith %}
+            {% endif %}
+        </div>
+    </div>
+    {% elif est.status == est.Status.REJECTED %}
+    <div class="row span12">
+        <div class="alert alert-warning">
+            {% if yauser.core_user == est.user %}
+                {% trans 'You have rejected this task.' %}
+            {% else %}
+                {% trans 'Rejected by' %}
+                {{ est.user.login }}
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

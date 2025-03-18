@@ -1,0 +1,78 @@
+#!/skynet/python/bin/python
+import sys
+from api.cms import Registry
+from optparse import OptionParser
+from getpass import getuser
+import hashlib
+import json
+import time
+
+parser = OptionParser()
+parser.add_option("-i", "--instance", dest="instance", help="instance tag name (for example, testws-production-replica)", default="testws-production-replica")
+parser.add_option("-s", "--shardtag", dest="shard_tags", help="shard tag name (for example, RusTier0)", default=[], action="append")
+parser.add_option("--hosts", dest="hosts_name", help="output host list to the specified file", default=None)
+parser.add_option("--manifest", dest="manifest_name", help="write manifest to the specified file", default=None)
+parser.add_option("--shards", dest="shards_name", help="output shard list to the specified file", default=None)
+parser.add_option("--program", dest="program_name", help="program name (basesearch, middlesearch, etc.)", default="")
+parser.add_option("-m", "--message", dest="message", help="message for other users", default="")
+
+(options, args) = parser.parse_args()
+
+do_query_instances = options.shards_name or options.hosts_name
+
+user_name = getuser()
+timestamp = long(time.time())
+program_name = options.program_name
+message = options.message
+
+beta_id_hash = hashlib.sha1()
+beta_id_hash.update(user_name)
+beta_id_hash.update('\t' + program_name)
+beta_id_hash.update('\t' + str(timestamp))
+beta_id = beta_id_hash.hexdigest()
+
+manifest = {}
+manifest['user'] = user_name
+manifest['time'] = timestamp
+manifest['message'] = message
+manifest['program'] = program_name
+manifest['id'] = beta_id
+
+if options.shards_name or options.hosts_name:
+    def list_instances(filters):
+        return list(Registry.listSearchInstances(**filters))
+    
+    filters = {
+        'conf' : 'HEAD',
+        'instanceTagName' : options.instance
+    }
+
+    if (options.shard_tags):
+        instances = []
+        for shard_tag in options.shard_tags:
+            filters['shardTagName'] = shard_tag
+            instances += list_instances(filters)
+    else:
+        instances = list_instances(filters)
+
+    instances.sort(key = lambda i: (i.host, i.port))
+    hosts = sorted(set([i.host for i in instances]))
+
+    manifest['instance'] = options.instance
+    manifest['shards'] = options.shard_tags
+    manifest['hosts'] = hosts
+
+    if options.hosts_name:
+        with open(options.hosts_name, 'w') as host_file:
+            for h in hosts:
+                print >>host_file, h
+
+    if options.shards_name:
+        with open(options.shards_name, 'w') as shards_file:
+            for i in instances:
+                print >>shards_file, "%(host)s\t/db/BASE/%(shard)s\t%(port)s" % i
+
+if options.manifest_name:
+    with open(options.manifest_name, 'w') as manifest_file:
+        json.dump(manifest, manifest_file, indent=2, ensure_ascii=False)
+

@@ -1,0 +1,423 @@
+{% extends 'core/index.html' %}
+{% load i18n %}
+
+{% block Title %}{% trans 'Estimation statistics' %}{% endblock %}
+{% block Scripts %}
+<script>
+    $(function () {
+        $("#filter input,#filter .selectpicker").change(
+            function () {
+                $("#filter").submit();
+            }
+        );
+      });
+{% if tab == 'assessors' %}
+    $(function () {
+        $(".asc,.desc").click(
+            function () {
+                var link = $(this);
+                removeSort();
+                if (link.children(".icon-blue").length) {
+                    link.children().removeClass("icon-blue");
+                    link.children().toggleClass("icon");
+                } else {
+                    var activeIcons = $(".icon-blue");
+                    activeIcons.removeClass("icon-blue");
+                    activeIcons.toggleClass("icon");
+                    var sorter = link.parents("div.sorter")[0];
+                    var idx = jQuery.inArray(sorter, $("#stats>thead").find("div.sorter")) + 1;
+                    var trs = $("#stats>tbody").children();
+                    var order = [];
+                    for (var i = 0; i < trs.length - 1; ++i) {
+                        order.push([
+                            parseFloat(
+                                jQuery.trim($($(trs[i]).children()[idx]).html()).split(" ")[0]
+                            ),
+                            i
+                        ]);
+                    }
+                    order.sort((this.className == "asc"? asc: desc));
+                    var lastTr = $(trs[trs.length - 1]);
+                    for (var i = 0; i < order.length; ++i) {
+                        lastTr.before($(trs[order[i][1]]));
+                    }
+                    link.children().removeClass("icon");
+                    link.children().toggleClass("icon-blue");
+                }
+                return false;
+            }
+        );
+      });
+
+      function asc(a, b) {
+          return a[0] - b[0];
+      }
+
+      function desc(a, b) {
+          return b[0] - a[0];
+      }
+
+      function removeSort() {
+          var trs = $("#stats>tbody").children();
+          var order = [];
+          for (var i = 0; i < trs.length - 1; ++i) {
+              order.push([jQuery.trim($($(trs[i]).children()[0]).html()), i]);
+          }
+          order.sort();
+          var lastTr = $(trs[trs.length - 1]);
+          for (var i = 0; i < order.length; ++i) {
+              lastTr.before($(trs[order[i][1]]));
+          }
+      }
+{% endif %}
+</script>
+{% endblock %}
+
+{% block Caption %}{% trans 'Estimation statistics' %}{% endblock %}
+{% block Content %}
+    <div class="row">
+        <div class="pull-right">
+            <form id="filter" method="get" action="{% if tab == 'count' %}{% url 'core:est_statistics_default' %}{% elif tab == 'time' %}{% url 'core:time_statistics' %}{% else %}{% url 'core:assessor_statistics' %}{% endif %}">
+                {{ form.as_table }}
+            </form>
+        </div>
+    </div>
+    <div>
+        <ul class="nav nav-pills">
+            <li{% if tab == 'count' %} class="active"{% endif %}>
+                <a href="{% url 'core:est_statistics_default' %}{% if qs %}?{{ qs }}{% endif %}">
+                    {% trans 'Count' %}
+                </a>
+            </li>
+            <li{% if tab == 'time' %} class="active"{% endif %}>
+                <a href="{% url 'core:time_statistics' %}{% if qs %}?{{ qs }}{% endif %}">
+                    {% trans 'Time' %}
+                </a>
+            </li>
+            <li{% if tab == 'assessors' %} class="active"{% endif %}>
+                <a href="{% url 'core:assessor_statistics' %}{% if qs %}?{{ qs }}{% endif %}">
+                    {% trans 'Assessors' %}
+                </a>
+            </li>
+        </ul>
+    </div>
+{% if tab == 'count' %}
+    {% if est_infos %}
+        <b>
+            {% trans 'Total' %}:
+        </b>
+        <br />
+        <div class="span2">
+            {% trans 'records displayed' %}:
+        </div>
+        {{ pages.obj_count }}
+        <br />
+        <div class="span2">
+            {% trans 'estimations left' %}:
+        </div>
+        {{ total_count }}
+        <br />
+        <br />
+        {% load paginator %}
+        {% url 'core:est_statistics_default' as page_url %}
+        {% paginator page_url pages as pg %}
+
+        {{ pg }}
+
+        <table class="table table-striped table-fixed">
+            <colgroup>
+                <col width="1">
+                <col width="1">
+                <col width="1">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th>{% trans 'Date' %}</th>
+                    <th>{% trans 'Country' %}</th>
+                    <th>{% trans 'Estimation count' %}</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for date, count in est_infos %}
+                <tr>
+                    <td>{{ date }}</td>
+                    <td>{% trans country %}</td>
+                    <td>{{ count }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+
+        {{ pg }}
+
+    {% else %}
+        <p>{% trans 'No estimations are available.' %}</p>
+    {%endif%}
+{% elif tab == 'time' %}
+        <div class="alert">
+            {% trans 'Medians and minimums are displayed with zero times ignored.' %}
+        </div>
+        <div class="alert alert-info">
+            {% trans 'All estimations.' %}
+        </div>
+        {% with params=stats.all %}
+            {% include 'core/time_statistics.html' %}
+        {% endwith %}
+        <div class="alert alert-info">
+            {% trans 'Linked estimations.' %}
+        </div>
+        {% with params=stats.linked %}
+            {% include 'core/time_statistics.html' %}
+        {% endwith %}
+        <div class="alert alert-info">
+            {% trans 'Unlinked estimations.' %}
+        </div>
+        {% with params=stats.unlinked %}
+            {% include 'core/time_statistics.html' %}
+        {% endwith %}
+{% else %}
+    {% if columns %}
+        <table class="table table-striped table-fixed table-centered" id="stats">
+            <colgroup>
+                <col width="1">
+                <col width="1">
+                <col width="1">
+                <col width="1">
+                <col width="1">
+                <col width="1">
+                <col width="1">
+                <col width="1">
+                <col width="1">
+                <col width="1">
+                <col width="1">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th>
+                        {% trans 'Login' %}
+                    </th>
+                    <th colspan="{{ ext_crit_names|length }}" style="vertical-align: bottom;">
+                        {% trans 'Precision' %}
+                        <table style="background-color: transparent; width: 100%;">
+                        <colgroup>
+                            <col width="25%">
+                            <col width="25%">
+                            <col width="25%">
+                            <col width="25%">
+                        </colgroup>
+                            <tbody style="background-color: transparent;">
+                                <tr style="background-color: transparent;">
+                                {% for crit_name in ext_crit_names %}
+                                    <td style="background-color: transparent; vertical-align: bottom;">
+                                        {% if forloop.counter < ext_crit_names|length %}
+                                            {% trans crit_name|slice:'1'|capfirst %}
+                                        {% else %}
+                                            {% trans crit_name|capfirst %}
+                                        {% endif %}
+                                        <div style="display: inline-block; vertical-align: bottom; float: right;" class="sorter">
+                                            <a href="#" class="asc">
+                                                <i class="icon icon-chevron-up"></i>
+                                            </a>
+                                            <br />
+                                            <a href="#" class="desc">
+                                                <i class="icon icon-chevron-down"></i>
+                                            </a>
+                                        </div>
+                                    </td>
+                                {% endfor %}
+                                </tr>
+                            </tbody>
+                        </table>
+                    </th>
+                    <th style="vertical-align: bottom;">
+                        {% trans 'Time' %}
+                        <br />
+                        <div style="display: inline-block; vertical-align: bottom; float: right;" class="sorter">
+                            <a href="#" class="asc">
+                                <i class="icon icon-chevron-up"></i>
+                            </a>
+                            <br />
+                            <a href="#" class="desc">
+                                <i class="icon icon-chevron-down"></i>
+                            </a>
+                        </div>
+                    </th>
+                    <th style="vertical-align: bottom;">
+                        {% trans 'Linked' %}
+                        <br />
+                        <div style="display: inline-block; vertical-align: bottom; float: right;" class="sorter">
+                            <a href="#" class="asc">
+                                <i class="icon icon-chevron-up"></i>
+                            </a>
+                            <br />
+                            <a href="#" class="desc">
+                                <i class="icon icon-chevron-down"></i>
+                            </a>
+                        </div>
+                    </th>
+                    <th style="vertical-align: bottom;">
+                        {% trans 'Complete' %}
+                        <br />
+                        <div style="display: inline-block; vertical-align: bottom; float: right;" class="sorter">
+                            <a href="#" class="asc">
+                                <i class="icon icon-chevron-up"></i>
+                            </a>
+                            <br />
+                            <a href="#" class="desc">
+                                <i class="icon icon-chevron-down"></i>
+                            </a>
+                        </div>
+                    </th>
+                    <th style="vertical-align: bottom;">
+                        {% trans 'Rejected' %}
+                        <br />
+                        <div style="display: inline-block; vertical-align: bottom; float: right;" class="sorter">
+                            <a href="#" class="asc">
+                                <i class="icon icon-chevron-up"></i>
+                            </a>
+                            <br />
+                            <a href="#" class="desc">
+                                <i class="icon icon-chevron-down"></i>
+                            </a>
+                        </div>
+                    </th>
+                    <th style="vertical-align: bottom;">
+                        {% trans 'Skipped' %}
+                        <br />
+                        <div style="display: inline-block; vertical-align: bottom; float: right;" class="sorter">
+                            <a href="#" class="asc">
+                                <i class="icon icon-chevron-up"></i>
+                            </a>
+                            <br />
+                            <a href="#" class="desc">
+                                <i class="icon icon-chevron-down"></i>
+                            </a>
+                        </div>
+                    </th>
+                    <th style="vertical-align: bottom;">
+                        {% trans 'Timeout packs' %}
+                        <br />
+                        <div style="display: inline-block; vertical-align: bottom; float: right;" class="sorter">
+                            <a href="#" class="asc">
+                                <i class="icon icon-chevron-up"></i>
+                            </a>
+                            <br />
+                            <a href="#" class="desc">
+                                <i class="icon icon-chevron-down"></i>
+                            </a>
+                        </div>
+                    </th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for login, column in columns %}
+                <tr>
+                    <td>
+                        <a href="{% url 'core:user_info' login %}">
+                            {{ login }}
+                        </a>
+                    </td>
+                {% if column.precisions %}
+                    {% for prec in column.precisions %}
+                    <td>
+                        {{ prec|floatformat:3 }}
+                    </td>
+                    {% endfor %}
+                {% else %}
+                    {% for crit in ext_crit_names %}
+                    <td>
+                        1
+                    </td>
+                    {% endfor %}
+                {% endif %}
+                {% if column.time %}
+                    <td>
+                        {{ column.time }}
+                    </td>
+                {% else %}
+                    <td>
+                        0
+                    </td>
+                {% endif %}
+                {% if column.linked %}
+                    <td>
+                        {{ column.linked }} %
+                    </td>
+                {% else %}
+                    <td>
+                        0 %
+                    </td>
+                {% endif %}
+                {% if column.complete %}
+                    <td>
+                        {{ column.complete }}
+                    </td>
+                {% else %}
+                    <td>
+                        0
+                    </td>
+                {% endif %}
+                {% if column.rejected %}
+                    <td>
+                        {{ column.rejected }}
+                    </td>
+                {% else %}
+                    <td>
+                        0
+                    </td>
+                {% endif %}
+                {% if column.skipped %}
+                    <td>
+                        {{ column.skipped }}
+                    </td>
+                {% else %}
+                    <td>
+                        0
+                    </td>
+                {% endif %}
+                {% if column.timeout_packs %}
+                    <td>
+                        {{ column.timeout_packs }}
+                    </td>
+                {% else %}
+                    <td>
+                        0
+                    </td>
+                {% endif %}
+                </tr>
+            {% endfor %}
+                <tr>
+                    <td>
+                        {% trans 'Totally' %}:
+                    </td>
+                {% for med in medians.precisions %}
+                    <td>
+                        {{ med }}
+                    </td>
+                {% endfor %}
+                    <td>
+                        {{ medians.time }}
+                    </td>
+                    <td>
+                        {{ medians.linked }} %
+                    </td>
+                    <td>
+                        {{ sums.complete }}
+                    </td>
+                    <td>
+                        {{ sums.rejected }}
+                    </td>
+                    <td>
+                        {{ sums.skipped }}
+                    </td>
+                    <td>
+                        {{ sums.timeout_packs }}
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    {% else %}
+        <p>{% trans 'No assessors are available.' %}</p>
+    {% endif %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,177 @@
+#include <tools/structparser/parsestruct.h>
+
+%%{
+    machine Scanner;
+    write data nofinal;
+
+    Mspace = [\t\v\f\r ]; #don't include carret ret
+    # Floating literals.
+    fract_const = digit* '.' digit+ | digit+ '.';
+    exponent = [eE] [+\-]? digit+;
+#    float_suffix = [flFL];
+    identifier = [a-zA-Z_] [a-zA-Z0-9_]*;
+    any_suffix = identifier; # c++11 user defined literals
+#    chrtype = "const" space+ "char" space* "*";
+
+    c_comment :=
+        ('\n' %{Line++;} | any)* :>> '*/' @{ fgoto main; };
+
+    main := |*
+
+    # high priority single-char tokens
+    '{' { In(); };
+    '}' { Out(); };
+
+    '__declspec'     { SpecAttribKeyword(false); };
+    '__attribute__'  { SpecAttribKeyword(false); };
+    '[['             { SpecAttribKeyword(true);  };
+    ']]'             { SpecAttribKeywordClose(); };
+
+    '['  { ProcOBraceSymb(2, *(te - 1)); };
+    '('  { ProcOBraceSymb(1, *(te - 1)); };
+    ']'  { ProcCBraceSymb(2, *(te - 1)); };
+    ')'  { ProcCBraceSymb(1, *(te - 1)); };
+
+    ':'  { ProcDef(); };
+
+    ( '~' | ',' | '=' | '|' | '<' | '>' | '?' | '^' | '/' | '-' | '+' | '*' | '=' | '!' | '&' | '|' | '%')   { ProcSymb(*(te - 1)); };
+
+    ';' { ProcEndEqSymb(); };
+
+    '.' { ProcDot(); };
+
+    # Single and double literals.
+    'true' {ProcBool(true);};
+    'false' {ProcBool(false);};
+    # Floating literals.
+    fract_const exponent? any_suffix? | digit+ exponent any_suffix? {  Float(ts, te);  };
+
+    # Integer decimal. Leading part buffered by float.
+    ( '0' | [1-9] ['0-9]* ) any_suffix? {              Int(ts, te); };
+
+    # Integer octal. Leading part buffered by float.
+    '0' ['0-9]+ [ulUL]{0,2} {    OctInt(ts, te); };
+
+    # Integer hex. Leading 0 buffered by float.
+    '0' ( 'x' ['0-9a-fA-F]+ any_suffix? ) { HexInt(ts, te); };
+    'L'? "'" ( [^'\\\n] | /\\./ )* "'" any_suffix? {  ProcLit(ts, te);  };
+    'L'? '"' ( [^"\\\n] | /\\./ )* '"' any_suffix? {  ProcLit(ts, te);  };
+
+    # type definition keywords
+    "signed"  { ProcConstType(ts, te); };
+    "unsigned"  { ProcConstType(ts, te); };
+    "int"  { ProcConstType(ts, te); };
+    "char"  { ProcConstType(ts, te); };
+    "double"  { ProcConstType(ts, te); }; #long double
+    "long"  { ProcConstType(ts, te); };
+    "short"  { ProcConstType(ts, te); };
+
+
+    # Identifiers & reserved words
+    "enum" { Spec('E'); };
+    "class" { Spec('C'); };
+    "struct" { Spec('S'); };
+
+    "static" { Spec('s'); };
+    "namespace" { Spec('N'); };
+    "typename" { Spec('t'); };
+    "template" { Spec('G'); };
+    "typedef" { Spec('T'); };
+    "try" { Spec('r'); };
+    "catch" { Spec('a'); };
+    "using" { Spec('U'); };
+    "const" { Spec('c'); };
+    "public" { Spec('0'); };
+    "protected" { Spec('1'); };
+    "private" { Spec('2'); };
+    "operator"  { Spec('o'); };
+    "throw"     { Spec('h'); };
+    "new"     { Spec('n'); };
+    "explicit";  # disabled { Spec('x'); };
+    "constexpr";                #todo we don't generate lexem
+    "virtual";
+    "inline";
+
+# todo    "override", "final" should be special defined Identifier (i.e. identifier which can be keyword in some circumstances
+#todo add nothrow ???
+    '...'  { Spec('M'); };
+
+
+#    chrtype { (TT_COMPLEXTYPE); };
+    identifier { SpecId(ts, te); };
+
+
+    '::' { ProcSymbType(); };
+
+    ( ('=' | '!' | '&' | '/' | '%' | '-' | '+' | '|' | '^' | '*' | '>' | '<') '=' ) { ProcOpEq(ts, te); };
+
+    ( '&&' | '||' | '++' | '--' | '->' | '.*' ) { ProcNOp(ts, te); };
+    ( '->*' | '>>=' | '<<=')  { ProcNOp3(ts, te); };
+
+
+    # Single char symbols.
+#    ( punct - [_"'] ) { process_token(TT_OTHER); }; #????
+
+    # Comments with special meaning
+#    '//' [^\n]* '@nodmp' [^\n]* '\n' {
+#        if (Line != last_entry_Line)
+#            errexit("cannot find which entry @nodmp belongs to (last entry was at Line %d)", last_entry_Line);
+#
+#        structs[current_struct].pop_back();
+#        Line++;
+#    };
+#
+#    '//' space*
+#        ( '@dmp'
+#            >{
+#                dmp_name_start = dmp_from_start = dmp_to_start =
+#                dmp_name_end = dmp_from_end = dmp_to_end =
+#                dmp_mode_start = 0;
+#            }
+#        )
+#        space* ( ( 'bitmask' | 'val' ) > { dmp_mode_start = p; } ) space*
+#        ( identifier
+#            >{ dmp_name_start = p; }
+#            %{ dmp_name_end = p-1; }
+#        )
+#        space* 'eff_name' space* 's/^'
+#        ( [a-zA-Z0-9_]*
+#            >{ dmp_from_start = p; }
+#            %{ dmp_from_end = p-1; }
+#        )
+#        '/'
+#        ( [a-zA-Z0-9_]*
+#            >{ dmp_to_start = p; }
+#            %{ dmp_to_end = p-1; }
+#        )
+#        '/' [^\n]* '\n' {EndOfLine(); };
+
+    # Comments and whitespace.
+    '/*' { fgoto c_comment; };
+    '//' [^\n]* '\n' { Line++; };
+
+    '\n' { Line++; };
+
+    '#' Mspace+ digit+ Mspace+ '"' ( [^"\\\n] | /\\./ )* '"' (Mspace+ digit+)* Mspace* '\n' { LinePragma(ts, te);};
+
+    '#line' Mspace+ digit+ Mspace+ '"' ( [^"\\\n] | /\\./ )* '"' (Mspace+ digit+)* Mspace*  '\n' { LinePragma(ts, te);};
+
+    '#' [^\n]* ('\\\n'[^\n]*)*'\n' { OtherPragma(ts, te); Line++;};
+    Mspace;
+#    ( any - 33..126 ) >{ fputc(*p, stdout); };
+
+    *|;
+}%%
+
+const char* TStructParser::Parse(const char *p, const char *pe)
+{
+	const char *ts, *te;
+        const char *eof = pe;
+	int act, cs;
+	Line = 1;
+        %% write init;
+        %% write exec;
+	if (cs == Scanner_error)
+              return p;
+        return 0;
+}

@@ -1,0 +1,13 @@
+#pragma once
+
+#include "precomputed_task_ids_hyperspace.h"
+
+#include <tools/clustermaster/common/precomputed_task_ids.h>
+#include <tools/clustermaster/common/precomputed_task_ids_group.h>
+
+class TWorkerTargetType;
+struct TWorkerGraphTypes;
+
+typedef TDependSourceTypeTargetType<TWorkerTargetType> TWorkerDependSourceTypeTargetType;
+typedef TPrecomputedTaskIdsInitializerGroup<TWorkerGraphTypes, TParamsByTypeHyperspace> TWorkerPrecomputedTaskIdsInitializerGroup;
+typedef TPrecomputedTaskIdsContainerGroup<TWorkerGraphTypes, TParamsByTypeHyperspace> TWorkerPrecomputedTaskIdsContainerGroup;

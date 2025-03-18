@@ -1,0 +1,126 @@
+{
+  "confidences": [
+    {
+      "condition": "GREATER",
+      "name": "comb-host-signal-judged-5",
+      "regional": null,
+      "requirements": [],
+      "threshold": 0.92,
+      "yandex": false
+    },
+    {
+      "condition": "GREATER",
+      "name": "dup-plag-counts-judged-5",
+      "regional": null,
+      "requirements": [],
+      "threshold": 0.95,
+      "yandex": false
+    },
+    {
+      "condition": "SMALLER",
+      "name": "empty-serp",
+      "regional": null,
+      "requirements": [],
+      "threshold": 0.01,
+      "yandex": false
+    },
+    {
+      "condition": "SMALLER",
+      "name": "empty-serp",
+      "regional": null,
+      "requirements": [],
+      "threshold": 0.001,
+      "yandex": true
+    },
+    {
+      "condition": "GREATER",
+      "name": "judged-sinsig-kc-no-turbo-judgement-values-5",
+      "regional": null,
+      "requirements": [],
+      "threshold": 0.999,
+      "yandex": false
+    },
+    {
+      "condition": "SMALLER",
+      "name": "serp-failed",
+      "regional": null,
+      "requirements": [],
+      "threshold": 0.003,
+      "yandex": false
+    }
+  ],
+  "configuration": {
+    "className": "AlbinKessel",
+    "kwargs": {
+      "aggregate_script": "power_positive(sum(position_results), 1 if any(D.all_custom_formulas['is_vital'][:5]) else 0.7)",
+      "custom_formulas": {
+        "cluster_boost": "1.8 if serp_data.get('query_param.cluster') == '34' else 1.0",
+        "comb": "S.Host_signal - 0.5 if 'Host_signal' in S and (avg(L.sinsig_kc_no_turbo_judgement_values) > 0 or S.Host_signal < 0.5) else 0.0",
+        "fine_dup": "0.8 ** S.dup_fine",
+        "fine_plag": "0.6 ** S.plag_fine",
+        "fine_super_dup": "0.1 ** S.super_dup_fine",
+        "fine_ungrouping": "0.9 ** S.ungrouping_count_no_turbo if int(serp_data.get('query_param.need_certain_host', 0)) else 0.7 ** S.ungrouping_count_no_turbo",
+        "intent_boost": "1.0 if (int(serp_data.get('query_param.intent')) <= 20) else 1.4",
+        "is_vital": "avg(L.sinsig_kc_no_turbo_judgement_values) + 1.2 * avg([max(0, slider) / 100.0 for slider in L.sinsig_kc_no_turbo_slider_values]) >= 1.5",
+        "news_boost": "int(serp_data.get('query_param.need_news') == 'true') * int(S.fresh_top_news_score >= 0.1)",
+        "sinsig": "avg(L.sinsig_kc_no_turbo_judgement_values) + 1.2 * avg([max(0, slider) / 100.0 for slider in L.sinsig_kc_no_turbo_slider_values])"
+      },
+      "custom_formulas_after_precompute": {
+        "fine_full": "D.custom_formulas['fine_ungrouping'] * D.custom_formulas['fine_dup'] * D.custom_formulas['fine_super_dup'] * D.custom_formulas['fine_plag']",
+        "fine_host": "D.custom_formulas['fine_ungrouping'] * D.custom_formulas['fine_plag'] if D.custom_formulas['comb'] > 0 else 1.0",
+        "sinsig_svin": "D.custom_formulas['sinsig'] + 0.13 * (D.custom_formulas['sinsig'] >= 0.4) * D.custom_formulas['news_boost'] * D.custom_formulas['intent_boost']"
+      },
+      "depth": 5,
+      "judged": false,
+      "label_script": "(0.69 * D.custom_formulas['sinsig_svin'] * D.custom_formulas['fine_full'] + 0.15/0.882 * D.custom_formulas['comb'] * D.custom_formulas['fine_host'] * D.custom_formulas['cluster_boost']) / S.position",
+      "max_depth": 10,
+      "scale_maps": {
+        "sinsig_kc_no_turbo_judgement_values": {
+          "404": 0,
+          "IRREL": 0,
+          "RELEVANCE_MINUS_BAD": 0.12,
+          "RELEVANCE_MINUS_GOOD": 0.25,
+          "SLIDER_GRADE": 0.25,
+          "SUBVITAL": 1.01,
+          "VITAL_BAD": 1,
+          "VITAL_GOOD": 2,
+          "__DEFAULT__": null
+        }
+      },
+      "signals": [
+        "comb_host_signal_enrichment",
+        "dup_fine",
+        "fresh_top_news_score",
+        "plag_fine",
+        "sinsig_kc_no_turbo_judgement_values",
+        "sinsig_kc_no_turbo_slider_values",
+        "super_dup_fine"
+      ]
+    },
+    "module": "albinkessel",
+    "requirements": [
+      "COMPONENT.judgements.comb_host_signal_enrichment",
+      "COMPONENT.judgements.dup_fine",
+      "COMPONENT.judgements.fresh_top_news_score",
+      "COMPONENT.judgements.plag_fine",
+      "COMPONENT.judgements.sinsig_kc_no_turbo_judgement_values",
+      "COMPONENT.judgements.sinsig_kc_no_turbo_slider_values",
+      "COMPONENT.judgements.super_dup_fine",
+      "SERP.query_param.cluster",
+      "SERP.query_param.intent",
+      "SERP.query_param.need_certain_host",
+      "SERP.query_param.need_news"
+    ],
+    "revision": 7767749,
+    "url": "svn+ssh://arcadia.yandex.ru/arc/trunk/arcadia/quality/mstand_metrics/offline_production/metrics",
+    "usePy3": true
+  },
+  "deprecated": false,
+  "description": "proxima \u0431\u0435\u0437 dbd \u0441 \u0431\u043e\u043d\u0443\u0441\u043e\u043c \u0437\u0430 \u0441\u0432\u0435\u0436\u0435\u0441\u0442\u044c (\u0441\u043e \u0441\u0442\u0435\u043f\u0435\u043d\u044c\u044e)\n\n0.69 * sinsig_svin * fine_full + 0.15/0.882 * comb * fine_host * cluster_boost\n\nhttps://wiki.yandex-team.ru/JandeksPoisk/KachestvoPoiska/AnalyticsAndProductization/offline-metrics/Current-metrics-and-baskets/",
+  "greaterBetter": true,
+  "name": "proxima2020-light-svin",
+  "owner": "robot-proxima",
+  "responsibleUsers": [],
+  "style": null,
+  "type": "mstand"
+}

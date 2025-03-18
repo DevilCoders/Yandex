@@ -1,0 +1,130 @@
+#include <tools/clustermaster/common/cron.cpp>
+
+%%{
+
+machine CronInstruction;
+
+action clear_int {
+    val = 0;
+}
+
+action update_int {
+    val = val * 10 + (fc - '0');
+}
+
+asterisk = '*';
+
+number = ( [0-9] | [1-5][0-9] ) >clear_int $update_int;
+step = ( [2-9] | [1-5][0-9] ) >clear_int $update_int;
+
+# ========================================================================
+
+value = number
+        %{ c.Value(val); };
+
+range = number
+        %{ minv = val; }
+    '-' number
+        %{ c.Range(minv, val); };
+
+range_step = number
+        %{ minv = val; }
+    '-' number
+        %{ maxv = val; }
+    '/' step
+        %{ c.RangeWithStep(minv, maxv, val); };
+
+any_step = '*/' step
+        %{ c.AnyWithStep(val); };
+
+cond = any_step | value | range | range_step;
+
+field = asterisk
+    | ( cond ( ',' cond )* );
+
+# ========================================================================
+
+sp = [ \t]+;
+
+entry_field = field %{ c.ProcessField(&(conditions[currentCondition++])); };
+entry = (entry_field sp){4,5} field %{ c.ProcessField(&dow); };
+
+main := entry;
+
+write data;
+
+}%%
+
+TCronEntry::TImpl* TCronEntry::TImpl::Create(const TString &entry)
+{
+    constexpr ui8 DEFAULT_MINIMUM_CONDS_NUM = 5;
+
+    DEBUGLOG1(cron, "parsing `" << entry << "'");
+    const char *p = entry.data();
+    const char *pe = p + strlen(p);
+    int cs;
+    const char *eof = pe;
+
+    unsigned val, minv, maxv;
+
+    TFieldProcessor c;
+
+    TVector<TCond> conditions(DEFAULT_MINIMUM_CONDS_NUM);
+    ui8 currentCondition = 0;
+
+    TCond second;
+    TCond minute;
+    TCond hour;
+    TCond dom;
+    TCond month;
+    TDayOfWeekCond dow;
+    bool cronFormat = false;
+
+    %% write init;
+    %% write exec;
+
+    if (cs < %%{ write first_final; }%%) {
+        ythrow TCronException() << "Error while parsing cron entry `" << entry << "'";
+    }
+
+    if (currentCondition < DEFAULT_MINIMUM_CONDS_NUM - 1) {
+        ythrow TCronException() << "Error while parsing cron entry";
+    }
+
+    if (currentCondition == DEFAULT_MINIMUM_CONDS_NUM - 1) {
+        cronFormat = true;
+    }
+
+    TFieldProcessor::Check(dow, 0, 7);
+
+    auto curCond = conditions.begin();
+
+    if (!cronFormat) {
+            second = *curCond;
+            TFieldProcessor::Check(second, 0, 59);
+            ++curCond;
+    }
+
+    minute = *curCond;
+    TFieldProcessor::Check(minute, 0, 59);
+
+    ++curCond;
+    hour = *curCond;
+    TFieldProcessor::Check(hour, 0, 23);
+
+    ++curCond;
+    dom = *curCond;
+    TFieldProcessor::Check(dom, 1, 31);
+
+    ++curCond;
+    month = *curCond;
+    TFieldProcessor::Check(month, 1, 12);
+
+    return new TCronEntry::TImpl(second,
+                                 minute,
+                                 hour,
+                                 dom,
+                                 month,
+                                 dow,
+                                 cronFormat);
+}

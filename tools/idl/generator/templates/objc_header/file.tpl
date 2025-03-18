@@ -1,0 +1,10 @@
+{{#IMPORT_SECTION}}{{#IMPORT}}#import {{IMPORT_PATH}}{{#IMPORT_separator}}
+{{/IMPORT_separator}}{{/IMPORT}}{{#IMPORT_SECTION_separator}}
+
+{{/IMPORT_SECTION_separator}}{{/IMPORT_SECTION}}{{#FWD_DECLS}}
+{{#FWD_DECL}}
+@class {{TYPE_NAME}};{{/FWD_DECL}}{{/FWD_DECLS}}{{#NON_FWD_DECL_ABLE_TYPE}}
+
+{{>NON_FWD_DECL_ABLE_TYPE}}{{/NON_FWD_DECL_ABLE_TYPE}}{{#CHILD}}
+
+{{>CHILD}}{{/CHILD}}

@@ -1,0 +1,107 @@
+---
+apiVersion: '1'
+kind: Task
+params:
+  arch: linux
+  custom_fields:
+    custom_attrs:
+      ttl: inf
+      name: LXC_SANDBOX_BIONIC_WITH_DOCKER
+    custom_image: true
+    custom_packages: ''
+    custom_repos: ''
+    install_common: true
+    resource_description: LXC_SANDBOX_BIONIC_WITH_DOCKER
+    resource_type: LXC_CONTAINER
+    set_default: false
+    test_result_lxc: false
+    ubuntu_release: bionic
+    unwanted_packages: juggler-client ^config-juggler
+    custom_packages: tar
+    custom_script: |
+      # TODO remove inline ad-hoc script once https://a.yandex-team.ru/review/618817/details commited'
+      # echo 'svn export  svn+ssh://arcadia.yandex.ru/arc/trunk/arcadia/tools/sandboxctl/examples/runtime-images/lxc-with-docker'
+      ###############
+      apt-get install yandex-internal-root-ca
+      apt-get --yes purge yandex-search-common-apt
+      
+      apt-get update
+      apt-get --yes install curl git python-pip software-properties-common iptables-persistent
+      apt-get --yes install python3-pip python3-virtualenv python3-venv
+      apt-get --yes install python python-virtualenv python-venv virtualenv
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+      add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu bionic stable"
+      apt-get --yes install docker-ce
+      
+      cat >> /etc/environment << EOF
+      REQUESTS_CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt"
+      EOF
+      
+      mkdir -p /etc/iptables
+      cat > /etc/iptables/rules.v6 << EOF
+      *filter
+      :INPUT ACCEPT [176:22921]
+      :FORWARD ACCEPT [0:0]
+      :OUTPUT ACCEPT [29:5356]
+      COMMIT
+      *nat
+      :PREROUTING ACCEPT [101:8396]
+      :INPUT ACCEPT [10:720]
+      :OUTPUT ACCEPT [80:6923]
+      :POSTROUTING ACCEPT [80:6923]
+      -A POSTROUTING -s fd00::/8 -j MASQUERADE
+      COMMIT
+      EOF
+      
+      mkdir -p /etc/docker
+      cat > /etc/docker/daemon.json << EOF
+      {
+      	"ipv6": true,
+      	"fixed-cidr-v6": "fd00::/8",
+      	"ip-forward": true
+      }
+      EOF
+      usermod -a -G docker sandbox
+
+      #Install extra packages
+      apt-get install -y xjobs zstd
+      pip install --upgrade pip setuptools
+      pip3 install --upgrade pip setuptools
+      pip install pytest pytest-html pytest-xdist
+      pip3 install pytest pytest-html pytest-xdist
+      hash pip
+
+      ####
+      cat >> /usr/bin/docker-load.sh << EOF
+      #!/bin/bash
+      set -e 
+      for img in $@
+      do
+          fname=$(basename -- "$img")
+          sfx="${img##*.}"
+          name="${fname%.*}"
+          catcmd='cat'
+          case "$sfx" in
+      	zst|zstd)
+      	    catcmd='zstdcat'
+      	    ;;
+      	xz)
+      	    catcmd='xzcat'
+      	    ;;
+      	tgz|gz)
+      	    catcmd='zcat'
+      	    ;;
+      	bz2|bz)
+      	    catcmd='bzcat'
+      	    ;;
+      	tar)
+      	    catcmd='cat'
+      	    ;;
+          esac
+          $catcmd $img | docker load
+      done
+      EOF
+      chmod +x /usr/bin/docker-load.sh
+  description: build sandbox lxc image with docker inside
+  priority: SERVICE:NORMAL
+  type: SANDBOX_LXC_IMAGE

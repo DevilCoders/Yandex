@@ -1,0 +1,167 @@
+{% extends "core/index.html" %}
+{% load i18n %}
+{% load crit_name_cleaner %}
+{% load setting %}
+{% core_setting 'SEGMENTATION_ENABLED' as seg_enabled %}
+
+{% block Title %}{% trans 'Estimation check' %}{% endblock %}
+{% block Scripts %}
+    <script>
+
+        $(function () {
+            {% for i in counted_ests %}
+                setupControlledCheckboxes("corr{{ forloop.counter0 }}");
+            {% endfor %}
+            $(".errorcb").popover({trigger: "hover",
+                                   content: "{% trans 'Significant error' %}"});
+            $("#skip_check").click(function () {
+                                       $("#id_action").val("Skip");
+                                       $("#next").click();
+                                   });
+        {% if error == 'collision' %}
+            alert("{% trans 'Sorry, this task was estimated by another user. Please review your corrections.' %}");
+        {% elif error == 'new_est_left' %}
+            alert("{% trans 'Sorry, new estimation was left during error processing. Please review your corrections.' %}");
+        {% endif %}
+        });
+
+    </script>
+{% endblock %}
+
+{% block Caption %}{% trans 'Estimation check' %}{% endblock %}
+{% block Content %}
+<div class="row">
+    <div class="span12">
+        {% with snip_tpls_ext=snip_tpls_ext task=est.task show_pools=True show_request=True %}
+            {% include 'core/snippet_pair.html' %}
+        {% endwith %}
+        <div style="clear: both;"></div>
+        {% if est.user != yauser.core_user %}
+            <div class="alert">{% trans 'You are viewing the corrections for actual estimation made by' %} {{ est.user }}.</div>
+        {% endif %}
+        {% if draft %}
+            <div class="alert">{% trans 'These corrections are draft. You must finish checking to send them to ANG.' %}</div>
+        {% endif %}
+    </div>
+</div>
+<div style="width: {% if seg_enabled %}74{% else %}79{% endif %}%; display: inline-block; float: left;">
+    <div>
+        <form method="post" class="form-inline" action="{% url 'core:process_errors' est_id %}">
+            {% if assessor_ests %}
+                <table class="table table-striped table-no-border">
+                    <colgroup>
+                        <col width="13%">
+                        <col width="29%">
+                        <col width="29%">
+                        <col width="29%">
+                    </colgroup>
+                    <thead>
+                        <tr>
+                            <td class="td-filter-cell">
+                                <a href="#" title="{% trans 'Filter' %}"><i class="icon  icon-filter"></i> {% trans 'All estimations' %}</a>
+                            </td>
+                            {% for crit, counter in counted_ests %}
+                                <td>
+                                    <label class="checkbox label-no-margin label-parent-weight">
+                                        <input type="checkbox" id="corr{{ forloop.counter0 }}_controller" />
+                                        <h4 style="display: inline-block;">{% trans crit|crit_name_cleaner|capfirst %}</h4>
+                                    </label>
+                                    <div class="row-fluid">
+                                        {% for digit, val in est.VALUE_NAMES %}
+                                            <div class="span4">{% trans val|title %}</div>
+                                        {% endfor %}
+                                    </div>
+                                    <div class="row-fluid">
+                                        {% for digit, count in counter %}
+                                            <div class="span4"><a href="#">{{ count }}</a></div>
+                                        {% endfor %}
+                                    </div>
+                                </td>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    {% for as_est, est_vals in assessor_ests %}
+                    <tr>
+                        <td>
+                            <i class="icon icon-user"></i>&nbsp;{{ as_est.user.login }}
+                            <input type="hidden" name="error_visible_{{ as_est.id }}" value="True" />
+                            {% if as_est.comment %}
+                                <div class="table-sub-row">
+                                    <div class="table-sub-row__content muted">
+                                    {% if as_est.answer %}
+                                        {% trans 'Question' %}:
+                                    {% else %}
+                                        {% trans 'Comment' %}:
+                                    {% endif %}
+                                    {{ as_est.comment }}
+                                    </div>
+                                </div>
+
+                                {% if as_est.answer %}
+                                <div class="table-sub-row">
+                                    <div class="table-sub-row__content muted">
+                                    {% trans 'Answer' %}: {{ as_est.answer }}
+                                    </div>
+                                </div>
+                                {% endif %}
+                            {% endif %}
+                        </td>
+                        {% for crit_name, val, aa_val, sign_err in est_vals %}
+                            <td class="{% if val == aa_val %}success{% else %}error{% endif %}">
+                                <label class="checkbox label-no-margin label-parent-weight">
+                                {% if val != aa_val %}
+                                    <input type="checkbox" data-group="corr{{ forloop.counter0 }}" class="errorcb" name="error_checkbox_{{ as_est.id }}_{{ forloop.counter0 }}" {% if sign_err %}checked{% endif %} />
+                                {% endif %}
+                                {% trans val|title %}
+                                </label>
+                            </td>
+                            {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </table>
+            {% else %}
+                <div class="alert alert-info">{% trans 'Nobody has completed this task yet. You may press "Finish checking" if you would like to complete this task.' %}</div>
+            {% endif %}
+
+            {% csrf_token %}
+            <input type="hidden" id="id_action" name="action" value="Next" />
+            <input type="hidden" id="id_aadmin_est_number" name="aadmin_est_number" value="{{ est.id }}" />
+            <div class="row">
+                <div class="span6 offset4">
+                    <div class="control-group">
+                        <div class="controls">
+                            <input type="button" id="skip_check" class="btn" value="{% trans 'Check later' %}" />
+                            <input type="submit" id="next" class="btn" value="{% trans 'Finish checking' %}" />
+                            {% if assessor_ests %}
+                                <label class="checkbox">
+                                    <input type="checkbox" name="compose" /> {% trans 'Compose a letter' %}
+                                </label>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+<div style="display: inline-block; width: {% if seg_enabled %}25{% else %}20{% endif %}%; float: left; padding-top: 10px;">
+    <form method="post" action="{% url 'core:estimation_check' est_id %}">
+        <div class="span3">
+            {% include 'core/estimation_form.html' %}
+            <input type="submit" id="submit" value="{% trans 'Change estimation' %}" class="btn" />
+        </div>
+    </form>
+</div>
+{% if est.task.status == est.task.Status.COMPLETE %}
+<div class="row">
+    <div class="span12" style="padding-top: 20px;">
+        <div class="alert alert-info">
+            {% blocktrans %}
+                This task is checked.
+                If you wish to change estimation, you should check error values again to keep ANG statistics actual.
+            {% endblocktrans %}
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

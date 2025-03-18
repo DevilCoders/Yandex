@@ -1,0 +1,184 @@
+import "tools/clustermaster/proto/target.proto";
+
+package NProto;
+
+enum EMessageType {
+    MT_UNKNOWN = 0;
+
+    MT_ERROR = 1;            // worker->master: error report
+
+    MT_PING = 2;             // not currently used
+    MT_TEST = 3;             // not currently used
+    MT_WORKERHELLO = 4;      // worker->master: hello message when master connects
+    MT_AUTHREPLY = 5;        // master->worker: reply to auth challenge in WORKERHELLO
+    MT_AUTHSUCCESS = 6;      // worker->master: confirmation of successfull auth (reply to AUTHREPLY)
+    MT_NEWCONFIG = 7;        // master->worker: config update (reply to MT_AUTHSUCCESS)
+
+    MT_FULLSTATUS = 8;       // worker->master: complete status of all tasks in all targets
+    MT_SINGLESTATUS = 9;     // worker->master: complete status of a single task
+    MT_THINSTATUS = 10;      // worker->master: thin (only state) status for all tasks in a single target
+
+    MT_FULLCROSSNODE = 11;   // master->worker: crossnote statuses for all targets
+    MT_SINGLECROSSNODE = 12; // master->worker: crossnote status for s single target
+
+    MT_COMMAND = 13;         // master->worker: command message
+    MT_POKE = 14;            // master->worker: crossnode depends are satisfied, ok to run
+
+    MT_VARIABLES = 15;       // worker<->master: update variables list
+
+    MT_DISKSPACE = 16;       // worker->master: update diskspace statistics
+
+    MT_MULTIPOKE = 17;       // master->worker: crossnode depends are satisfied, ok to run
+
+    MT_COMMAND2 = 18;        // master->worker: command message new version (with global task ids)
+
+    // Number of messages (last message id + 1)
+    MT_NUMMESSAGES = 19;
+}
+
+message TCommandMessage {
+    enum ECommandFlags {
+        CF_RUN               = 0x00000001; // mark task as pending
+        CF_INVALIDATE        = 0x00000002; // mark task as idle
+        CF_MARK_SUCCESS      = 0x00000004; // mark task as successfull
+        CF_RESET_STAT        = 0x00000008; // reset resource usage statistics
+
+        CF_FORCE_RUN         = 0x00010000; // force-run (ignore depends & resources)
+        CF_FORCE_READY       = 0x00020000; // force-run (ignore depends only)
+        CF_RETRY             = 0x00040000; // run failed or depfailed task only
+        CF_MARK_SKIPPED      = 0x00080000; // mark skipped targets
+
+        CF_CANCEL            = 0x00100000; // for running tasks: send signal and change state to CANCELING; for READY and PENDING tasks, set state to CANCELED
+        CF_KILL              = 0x00200000; // use SIGKILL instead of SIGTERM
+        CF_REMAIN_SUCCESS    = 0x00400000; // when invalidating, do not touch tasks marked as successfull
+
+        CF_RECURSIVE_UP      = 0x01000000; // also work on depends recursively
+        CF_RECURSIVE_DOWN    = 0x02000000; // also work on followers recursively
+        CFI_IN_RECURSION     = 0x04000000; // internal; shows secondary status changes
+
+        CF_RECURSIVE_ONLY    = 0x08000000; // only affects targets visited through recursion
+
+        CF_IDEMPOTENT        = 0x10000000; // idempontent run command does not affect failed&depfailed tasks
+                                           // needed in cron restart_on_success
+    }
+
+    required string Target = 1;
+    required int32 Task = 2; // id within one worker (not global one)
+    required uint32 Flags = 3;
+    required ETaskState State = 4;
+    optional fixed64 StateValue = 5;
+}
+
+// This message contains list of _global_ task ids (not ids within one worker as TCommandMessage). I'm going
+// to use this approach everywhere after (short?) transitional period.
+message TCommandMessage2 {
+    required string Target = 1;
+    repeated int32 Task = 2; // task ids in this list are global
+    required uint32 Flags = 3;
+    required ETaskState Unused = 4; // was 'State' - but now tasks are filterd by state on master side
+}
+
+message TFullStatusMessage {
+    repeated TTaskStatuses Target = 1;
+}
+
+message TSingleStatusMessage {
+    required string Name = 1;
+    required uint32 Task = 2;
+    required TTaskStatus Status = 3;
+}
+
+message TThinStatusMessage {
+    required string Name = 1;
+    repeated ETaskState State = 2; // Left for compability with older versions, should be removed
+    repeated TThinTaskStatus Status = 3;
+}
+
+message TAuthReplyMessage {
+    required bytes Digest = 1;
+    optional bool MasterIsSecondary = 2;
+}
+
+message TAuthSuccessMessage {
+}
+
+message TWorkerHelloMessage {
+    required uint32 HttpPort = 2;
+    required bytes Challenge = 5;
+}
+
+message TConfigMessage {
+    message TListType {
+        required string Name = 1;
+        repeated string Items = 2;
+    }
+
+    message TThisWorkerTargetType {
+        required string Name = 1;
+        // worker params checksum
+        // ignored if omitted (for tests)
+        optional fixed64 Checksum = 2;
+    }
+
+    message TThisWorkerTarget {
+        message TDepend {
+            required string DependName = 1;
+        }
+
+        required string Name = 1;
+        required bool HasCrossnodeDepends = 2;
+        repeated TDepend Depends = 5;
+    }
+
+    required string WorkerName = 21;
+    required bytes Config = 1;
+    repeated bytes HostCfgs = 11;
+    required bytes HostList = 12;
+    required string MasterHost = 4;
+    required uint32 MasterHttpPort = 5;
+    repeated TThisWorkerTargetType ThisWorkerTargetTypes = 6;
+    repeated TThisWorkerTarget ThisWorkerTargets = 7;
+}
+
+message TPokeMessage {
+    enum EPokeFlags {
+        PF_UNUSED = 0x01;
+        PF_UNUSED_2 = 0x02;
+        PF_READY = 0x04;
+    }
+
+    required string Target = 1;
+    required int32 Unused = 3; // this was named 'Task' and is not used now; was left to not break compatibility
+    required int32 Flags = 2;
+}
+
+message TMultiPokeMessage {
+    enum EPokeFlags {
+        PF_UNUSED = 0x01;
+        PF_UNUSED_2 = 0x02;
+        PF_READY = 0x04;
+    }
+
+    required string Target = 1;
+    repeated int32 Tasks = 2;
+    required int32 Flags = 3;
+}
+
+message TErrorMessage {
+    required bool Fatal = 1;
+    required string Error = 2;
+}
+
+message TVariablesMessage {
+    message TVariable {
+        required string Name = 1;
+        optional string Value = 2;
+    }
+
+    repeated TVariable Variable = 1;
+}
+
+message TDiskspaceMessage {
+    required uint64 Total = 1;
+    required int64 Avail = 2;
+}

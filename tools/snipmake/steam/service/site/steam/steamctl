@@ -1,0 +1,14 @@
+#!/bin/bash
+# INFO: this method of start file is deprecated. Use ubic.
+if [[ $1 == start ]]; then
+    python /usr/share/pyshared/steam/manage.py celeryd_multi start steam -EB --autoreload --concurrency=3 --loglevel=INFO --workdir=/usr/share/pyshared/steam/ --logfile=/var/log/yandex/steam/celeryd_steam.log --pidfile=/var/run/celeryd/steam.pid
+
+    uwsgi --chdir=/usr/share/pyshared/steam/ --module=ui.wsgi:application --env DJANGO_SETTINGS_MODULE=ui.settings --master --pidfile=/tmp/steam-uwsgi.pid --socket=/tmp/steam-uwsgi.socket --processes=3 --harakiri=20 --max-requests=5000 --daemonize=/var/log/yandex/steam/uwsgi.log --plugin=python
+
+    nginx -c /usr/share/pyshared/steam/etc/nginx/90-steam-site-uwsgi.conf
+fi;
+if [[ $1 == stop ]]; then
+    nginx -c /usr/share/pyshared/steam/etc/nginx/90-steam-site-uwsgi.conf -s stop
+    uwsgi --stop /tmp/steam-uwsgi.pid
+    python /usr/share/pyshared/steam/manage.py celeryd_multi stop steam --pidfile=/var/run/celeryd/steam.pid
+fi;

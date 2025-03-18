@@ -1,0 +1,322 @@
+{% extends "core/index.html" %}
+{% load i18n %}
+{% load crit_name_cleaner %}
+
+{% block Title %}{% trans 'Statistics' %}{% endblock %}
+{% block Scripts %}
+<script>
+
+    $(function () {
+            $(".wilcoxon_popover").popover({delay: {show: 0, hide: 2000}});
+
+            yandex_uids = [
+            {% for yandex_uid in user_pks %}
+                "{{ yandex_uid }}",
+            {% endfor %}
+            ];
+            reqdata = new FormData();
+            reqdata.append("tasks_json", '{{ tasks_json|safe }}');
+            reqdata.append(
+                "csrfmiddlewaretoken",
+                $("input[name=\"csrfmiddlewaretoken\"]").val()
+            );
+            for (i=0; i < yandex_uids.length; ++i) {
+                $.ajax({
+                    url: "/ajax/statistics/{{ taskpool.pk }}/{% if filter_crit and filter_val %}{{ filter_crit }}_{{ filter_val }}/{% endif %}" + yandex_uids[i] + "/",
+                    type: "POST",
+                    data: reqdata,
+                    cache: false,
+                    contentType: false,
+                    processData: false
+                }).done(function(data) {
+                            $("#user_aggregated tbody").append(data);
+                            $(".unfold_link").click(unfold);
+                        });
+            }
+        });
+
+    function unfold() {
+        login = this.id.substr(0, this.id.indexOf("_"));
+        $("[data-login=\"" + login + "\"]").css("display", "table-row");
+        $($("[data-login=\"" + login + "\"] > td")[0]).html(
+            "<a href=\"#\" id=\"" + login + "_folder\"></a> " + login
+        );
+        $("#" + login + "_folder").html("<i class=\"icon-minus-sign\"></i>");
+        $("#" + login + "_folder").click(fold);
+        $("#" + login + "_header_tr").css("display", "none");
+        $("#" + login + "_fake_odd").remove();
+        return false;
+    }
+
+    function fold() {
+        login = this.id.substr(0, this.id.indexOf("_"));
+        $("[data-login=\"" + login + "\"]").css("display", "none");
+        $("#" + login + "_header_tr").css("display", "table-row");
+        userEstCount = $("[data-login=\"" + login + "\"]").length;
+        if (userEstCount % 2 == 0) {
+            $($("[data-login=\"" + login + "\"]")[userEstCount - 1]).after(
+                "<tr id=\"" + login + "_fake_odd\"></tr>"
+            );
+        }
+        return false;
+    }
+
+</script>
+{% endblock %}
+
+{% block Content %}
+<div class="row" style="text-align: center;">
+    <table style="display: inline;">
+        <tr>
+            <td style="text-align: right;">
+                {% trans 'Task pool' %}:
+            </td>
+            <td style="text-align: left;">
+                {{ taskpool.title }}
+            </td>
+        </tr>
+        <tr>
+            <td style="text-align: right;">
+                {% trans 'Tasks type' %}:
+            </td>
+            <td style="text-align: left;">
+                {{ taskpool.kind_pool_str }}
+            </td>
+        </tr>
+        <tr>
+            <td style="text-align: right;">
+                {% trans 'Estimation mode' %}:
+            </td>
+            <td style="text-align: left;">
+                {{ taskpool.kind_str }}
+            </td>
+        </tr>
+        <tr>
+            <td style="text-align: right;">
+                {% trans 'Overlap' %}:
+            </td>
+            <td style="text-align: left;">
+                {{ taskpool.overlap }}
+            </td>
+        </tr>
+        <tr>
+            <td style="text-align: right;">
+                {% trans 'Estimation count' %}:
+            </td>
+            <td style="text-align: left;">
+                {{ est_count }}
+            </td>
+        </tr>
+        <tr>
+            <td style="text-align: right;">
+                {% trans 'Unique estimation amount' %}:
+            </td>
+            <td style="text-align: left;">
+                {{ unique_ests_count }}
+            </td>
+        </tr>
+    </table>
+</div>
+<div class="row">
+    <h4>
+        {% trans 'Integral data' %}
+        ({% trans 'Corrected' %} / {% trans 'Original' %})
+    </h4>
+{% load percentage %}
+{% load yauth %}
+{% if filter_crit and filter_val %}
+    {% trans 'Filter selected' %}:
+    {% trans filter_crit|crit_name_cleaner|capfirst %},
+    {% trans filter_val|title %}
+    <a href="{% url 'core:statistics_default' taskpool.id %}">
+        <i class="icon-remove-sign"></i>
+    </a>
+    {% endif %}
+    <table class="table table-striped table-condensed table-fixed table-centered table-no-border">
+            <colgroup>
+            {% if yauser.core_user.role == yauser.core_user.Role.ANALYST %}
+                <col width="25%">
+                <col width="25%">
+                <col width="25%">
+                <col width="25%">
+            {% else %}
+                <col width="20%">
+                <col width="16%">
+                <col width="16%">
+                <col width="16%">
+                <col width="16%">
+                <col width="16%">
+            {% endif %}
+            </colgroup>
+            <tr>
+                <th></th>
+                <th>
+                    {{ taskpool.first_pool_str }}
+                </th>
+                <th>
+                    {% trans 'both'|title %}
+                </th>
+                <th>
+                    {{ taskpool.second_pool_str }}
+                </th>
+            {% if yauser.core_user.role != yauser.core_user.Role.ANALYST %}
+                <th>
+                    {% trans 'Different estimations' %}
+                </th>
+                <th>
+                    {% trans 'Opposite estimations' %}
+                </th>
+            {% endif %}
+            </tr>
+        {% for criterion, counters, wilcoxon_test, different, opposite, has_line_info in integral_data %}
+            <tr>
+                <td>
+                    <i class="wilcoxon_popover
+                    {% if wilcoxon_test.T_abs > wilcoxon_test.T_CRITICAL %}
+                        {% if wilcoxon_test.is_right %}
+                            icon-arrow-right icon-blue
+                        {% else %}
+                            icon-arrow-left icon-red
+                        {% endif %}
+                    {% else %}
+                        icon-resize-horizontal
+                    {% endif %}
+                    " data-content="
+                    {% trans 'Not null diff size' %}: {{ wilcoxon_test.size }}<br />
+                    {% trans 'T-value' %}: {{ wilcoxon_test.T }}<br />
+                    {% trans 'T-CRITICAL' %}: {{ wilcoxon_test.T_CRITICAL }}
+                    {% if no_line_info %}
+                        <br />
+                        <a href='https://wiki.yandex-team.ru/JandeksPoisk/KachestvoPoiska/Annotation/steam/FS/v2#kriterijjznachimostiofflajjnocenok'>{% trans 'No data on snippet lines!' %}</a>
+                    {% endif %}
+                    " data-html="true"
+                    data-trigger="hover"></i>
+                    {% trans criterion|crit_name_cleaner|capfirst %}:
+                </td>
+            {% for corr_number, orig_number in counters %}
+                <td>
+                    {% cycle 'left' 'both' 'right' as crit_val silent %}
+                    {% if filter_crit == criterion and filter_val == crit_val %}
+                        <div style="background-color: #808080;">
+                    {% endif %}
+                    <a href="{% url 'core:statistics' taskpool.id criterion crit_val %}">
+                    {{ corr_number }}
+                    {{ corr_number|percentage:unique_ests_count}}
+                    /
+                    {{ orig_number }}
+                    {{ orig_number|percentage:unique_ests_count}}
+                    </a>
+                    {% if filter_crit == criterion and filter_val == crit_val %}
+                        </div>
+                    {% endif %}
+                </td>
+            {% endfor %}
+
+            {% if yauser.core_user.role != yauser.core_user.Role.ANALYST %}
+                <td>
+                    {{ different|length }}
+                    {{ different|length|percentage:task_count }}
+                </td>
+                <td>
+                    {{ opposite|length }}
+                    {{ opposite|length|percentage:task_count }}
+                </td>
+            {% endif %}
+            </tr>
+            <!--hack for correct colors-->
+            <tr></tr>
+        {% endfor %}
+    </table>
+</div>
+<div class="row">
+{% if est_count %}
+    <h4>
+        {% trans 'Grouped by users' %}
+    </h4>
+    <br />
+    <div class="row">
+        <div class="span2"><b>{% trans 'Count' %}:</b></div>
+        <div class="span1">{{ user_pks|length }}</div>
+    </div>
+    <br />
+    {% if user_pks %}
+
+        <table id="user_aggregated" class="table table-striped table-condensed table-fixed table-centered table-no-border">
+                <colgroup>
+                {% if yauser.core_user.role == yauser.core_user.Role.ANALYST %}
+                    <col width="10%">
+                    <col width="15%">
+                    <col width="25%">
+                    <col width="8%">
+                    <col width="8%">
+                    <col width="8%">
+                    <col width="8%">
+                    <col width="18%">
+                {% else %}
+                    <col width="10%">
+                    <col width="15%">
+                    <col width="21%">
+                    <col width="9%">
+                    <col width="9%">
+                    <col width="9%">
+                    <col width="9%">
+                    <col width="9%">
+                    <col width="9%">
+                {% endif %}
+                </colgroup>
+            <tr>
+                <th>
+                    {% trans 'User' %}
+                </th>
+                <th>
+                    {% trans 'Request' %}
+                </th>
+                <th>
+                    URL
+                </th>
+            {% if yauser.core_user.role == yauser.core_user.Role.ANALYST %}
+                <th>
+                    {% trans 'Estimation' %}
+                </th>
+                {% for crit_name in crit_names %}
+                    <th>
+                        {% trans crit_name|title|slice:'1' %}
+                    </th>
+                {% endfor %}
+                <th>
+                    {% trans 'Comment' %}
+                </th>
+            {% else %}
+                <th>
+                    {% trans 'Criterion' %}
+                </th>
+                <th>
+                    {{ taskpool.first_pool.title }}
+                </th>
+                <th>
+                    {% trans 'both'|title %}
+                </th>
+                <th>
+                    {{ taskpool.second_pool.title }}
+                </th>
+                <th>
+                    {% trans 'Different estimations' %}
+                </th>
+                <th>
+                    {% trans 'Opposite estimations' %}
+                </th>
+            {% endif %}
+            </tr>
+        </table>
+
+    {% else %}
+        {% trans 'No estimations available.' %}
+    {% endif %}
+
+{% else %}
+    <h4>
+        {% trans 'No estimations available.' %}
+    </h4>
+{% endif %}
+</div>
+{% endblock %}

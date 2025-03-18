@@ -1,0 +1,9 @@
+RECURSE(
+    filestorage
+    page_factors/cpp_factors
+    page_factors/cpp_factors/segmentator_tool
+    protos
+    serp_parser
+    html_snapshot
+    pyhtml_snapshot
+)

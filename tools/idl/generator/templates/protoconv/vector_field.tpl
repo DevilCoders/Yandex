@@ -1,0 +1,1 @@
+{{#CUSTOM_TYPE}}decode({{#ENUM_FIELD}}static_cast<{{PB_ENUM_NAME}}>({{/ENUM_FIELD}}{{/CUSTOM_TYPE}}item{{#CUSTOM_TYPE}}{{#ENUM_FIELD}}){{/ENUM_FIELD}}){{/CUSTOM_TYPE}}

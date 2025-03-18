@@ -1,0 +1,5 @@
+RECURSE(
+    common
+    market
+    web
+)

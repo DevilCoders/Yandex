@@ -1,0 +1,225 @@
+#!/usr/local/bin/perl5
+#use strict;
+
+require 5.005;
+
+########### colors ##########
+
+$bg_color	= "#FFFFFF";
+$text_color	= "#0A0A0A";
+$link_color	= "#0045bf";
+$alinc_color	= "#0045bf";
+$vlink_color	= "#8c528b";
+@tabcolors=('#E0FFFF', '#FFFFFF');
+
+$tablepadding=2;
+$method	= "GET";
+$action	= "/cgi-bin/prword";
+
+use CGI qw(:standard :cgi);
+
+$, = "\n";
+
+$PRINTKEYS = '/usr/room/room.ls/room.2.0/arcadia/ysite/printkeys';
+$INDEX_KEY = 'workindexkey';
+$INDEX_INV = 'workindexinv';
+$PRDATA_FILE = '/var/tmp/.prdata.';
+
+print header();
+if (param) {
+	print_form();
+	print_words();
+} else { 
+	print_form();
+}
+
+
+###
+#
+sub print_form {
+  my ($letters) = param('letters');
+  print	start_html(-TITLE=>"—писок найденных слов. Yandex-Site.",
+			-BGCOLOR=>$bg_color,
+			-TEXT=>$text_color,
+			-LINK=>$link_color,
+			-ALINK=>$alinc_color,
+			-VLINK=>$vlink_color,
+			-FONTSIZE=>"-2"
+	),
+	start_form($method, $action),
+ 	small(
+	 table( {align=>center},
+	  Tr(
+ 	    td (b("«адайте начальные буквы слова"),
+	        input ({
+	    		-name=>'letters',
+	    		-value=>$letters,
+	    		-size=>10,
+	    		-maxlenth=>30
+	    	}),
+		"<input type=hidden name=prev value=".param('how').">\n",
+	        submit (	-name=>"",
+			-style=>'font-size: 9pt',
+			-value=>'Go!'), br(),
+		b("<small>( ! все слова нормализованны)</small>")
+	    ),
+	  ),
+	  Tr (
+		td ('ѕримеры:'),
+	  ),
+	  Tr (
+		td (b('ав'), ' -- слова начинаютс€ с "ав"', br(), $,,
+		    b('[ав]'), ' -- слова начинаютс€ или с "а", или с "в"', br(), $,,
+		    b('.*'), '  -- показать все слова ', br(), $,,
+		    b('[в-д]'), ' -- показать слова, начинающиес€ с в,г,д', br(), $,,
+		    b('[^в-д]'), ' -- исключить из списка слова, начинающиес€ с в,г,д', br(), $,,
+		    '≈сли заданы строчные буквы, поиск ведетс€ без учета регистра,<br>', $,,
+		    'если заданы прописные буквы, ищутс€ слова с точным совпадением регистра', $,
+		)
+	    ),
+	  Tr (td("<hr noshade>")),
+	  Tr (
+		td (
+		    '<input type=radio name="how" value="all" '.(param('how')eq"all"||param('how')eq''?"checked":"").">",
+		    b(" ¬се слова"), $,,
+		    '<input type=radio name="how" value="isdict" '.(param('how')eq"isdict"?"checked":"").">", $,,
+		    b(" —ловарные слова"), $,,
+		    '<input type=radio name="how" value="nodict" '.(param('how')eq"nodict"?"checked":"").">", $,,
+		    b(" Ќесловарные слова"), br(), $,,
+		    '<small>( ! все английские слова относ€тс€ к несловарным)</small>', br(), $,,
+		), $,,
+	  ),
+	  Tr (
+		td (
+		    '<input type=checkbox name="sort"  value="yes" '.(param('sort')eq"yes"?"checked":"").">",
+		    b(" —ортировать по частоте повторени€"), br(), $,,
+		    pr_newwin(),
+		),
+	  ),
+	  Tr (td ("<hr noshade>")),
+	  Tr (td ("ƒл€ получени€ списка документов, содержащих <br> нужное слово, перейдите по ссылке")),
+	  Tr (td("<hr noshade>")),
+	 ),
+	),
+	end_form(),
+	end_html();
+}
+
+sub pr_newwin {
+    if (!param) {
+        return '<input type=checkbox name="newwin" value="yes" '.(param('newwin')eq"yes"||param('newwin')eq''?"checked":"").">".
+		    b(" ќткрывать ссылки в новом окне"), br();
+    }
+    return '';
+}
+####
+#
+sub print_words {
+my ($pr_opt) = "";
+$pr_opt = "-d" if param('how') eq 'isdict';
+$pr_opt = "-n" if param('how') eq 'nodict';
+
+my ($prword_mtime) = (stat("prword"))[9];
+my ($prdata_time) = (stat($PRDATA_FILE))[9];
+
+chdir ($PRINTKEYS) || die "Cannot change directory: $PRINTKEYS -- $!\n";
+
+# ≈сли врем€ изменени€ временного файла с результатом работы
+# printkeys меньше времени изменени€ индексных файлов -- читать данные
+# из него; в противном случае выполн€ем printkeys
+if (! -f $PRDATA_FILE || param('prev') ne param('how')
+	|| $prdata_time < (stat($PRINTKEYS))[9]
+	|| $prdata_time < (stat($INDEX_KEY))[9]
+	|| $prdata_time < $prword_mtime) {
+    if (-f $PRDATA_FILE) {
+	unlink ($PRDATA_FILE) || die("Cannot unlink $PRDATA_FILE: $!");
+    }
+    $PRDATA_FILE = "./printkeys ".$pr_opt." $INDEX_KEY $INDEX_INV|tee $PRDATA_FILE|";
+}
+
+print $PRDATA_FILE;
+open (PRDATA, $PRDATA_FILE) || die "Cannot open: printkeys -n $INDEX_KEY $INDEX_INV: $! \n\n";
+
+print &table({	-align=>"center",
+		-border=>0,
+		-cellpadding=>2,
+		-width=>"50%"});
+
+local $dirrow = 0;
+local $count = 0;
+local $sort = param('sort') eq 'yes';
+local $newwin = param('newwin') eq 'yes';
+
+my ($data, %data);
+my $letter = param('letters');
+$letter = ($letter eq "*" ?  "" : $letter.".*");
+
+my ($pattern) = '^'.$letter.'[^\#0-9\W]*$';
+
+print ("<tr><td colspan=3><b>*</b> - звездочка указывает на словарное слово</td></tr>") if $pr_opt eq "";
+#print "<tr><td colspan=3>".$pattern."</td></tr>";
+
+while (($data=<PRDATA>)) {
+    chop ($data);
+    my ($word, $num) = split(" ", $data);
+    $word = substr ($data, 1) if ($data =~ "^[*]");
+
+    if ($word =~ /$pattern/) {
+	if ($sort) {
+	    $data{$data} = 10000+$num;
+	} else {
+	    pr_word ($data, $word); 
+	}
+    }
+}
+
+if ($sort) {
+    foreach $data (sort { $data{$b} <=> $data{$a} } keys %data) {
+	pr_word ($data);
+    }
+}
+ 
+print "</TD></TR><TR><TD>¬сего слов : <b>$count</B>"; 
+print "</TD></TR></table>";
+print "\n", &end_html;
+}
+
+sub pr_word {
+    my ($data) = @_;
+    my ($word) = split(" ", $data);
+    $word = substr ($word, 1) if ($word =~ "^[*]");
+
+    if ($count % 3 == 0) {
+	print "</TD></TR>\n";
+        if ($count % 150 == 0) {
+	    print "</table>\n".table({-align=>"center",
+				-border=>0,
+				-cellpadding=>2,
+				-width=>"80%"});
+	}
+	print "<TR bgcolor=".@tabcolors[$dirrow%2]."><TD>";
+	$dirrow++;
+    } else {
+	print "</TD><TD>";  
+    }
+    $data =~ s/(.*)\"(.*)/\1\"\2\"/;
+
+    # ![ IGNORE [
+    if (1) {
+    print "<A HREF=\"http://arc.hq.cti.ru/cgi-bin/yandsearch.ls?text=$word&formal=on&prog=0x2757574D&host=arc.hq.cti.ru\"".($newwin?"target=_blank":"").">$data</A>\n";
+    } else {
+    # ]]
+    print "<A HREF=\"/cgi-bin/yandsearch?text=".escape($word).'"'.($newwin?"target=_blank":"").">$data</A>\n"
+    # ![ IGNORE [
+    }
+    # ]]
+    $count++;
+}
+
+sub escape {
+    shift() if ref($_[0]) || $_[0] eq $DefaultClass;
+    my $toencode = shift;
+    return undef unless defined($toencode);
+    $toencode=~s/([^a-zA-Z0-9_.-])/uc sprintf("%%%02x",ord($1))/eg;
+    return $toencode;
+}

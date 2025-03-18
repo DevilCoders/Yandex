@@ -1,0 +1,173 @@
+{% extends "core/index.html" %}
+{% load i18n %}
+{% load yauth %}
+
+{% block Title %}{% trans 'User tasks' %}{% endblock %}
+{% block Scripts %}
+    <script>
+
+        $(function () {
+              $("#hotkeys_popover").popover({delay: {show: 0, hide: 2000}});
+              $(".unfold_link").click(unfold);
+          {% if unfolded %}
+              try {
+                  $("#tp{{ unfolded }}_unfolder").click();
+                  $("html, body").animate({
+                      scrollTop: $("#tp{{ unfolded }}_header_tr").offset().top
+                  }, 1000);
+              } catch (exc) {
+              }
+          {% endif %}
+              $("a.disabled").css("color", "#808080");
+              $("a.disabled").click(function () {
+                                        return false;
+                                    });
+              $("a.disabled").popover({trigger: "hover",
+                                       content: "{% trans 'Task disabled!' %}"});
+              $("a.expired").css("color", "#808080");
+              $("a.expired").click(function () {
+                                       alert("{% trans 'Task expired!' %}");
+                                       return false;
+                                   });
+              $("a.expired").popover({trigger: "hover",
+                                     content: "{% trans 'Task expired!' %}"});
+              $("a.questioned").css("color", "#8080FF");
+          {% if error == 'inexistent' %}
+              alert("{% trans 'Task does not exist!' %}");
+          {% elif error == 'timeout' %}
+              alert("{% trans 'Task expired!' %}");
+          {% elif error == 'uncheckable' %}
+              alert("{% trans 'You can not check this task' %}!");
+          {% elif error == 'notchecked' %}
+              alert("{% trans 'This task is not yet checked' %}!");
+          {% elif error == 'disabled' %}
+              alert("{% trans 'This task is disabled' %}!");
+          {% endif %}
+          });
+
+        function unfold() {
+            tpId = this.id.substr(0, this.id.indexOf("_"));
+            $("#" + tpId + "_fake_color").remove();
+            $("#" + tpId + "_fake_odd").remove();
+            $("[data-tp-id=\"" + tpId + "\"]").css("display", "table-row");
+            $("#" + tpId + "_unfolder").html("<i class=\"icon-minus-sign\"></i>");
+            $("#" + tpId + "_unfolder").unbind();
+            $("#" + tpId + "_unfolder").click(fold);
+            return false;
+        }
+
+        function fold() {
+            tpId = this.id.substr(0, this.id.indexOf("_"));
+            $("#" + tpId + "_header_tr").after("<tr id=\"" + tpId + "_fake_color\"></tr>");
+            $("[data-tp-id=\"" + tpId + "\"]").css("display", "none");
+            $("#" + tpId + "_unfolder").html("<i class=\"icon-plus-sign\"></i>");
+            $("#" + tpId + "_unfolder").unbind();
+            $("#" + tpId + "_unfolder").click(unfold);
+            packEstCount = $("[data-tp-id=\"" + tpId + "\"]").length;
+            if (packEstCount % 2 == 0) {
+                $($("[data-tp-id=\"" + tpId + "\"]")[packEstCount - 1]).after(
+                    "<tr id=\"" + tpId + "_fake_odd\"></tr>"
+                );
+            }
+            return false;
+        }
+
+    </script>
+{% endblock %}
+
+{% block Caption %}{% trans 'User tasks' %}{% endblock %}
+{% block Content %}
+    <div class="navbar">
+        <div class="navbar-outer">
+            <div class="container">
+                <div>
+                    <ul class="nav nav-pills">
+                        <li>
+                        <a href="{% if yauser.core_user.role == yauser.core_user.Role.ASSESSOR %}{% url 'core:usertask_packs_default' %}{% else %}{% url 'core:available_usertasks_default' %}{% endif %}">
+                                {% trans tab_available|capfirst %}
+                            </a>
+                        </li>
+                    {% for tab_name in tabs %}
+                        <li{% if tab == tab_name %} class="active"{% endif %}>
+                            <a href="{% url 'core:usertasks_default' tab_name %}">
+                                {% trans tab_name|capfirst %}
+                            </a>
+                        </li>
+                    {% endfor %}
+                    </ul>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div>
+
+        <i class="icon-info-sign" id="hotkeys_popover" style="position:relative; float:right;"
+            data-title="<b>{% trans 'Changes in STEAM' %}</b>"
+            data-content="<ol>{% if yauser.core_user.role == yauser.core_user.Role.ASSESSOR %}<li>{% trans 'Tasks are now distributed in packs: you can take a pack of a particular number of tasks that must be closed until deadline.' %}</li><li>{% trans 'You can see available packs on the &laquo;Available&raquo; tab.' %}</li>{% endif %}<li>{% trans 'You can change your complete estimations now.' %}</li><li>{% trans 'The estimation process is now separated into 3 steps: at first you estimate readability, then you are given the document URL and estimate content-richness, and finally you are given the query and estimate informativity.' %}</li><li><a href='{% url 'core:help' %}'>{% trans 'Help' %}</a></li></ol>"
+            data-html="true"
+            data-placement="left"
+            data-trigger="hover"></i>
+        {% if rendered_objects %}
+            {% load paginator %}
+            {% url 'core:usertasks_default' tab as page_url %}
+            {% paginator page_url pages as pg %}
+
+            {{ pg }}
+
+            <p><b>{% trans 'Total count' %}:</b> {{ pages.obj_count }}</p>
+            <table class="table table-striped  table-fixed">
+                <colgroup>
+                    <col width="5">
+                    {% if tab == 'finished' %}
+                        <col width="1">
+                    {% elif tab == 'checked' %}
+                        <col width="1">
+                        <col width="2">
+                        <col width="1">
+                    {% endif %}
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th>{% trans 'Task' %}</th>
+                        {% if tab == 'finished' %}
+                            <th>{% trans 'Date' %}</th>
+                        {% elif tab == 'checked' %}
+                            <th>{% trans 'Region' %}</th>
+                            <th>{% trans 'Comment' %}</th>
+                            <th>{% trans 'Correction date' %}</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for obj in rendered_objects %}
+                        {% if tab == 'current' %}
+                            {{ obj.render_for_current }}
+                        {% elif tab == 'finished' %}
+                            {{ obj.render_for_finished }}
+                        {% else %}
+                            <tr>
+                            {% with est=obj user=request.yauser.core_user %}
+                                {% include 'core/est_for_usertasks.html' %}
+                            {% endwith %}
+                            </tr>
+                        {% endif %}
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            {{ pg }}
+
+        {% else %}
+            <p>
+            {% if tab == 'current' %}
+                {% trans 'You have no current tasks right now. Please check out the &laquo;Available&raquo; tab to get new tasks.' %}
+            {% else %}
+                {% trans 'No tasks are available.' %}
+            {% endif %}
+            </p>
+        {% endif %}
+    </div>
+
+{% endblock %}

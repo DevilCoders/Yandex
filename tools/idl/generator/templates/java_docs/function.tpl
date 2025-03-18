@@ -1,0 +1,1 @@
+{{FUNCTION_NAME}}({{#PARAM}}{{PARAM_TYPE}}{{#PARAM_separator}}, {{/PARAM_separator}}{{/PARAM}})

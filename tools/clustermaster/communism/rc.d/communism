@@ -1,0 +1,152 @@
+#!/bin/sh
+
+# PROVIDE: communism
+# REQUIRE: NETWORKING DAEMON LOGIN FILESYSTEMS SERVERS
+# KEYWORD: nojail
+
+#
+# $Id$
+#
+
+export PATH=/usr/local/bin:$PATH
+
+. /etc/rc.subr
+
+name='communism'
+rcvar=`set_rcvar`
+
+extra_commands='resurrect'
+start_cmd='communism_start'
+stop_cmd='communism_stop'
+status_cmd='communism_status'
+resurrect_cmd='communism_resurrect'
+
+load_rc_config $name
+
+eval ": \${$rcvar:='NO'}"
+
+: ${communism_program="/Berkanavt/communism/bin/solver"}
+: ${communism_user="lenin"}
+: ${communism_pidfile="/Berkanavt/communism/var/solver.pid"}
+: ${communism_path="/Berkanavt/communism/var/socket"}
+: ${communism_port="3366"}
+: ${communism_limits="/Berkanavt/communism/limits/limits.sh"}
+: ${communism_logfile="/Berkanavt/communism/var/solver.out"}
+
+# image_rus_fastrobot (kibor@, ai@)
+# hosts: slovo-fast00
+# : ${communism_image_rus_fastrobot_program="/Berkanavt/fast/cm/solver"}
+# : ${communism_image_rus_fastrobot_user="imgbase"}
+# : ${communism_image_rus_fastrobot_pidfile="/Berkanavt/fast/cm/solver.pid"}
+# : ${communism_image_rus_fastrobot_path="/Berkanavt/fast/cm/solver.soc"}
+# : ${communism_image_rus_fastrobot_limits="/Berkanavt/fast/webscripts/images/cm/limits/hw.sh"}
+
+# image_rus_robot (kibor@, ai@)
+# hosts: kartonka, slovo00-slovo47
+# : ${communism_image_rus_robot_program="/Berkanavt/cm/solver"}
+# : ${communism_image_rus_robot_user="imgbase"}
+# : ${communism_image_rus_robot_pidfile="/Berkanavt/cm/solver.pid"}
+# : ${communism_image_rus_robot_path="/Berkanavt/cm/solver.soc"}
+# : ${communism_image_rus_robot_limits="/Berkanavt/cm/resources.list"}
+
+echo_resurrect()
+{
+    if [ -n "$resurrect" ]; then
+        echo "$@"
+    fi
+}
+
+echo_noresurrect()
+{
+    if [ -z "$resurrect" ]; then
+        echo "$@"
+    fi
+}
+
+communism_init_variables() {
+    eval _program=\"\$communism_program\"
+    eval _user=\"\$communism_user\"
+    eval _pidfile=\"\$communism_pidfile\"
+    eval _port=\"\$communism_port\"
+    eval _path=\"\$communism_path\"
+    eval _limits=\"\$communism_limits\"
+    eval _logfile=\"\$communism_logfile\"
+
+    test -z "$_program" && err 3 "No program defined"
+    test -z "$_user" && err 3 "No user defined for"
+    test -z "$_pidfile" && err 3 "No pidfile defined"
+}
+
+communism_start() {
+    echo_noresurrect 'Starting communism solver.'
+
+    communism_init_variables
+
+    local _pid=$(check_pidfile $_pidfile $_program)
+    if [ ! -z "$_pid" ]; then
+        echo_noresurrect "solver already running? (pid=$_pid)."
+        return 1
+    else
+        if [ -n "$resurrect" ]; then
+            # resurrect only after unclean shutdown (pid file not removed)
+            if [ -e $_pidfile ]; then
+                echo "Resurrected solver!"
+            else
+                return
+            fi
+        fi
+    fi
+
+    local _commandline="$_program -r -P$_pidfile ${_port:+-p${_port:-}} ${_path:+-u$_path} ${_logfile:+-l$_logfile}"
+    if [ -n "${_limits}" ]; then
+        if [ -e "${_limits}" ]; then
+            _commandline="$_commandline -k`su $_user -c $_limits`"
+        else
+            warn "Limits file ${_limits} does not exist!"
+        fi
+    fi
+
+    _commandline="su $_user -c 'sh -c \"$_commandline\"'"
+
+    debug "starting solver: $_commandline"
+
+    (
+        umask 0002
+        eval $(limits -eB -U $_user)
+        eval $_commandline
+    )
+
+    test "$?" -eq 0 || warn "solver: cannot start"
+}
+
+communism_stop() {
+    echo 'Stopping communism solver.'
+
+    communism_init_variables
+
+    local _pid=$(check_pidfile $_pidfile $_program)
+
+    if [ -z "$_pid" ]; then
+        echo "solver is not running."
+        return 1
+    fi
+
+    su -m $_user -c "kill -TERM $_pid"
+    wait_for_pids $_pid
+    rm -f $_pidfile
+}
+
+communism_status() {
+    communism_init_variables
+
+    local _pid=$(check_pidfile $_pidfile $_program)
+
+    test -n "$_pid" && echo "solver is running as pid $_pid." || echo "solver is not running."
+}
+
+communism_resurrect() {
+    resurrect=1
+    communism_start
+}
+
+run_rc_command "$1"

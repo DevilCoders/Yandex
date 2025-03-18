@@ -1,0 +1,12 @@
+RECURSE(
+    begemot_reducer
+    begemot_reducer/local_test
+    merger
+    redundant_rules
+    shard_updater
+    slow_queries
+    wizard_reducer
+    shard_updater
+    cache_hit
+    diff_yt
+)

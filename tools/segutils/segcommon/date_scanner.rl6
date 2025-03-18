@@ -1,0 +1,84 @@
+#include <tools/segutils/segcommon/data_utils.h>
+
+#include <util/string/cast.h>
+
+namespace NSegutils {
+
+#if 0
+
+    %%{
+        machine date_scanner;
+
+        separator = [/.];
+        integer   = digit+;
+
+        main := |*
+        separator {
+            if (res.empty() || res.size() >= 3) {
+                fbreak;
+            }
+        };
+
+        integer {
+            res.push_back(FromString<ui32>(TStringBuf(ts, te)));
+
+            if (res.size() >= 3) {
+                fbreak;
+            }
+        };
+
+        any     {
+            fbreak;
+        };
+        *|;
+
+    }%%
+#endif
+
+NDater::TDaterDate ScanDateSimple(TStringBuf q) {
+    using namespace NDater;
+    while(!q.empty() && isspace(q[0]))
+        q.Skip(1);
+
+    TVector<ui32> res;
+
+    const char* p = q.begin();
+    const char* pe = q.end();
+    const char* eof = pe;
+
+    int cs;
+    int act;
+
+    const char* ts = 0;
+    const char* te = 0;
+
+    %%{
+        write data noerror nofinal;
+        write init;
+        write exec;
+    }%%
+
+    (void)date_scanner_en_main;
+
+    if (res.size() && res[0] > 1000)
+        std::reverse(res.begin(), res.end());
+
+    switch (res.size()) {
+    default:
+        return TDaterDate();
+    case 1:
+        if (res[0])
+            TDaterDate::NormalizeYear(res[0]);
+        return TDaterDate(res[0]);
+    case 2:
+        TDaterDate::NormalizeYear(res[1]);
+        return TDaterDate(res[1], res[0]);
+    case 3:
+        TDaterDate::NormalizeYear(res[2]);
+        return TDaterDate(res[2], res[1], res[0]);
+    }
+
+    Y_UNUSED(act);
+}
+
+}

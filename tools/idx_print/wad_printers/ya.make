@@ -1,0 +1,51 @@
+LIBRARY()
+
+OWNER(g:base)
+
+SRCS(
+    base_wad_printer.h
+    doc_attrs_printer.h
+    doc_wad_printer.h
+    erf_printer.h
+    generic_erf_printer.h
+    generic_reg_erf_printer.h
+    herf_printer.h
+    key_inv_printer.h
+    omni_printer.h
+    reg_erf_printer.h
+    smart_wad_printer.h
+    inv_hash_wad_printer.h
+    text_archive_printer.h
+    itditp_slim_index_printer.h
+)
+
+PEERDIR(
+    kernel/doom/chunked_wad
+    kernel/doom/index_format_processor
+    kernel/doom/info
+    kernel/doom/key
+    kernel/doom/offroad
+    kernel/doom/offroad_ann_data_wad
+    kernel/doom/offroad_attributes_wad
+    kernel/doom/offroad_doc_attrs_wad
+    kernel/doom/offroad_erf_wad
+    kernel/doom/offroad_ngrams_panther_wad
+    kernel/doom/offroad_reg_herf_wad
+    kernel/doom/offroad_sent_wad
+    kernel/doom/offroad_struct_wad
+    kernel/doom/yandex
+    kernel/groupattrs
+    kernel/indexdoc
+    kernel/struct_codegen/print
+    kernel/tarc/disk
+    kernel/tarc/markup_zones
+    library/cpp/dbg_output
+    library/cpp/offroad/flat
+    search/panther/runtime/term_hashing
+    search/itditp/static_features/library
+    tools/idx_print/utils
+    ysite/yandex/erf_format
+    ysite/yandex/srchmngr
+)
+
+END()

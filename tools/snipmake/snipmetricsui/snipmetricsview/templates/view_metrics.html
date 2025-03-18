@@ -1,0 +1,191 @@
+{% extends "base_template.html" %}
+
+{% load utilfilters %}
+
+{% block title %}
+Просмотр метрик
+{% endblock %}
+
+{% block scripts %}
+   <script language="javascript" type="text/javascript" src="scripts/jquery.min.js"></script>
+   <script language="javascript" type="text/javascript" src="scripts/excanvas.min.js"></script>
+   <script language="javascript" type="text/javascript" src="scripts/jquery.flot.min.js"></script>   
+{% endblock %}
+
+{% block menu %}
+{% endblock %}
+
+{% block undermenu %}
+{% if showMetrics %}
+<br />
+<div class="fixedElement">
+<h2>Перейти к метрике</h2>
+    <ol>
+    {% for metric in metricsNames|getKeys %}
+       <li><a href="#metr{{ metricsNames|getValue:metric|getValue:1 }}" class="smalllinks">{{ metricsNames|getValue:metric|getValue:0 }}</a></li>
+    {% endfor %}
+    <script language="javascript">
+    $(window).scroll(function(e){ 
+        $el = $('.fixedElement'); 
+        if ($(this).scrollTop() > 500 && $el.css('position') != 'fixed'){ 
+             $('.fixedElement').css({'position': 'fixed', 'top': '0px'}); 
+        }
+        else if ($(this).scrollTop() < 500){
+            $('.fixedElement').css({'position': 'relative'}); 
+        }
+    });
+    </script>
+    </ol>
+ </div>
+{% endif %}
+{% endblock %}
+
+{% block body %}
+<h1>Просмотр метрик</h1><br />
+  {% for error in errors %}
+     {% if forloop.first %}<ul>{% endif %}
+     <li class="errors">{{ error }}</li>
+     {% if forloop.last %}</ul>{% endif %}     
+  {% endfor %}
+    <form action="view_metrics.html" method="GET" >
+        <div>
+           <label for="snipsDumps">{{ viewMetricsForm.snipDumps.label }}:</label><br />
+           {{ viewMetricsForm.snipDumps }}           
+        </div>
+        <br />
+        <table width="100%">
+        <tr valign="top"><td width="35%">
+           <label for="metrics">{{ viewMetricsForm.metrics.label }}:</label><br /><br />
+           {{ viewMetricsForm.metrics|safe }}
+        </td>
+        <td>
+           <label for="withTitle">{{ viewMetricsForm.withTitle.label }}:</label>
+           {{ viewMetricsForm.withTitle }}<br />
+           <label for="queryCharacteristics">{{ viewMetricsForm.queryCharacteristics.label }}:</label>
+           {{ viewMetricsForm.queryCharacteristics }}<br />
+           <label for="queryWordsCount">{{ viewMetricsForm.queryWordsCount.label }}:</label><br />
+           {{ viewMetricsForm.queryWordsCount }}<br /><br />
+           <label for="sameScale">{{ viewMetricsForm.sameScale.label }}:</label>
+           {{ viewMetricsForm.sameScale }}<br />
+           <label for="sameQueryUrls">{{ viewMetricsForm.sameQueryUrls.label }}:</label>
+           {{ viewMetricsForm.sameQueryUrls }}                     
+        </td></tr></table>
+        <br />
+        <input type="submit" value="Просмотр" name="view" />&nbsp;&nbsp;&nbsp;<input type="submit" value="Скачать файл со значениями метрик" name="download" onclick="javascript: form.action='metrics.txt'; form.submit()" />&nbsp;&nbsp;&nbsp;<a href="clear_cache.html">очистить кэш автометрик</a>
+    </form>
+    {% if shortUrl %}<br />
+    Короткий URL: <input type="text" readonly="true" value="{{shortUrl}}" size="60" name="short url"/>
+    {% endif %}
+    <hr />
+    <script id="source" language="javascript" type="text/javascript">
+        $(function () {
+            if ($("select #id_queryCharacteristics").length == 0) {
+                $("#id_queryCharacteristics").prev().hide();
+                $("#id_queryCharacteristics").hide();
+            }
+        });        
+    </script>
+    {% if showMetrics %}
+    <br />
+    {% for snippetsDump in snippetsDumps %}
+    <div class="column">
+    Дамп сниппетов: {{ snippetsDump }}<br />
+    Дата: {{ snippetsDump.date }}<br />
+    </div>
+    {% endfor %}
+    <br />
+    {% for snippetsDump in snippetsDumps %}
+    <div class="column">
+    {% for metric in metricsNames|getKeys %}
+    
+    <a name="metr{{ metricsNames|getValue:metric|getValue:1 }}"><h2 title="{{ metricsNames|getValue:metric|getValue:1 }}">{{ metricsNames|getValue:metric|getValue:0 }}</h2></a>
+    <div id="placeholder{{forloop.parentloop.counter}}{{forloop.counter}}" style="width:300px;height:200px;"></div>
+    {% if metricsMean|getValue:snippetsDump.id|hasKey:metric %}    
+    <ul>
+        <li>Среднее: {{ metricsMean|getValue:snippetsDump.id|getValue:metric }}{% if metricsMeanConfidence %}<br />
+        ({{ metricsMeanConfidence|getValue:snippetsDump.id|getValue:metric|getValue:0 }} - {{ metricsMeanConfidence|getValue:snippetsDump.id|getValue:metric|getValue:1 }}){% endif %}</li>
+        <li>Медиана: {{ metricsMedian|getValue:snippetsDump.id|getValue:metric }}</li>
+        <li>Стандартное отклонение: {{ metricsStd|getValue:snippetsDump.id|getValue:metric }}</li>
+        <li>Минимум: {{ metricsMinimums|getValue:snippetsDump.id|getValue:metric }}</li>
+        <li>Максимум: {{ metricsMaximums|getValue:snippetsDump.id|getValue:metric }}</li>
+    </ul>
+    {% else %}
+    <div style="width:300px;height:143px;"></div>    
+    {% endif %}
+    
+    {% endfor %}
+    </div>
+    {% endfor %}
+     
+    <script id="source" language="javascript" type="text/javascript">
+        $(function () {
+        {% for snipDump in snippetsDumps %}
+            {% for metric in metricsNames|getKeys %}
+                var d{{forloop.parentloop.counter}}{{forloop.counter}} = 
+                {% if metricsHistograms|getValue:snipDump.id|hasKey:metric %}                
+                    [ {% for val in metricsHistograms|getValue:snipDump.id|getValue:metric|getValue:0 %} [{{val}}, {{metricsHistograms|getValue:snipDump.id|getValue:metric|getValue:1|getValue:forloop.counter0}}] {% if not forloop.last %},{% endif %}  {% endfor %}  ];
+                {% else %}
+                    [];
+                {% endif %}
+            {% endfor %}
+        {% endfor %}
+        {% if sameScale %}
+        var scaleMins = [
+        {% for metric in metricsNames|getKeys %}
+        {{ metricsScaleMin|getValue:metric }},
+        {% endfor %}
+        ];
+        var scaleYMax = [
+        {% for metric in metricsNames|getKeys %}
+        {{ metricsScaleYMax|getValue:metric }},
+        {% endfor %}
+        ];
+        var scaleMaxs = [
+        {% for metric in metricsNames|getKeys %}
+        {{ metricsScaleMax|getValue:metric }},
+        {% endfor %}
+        ];
+        {% endif %}
+        var barWidthes = [
+        {% for snipDump in snippetsDumps %}
+        [
+            {% for metric in metricsNames|getKeys %}
+               {% if barWidthes|getValue:snipDump.id|hasKey:metric %}
+                {{ barWidthes|getValue:snipDump.id|getValue:metric }},
+               {% else %}
+                 1, 
+               {% endif %}
+            {% endfor %}
+        ],
+        {% endfor %}
+        ];
+        var dumpsCount = {{ snippetsDumps|length }};
+        var metricsCount = {{ metricsCount }};
+        for (var j = 1; j <= dumpsCount; ++j)
+        {
+	     for (var i = 1; i <= metricsCount; ++i)
+	     {		    
+	          $.plot($(("#placeholder"+j)+i), [ eval(("d" + j) + i) ], 
+	          {
+		            series: {
+		            bars: { show: true,
+                    barWidth : barWidthes[j-1][i-1],
+		    		align: "center"},
+                    },
+                    {% if sameScale %}
+                    xaxis: {min: scaleMins[i-1], max: scaleMaxs[i-1]},
+                    yaxis: {min: 0, max: scaleYMax[i-1]},
+                    {% endif %}
+		            grid: {
+		                backgroundColor: { colors: ["#fff", "#eee"] }
+		            },
+		        }
+		    );
+        }
+        }
+    });
+    </script>
+
+    {% endif %}
+
+{% endblock %}

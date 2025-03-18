@@ -1,0 +1,204 @@
+{% extends 'core/index.html' %}
+{% load i18n %}
+{% load regionname %}
+
+{% block Title %}{% trans 'Tasks' %}{% endblock %}
+{% block Scripts %}
+<script>
+    $(function () {
+        queryString = "{% if search_request %}?search_request={{ search_request }}{% endif %}";
+        setupControlledCheckboxes("task");
+        $("#status_slider").slider({
+            min: 0, max: 1,
+            value: {% if status == 'all' %}0{% else %}1{% endif %},
+            change: function(event, ui) {
+                        if (ui.value) {
+                            document.location.href = "{% url 'core:tasks_default' taskpool.id 'inspection' order %}" + queryString;
+                        } else {
+                            document.location.href = "{% url 'core:tasks_default' taskpool.id 'all' order %}" + queryString;
+                        }
+                    }
+        });
+        $("#order_slider").slider({
+            min: 0, max: 1,
+            value: {% if order == 'alphabet' %}0{% else %}1{% endif %},
+            change: function(event, ui) {
+                        if (ui.value) {
+                            document.location.href = "{% url 'core:tasks_default' taskpool.id status 'random' %}" + queryString;
+                        } else {
+                            document.location.href = "{% url 'core:tasks_default' taskpool.id status 'alphabet' %}" + queryString;
+                        }
+                    }
+        });
+    });
+</script>
+{% endblock %}
+
+{% block Caption %}{% trans 'Task pool' %}{% endblock %}
+{% block Content %}
+    <div class="row">
+        <div class="span2" style="text-align: right;"><b>{% trans 'Name' %}:</b></div>
+        <div class="span8">{{ taskpool.title }}</div>
+    </div>
+    <div class="row">
+        <div class="span2" style="text-align: right;"><b>{% trans 'Kind' %}:</b></div>
+        <div class="span1">{{ taskpool.kind_str }}</div>
+    </div>
+    <div class="row">
+        <div class="span2" style="text-align: right;"><b>{% trans 'Pool kind' %}:</b></div>
+        <div class="span1">{{ taskpool.kind_pool_str }}</div>
+    </div>
+    <div class="row">
+        <div class="span2" style="text-align: right;"><b>{% trans 'Overlap' %}:</b></div>
+        <div class="span1">{{ taskpool.overlap }}</div>
+    </div>
+    <div class="row">
+        <div class="span2" style="text-align: right;"><b>{% trans 'Total' %}:</b></div>
+        <div class="span1">{{ taskpool.overlap_count }}</div>
+    </div>
+    <div class="row">
+        <div class="span2" style="text-align: right;"><b>{% trans 'Estimated' %}:</b></div>
+        <div class="span1">{{ taskpool.tasks_status }}</div>
+    </div>
+    <div class="row">
+        <div class="span2" style="text-align: right;"><b>{% trans 'Displayed' %}:</b></div>
+        <div class="span1">{{ pages.obj_count }}</div>
+    </div>
+    <br>
+
+    <div class="row">
+        <form method="get" action="{% url 'core:tasks_default' taskpool.id status order %}" class="navbar-search pull-right">
+            <input type="text" name="search_request" class="search-query" placeholder="{% trans 'Request' %}" maxlength="100" />
+            <input type="submit" value="{% trans 'Search' %}" class="btn" />
+        </form>
+    </div>
+
+    {% if search_request %}
+        <div class="alert alert-success pull-right" style="margin-top: 10px;">
+            {% trans 'Showing results for request' %}: "{{ search_request }}"
+        </div>
+    {% endif %}
+    <div class="steamSlider" style="margin-bottom: 20px;">
+        <div class="row">
+            <div class="span3" style="text-align: center; margin-bottom: 10px;">
+                <b>{% trans 'Tasks displayed' %}:</b>
+            </div>
+        </div>
+        <div class="row">
+            <div class="span1" style="text-align: right;">
+               {% trans 'All' %}
+            </div>
+            <div class="span1" style="text-align: center;">
+                <div id="status_slider" style="display: inline-block; width: 50px; margin-left: 10px; margin-right: 10px;"></div>
+            </div>
+            <div class="span1" style="text-align: left;">
+                {% trans 'Inspection only' %}
+            </div>
+        </div>
+        <div class="row">
+            <div class="span3" style="text-align: center; margin-bottom: 10px;">
+                <b>{% trans 'Sort order' %}:</b>
+            </div>
+        </div>
+        <div class="row">
+            <div class="span1" style="text-align: right;">
+               {% trans 'Alphabetical' %}
+            </div>
+            <div class="span1" style="text-align: center;">
+                <div id="order_slider" style="display: inline-block; width: 50px; margin-left: 10px; margin-right: 10px;"></div>
+            </div>
+            <div class="span1" style="text-align: left;">
+                {% trans 'Random' %}
+            </div>
+        </div>
+    </div>
+{% if tasks_with_aadmins %}
+    {% load paginator %}
+    {% url 'core:tasks_default' taskpool.id status order as page_url %}
+    {% paginator page_url pages as pg %}
+
+    {{ pg }}
+
+    <form method="post" action="{% url 'core:take_aadmin_task_batch' action='assign' taskpool_id=taskpool.id status=status order=order page=pages.cur_page %}">
+        <table class="table table-striped table-fixed">
+            <colgroup>
+                <col width="6">
+                <col width="1">
+                <col width="1">
+                <col width="1">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th>
+                        <label class="checkbox label-no-margin label-parent-weight">
+                            <input type="checkbox" id="task_controller" />
+                            {% trans 'Task' %}
+                        </label>
+                    </th>
+                    {% if taskpool.kind_pool == taskpool.TypePool.MULTI_CRITERIAL %}
+                        <th>{% trans 'Region' %}</th>
+                    {% endif %}
+                    <th>{% trans 'Kind' %}</th>
+                    <th>{% trans 'Status' %}</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for task, aadmin in tasks_with_aadmins %}
+                <tr>
+                    <td class="td td-left">
+                        {% if enable_taking and task.id not in tasks_not_to_assign %}
+                            <label class="checkbox label-no-margin label-parent-weight">
+                                <input type="checkbox" data-group="task" name="task_ids" value="{{ task.id }}">
+                                {{ task.request }}
+                            </label>
+                        {% else %}
+                            <div style="display: inline-block; height: 10px; width: 17px;"></div>
+                            {% if taskpool.kind_pool == taskpool.TypePool.MULTI_CRITERIAL %}
+                                {{ task.request }}
+                            {% else %}
+                                {{ task.url }}
+                            {% endif %}
+                        {% endif %}
+                    </td>
+                    {% if taskpool.kind_pool == taskpool.TypePool.MULTI_CRITERIAL %}
+                        <td>{{ task.region|regionname }}</td>
+                    {% endif %}
+                    <td>
+                    {% if task.status == task.Status.REGULAR %}
+                        {% trans 'Regular' %}
+                    {% else %}
+                        {% trans 'Inspection' %}
+                        {% if task.status == task.Status.COMPLETE %}
+                            ({% trans 'checked by' %}
+                            {% if aadmin == yauser.core_user.login %}
+                                {% trans 'me' %})
+                            {% else %}
+                                {{ aadmin }})
+                            {% endif %}
+                        {% endif %}
+                    {% endif %}
+                    </td>
+                    <td>
+                    {% if task.completed < taskpool.overlap %}
+                        <font color="orange">{% trans 'Incomplete' %}</font>
+                    {% else %}
+                        <font color="green">{% trans 'Complete' %}</font>
+                    {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% csrf_token %}
+    {% if enable_taking %}
+        <input type="submit" class="btn btn-primary" value="{% trans 'Assign to me' %}" />
+    {% endif %}
+    </form>
+
+    {{ pg }}
+
+{% else %}
+    <p>{% trans 'No tasks are available.' %}</p>
+{%endif%}
+
+{% endblock %}

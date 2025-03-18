@@ -1,0 +1,253 @@
+{% extends 'core/index.html' %}
+{% load i18n %}
+{% load default_time %}
+
+{% block Title %}{% trans 'Task pools' %}{% endblock %}
+
+{% block Scripts %}
+<script>
+    function alertError(status) {
+        if (status == 404) {
+            alert("{% trans 'This TaskPool not found! Please reload page or contact developer.' %}");
+        }
+    }
+
+    $(function () {
+        {% if got_tasks != None %}
+            {% if got_tasks == 0 %}
+                alert("{% trans "Taskpool wasn't created because it doesn't contain any tasks!" %}");
+            {% else %}
+                alert("{% blocktrans count counter=got_tasks %}Taskpool with 1 task was created!{% plural %}Taskpool with {{ counter }} tasks was created!{% endblocktrans %}");
+            {% endif %}
+        {% endif %}
+
+        {% if error == 'no_estimations' %}
+            alert("{% trans 'No complete estimations for this taskpool!' %}");
+        {% elif error == 'inexistent' %}
+            alert("{% trans 'This TaskPool not found! Please reload page or contact developer.' %}");
+        {% endif %}
+      });
+
+</script>
+
+<style>
+    .tr-big-first-row > td {
+        font-size: 125%;
+        padding: 14px 5px;
+        border-top: 1px solid #DDD;
+    }
+
+    .tr-small-second-row > td {
+        font-size: 85%;
+        border-bottom: 1px solid #DDD;
+    }
+</style>
+{% endblock %}
+
+{% block Caption %}{% trans 'Task pools' %}{% endblock %}
+{% block Content %}
+    <div class="row">
+        <form method="get" action="{% url 'core:taskpools_default' tab=ang_tab %}" class="navbar-search pull-right">
+            <input type="text" name="search_request" class="search-query" placeholder="{% trans 'Request' %}" maxlength="100" />
+            <input type="hidden" name="status" value="{{ filter_status }}" />
+            <input type="hidden" name="country" value="{{ filter_country }}" />
+            <input type="submit" value="{% trans 'Search' %}" class="btn" />
+        </form>
+    </div>
+    {% if search_request %}
+        <div class="row">
+            <div class="alert alert-success pull-right" style="margin-top: 10px;">
+                {% trans 'Showing results for request' %}: "{{ search_request }}"
+            </div>
+        </div>
+    {% endif %}
+
+    <form class="navbar-form pull-right form-inline" action="{% url 'core:taskpools_default' tab=ang_tab %}" method="GET">
+        <div style="margin-top: 10px; clear: both;" class="pull-right">
+            <label>{% trans 'Filter' %}:</label>
+            <select class="switcher span2 selectpicker show-tick" name="status">
+                <option class="alert-info" value="">
+                    {% trans 'All' %}
+                </option>
+
+                {% for status, choice in taskpool_statuses %}
+                    <option value="{{ status }}"{% if status == filter_status %} selected="selected"{% endif %}>
+                        {{ choice }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div style="margin-top: 10px; clear: both;" class="pull-right">
+            <label>{% trans 'Country' %}:</label>
+            <select class="switcher span2 selectpicker show-tick" name="country">
+                <option class="alert-info" value="">
+                    {% trans 'All' %}
+                </option>
+
+                {% for value, name in country_names %}
+                    <option value="{{ value }}"{% if value == filter_country %} selected="selected"{% endif %}>
+                        {% trans name %}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <input type="hidden" name="search_request" value="{{ search_request }}" />
+    </form>
+    <div>
+        <ul class="nav nav-pills">
+            <li{% if not ang_tab %} class="active"{% endif %}>
+                <a href="{% url 'core:taskpools_default' %}{% if ang_tab %}?search_request={{ search_request }}{% endif %}">
+                    {% trans 'Non-ANG' %}
+                </a>
+            </li>
+            <li{% if ang_tab %} class="active"{% endif %}>
+                <a href="{% url 'core:taskpools_default' tab='ang' %}{% if not ang_tab %}?search_request={{ search_request }}{% endif %}">
+                    {% trans 'ANG' %}
+                </a>
+            </li>
+        </ul>
+    </div>
+
+
+    <a href="#myModal" id="add_new_btn" class="btn btn-primary pull-right" onClick="return getPopup('{% url 'core:add_taskpool' %}')">{% trans 'Add new' %}</a>
+    <div id="modal_container">
+    </div>
+
+    {% if taskpools %}
+        {% load paginator %}
+        {% if ang_tab %}
+            {% url 'core:taskpools_default' ang_tab as page_url %}
+        {% else %}
+            {% url 'core:taskpools_default' as page_url %}
+        {% endif %}
+        {% paginator page_url pages as pg %}
+        {{ pg }}
+
+        <table class="table table-striped table-condensed table-fixed table-centered">
+            <colgroup>
+                <col width="1">
+                <col width="3">
+                <col width="2">
+                <col width="2">
+                <col width="2">
+                <col width="3">
+                <col width="3">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th> </th>
+                    <th>{% trans 'Name' %}</th>
+                    <th>{% trans 'Count' %}</th>
+                    <th>{% trans 'Overlap' %}</th>
+                    <th>{% trans 'Pack size' %}</th>
+                    <th>{% trans 'Deadline' %}</th>
+                    <th>{% trans 'Country' %}</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for taskpool in taskpools %}
+                <tr class="tr-big-first-row">
+                    <td class="td-left">
+                        <div style="margin-left: 17px;">
+                            {% if taskpool.status == taskpool.Status.ACTIVE %}
+                                <div class="btn-group">
+                                    <a class="btn dropdown-toggle" data-toggle="dropdown" href="#">
+                                        <i class="icon-stop"></i>
+                                    </a>
+                                    <ul class="dropdown-menu">
+                                        <li>
+                                           <a tabindex="-1"  href={% url 'core:stop_taskpool' 'disable' taskpool.pk pages.cur_page %}>{% trans 'Disable temporarily' %}</a>
+                                        </li>
+                                        <li>
+                                            <a tabindex="-1" href={% url 'core:stop_taskpool' 'finish' taskpool.pk pages.cur_page %}>{% trans 'Finish permanently' %}</a>
+                                        </li>
+                                    </ul>
+                                </div>
+                            {% endif %}
+                            {% if taskpool.status == taskpool.Status.DISABLED %}
+                                <a class="btn" href="#myModal" id="start_btn{{ taskpool.pk }}" onClick="return getPopup('{% url 'core:start_taskpool' taskpool.pk %}')"><i class="icon-play"></i></a>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td class="td-left">
+                        <a href={% url 'core:tasks_default' taskpool.pk 'all' 'alphabet' %}>{{ taskpool.title }}</a>
+                    </td>
+                    <td>{{ taskpool.tasks_status }} / {{ taskpool.overlap_count }}</td>
+                    <td>{{ taskpool.overlap }}</td>
+                    <td>{{ taskpool.pack_size }}</td>
+                    <td>{{ taskpool.deadline|default_time }}</td>
+                    <td>
+                        {% for country in taskpool.tpcountry_set.all %}
+                                {{ country }}{% if not forloop.last %},{% endif %}
+                        {% endfor %}
+                    </td>
+                </tr>
+                <tr></tr>
+                <tr class="tr-small-second-row">
+                    <td colspan="7">
+                        <ul class="inline text-left" style="margin-bottom: 0px; margin-left: 12px;">
+                            <li>
+                                {% trans 'Estimation type' %}:
+                                {{ taskpool.kind_str }}
+                            </li>
+                            <li>
+                                {% trans 'User' %}:
+                                {{ taskpool.user.login|default:"unknown" }}
+                            </li>
+                            <li>
+                                {% trans 'Create date' %}:
+                                {{ taskpool.create_time }}
+                            </li>
+                            <li>
+                                {% trans 'Snippet pools' %}:
+                            </li>
+                            <li style="vertical-align: top;">
+                                <ul>
+                                    <li>
+                                        <a href={% url 'core:snippets' taskpool.first_pool.pk 0 %}>{{ taskpool.first_pool_str }}</a>
+                                    </li>
+                                    <li>
+                                        <a href={% url 'core:snippets' taskpool.second_pool.pk 0 %}>{{ taskpool.second_pool_str }}</a>
+                                    </li>
+                                </ul>
+                            </li>
+                        </ul>
+                        <ul class="nav nav-pills" style="margin-bottom: 0px; margin-left: 5px;">
+                            <li>
+                                <a href="{% url 'core:view_taskpool_default' taskpool.pk 'alphabet' %}">{% trans 'View' %}</a>
+                            </li>
+                            <li>
+                                <a href="{% url 'core:monitor_taskpool' taskpool.pk %}">{% trans 'Monitor' %}</a>
+                            </li>
+                            <li>
+                                <a href="{% url 'core:statistics_default' taskpool.pk %}">{% trans 'Statistics' %}</a>
+                            </li>
+                            <li>
+                                <a href="{% url 'core:export_taskpool' taskpool.pk pages.cur_page %}">{% trans 'Export' %}</a>
+                            </li>
+                            <li>
+                                <a href="#myModal" id="edit_btn{{ taskpool.pk }}" onClick="return getPopup('{% url 'core:edit_taskpool' taskpool.pk %}')">{% trans 'Edit' %}</a>
+                            </li>
+                            {% if taskpool.can_delete %}
+                                <li>
+                                    <a onclick="return false;" data-href="{% url 'core:delete_taskpool' taskpool.pk pages.cur_page %}"
+                                       data-toggle="confirmation"
+                                       data-title="{% trans 'Are you sure?' %}"
+                                       data-btnCancelLabel="{% trans 'No' %}"
+                                       data-btnOkLabel="{% trans 'Yes' %}"
+                                       data-btnOkClass="btn-danger">{% trans 'Delete' %}</a>
+                                </li>
+                            {% endif %}
+                        </ul>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+
+        {{ pg }}
+
+    {% else %}
+        <p>{% trans 'No taskpools are available.' %}</p>
+    {% endif %}
+{% endblock %}

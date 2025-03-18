@@ -1,0 +1,136 @@
+#include <util/generic/vector.h>
+#include <util/generic/hash.h>
+#include <util/generic/string.h>
+#include <util/stream/file.h>
+
+#include <tools/calcstaticopt/common.h>
+#include <tools/calcstaticopt/parser.h>
+
+static TVector< std::pair<int, TString> > Tokens;
+static size_t TokenIndex = 0;
+
+static void Emit(int tok, const char* ts, const char* te) {
+    Tokens.push_back(std::pair<int, TString>(tok, TString(ts, te - ts)));
+}
+
+int yylex(YYSTYPE* yylval, void*) {
+    if (TokenIndex == Tokens.size())
+        return 0;
+
+    yylval->str = Tokens[TokenIndex].second.c_str();
+    return Tokens[TokenIndex++].first;
+}
+
+%%{
+    machine scanner;
+    write data;
+}%%
+
+void ScanFile(const TString& filename) {
+    THashMap<TString, int> kw;  // keyword to token number map
+    kw["factor"] = FACTOR;
+    kw["block"] = BLOCK;
+    kw["structure"] = STRUCTURE;
+    kw["fastrank_formulas"] = FASTRANK_FORMULAS;
+    kw["fastrank_factor"] = FASTRANK_FACTORS;
+    kw["fastrank_factors"] = FASTRANK_FACTORS;
+    kw["external_factor"] = EXTERNAL_FACTORS;
+    kw["external_factors"] = EXTERNAL_FACTORS;
+    kw["args"] = ARGS;
+    kw["depends"] = DEPENDS;
+    kw["computes"] = COMPUTES;
+    kw["float"] = T_FLOAT;
+
+    TString input;
+    if (filename == "-")
+        input = Cin.ReadAll();
+    else
+        input = TUnbufferedFileInput(filename).ReadAll();
+
+    if (input.size() == 0) {
+        Cerr << "calcstaticopt error: empty input\n";
+        exit(1);
+    }
+
+    int cpp_depth = 0;
+    const char *cpp_start = NULL;
+
+    const char *p, *pe, *eof, *ts, *te;
+    Y_UNUSED(eof);
+    int cs, act, stack[10], top;
+    Y_UNUSED(act);
+
+    p = input.c_str();
+    pe = p + input.size();
+    eof = pe;
+
+    %%{
+        main := |*
+            ( 'expr' space* '\(' )      { cpp_depth = 1; cpp_start = te; fgoto cpp_expr; };
+            ( '"' [^"]* '"' )           { Emit(QUOTED, ts+1, te-1); };
+            ( [a-zA-Z_] [a-zA-Z0-9_]* ) {
+                                            TString value(ts, te - ts);
+                                            if (kw.contains(value))
+                                                Emit(kw[value], ts, te);
+                                            else
+                                                Emit(ID, ts, te);
+                                        };
+            ( '0' | [1-9] [0-9]* )      { Emit(NUM, ts, te); };
+            ( [.,:;()=] )               { Emit(ts[0], ts, te); };
+            '{' '\r'? '\n'?             { cpp_depth = 1; cpp_start = te; fgoto cpp_block; };
+            '/*'                        { fcall c_comment; };
+            '//' [^\n]* '\n';
+            ('# ' | '#line') [^\n]* '\n';  # leftovers from c preprocessor
+            [ \t\r\n];
+        *|;
+
+        c_comment := any* :>> '*/' @{ fret; };
+
+        # inline c++ curly block
+        cpp_block := |*
+            "'" ( [^'\\] | /\\./ )* "'";
+            '"' ( [^"\\] | /\\./ )* '"';
+            '//' [^\n]* '\n';
+            '/*' { fcall c_comment; };
+            '{' { cpp_depth++; };
+            '}' {
+                    if (--cpp_depth == 0) {
+                        Emit(CPP_BLOCK, cpp_start, te - 1);
+                        fgoto main;
+                    }
+                };
+            (any - 0);
+        *|;
+
+        # inline c++ parenthesized expression
+        cpp_expr := |*
+            "'" ( [^'\\] | /\\./ )* "'";
+            '"' ( [^"\\] | /\\./ )* '"';
+            '//' [^\n]* '\n';
+            '/*' { fcall c_comment; };
+            '(' { cpp_depth++; };
+            ')' {
+                    if (--cpp_depth == 0) {
+                        Emit(CPP_EXPR, cpp_start, te - 1);
+                        fgoto main;
+                    }
+                };
+            (any - 0);
+        *|;
+
+        write init;
+        write exec;
+    }%%
+
+    if (cs == scanner_error || cpp_depth != 0) {
+        int line = 1;
+        for (const char *s = input.c_str(); s < p && s < pe; s++) {
+            if (*s == '\n') {
+                line++;
+            }
+        }
+
+        fprintf(stderr, "%s:%d: %s\n", filename.c_str(), line, cpp_depth == 0 ? "parse error" : ": unterminated c++");
+        exit(1);
+    }
+}

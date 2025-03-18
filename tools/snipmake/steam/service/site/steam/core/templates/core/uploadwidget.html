@@ -1,0 +1,126 @@
+{% load i18n %}
+
+            <input type="button" class="btn" style="height: 30px; width: 100px;" value="{% trans 'Upload' %}..." />
+            {{ fileinput }}
+            <a id="id_{{ name }}_delete_link" class="btn" style="position: relative; left: -210px; min-height: 22px; min-width: 100px; max-width: 110px; overflow: hidden; z-index: 3;{% if not value %} display: none;{% endif %}">
+                <i class="icon-remove-sign"></i>
+                {{ filename }}
+            </a>
+            <input type="hidden" id="id_fileinput_{{ name }}" name="fileinput_{{ name }}" value="{{ filename }}">
+            <input type="hidden" id="id_tmp_{{ name }}" name="tmp_{{ name }}" value="{{ value }}" />
+            <br />
+            <progress value="0" max="100" style="{% if value %} display: none;{% endif %}"></progress>
+<script>
+
+    ajaxXHR = false;
+
+    $(function () {
+          $("#id_{{ name }}").change(uploadFile);
+      {% if value %}
+          $("#id_{{ name }}_delete_link").click(deleteFile);
+      {% else %}
+          $("progress").css("display", "none");
+      {% endif %}
+          $("#id_{{ name }}").parents("form").submit(checkUpload);
+          $("#myModal").on("hide", function () {
+                                       deleteFile();
+                                   });
+      });
+
+    function uploadFile() {
+        if ($("#id_{{ name }}")[0].files.length) {
+            if (ajaxXHR) {
+                ajaxXHR.abort();
+            }
+            $("#id_fileinput_{{ name }}").val($("#id_{{ name }}").val());
+            deleteFile();
+            $("progress").css("display", "inline");
+            reqdata = new FormData();
+            reqdata.append(
+                "csrfmiddlewaretoken",
+                $("input[name=\"csrfmiddlewaretoken\"]").val()
+            );
+            reqdata.append("file", $("#id_{{ name }}")[0].files[0]);
+            ajaxXHR = $.ajax({
+                    url: "{% url 'core:ajax_fileupload' %}",
+                    type: "POST",
+                    xhr: function () {
+                            customXHR = $.ajaxSettings.xhr();
+                            if (customXHR.upload) {
+                                customXHR.upload.addEventListener(
+                                    "progress", handleProgress,
+                                    false
+                                );
+                            }
+                            return customXHR;
+                        },
+                    data: reqdata,
+                    cache: false,
+                    contentType: false,
+                    processData: false
+            }).done(uploadDone);
+        } else {
+            alert("{% trans 'Choose a file to upload!' %}");
+        }
+        return false;
+    }
+
+    function deleteFile() {
+        if ($("#id_{{ name }}_delete_link").css("display") != "none") {
+            reqdata = new FormData();
+            reqdata.append(
+                "csrfmiddlewaretoken",
+                $("input[name=\"csrfmiddlewaretoken\"]").val()
+            );
+            reqdata.append("file", $("#id_tmp_{{ name }}").val());
+            $.ajax({
+                url: "{% url 'core:ajax_filedelete' %}",
+                type: "POST",
+                data: reqdata,
+                cache: false,
+                contentType: false,
+                processData: false
+            }).done(function () {
+                        $("progress").attr({value: 0, max: 100});
+                        $("progress").css("display", "none");
+                        $("#id_{{ name }}_delete_link").css("display", "none");
+                        $("#id_{{ name }}_delete_link").unbind();
+                        $("#id_tmp_{{ name }}").val("");
+                    });
+        }
+        return false;
+    }
+
+    function uploadDone(respdata) {
+        $("progress").attr({value: 100, max: 100});
+        $("progress").css("display", "none");
+        $("#id_tmp_{{ name }}").val(respdata);
+        if ($("#id_{{ name }}_delete_link").css("display") == "none") {
+            $("#id_{{ name }}_delete_link").html(
+                "<i class=\"icon-remove-sign\"></i> " +
+                $("#id_fileinput_{{ name }}").val()
+            );
+            $("#id_{{ name }}_delete_link").css("display", "inline-block");
+            $("#id_{{ name }}_delete_link").click(deleteFile);
+        }
+    }
+
+    function handleProgress(event) {
+        if (event.lengthComputable) {
+            $("progress").attr({value: event.loaded, max: event.total});
+        }
+    }
+
+    function checkUpload() {
+        if (
+        {% if upload_type %}
+            $("#id_upload_type").val() == "{{ upload_type }}" &&
+        {% endif %}
+            $("#id_tmp_{{ name }}").val() == ""
+        ) {
+            alert("{% trans 'You must upload a file!' %}");
+            return false;
+        }
+    }
+
+</script>

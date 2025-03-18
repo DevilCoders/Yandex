@@ -1,0 +1,126 @@
+#include <tools/structparser/parsestruct.h>
+
+%%{
+    machine Parser;
+    write data;
+    prepush { stack.push_back(-1); }
+    postpop { stack.pop_back(); }
+
+
+    ENUM = 'E';
+    STRUCT = 'S';
+    STATIC = 's';
+    NAMESPACE = 'N';
+    CLASS = 'C';
+    CONST = 'c';
+    TYPEDEF = 'T';
+    TEMPLATE = 'G';
+    TYPENAME = 't';
+    TRY     = 'r';
+    CATCH   = 'a';
+    USING = 'U';
+    IDENTIFIER = 'I' %{Part.CurId++;};
+    LITERAL = 'L';
+    OPERATION_SEQUENCE = ('O' (any - alpha - digit - '{' - ';'){2}) | ('P' (any - alpha - digit - '{' - ';'){3});
+# O,B is error symbol
+    OPERATOR = 'o';
+    THROW    = 'h';
+    NEW      = 'n';
+#    EXPLICIT = 'x'; #disabled
+    MANYPOINTS = 'M';
+
+    brace1 :=    ( ( '(' >{fcall brace1; } ) | (any - '(') )* ')' >{ fret; };
+    checkBrace1 =  '(' >{fcall brace1; };
+    brace2 :=    ( ( '[' >{fcall brace2; } ) | (any - '[') )* ']' >{ fret; };
+    checkBrace2 =  '[' >{fcall brace2; };
+
+    template_param = (IDENTIFIER | TYPENAME | CLASS) IDENTIFIER %{Part.TemplHdrIdParsed();};
+    template_list = (template_param ',')* template_param;
+
+    template_pref = TEMPLATE '<' template_list? '>' %{ Part.TemplatePrefParsed();};
+
+    template_idparam = (IDENTIFIER %{Part.AddTemplParam();} )| (LITERAL %{Part.AddTemplLiteral();} );
+    simple_templ_list = (template_idparam ',')* template_idparam;
+
+    #real problem is that instead of typename can be struct or even class so here will be big parsing error (we can go to skip mode)
+    template_id = TYPENAME? (IDENTIFIER %{ Part.AddTemplBase(); } ) ('<' simple_templ_list '>')?  %{Part.TemplateIdParsed();} ; # base_list should be instead of simple_list
+    leading_dot = '.' %{Part.HasLeadingDot = true;};
+    complex_id = leading_dot? (template_id '.')* template_id %{Part.CompexIdsParsed();};  
+
+    base_list = ('0'? complex_id ',')* '0'? complex_id; 		#todo '1' '2' access modifiers can be there but parsing them is too complex (use complex examples to understand)
+    any_base_list = (('0'|'1'|'2')? complex_id ',')* ('0'|'1'|'2')? complex_id; 
+
+    struct_def = template_pref? STRUCT ( ((complex_id (':' base_list    )?)? '{') | (complex_id ';')  );
+    class_def  = template_pref? CLASS  ( ((complex_id (':' any_base_list)?)? '{') | (complex_id ';')  );
+    enum_def = ENUM ((CLASS|STRUCT) %{Part.EnumClass = true;})? ( complex_id (':' base_list)? )? '{';
+
+    namespace_def = NAMESPACE IDENTIFIER '{';
+    typedef_def = TYPEDEF complex_id IDENTIFIER  checkBrace2?';';
+
+
+    complex_type = (((CONST %{Part.MarkPrefConst();} )? STATIC?) | (STATIC? (CONST %{Part.MarkPrefConst();})?)) complex_id (CONST %{Part.MarkPostConst();})? ('*' %{Part.LastCmplTypeAddPointer();}  (CONST %{Part.MarkPostConst();})?)* ('&' %{Part.LastCmplTypeAddReference();} )?;
+    one_member_def_complex = complex_type IDENTIFIER ((':' LITERAL %{Part.BitField();} ) | checkBrace2)? ('='[^,{;]+)? ';'; #todo here :constexpr_id can be which is IDENTIFIER!
+    many_members_def_simple = complex_type IDENTIFIER ('=' LITERAL)? (',' CONST? ('*' CONST?)* '&'? IDENTIFIER ('=' LITERAL)?)+ ';';
+
+    function_name = IDENTIFIER '(' %{Part.GetFunctionName();};
+
+    simple_function = template_pref? complex_type function_name ')' (CONST %{ Part.ConstFunction = true; })? ( THROW '(' ')' )? (';' | ((TRY %{SkipTry();} )? '{' )); #todo throw can be expanded
+
+    complex_func_param = complex_type (IDENTIFIER ('=' ((LITERAL %{Part.HasDefParam(true);} ) | (IDENTIFIER '()'? %{Part.HasDefParam(false);})) )? )? %{ Part.DropComplexParams(); }; #may be done better
+
+    complex_function = template_pref? complex_type function_name complex_func_param (',' complex_func_param)* (',' MANYPOINTS)? ')' (CONST %{ Part.ConstFunction = true; })? ( THROW '(' ')' )? (';' | ((TRY %{SkipTry();} )? '{' ));
+
+    using_name = USING complex_id ';';
+
+
+
+    one_member_init = complex_id checkBrace1;
+    members_init = ':' one_member_init (',' one_member_init)*;
+    simple_ctor = template_pref? function_name (complex_func_param (',' complex_func_param)* (',' MANYPOINTS)? )? ')' ( THROW '(' ')' )? (';' | (members_init?  (TRY %{SkipTry();} )? '{') );
+    destructor = '~' function_name ')' (';' | ((TRY %{SkipTry();} )? '{'));
+
+    operator_conv = OPERATOR complex_type '(' ')' (CONST %{ Part.ConstFunction = true; })? ( THROW '(' ')' )? (';' | ((TRY %{SkipTry();} )? '{'));
+    operator_def = template_pref? complex_type OPERATOR ((('[]') | ('()') | '~' | OPERATION_SEQUENCE | '=' | '!' | '&' | '/' | '%' | '-' | '+' | '|' | '^' | '*' | '<' | '>') %{Part.OperName(p);}) '(' complex_func_param? ')' (CONST %{ Part.ConstFunction = true; })? ( THROW '(' ')' )?  (';' | ((TRY %{SkipTry();} )? '{'));
+
+
+
+    using_type = template_pref? USING complex_id '=' complex_id ';' ;
+
+    main := 
+       struct_def %to{ PartToStruct(); } |
+       enum_def %to{ PartToEnum(); } |
+       class_def %to{ PartToClass(); } |
+       namespace_def %to{ GoToNameSpace(); } |
+       typedef_def %to{ PartToTypeDef(); } |
+       one_member_def_complex %to{ PartToMember(true); } |
+       many_members_def_simple %to{ PartToMember(false); } |
+       simple_function %to{SimpleFunc(false);} |
+       complex_function %to{SimpleFunc(true);} |
+       using_name %to{ UsingMember(); } |
+       simple_ctor %to{ Ctor(); } |
+       destructor %to{ Detor(); } |
+       operator_conv %to{ ConvOper(); }|
+       operator_def %to{ Oper(); }|
+       using_type %to{ UsingType();} ;
+      
+}%%
+
+
+char* TStructParser::ParseP(TVector<char>& v)
+{
+        char *p = v.begin();
+        char *pe = v.end();
+        int top = 0;
+        TVector<int>& stack = RagelGrammerStack;
+        stack.clear();
+
+//	char *tokstart, *tokend;    
+//      int act;    
+	int cs;
+        %% write init;
+        %% write exec;
+       	if (cs < Parser_first_final || cs == Parser_error)
+              return p;
+        return 0;
+}
+

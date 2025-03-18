@@ -1,0 +1,106 @@
+{% extends "core/index.html" %}
+{% load i18n %}
+{% load yauth %}
+
+{% block Title %}{% trans 'Task list' %}{% endblock %}
+{% block Scripts %}
+<script>
+    $(function () {
+        {% if error == 'hasests' %}
+            alert("{% trans 'Can not delete this task because it has estimations!' %}");
+        {% endif %}
+        $("#order_slider").slider({
+            min: 0, max: 1,
+            value: {% if order == 'alphabet' %}0{% else %}1{% endif %},
+            change: function(event, ui) {
+                        if (ui.value) {
+                            document.location.href = "{% url 'core:view_taskpool_default' taskpool.id 'random' %}";
+                        } else {
+                            document.location.href = "{% url 'core:view_taskpool_default' taskpool.id 'alphabet' %}";
+                        }
+                    }
+        });
+      });
+</script>
+{% endblock %}
+{% block Caption %}{% trans 'Task list' %}{% endblock %}
+
+{% block Content %}
+
+{% if tasks_ext %}
+    <div class="row">
+        <div class="span2" style="text-align: right;"><b>{% trans 'Name' %}:</b></div>
+        <div class="span8">{{ taskpool.title }}</div>
+    </div>
+    <div class="row">
+        <div class="span2" style="text-align: right;"><b>{% trans 'Total' %}:</b></div>
+        <div class="span1">{{ taskpool.count }}</div>
+    </div>
+    <div class="row">
+        <div class="span2" style="text-align: right;"><b>{% trans 'Snippet pools' %}:</b></div>
+        <div class="span8">
+            {{ taskpool.first_pool_str }}
+            VS
+            {{ taskpool.second_pool_str }}
+        </div>
+    </div>
+    <br>
+    <div class="steamSlider" style="margin-bottom: 20px;">
+        <div class="row">
+            <div class="span3" style="text-align: center; margin-bottom: 10px;">
+                <b>{% trans 'Sort order' %}:</b>
+            </div>
+        </div>
+        <div class="row">
+            <div class="span1" style="text-align: right;">
+               {% trans 'Alphabetical' %}
+            </div>
+            <div class="span1" style="text-align: center;">
+                <div id="order_slider" style="display: inline-block; width: 50px; margin-left: 10px; margin-right: 10px;"></div>
+            </div>
+            <div class="span1" style="text-align: left;">
+                {% trans 'Random' %}
+            </div>
+        </div>
+    </div>
+
+    {% load paginator %}
+    {% url 'core:view_taskpool_default' taskpool.id order as page_url %}
+    {% paginator page_url pages as pg %}
+
+    {{ pg }}
+
+    <ul class="nav nav-list">
+    {% for task, snip_tpls_ext in tasks_ext %}
+        <li>
+            {% if not task.est_count and yauser.core_user.role != yauser.core_user.Role.AADMIN %}
+                <a onclick="return false;" data-href="{% url 'core:delete_task' task.id order pages.cur_page %}"
+                   data-toggle="confirmation"
+                   data-title="{% trans 'Are you sure?' %}"
+                   data-btnCancelLabel="{% trans 'No' %}"
+                   data-btnOkLabel="{% trans 'Yes' %}"
+                   data-btnOkClass="btn-danger"
+                   class="close pull-right">&times;</a>
+            {% endif %}
+            {% if taskpool.kind_pool == taskpool.TypePool.MULTI_CRITERIAL %}
+                {% with snip_tpls_ext=snip_tpls_ext show_pools=False show_request=True showMediaContent=False  %}
+                    {% include 'core/snippet_pair.html' %}
+                {% endwith %}
+            {% endif %}
+            {% if taskpool.kind_pool == taskpool.TypePool.RCA %}
+                {% with snip_tpls_ext=snip_tpls_ext show_pools=False show_request=False showMediaContent=True %}
+                    {% include 'core/snippet_pair.html' %}
+                {% endwith %}
+            {% endif %}
+        </li>
+        <li class="divider"></li>
+    {% endfor %}
+    </ul>
+
+    {{ pg }}
+
+{% else %}
+    <p>{% trans 'No tasks are available.' %}</p>
+{% endif %}
+
+{% endblock %}

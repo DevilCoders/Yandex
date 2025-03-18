@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<head>
+    <meta charset="utf-8">
+    <style type="text/css">
+        #evaltable { margin-top: 1em; margin-bottom: 1em; padding:0; border:0; border-collapse:collapse; font-size:12pt}
+        .pane { padding-left: 1em; padding-right: 1em; width:50%; border:1px solid lightgray;}
+        .column-numbers {font-size:8pt; color:gray}
+        .column-text {text-indent:0.5em; padding-left:0.5em; padding-right:0.5em; color:gray}
+        .hilited {font-weight:bold; color:black}
+        .abovegap {border-bottom:1px dotted gray}
+
+        .pane-selected { background-color: #C0FFC0 }
+        .pane-equals { text-align:center; margin-top: 1em}
+    </style>
+</head>
+<body>
+    <div>
+        URL: <a href="{{ hidden_url }}">{{url}}</a>
+    </div>
+    <div style="margin-top:2em">
+        <form id="markform" method="POST" action="">
+        <input id="marksave" type="submit" name="action" value="Сохранить">
+        <input type="checkbox" name="unmarked_only" value="1" {{ 'checked' if unmarked_only }} id="unmarked_only">
+        <label for="unmarked_only">и перейти к следующему неоцененному</label>
+        <div id="pane-1" data-hotkey="-1" class="pane pane-equals" style="width:100%; height:2em; margin-top:2em">
+            Одинаково
+        </div>
+        <table width="100%" id="evaltable">
+            <colgroup>
+                <!-- <col> -->
+                {% for variant in variants %}
+                <col id="pane{{variant}}" class="pane" data-hotkey="{{loop.index0}}">
+                {% endfor %}
+            </colgroup>
+            <tbody>
+                {% for item in items %}
+                {% if not loop.last and items[loop.index0+1][0] != item[0] + 1 %}
+                    {% set trclass = "abovegap" %}
+                    {% else %}
+                    {% set trclass = "" %}
+                {% endif %}
+                <tr class="{{trclass}}">
+                    <!--<td class="column-numbers">
+                        {{ item[0] }}
+                    </td>-->
+                    {% set linenum = loop.index0 %}
+                    {% for variant in variants %}
+                    {% set content = item[variant+1] %}
+                    <td class="column-text" data-pane="{{variant}}">
+                        {% if content %}
+                            {% if first_indices[variant] == linenum %}
+                            <span id="beginning-{{variant}}">{{ content | safe }}</span>
+                            {% else %}
+                            {{ content | safe }}
+                            {% endif %}
+                        {% elif linenum != 0 %}
+                        &nbsp;
+                        {% elif first_indices[variant] and first_indices[variant] > 5 %}
+                        <a href="#" class="beginning-button" data-pane="{{variant}}">Перейти к тексту &darr;</a>
+                        {% elif not first_indices[variant] %}
+                        [пусто]
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <input type="hidden" name="mark" value="" id="mark_value">
+        </form>
+    </div>
+    <div>
+    </div>
+    <script src="/static/jquery.js" type="text/javascript">
+    </script>
+    <script>
+
+function select_pane(data)
+{
+    var result_holder = $('#mark_value');
+    $('.pane').toggleClass('pane-selected', false);
+    if (data == null || parseInt(result_holder.val(), 10) == data.index) {
+        result_holder.val('');
+    }
+    else {
+        result_holder.val(data.index);
+        data.pane.toggleClass('pane-selected', true);
+    }
+}
+        
+function doc_init()
+{
+    var num_variants = {{variants|length}};
+    var current_mark = {{current_mark}};
+    var events = Array();
+
+    $('#mark_value').val('');
+    for (var i = -1; i < num_variants; ++i) {
+        var pane = $('#pane' + i);
+        var data = {'index':i, 'pane':pane, 'hotkey':parseInt(pane.data('hotkey'), 10)};
+        if (i == current_mark) {
+            pane.toggleClass('pane-selected', true);
+        }
+        events[i] = data;
+    }
+    $("#pane-1").on("click", function(event) {
+        select_pane(events[-1]);
+    });
+    $("#evaltable").delegate("td", "click", function(event) {
+        var pane_id = $(event.currentTarget).data('pane');
+        select_pane(events[pane_id]);
+    });
+    $(".beginning-button").on("click", function(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        document.getElementById('beginning-' + $(event.target).data('pane')).scrollIntoView();
+    });
+
+    $(document).on('keydown', null, events, function(event) {
+        var events = event.data;
+        var key = event.keyCode;
+        for (var e in events) {
+            var i = events[e].hotkey;
+            if (key == 49 + i) {
+                select_pane(events[e]);
+                break;
+            }
+            else if (key == 13) {
+                $('#markform').submit();
+            }
+        }
+    });
+}
+
+$(document).ready(doc_init);
+
+    </script>
+</body>

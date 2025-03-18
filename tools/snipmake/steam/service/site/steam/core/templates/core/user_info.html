@@ -1,0 +1,183 @@
+{% extends "core/index.html" %}
+{% load i18n %}
+{% load yauth %}
+{% load default_time %}
+{% load percentage %}
+{% load crit_name_cleaner %}
+
+{% block Title %}{% trans 'User profile' %}{% endblock %}
+{% block Scripts %}
+<script>
+    function alertError(status) {
+        if (status == 404) {
+            alert("{% trans 'This TaskPack is from disabled TaskPool! Please wait until TaskPool is finished.' %}");
+        }
+    }
+
+    $(function () {
+        {% if error == 'noests' %}
+            alert("{% trans 'User has no estimations for checking!' %}");
+        {% endif %}
+      });
+</script>
+{% endblock %}
+
+{% block Caption %}{% trans 'User profile' %}{% endblock %}
+{% block Content %}
+    <div class="row">
+        <div class="span2" style="text-align: right;"><b>{% trans 'Login' %}:</b></div>
+        <div class="span8">{{ user.login }}</div>
+    </div>
+    <div class="row">
+        <div class="span2" style="text-align: right;"><b>{% trans 'Country' %}:</b></div>
+        <div class="span8">{{ user.language_str }}</div>
+    </div>
+    <div class="row">
+        <div class="span2" style="text-align: right;"><b>{% trans 'Role' %}:</b></div>
+        <div class="span8">{{ user.role_str }}</div>
+    </div>
+    <div class="row">
+        <div class="span2" style="text-align: right;"><b>{% trans 'Status' %}:</b></div>
+        <div class="span8">{{ user.status_str }}</div>
+    </div>
+    <div class="row">
+        <div class="span2" style="text-align: right;"><b>{% trans 'Complete task count' %}:</b></div>
+        <div class="span8">{{ complete_est_count }}</div>
+    </div>
+
+    {% if assessor_precisions %}
+        <div class="row">
+            <div class="span2" style="text-align: right;"><b>{% trans 'Precision' %}:</b></div>
+            <div class="span8">
+                <table class='table table-striped table-condensed table-fixed table-centered'>
+                    <colgroup>
+                        <col width='2'>
+                        <col width='2'>
+                        <col width='2'>
+                        <col width='2'>
+                    </colgroup>
+                    <thead>
+                        <tr>
+                            {% for crit, prec in assessor_precisions %}
+                                <th>{% trans crit|crit_name_cleaner|capfirst %}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            {% for crit, prec in assessor_precisions %}
+                                <td>{{ prec|floatformat:3 }}</td>
+                            {% endfor %}
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    {% endif %}
+
+    {% if yauser.core_user.role != yauser.core_user.Role.ASSESSOR %}
+        {% if user.role == yauser.core_user.Role.ASSESSOR %}
+            <div class="row">
+                <div class="span2" style="text-align: right;"><b>{% trans 'Inspection' %} ({% trans 'got' %} / {% trans 'needed' %}):</b></div>
+                <div class="span8">
+                    {{ inspection_est_count }} / {{ inspection_est_count|add:needed_inspection_count }}
+                    {% if needed_inspection_count %}
+                        <a class="btn btn-info btn-mini" href="{% url 'core:take_task_by_as' user.pk %}">{% trans 'Assign task by assessor' %}</a>
+                    {% endif %}
+                </div>
+            </div>
+        {% endif %}
+        {% if yauser.core_user == user %}
+            <a class="btn btn-danger btn-small" onclick="return false;" data-href="{% url 'core:clear_estimations' %}"
+               data-toggle="confirmation"
+               data-title="{% trans 'Are you sure?' %}"
+               data-btnCancelLabel="{% trans 'No' %}"
+               data-btnOkLabel="{% trans 'Yes' %}"
+               data-btnOkClass="btn-danger">{% trans 'Clear open estimations' %}</a>
+        {% endif %}
+    {% endif %}
+
+    <table class="table table-striped table-fixed">
+        <colgroup>
+            <col width="2">
+            <col width="1">
+            <col width="1">
+            <col width="1">
+            <col width="1">
+            <col width="1">
+            {% if user.role == user.Role.ASSESSOR %}
+                <col width="2">
+                <col width="1">
+                {% if yauser.core_user.role != yauser.core_user.Role.ASSESSOR %}
+                    <col width="1">
+                    <col width="1">
+                    <col width="1">
+                {% endif %}
+            {% endif %}
+        </colgroup>
+        <thead>
+            <tr>
+                <th>
+                    {% if yauser.core_user.role != yauser.core_user.Role.ASSESSOR %}
+                        {% trans 'Pool' %}
+                    {% else %}
+                        {% trans 'Deadline' %}
+                    {% endif %}
+                </th>
+                {% if yauser.core_user.role != yauser.core_user.Role.ASSESSOR %}
+                    <th>{% trans 'Pool kind' %}</th>
+                {% endif %}
+                <th>{% trans 'Complete' %}</th>
+                <th>{% trans 'Rejected' %}</th>
+                <th>{% trans 'Skipped' %}</th>
+                <th>{% trans 'Assigned' %}</th>
+                <th>{% trans 'Total' %}</th>
+                {% if user.role == user.Role.ASSESSOR %}
+                    <th>{% trans 'Last activity' %}</th>
+                    <th>{% trans 'Pack status' %}</th>
+                    {% if yauser.core_user.role != yauser.core_user.Role.ASSESSOR %}
+                        <th>{% trans 'Changed' %}</th>
+                        <th>{% trans 'Linked' %}</th>
+                    {% endif %}
+                {% endif %}
+            </tr>
+        </thead>
+        <tbody>
+        {% for pool_id, pool_info in taskpools_info %}
+        <tr{% if user.role == user.Role.ASSESSOR %} class="{% if pool_info.pack_status == PACK_STATUSES.FINISHED %}success{% elif pool_info.pack_status == PACK_STATUSES.TIMEOUT %}error{% else %}warning{% endif %}"{% endif %}>
+                <td>
+                    {% if yauser.core_user.role != yauser.core_user.Role.ASSESSOR %}
+                        <a href="{% url 'core:monitor_taskpool' pool_id %}">{{ pool_info.pool_title }}</a>
+                    {% else %}
+                        {{ pool_info.pool_deadline|default_time }}
+                    {% endif %}
+                </td>
+                {% if yauser.core_user.role != yauser.core_user.Role.ASSESSOR %}
+                    <td>{{ pool_info.kind_pool }}</td>
+                {% endif %}
+                <td>{{ pool_info.complete }}</td>
+                <td>{{ pool_info.rejected }}</td>
+                <td>{{ pool_info.skipped }}</td>
+                <td>{{ pool_info.assigned }}</td>
+                <td>{{ pool_info.total }} / {{ pool_info.total|add:pool_info.skipped|add:pool_info.assigned }}</td>
+                {% if user.role == user.Role.ASSESSOR %}
+                    <td>{{ pool_info.last_update }}</td>
+                    <td>
+                        {{ pool_info.pack_status_str }}
+                        {% if yauser.core_user.role != yauser.core_user.Role.ASSESSOR and pool_info.pack_status == PACK_STATUSES.TIMEOUT %}
+                            <a href="#myModal" id="assign_pack_btn" class="btn btn-info btn-mini" onClick="return getPopup('{% url 'core:assign_pack_back' pool_info.pack_id %}')">{% trans 'Assign back' %}</a>
+                        {% endif %}
+                    </td>
+                    {% if yauser.core_user.role != yauser.core_user.Role.ASSESSOR %}
+                        <td>{{ pool_info.changed }} {{ pool_info.changed|percentage:pool_info.total }}</td>
+                        <td>{{ pool_info.linked }} {{ pool_info.linked|percentage:pool_info.total }}</td>
+                    {% endif %}
+                {% endif %}
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <div id="modal_container">
+    </div>
+{% endblock %}

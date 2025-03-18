@@ -1,0 +1,10 @@
+RECURSE(
+    comparer
+    dumper
+    executor
+    executor/tests
+    libs
+    neher
+    planner
+    stepper
+)

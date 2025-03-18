@@ -1,0 +1,35 @@
+OWNER(g:mstand-squeeze)
+
+RECURSE_FOR_TESTS(
+    alice
+    app_metrics
+    cv
+    images
+    intrasearch
+    intrasearch_metrika
+    market
+    market_search_sessions
+    morda
+    news
+    object_answer
+    ott_impressions
+    ott_sessions
+    pp
+    prism
+    recommender
+    surveys
+    toloka
+    touch
+    vh
+    video
+    video_binary
+    watch_log
+    web
+    web_binary
+    web_surveys
+    ya_metrics_toloka
+    yql_ab
+    yuid_reqid_testid_filter
+    zen
+    zen_surveys
+)

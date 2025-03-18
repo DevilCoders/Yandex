@@ -1,0 +1,251 @@
+#!/bin/sh -e
+
+_scenario() {
+  # TYPES
+  # <TYPE> = <hosts> [<clusters>] [<options>]
+
+  GLOB = wspm                  cpu=0        shape=ellipse
+  GLO2 = wspm2                 cpu=0        shape=octagon
+  SEGM = nohost                cpu=0.5001/1 shape=box
+  CLST = nohost nocluster      cpu=1        shape=hexagon
+  SCAT = nohost                cpu=4        shape=pentagon
+  GL1W = wspm  !hostcfg:h      cpu=2        shape=ellipse
+  GL2W = wspm2 !hostcfg:h      cpu=2        shape=octagon
+
+  # TARGETS
+  SEGM get_host_flags_local
+  GLOB merge_host_flags
+
+  GLOB clean_targets :
+  SEGM clean_local_dst
+  SCAT clean_scatter_dst : clean_targets
+
+  GLO2 configure_rdr_locks : clean_targets merge_host_flags
+  GLO2 prepare_rdr_recheck
+  GLO2 configure_rdrque
+  GL2W configure_remote3 : ^ clean_local_dst
+  GLOB calc_old_fltic : clean_targets merge_host_flags # ipcy part 1
+  GLOB ipcy_bans                      # ipcy part 2
+  GLOB configure_links
+  GLOB configure_catres
+
+  GLOB pack_remote_cfg
+  GL1W configure_remote : ^ clean_local_dst net=0.5/1
+  GLOB configure_att : pack_remote_cfg
+  GL1W configure_remote2 net=0.5/1
+
+# <run_remote>
+    SEGM sort_att_local : configure_remote2
+
+    SEGM hostgraph_local_init : clean_local_dst cpu=1
+    CLST hostgr_c1            disk=0.2/1
+    SEGM hostgr_m1            cpu=1
+    SEGM hostgr_hops_local    cpu=1 disk=0.7/1
+    CLST hosthop2doc          cpu=2
+
+    SEGM unpack_local_config : configure_remote
+    SEGM anticy_local_export_hash  cpu=1
+    SEGM links_local_count         cpu=1 disk=0.7/1
+    SEGM links_local_count2 : ^ hosthop2doc cpu=1 disk=0.9/1
+
+    GLOB configure_mfas :  clean_targets
+    GLOB run_remote_pre
+    GL1W configure_remote5 : ^ clean_local_dst
+    SEGM unpack_local_config2
+    SEGM mfas_walrus_clean_deltas
+    SEGM mfas_local_rotate
+
+#   <mkcl>
+    #if [ "$2" = "-u" ] ; then
+      SEGM mfas_local_init_upd
+      SEGM mkclqs_split
+      CLST mfas_upd cpu=1.1
+      CLST link_match_upd cpu=1.1
+      CLST mfas_rule_inc cpu=1.1
+#      SEGM mkclqs_split
+      CLST mkclqs_upd : ^ links_local_count2
+    #else
+    #  SEGM mfas_local_init_full
+    #  CLST mfas_full
+    #  CLST link_match_full
+    #  CLST mkclqs_full : ^ links_local_count2
+    #fi
+    CLST mkclqs_rename
+#   </mkcl>
+
+    SEGM qs_all_pfc # txt
+    SEGM qs_all_rename
+    SEGM qs_db_ready : ^ sort_att_local
+    SEGM mfas_deduce_ow : ^ cpu=1
+    SEGM mfas_deduce_hst : qs_db_ready cpu=1
+    SEGM process_dedtxt_local : ^ mfas_deduce_ow
+    SEGM qs_all_cleanup
+    SEGM mfas_badnode : qs_db_ready cpu=1
+    SEGM mfas_ban_bydoc_local                 cpu=1
+    SEGM forum-examples_local                 cpu=1
+    SEGM reqdistr_local                       cpu=1
+    SEGM badforums_local : ^ qs_all_cleanup
+    SEGM forum_ban_docs_local
+    SEGM ban_docs_4sct : ^ clean_scatter_dst
+    SEGM xss_lists_4wmc : forum_ban_docs_local
+
+    SEGM qs_all_addmarks
+    SEGM mon_ban_stats_local
+
+    CLST hostgr_c2
+
+    SEGM hostgr_m2 # hostgraph
+    GL2W get_local_result4
+    SEGM rdr_queue_local : hostgr_m2 configure_remote3 cpu=1 disk=1/1
+    SEGM catres_lb : hostgr_m2 disk=1/1
+
+    SEGM spmmark_viewer_local
+    SEGM pack_local_results
+
+    GLOB run_remote_post # part of run_remote
+
+    SEGM lb_text_hash : pack_local_results
+    SEGM lb_reduce disk=1/1
+    SEGM lb_sample_seo disk=1/1
+    SEGM lb_owners_seo
+    SEGM lb_seo_spectrums disk=1/1
+# </run_remote>
+
+  SCAT sct_wait_ready : clean_scatter_dst
+  SCAT dyn_ban_data
+  SCAT ban_docs_4srch : ban_docs_4sct
+  SCAT tw_4dyn_ban : ^ dyn_ban_data
+  SCAT sct_pull_hashes
+
+  GL1W get_local_result1: pack_local_results
+
+  GLO2 merge_hostgraph_ch : get_local_result4
+  GLO2 merge_hostgraph_u
+  GLO2 hostgraphs_cl_u
+  GLO2 calc_anticy
+
+  GLO2 merge_hostgraph_o : merge_hostgraph_ch
+  GLO2 merge_hostgraph_c
+  GLO2 hostgraphs_cl_o
+  GLO2 hostgraphs_cl_c
+  GLO2 merge_hostgraph_clr : ^ merge_hostgraph_u
+  GLO2 merge_hostgraph_hst
+
+  GL2W get_local_result2: rdr_queue_local
+  GLO2 fill_rdr_queue
+  GLO2 get_host_ages
+  GLOB process_host_ages
+  GLO2 update_rdr_reftxt : get_host_ages
+  GLO2 sync_rdr_recheck
+
+  GLOB catres_join : get_local_result1 run_remote_post
+  GL1W configure_remote4
+  SEGM catres_lb2 : ^ lb_seo_spectrums
+  GL1W get_local_result3
+  GLOB catres_join2
+
+  GLOB mk_badforums_hist : catres_join
+  GLOB merge_txt_freqs
+  GLOB upd_masks_list : ^ catres_join2
+  GLOB mon_ban_stats
+  GLOB seo_spectrum_charts
+  GLOB make_zonewht : process_host_ages calc_anticy
+  GLOB mfas_chk_all_pop : ^ seo_spectrum_charts
+
+  GLOB imp-mfas
+  GLOB misc_bans
+  GLOB viewer
+  # spam_async ("asynchronous" post-ban steps)
+  GLOB hist_alert
+  GLOB hist_upd            disk=0.7/1
+  GLOB ipcy_ban_flt
+  GLOB upd_ign_masks
+  GLOB export_spam4ban
+  GLOB mfas_get_liex
+
+  GLOB mv_for_spmmark_viewer : viewer
+  GLOB make_spmmark_viewer disk=0.9/1
+  GLOB docview_export
+  GLOB blasts4view
+
+  GLOB check_hostgraph_age : merge_hostgraph_hst
+  GLOB hg_ac_cm
+  GLOB clean_orca_tails : clean_targets
+  SEGM cp1orca_local : ^ qs_all_addmarks cpu=0.5 net=0.6/1
+  GLOB clean_targets_zm : clean_targets
+  SEGM cp1zm_local : ^ lb_reduce cpu=0.5 net=0.6/1
+  SEGM lbr_split_cp_w2z : cp1zm_local cpu=0.5
+  SEGM lbr_merge_w2z : ^ *
+  GLOB sample_stream_qs
+
+  GLOB wait_dyn : viewer sct_pull_hashes
+  GLOB regspam_ok
+  GLOB spam_fin : ^ sample_stream_qs mfas_get_liex hg_ac_cm blasts4view sync_rdr_recheck cp1orca_local mailto=melkov-mobile@yandex.ru
+
+  # quick_hostgraphs
+  GLO2 curq_mv : check_hostgraph_age
+  GLO2 mkhist_graph_q
+  GLO2 mkhist_blasts_q
+
+  # full_hostgraphs
+  GLO2 more_hostgraphs : check_hostgraph_age
+  GLO2 transp_hostgraphs
+  GLO2 mk_link_3s
+  GLO2 mk_link_counts
+  GLO2 mk_link_rings1
+  GLO2 mk_link_rings2
+  GLO2 mvoldnew
+  GLO2 hostgr_to_wspm
+  #hostgrhist
+  GLO2 mkhist_graph
+  GLO2 mkhist_blasts
+  GLO2 mk_stab
+  GLO2 hostgr_to_wspm_b
+  GLO2 cur_ln
+  GLOB fltcy
+  GLO2 age_sift_mkm : cur_ln
+  GLO2 mkhist_cu_graph
+
+  #calc_ic
+  GLOB tcy_switch_prev_ossa2 : more_hostgraphs
+  GLOB tcy_switch_prev
+  GLOB tcy_init_config
+  GLOB tcy_init_remote_pre
+  GL1W tcy_init_remote
+  #GLOB tcy_rta
+  SEGM tcy_cy_conf_local
+  SEGM tcy_cy_prepare_local
+  CLST tcy_cy_src_cluster
+  SEGM tcy_cy_msrc_local
+  SEGM tcy_local_tw_src
+  SEGM tcy_joinh2ucl : tcy_local_tw_src *
+  SEGM tcy_clean_rta_local
+  SEGM tcy_invert_host2url
+  #GLOB tcy_tw
+  SEGM tcy_gen_cy_ysTree
+  SEGM tcy_prepare_sitetree_local_1
+  GLOB tcy_tw_select_nodes
+  SEGM tcy_add_descrs
+  GLOB tcy_tw_global_for_load
+  GLOB tcy_tw_global_for_load_alt
+  GL1W tcy_cprta : tcy_cy_msrc_local
+  GLOB tcy_mrta : tcy_cprta
+  GLOB tcy_clean_rta
+  GLOB tcy_age_sift : tcy_clean_rta age_sift_mkm
+  GLOB tcy_blast_sift
+  GLOB tcy_h2u
+  GLOB tcy_mut
+  GLOB tcy_badsrc1
+  GLOB tcy_badsrc2
+  GLOB tcy_tcy2 : ^ fltcy
+  GLOB tcy_tcy4
+  GLOB tcy_sendtoya
+  GLOB tcy_nocat_sample
+  GLOB tcy_sendtotsa : ^ tcy_tw_global_for_load_alt
+  GLOB tcy_tsa_mkviewers
+  GLOB tcy_sendtoossa2 : tcy_sendtotsa
+  GLOB tcy_all_finished : ^ tcy_tsa_mkviewers mkhist_cu_graph
+  #GLOB gen_axdr_masks # it uses siteTree
+}
+
+true

@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+<meta charset="utf-8">
+<title>{{url}} -- assessor_ui</title>
+<script type="text/javascript" src="/static/jquery-2.1.1.js"></script>
+<script type="text/javascript" src="/static/json2.js"></script>
+<style type="text/css">
+body, html {
+    margin:0px;
+    padding:0px;
+}
+body {
+    background-color:#F0F0F0;
+}
+#markupColumn {
+    margin:0px;
+    padding:0px;
+    float:left;
+    font-size:10pt;
+    font-family:sans-serif;
+    overflow-y:scroll;
+
+    height:93vh;
+    max-height:93vh;
+
+    width:34%;
+    max-width:34%
+}
+#previewFrame {
+    margin:0px;
+    padding:0px;
+    float:right;
+
+    min-height:93vh;
+
+    max-width:65%;
+    width:65%;
+}
+#toolbar {
+    margin:0px;
+    padding:0px;
+    width:100%;
+    height:5vh;
+}
+.sentFreq {
+    text-align:right;
+}
+
+.sentsTable {
+    width:100%;
+}
+
+.sentsTable td {
+    border:1px solid #E0E0E0;
+    padding:4pt;
+}
+
+.sentsTable tr:hover td {
+    border:1px solid black;
+}
+
+tr.sentRow[data-vote=none] td.voteButtonBad:hover, tr.sentRow[data-vote=good] td.voteButtonBad:hover {
+    background-image:url('/static/trash_off.png');
+}
+
+tr.sentRow[data-vote=none]:hover td.voteButtonGood:hover, tr.sentRow[data-vote=bad] td.voteButtonGood:hover {
+    background-image:url('/static/star_off.png');
+}
+
+.voteButton {
+    background-color:#E0E0E0;
+    background-position:center center;
+    background-repeat:no-repeat;
+    margin:0px;
+    padding:0px;
+    min-width:36px;
+    width:36px;
+}
+
+tr.sentRow[data-vote=bad] td.voteButtonBad {
+    background-image:url('/static/trash_on.png');
+}
+tr.sentRow[data-vote=good] td.voteButtonGood {
+    background-image:url('/static/star_on.png');
+}
+tr.sentRow[data-vote=updating] td.voteButton:before {
+    content:"zzz"
+}
+tr.sentRow[data-vote=wtf] td.voteButton:before {
+    content:"???"
+}
+.sealUnseal {
+    float:right;
+    margin-right:10pt;
+}
+.unsealedDoc #unsealPanel {
+    display:none;
+}
+.sealedDoc #sealPanel {
+    display:none;
+}
+
+</style>
+</head>
+<body>
+<script type="text/javascript">
+var sentsJson = {{sentsJson|tojson|safe}};
+
+function setButtonState(row, state)
+{
+    row.attr('data-vote', state);
+}
+
+function sentClickHandler(eventObject)
+{
+    var tgt = eventObject.target;
+    var theTD = null;
+    var theTR = null;
+
+    while (tgt != null) {
+        if (tgt.tagName == 'TD') {
+            theTD = $(tgt);
+        }
+        else if (tgt.tagName == 'TR') {
+            theTR = $(tgt);
+            break;
+        }
+        tgt = tgt.parentElement;
+    }
+
+
+    if (theTD == null || theTR == null) {
+        return;
+    }
+
+    var idx = Number(theTR.data('sent'));
+    var sents = eventObject.data;
+
+    var sent = sents[idx];
+    var buttonType = theTD.data('vote');
+    var oldState = theTR.attr('data-vote');
+    var newState = (oldState == buttonType) ? 'none' : buttonType;
+
+    if (oldState == 'wtf' || oldState == 'updating') {
+        return;
+    }
+
+    var packet = {
+        'url' : {{url|tojson|safe}},
+        'cmd' : 'vote',
+        'group' : {{url_group|tojson|safe}},
+        'sent' : sent,
+        'state' : newState,
+        'oldstate' : oldState
+    }
+
+    setButtonState(theTR, 'updating');
+
+    var reportVoteError = function(err) {
+        alert('Could not store your vote. The reason appears to be: ' + err + "\nPlease reload the page at your earliest convenience.");
+    }
+
+    var reportVoteConflict = function() {
+        alert('Vote conflict detected.\n' +
+              'Vote reverted to the last registered state.\n' +
+              'Please take a look and vote again if needed.');
+    }
+
+    jQuery.ajax({url: '/vote',
+        type: 'POST',
+        contentType: 'text/javascript',
+        data: JSON.stringify(packet),
+        dataType: 'json',
+        error: function(xhr, textStatus, err) {
+            reportVoteError(err);
+            setButtonState(theTR, oldState);
+        },
+        success: function(data, textStatus, xhr) {
+            if (data['error'] != null) {
+                setButtonState(theTR, 'wtf');
+                reportVoteError(data['error']);
+            }
+            else {
+                setButtonState(theTR, data['state']);
+                if (data['conflict']) {
+                    reportVoteConflict();
+                }
+                else {
+                    setSealPanelEnabled(true);
+                }
+            }
+        }
+    });
+}
+
+function onDocLoad()
+{
+    $('#sentsTable').click(
+        sentsJson, sentClickHandler
+    );
+    $('#sealButton').click(onDoneClick);
+}
+
+function disableFrameLinks()
+{
+    var frame = $('#previewFrame');
+    frame.contents().find("[href]").attr("target", "_blank");
+}
+
+function setSealPanelEnabled(isEnabled)
+{
+    var ids = ['unsealedDoc', 'sealedDoc'];
+    if (isEnabled) {
+        ids.reverse();
+    }
+    var tb = $('#toolbar');
+    tb.removeClass(ids[0]);
+    tb.addClass(ids[1]);
+}
+
+function onDoneClick()
+{
+    alert('zz');
+    var packet = {
+        'url' : {{url|tojson|safe}}
+    }
+
+    jQuery.ajax({url: '/seal',
+        type: 'POST',
+        contentType: 'text/javascript',
+        data: JSON.stringify(packet),
+        dataType: 'json',
+        error: function(xhr, textStatus, err) {
+            alert(err);
+        },
+        success: function(data, textStatus, xhr) {
+            if (data['error'] != null) {
+                alert(data['error']);
+            }
+            else {
+                setSealPanelEnabled(false);
+            }
+        }
+    });
+}
+
+$(document).ready(onDocLoad);
+</script>
+
+<div id="toolbar" class="{{'sealedDoc' if is_sealed else 'unsealedDoc'}}">
+    <div>
+        <a href="{{url_for('url_list_handler', group=url_group)}}" style="margin-right:10pt">&lt; {{url_group}}</a>
+        <a href="{{anonymized_url}}" target="_blank">{{url}}</a>
+        <div class="sealUnseal" id="sealPanel"><a href="#" id="sealButton">Done!</a></div>
+        <div class="sealUnseal" id="unsealPanel">Done.</div>
+    </div>
+</div>
+<div id="markupColumn">
+    <table class="sentsTable" id="sentsTable">
+        {% for sent in sents %}
+        <tr data-sent="{{loop.index0}}" data-vote="{{sent.state}}" class="sentRow" style="background-color:{{sent.color}}">
+            <td class="sentFreq">{{sent.freq}}</td>
+            <td>
+                <div class="sentText">{{sent.text}}</div>
+            </td>
+            <td data-vote="good" class="voteButton voteButtonGood">&nbsp;
+            </td>
+            <td data-vote="bad" class="voteButton voteButtonBad">&nbsp;
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+<iframe id="previewFrame" sandbox="allow-same-origin" onmouseover="disableFrameLinks()" src="{{url_for('url_fetch_handler', url=url)}}">
+</iframe>
+</body>
+</html>

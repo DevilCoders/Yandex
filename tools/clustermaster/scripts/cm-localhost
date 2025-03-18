@@ -1,0 +1,52 @@
+#!/bin/sh
+
+# Скрипт для запуска тестового инстанса clustermaster на localhost
+# Тестовая конфигурация состоит из мастера, 2 глобальных и 4 сегментных воркеров
+# Порты воркеров (-w) зашиты в clustermaster (master/worker_pool.cpp), здесь их
+# менять нет смысла.
+#
+# Usage:
+#  cm deploy <путь к скрипту>
+#  cm kill
+#
+
+CM_DIR=/home/marakasov/arcadia/junk/marakasov/clustermaster
+VAR_DIR=/tmp
+HOSTCFG=/home/marakasov/arcadia/junk/marakasov/clustermaster/examples/clm-host.cfg
+
+case "$1" in
+deploy)
+    if [ "x$2" = "x" ]; then
+        echo "Usage: $0 deploy config"
+        exit 1
+    fi
+
+    rm -f $VAR_DIR/cm-0.var/script
+    rm -f $VAR_DIR/cm-1.var/script
+    rm -f $VAR_DIR/cm-2.var/script
+    rm -f $VAR_DIR/cm-3.var/script
+    rm -f $VAR_DIR/cm-g1.var/script
+    rm -f $VAR_DIR/cm-g2.var/script
+
+    # global workers
+    $CM_DIR/worker/worker -v $VAR_DIR/cm-g1.var -P $VAR_DIR/cm-g1.pid -l $VAR_DIR/cm-g1.log -w 10001 -h 20001 -g
+    $CM_DIR/worker/worker -v $VAR_DIR/cm-g2.var -P $VAR_DIR/cm-g2.pid -l $VAR_DIR/cm-g2.log -w 10002 -h 20002 -2
+
+    # normal workers
+    $CM_DIR/worker/worker -v $VAR_DIR/cm-0.var -P $VAR_DIR/cm-0.pid -l $VAR_DIR/cm-0.log -w 11000 -h 21000
+    $CM_DIR/worker/worker -v $VAR_DIR/cm-1.var -P $VAR_DIR/cm-1.pid -l $VAR_DIR/cm-1.log -w 11001 -h 21001
+    $CM_DIR/worker/worker -v $VAR_DIR/cm-2.var -P $VAR_DIR/cm-2.pid -l $VAR_DIR/cm-2.log -w 11002 -h 21002
+    $CM_DIR/worker/worker -v $VAR_DIR/cm-3.var -P $VAR_DIR/cm-3.pid -l $VAR_DIR/cm-3.log -w 11003 -h 21003
+
+    # master
+    $CM_DIR/master/master -v $VAR_DIR/cm-m.var -P $VAR_DIR/cm-m.pid -l $VAR_DIR/cm-m.log -s "$2"
+    ;;
+kill)
+    killall master
+    killall worker
+    ;;
+*)
+    echo "Usage: $0 deploy <config>"
+    echo "       $0 kill"
+    exit 1
+esac

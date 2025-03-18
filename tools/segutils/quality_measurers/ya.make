@@ -1,0 +1,11 @@
+RECURSE(
+    arc_downloader
+    arc_printer
+    dater_quality
+    hosts_getter
+    links_quality
+    mains_features
+    mains_quality
+    segqualitycommon
+    tune_threshold
+)

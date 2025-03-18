@@ -1,0 +1,216 @@
+diff --git a/library/sanitize/css/css2-drv.cpp b/library/sanitize/css/css2-drv.cpp
+index 1e061e4..f69bcde 100644
+--- a/library/sanitize/css/css2-drv.cpp
++++ b/library/sanitize/css/css2-drv.cpp
+@@ -101,7 +101,7 @@ void TCSS2Driver::Error(const TString & m)
+ void TCSS2Driver::Error(const char * msg)
+ {
+     ErrorCount++;
+-    ParseErrorStream << StreamName << ':' << Lexer->lineno() << ' ' << msg << '\n';
++    Cerr << StreamName << ':' << Lexer->lineno() << ' ' << msg << '\n';
+ }
+
+ TString TCSS2Driver::ExprToString(const TString & prop_name, const TContext & context)
+@@ -178,7 +178,7 @@ TString TCSS2Driver::ExprToString(const TString & prop_name, const TContext & cont
+             if (wantUrl) {
+                 TString url;
+                 if ((nonLocalUrl || ProcessAllUrls)
+-                    && TagName
++                    && (TagName || ProcessAllUrls)
+                     && UrlProcessor
+                     && UrlProcessor->IsAcceptedAttr(TagName, prop_name.c_str())
+                 ) {
+diff --git a/library/sanitize/css/css2_l.l b/library/sanitize/css/css2_l.l
+index 4e88297..e8736c2 100644
+--- a/library/sanitize/css/css2_l.l
++++ b/library/sanitize/css/css2_l.l
+@@ -52,7 +52,7 @@ h		[0-9a-f]
+ nonascii	[\200-\377]
+ unicode		\\{h}{1,6}[ \t\r\n\f]?
+ escape		{unicode}|\\[ -~\200-\377]
+-nmstart_spec    "-"|"_"
++nmstart_spec    "-"|"_"|"*"
+ nmstart		[a-z]|{nonascii}|{escape}
+ nmchar		[a-z0-9-]|{nonascii}|{escape}|"_"
+ string1		\"([\t !#$%&(-~]|\\{nl}|\'|{nonascii}|{escape})*\"
+@@ -179,7 +179,8 @@ expression      {E}{X}{P}{R}{E}{S}{S}{I}{O}{N}
+ {w}"}"{w}      {
+                 return RBRACE;
+             }
+-
++{w}"("{w}   { return '('; }
++{w}")"{w}   { return ')'; }
+ {w}":"{w}   { return ':'; }
+
+ {w}";"{w}   { return ';'; }
+@@ -192,6 +193,7 @@ expression      {E}{X}{P}{R}{E}{S}{S}{I}{O}{N}
+ {w}","{w}   {return COMMA_T;}
+ {w}">"{w}   {return GREATER;}
+ {w}"+"{w}   {return PLUS;}
++{w}"::"{w}  {return DOUBLE_COLON;}
+
+
+ {string}    	 {
+diff --git a/library/sanitize/css/css2_y.y b/library/sanitize/css/css2_y.y
+index 2e990c0..c3815f6 100644
+--- a/library/sanitize/css/css2_y.y
++++ b/library/sanitize/css/css2_y.y
+@@ -62,7 +62,7 @@ void operator delete(void *) throw()
+
+ %token <ival> S CHARSET_SYM IMPORT_SYM COMMA_T LBRACE URL
+ %token <ival> RBRACE MEDIA_SYM
+-%token <ival> PAGE_SYM PLUS MINUS GREATER INCLUDES DASHMATCH
++%token <ival> PAGE_SYM PLUS MINUS GREATER INCLUDES DASHMATCH DOUBLE_COLON
+ %token <ival> IMPORTANT_SYM
+ %token <ival> INVALID DIMENSION FONT_FACE_SYM
+ %token <ival> ATKEYWORD UNICODERANGE
+@@ -76,7 +76,7 @@ void operator delete(void *) throw()
+ %type <text> predicate_list predicate hd_item elt
+ %type <text> opt_attrib_quals attrib_qual ident_or_string opt_ident pseudo
+ %type <text> declaration ruleset ruleset_list rule_declaration_list opt_declaration opt_prio prio property
+-%type <text> opt_pseudo_page pseudo_page medium medium_list opt_medium_list
++%type <text> opt_pseudo_page pseudo_page medium medium_list opt_medium_list medium_condition medium_conditions
+ %type <text> declaration_list
+ %type <stroka_list> selector_list
+
+@@ -162,6 +162,7 @@ chooser
+     }
+     | media
+     | page
++    | font_face
+   ;
+
+ import
+@@ -247,6 +248,17 @@ media
+     }
+   ;
+
++font_face
++    : FONT_FACE_SYM opt_s LBRACE rule_declaration_list RBRACE
++    {
++        driver.Out("@font-face { ");
++        driver.Out($4->Value);
++        driver.Out(" }\n");
++
++        delete $4;
++    }
++  ;
++
+ ruleset_list
+   :
+     {
+@@ -268,6 +280,51 @@ medium
+     {
+         $$ = $1;
+     }
++  | IDENT medium_conditions
++    {
++        $$ = $1;
++        $$->Value += $2->Value;
++    }
++  | '(' medium_condition ')'
++    {
++        $$ = driver.New<TString>();
++        $$->Value = "(";
++        $$->Value += $2->Value;
++        $$->Value += ") ";
++    }
++  | '(' medium_condition ')' medium_conditions
++    {
++        $$ = driver.New<TString>();
++        $$->Value = "(";
++        $$->Value += $2->Value;
++        $$->Value += ") ";
++        $$->Value += $4->Value;
++    }
++  ;
++
++medium_conditions
++  : FUNCTION medium_condition opt_s ')'
++    {
++        $$ = $1;
++        $$->Value += " (";
++        $$->Value += $2->Value;
++        $$->Value += ") ";
++    }
++  | FUNCTION medium_condition opt_s ')' opt_s medium_conditions
++    {
++        $$ = $1;
++        $$->Value += " (";
++        $$->Value += $2->Value;
++        $$->Value += ") ";
++        $$->Value += $6->Value;
++    }
++  ;
++
++medium_condition
++  : declaration
++    {
++        $$ = $1;
++    }
+   ;
+
+ page
+@@ -353,6 +410,11 @@ property
+     {
+         $$ = $1;
+     }
++  | error
++    {
++        $$ = driver.New<TString>();
++        $$->Value = "-yandex-invalid-property";
++    }
+   ;
+
+ ruleset
+@@ -432,6 +494,11 @@ selector
+         delete $2;
+         delete $3;
+     }
++  | error
++    {
++        $$ = driver.New<TString>();
++        $$->Value = ".SELECTOR_WE_COULDNT_PARSE";
++    }
+
+   ;
+
+@@ -521,7 +588,11 @@ predicate
+         $$ = $2;
+         $$->Value.insert(size_t(0), 1, ':');
+     }
+-  ;
++  | DOUBLE_COLON pseudo
++    {
++        $$ = $2;
++        $$->Value.insert(size_t(0), "::", 2);
++    };
+
+ opt_attrib_quals
+   :
+@@ -572,7 +643,7 @@ pseudo
+     {
+         $$ = $1;
+     }
+-  | FUNCTION opt_ident  ')'
++  | FUNCTION simple_selector  ')'
+     {
+         $$ = $1;
+         $$->Value += "(" + $2->Value + ")";
+@@ -642,10 +713,12 @@ declaration
+         if (!expr_str.empty())
+         {
+             $$->Value += ":" + expr_str;
+-            if (!$4->Value.empty())
+-                $$->Value += " " + $4->Value;
+-        } else
+-            $$->Value = "";
++        } else {
++            $$->Value += ":\"\"";
++        }
++        if (!$4->Value.empty()) {
++            $$->Value += " " + $4->Value;
++        }
+
+         delete $3;
+         delete $4;
