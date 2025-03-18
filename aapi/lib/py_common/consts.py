@@ -1,0 +1,18 @@
+YT_CHUNK = 16 * 1024 * 1024  # 16MB
+
+
+# directory entry types
+MODE_REG = 0
+MODE_EXEC = 1
+MODE_LINK = 2
+MODE_DIR = 3
+
+
+# YT node types
+NODE_BLOB = 0
+NODE_TREE = 1
+NODE_SVN_CI = 2
+NODE_HG_CHANGESET = 3
+NODE_HG_HEADS = 4
+NODE_SVN_HEAD = 100
+NODE_NAME = 100
