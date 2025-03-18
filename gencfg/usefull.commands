@@ -1,0 +1,199 @@
+
+Cpu temperature:
+    Linux: sky run -t 50 "cat /sys/bus/platform/devices/coretemp.*/temp*_input | sort -g | tail -1" +ASEARCH (можно также командой sensors там где она есть)
+    FreeBSD: sky run -t 50 "sysctl dev.cpu | grep coretemp.delta | awk '{print 90-\$NF}' | sort -g | tail -1" +ASEARCH
+
+Build custom config:
+    ./custom_generators/intmetasearchv2/generate_configs.py -a genconfigs -t db/configs/intmetasearchv2/web/mmeta.yaml
+    ./custom_generators/intmetasearchv2/generate_configs.py -a genconfigs -t db/configs/intmetasearchv2/web/mmeta.yaml -c ms-snippets-ssd.cfg
+
+Cpu overheat:
+    Linux: sky run "X=\`LANG=C dmesg -T| grep \"Fri Jan 31 21:\" | grep \"Package temperature above threshold\" | wc -l\`; if [ \$X -gt 0 ] ; then echo \"overheat\"; fi" +ASEARCH
+    FreeBSD: sky run "X=\`cat /var/log/messages | grep \"Feb  7 15\" | grep \"critical temperature detected\" | wc -l\`; if [ \$X -gt 0 ] ; then echo \"overheat\"; fi" +ASEARCH
+
+Посмотреть очередь backlog-а на Linux:
+    ss -nl
+
+Запустить хитрую команду на production базовых инстансах в Амстердаме (на момент написания команда не работала в Сасово изза бага):
+    sky run -N --mode=i " ( echo \$INSTANCE; tail -10000 /usr/local/www/logs/current-loadlog-base-\$INSTANCE_PORT | awk '{print \$(NF-2)}' | sort | uniq -c ) | xargs" I@a_ctype_prod . I@a_geo_ams . I@a_prj_web-main . I@a_itype_base
+
+Отключить hyperthreading в Linux:
+CPUS_TO_SKIP=" $(cat /sys/devices/system/cpu/cpu*/topology/thread_siblings_list | sed 's/[^0-9].*//' | sort | uniq | tr "\r\n" "  ") "
+
+for CPU_PATH in /sys/devices/system/cpu/cpu[0-9]*; do
+    CPU="$(echo $CPU_PATH | tr -cd "0-9")"
+    echo "$CPUS_TO_SKIP" | grep " $CPU " > /dev/null
+    if [ $? -ne 0 ]; then
+        echo 0 > $CPU_PATH/online
+    fi
+done
+
+Включить smart scheduler для определенного слота:
+    echo 1 > /sys/fs/cgroup/cpu/slots/slot7300/cpu.smart
+
+Посчитать количество используемой памяти:
+    sky run -q -t 30 "ps -e -orss=,args= | grep 7300 | sort -g -k 1 | tail -1 | awk '{print \$1}'" `cat intlookup-msk.py  | grep 7300  | sed 's/:.*//' | sed "s/.*'//" | awk '{print "+"$1}' | xargs`
+
+Забанить входящий исходящий трафик на какой-то порт:
+   iptables -A INPUT/OUTPUT -p tcp --dport 17322 -j REJECT --reject-with tcp-reset
+
+Установить ручки на старых Linux-ах:
+    echo 20 > /proc/sys/vm/file_inactive_ratio
+    echo 1 > /proc/sys/vm/promote_mapped_pages
+    echo 0 > /proc/sys/vm/miss_based_ra
+
+Проверить, что работает fastbone:
+    nc -w 1 -z `sky list I@SAS_WEB_BASE | sort -r | tail -1 | sed 's/\..*/.fb/'` 22 &&  nc -w 1 -z `sky list I@SAS_WEB_BASE | sort -r | tail -1 | sed 's/\..*/.fb/'` 22 && nc -w 1 -z `sky list I@SAS_WEB_BASE | sort -r | tail -1 | sed 's/\..*/.fb/'` 22 || echo "No fastbone at `hostname -s`"
+
+Узнать модели дисков под Linux:
+    sudo hdparm -I /dev/sda[0-9] | grep "^\/\|Model Number"
+
+Подгрузить модули для ipmitool:
+    sudo modprobe ipmi_devintf
+    sudo modprobe ipmi_si
+
+Перегрузить hard reset-ом машинку/посмотреть статус (на stain.search.yandex.net):
+    ipmitool -I lanplus -U ADMIN -P ADMIN -H sas1-2042.search.yandex.net.ipmi.yandex-team.ru chassis power status
+    ipmitool -I lanplus -U ADMIN -P ADMIN -H sas1-2042.search.yandex.net.ipmi.yandex-team.ru chassis power reset
+
+Проверить объем утекшей памяти:
+    cat /proc/vmstat  | grep "nr_inactive_anon \|nr_active_anon \|nr_anon_pages \|nr_shmem" | xargs | awk '{print ($2 + $4 - $6 - $8) * 4096 / 1024 / 1024 / 1024}'
+    sky run "cat /proc/vmstat  | grep \"nr_inactive_anon \|nr_active_anon \|nr_anon_pages \|nr_shmem\" | xargs | awk '{print (\$2 + \$4 - \$6 - \$8) * 4096 / 1024 / 1024 / 1024}'" +ws2-200
+
+Проверить наличие фильтров, которые использует golovan, в генерилке (предполагая, что в tt.txt перечислены "названия" агентов):
+    for elem in `cat tt.txt`; do  rm -f 1.log; touch 1.log; ./rare_utils/check_golovan_tags.py -f "https://git.qe-infra.yandex-team.ru/projects/SEARCH_INFRA/repos/yasm/browse/CONF/agent.$elem.conf?&raw" -s w-generated/searcherlookup.conf -i $elem >1.log ; echo "Config agent.$elem.conf:" `cat 1.log | grep "has 0 instances"| wc -l` "empty tags;" `cat 1.log | grep -v "has 0 instances"| wc -l` "non empty tags"; cat 1.log | grep "has 0 instances" | awk '{print "    "$2}'; done
+
+Нарисовать дерево процессов, начиная с определенного:
+    pstree -asp 22042
+
+Уменьшить до нуля readahead на инстансе:
+    wget -O 1.txt 'http://127.0.0.1:7300/admin?action=setreadahead&mode=no'
+
+Запустить ptugen (лежит в binutils). Может вызывать неработоспособность skynet-а изза того, что порождает много процессов, которые используют cpu по полной.
+    sky run -U "cd /var/tmp; sudo touch .accepted_intel_ptu_license; sudo ./ptugen.Linux -p 100 -ct 2 -mt 3" +sas1-4354
+
+Собирать статистику с помощью perf:
+    perf list # список сигналов, которые можно мониторить
+    perf record -e <signal> -a # записывать сигнал <signal>
+    perf script # посмотреть результаты сбора сигналов
+
+Посмотреть инстансы порто:
+    portoctl list # список всех активных конфигураций
+    portoctl get <имя конфигурайции> # получить список активных конфигураций
+
+Запустить программу на python под профилировщиком:
+    /skynet/python/bin/python -m cProfile -s cumtime ./tst1.py  w-generated/searcherlookup.conf >func.profile # это для получения статистики по функциям
+
+Запустить программу на python под профилировщиком (полайновая статистика)
+    pip install line_profiler # установить line_profiler
+    # отредактировать интересующие функции, добавив декоратор @profile
+    kernprof -v -l ./tst1.py w-generated/searcherlookup.conf # жд
+
+Добавить группу в динамику:
+    ./optimizers/dynamic/main.py -a add -g MAN_UNEXISTING_GROUP --location MAN --memory "500 Mb" --prj "['proxywizard']" --ctype prod --itype base -m ALL_DYNAMIC -o feliksas -w petrk --min_replicas 3
+
+Посмотреть список дисков в системе:
+    lsblk -io KNAME,TYPE,SIZE,MODEL,ROTA
+
+Посмотреть статистику по использованию сети различными сокетами:
+    sudo iftop -P
+
+Установить/получить правильный p-state на "новых" intel-овских машинах:
+    modprobe ipmi_devintf; modprobe ipmi_si; ipmitool -t 0x2c -b 0x06 raw 0x2e 0xd3 0x57 0x01 0x00 0x00 | awk '{print $4}'; rmmod ipmi_devintf ipmi_si ipmi_msghandler # получить минимально разрешенное значение p-state
+    modprobe ipmi_devintf; modprobe ipmi_si; ipmitool -t 0x2c -b 0x06 raw 0x2e 0xd2 0x57 0x01 0x00 0x00 $PSTATE 0x00; rmmod ipmi_devintf ipmi_si ipmi_msghandler # (PSTATE=0x00...0x0f)
+
+Установить/получить правильный t-state на "новых" intel-овских машинах (команда почти аналогична команде для p-state):
+    modprobe ipmi_devintf; modprobe ipmi_si; ipmitool -t 0x2c -b 0x06 raw 0x2e 0xd3 0x57 0x01 0x00 0x00 | awk '{print $5}'; rmmod ipmi_devintf ipmi_si ipmi_msghandler # получить минимально разрешенное значение p-state
+    modprobe ipmi_devintf; modprobe ipmi_si; ipmitool -t 0x2c -b 0x06 raw 0x2e 0xd2 0x57 0x01 0x00 0x00 0x00 $TSTATE; rmmod ipmi_devintf ipmi_si ipmi_msghandler # (TSTATE=0x00...0x03)
+
+Протестировать wbe/api, поднятое на локально на порту 13579:
+    ./scripts/gen-custom-service-tests.sh -v --db unstable --port 13579 --host `hostname` tests/api
+    ./scripts/gen-custom-service-tests.sh -v --db unstable --port 13579 --host `hostname` tests/api/test_api.py::test_hosts_data # для одного теста
+    ./scripts/gen-custom-service-tests.sh -v --db unstable --port 13579 --host `hostname` tests/wbe
+    ./scripts/gen-custom-service-tests.sh -v --db unstable tests/utils/test_update_igroups.py::test_add_group_with_wrong_user
+
+Проверить потребление через ipmi:
+    modprobe ipmi_devintf; modprobe ipmi_si; ipmitool sensor reading NODE_Watt
+
+Включить выключить машинку через ipmitool:
+    modprobe ipmi_devintf; modprobe ipmi_si; ipmitool chassis power cycle (warm|cold)
+
+Задать запрос к api:
+    curl 'http://api.gencfg.yandex-team.ru/trunk/searcherlookup/groups/MSK_RESERVED/instances'
+    curl 'http://api.gencfg.yandex-team.ru/tags/stable-76-r21/searcherlookup/groups/MSK_RESERVED/instances'
+
+Получить конфиг среднего через http:
+    curl 'http://ws37-186:8030/yandsearch?info=getconfig'
+
+Посмотреть статистику использования сети, суммируемую по по портам:
+    iftop -N -i eth0 (потом нажать последостальность sdSt)
+
+Задать POST-запрос в backend-у:
+    curl 'http://beatrice.yandex-team.ru:13579/trunk/groups/MSK_DIVERSITY2_BASE/card' --data '{"action":"update","card":[{"path":["legacy","funcs","instancePort"],"value":"old12345"}]}' --header 'content-type: application/json; charset=UTF-8'
+
+Выключить буферизацию в 4Kb в шелле и сделать ее построчной:
+    stdbuf -oL -eL <command>
+
+Вернуть правильные частоты, когда включен intel_pstate, но во freqs почему-то стоит не 3000 а 2201 или какая-то другая величина, соответствующая turbo boost-у:
+    sky run -U "for i in \`seq 0 31\`; do echo 3000000 | sudo tee /sys/devices/system/cpu/cpu\$i/cpufreq/scaling_max_freq; done"
+
+Посмотреть потребление стойки в финке (графики от prostov@):
+    https://grafana.yandex-team.ru/dashboard/db/prostov-rack-detail-gb
+
+Посмотреть логи atop-а:
+    atop -lf -r /var/log/atop.log
+
+Проверить, что до cms-а докатился релиз из соответствующего таска sandbox-а:
+    for cms in $(sky list K@search_instrum-acms) ; do echo -n "$cms " ; curl -s -I "http://${cms}/res/gencfg/releases/48210016/generated/balancer/web_priemka_tun.cfg" 2>/dev/null | grep -R '^HTTP'; done
+
+Проверить запрос к генерилке в логах балансера:
+    sky run -U "tail -10000 /usr/local/www/logs/current-access_log-balancer-7020 | grep MAN_ADVERTPROPAGANDA_MONGODB_R1" `./utils/common/show_group_hosts.py -s -g VLA_BALANCER,SAS_BALANCER,MAN_BALANCER`
+    sky run -U "tail -10000 /usr/local/www/logs/current-access_log-balancer-7020 | grep gencfg.yandex-team.ru" G@VLA_BALANCER G@SAS_BALANCER G@MAN_BALANCER
+
+Рестартануть конфигурацию backend-ов генерилки, полностью удалив с хостов и скачав по новой:
+    export CONFNAME=gencfg_api_unstable-1466011372269; sky run -U "sudo bsconfig configuration_deactivate ${CONFNAME} ; sudo bsconfig configuration_remove ${CONFNAME} && sudo bsconfig configuration_prepare ${CONFNAME} --now --shards && sudo bsconfig configuration_activate ${CONFNAME}" G@ALL_GENCFG_NEW
+
+Команды, помогающие найти и добавить внешний пакет с помощью pip:
+    1. Посмотреть доступные версии пакета:
+       /skynet/python/bin/pip install --no-deps --no-install flask-compress -v
+    2. Сделать wheel по пакету:
+       /skynet/python/bin/pip wheel --wheel-dir=./wheels flask-compress
+
+Как запустить arcadia valgrind на произвольный питоновский скрипт:
+     /home/kimkim/work/arcadia/ya tool valgrind --tool=callgrind /skynet/python/bin/python ./b0.py
+
+Посмотреть все porto-контейнеры и отсортировать их по memory_guarantee:
+    for c in `portoctl list | grep running | awk '{print $1}'`; do echo $c; portoctl dget $c memory_guarantee; done | xargs -n 2 echo | sort -g -k 2 | awk '{print $1" "$2/1024/1024/1024.}'
+
+Убрать background группы с машин, на которых background группам жить нельзя:
+    ./tools/recluster/main.py -a recluster -c cleanup -g MSK_ST_TASK_GENCFG_697_INT_HAMSTER
+    ./tools/recluster/main.py -a recluster -c cleanup -g MSK_ST_TASK_GENCFG_697_BASE_HAMSTER
+    ./tools/recluster/main.py -a recluster -c cleanup -g MAN_ST_TASK_GENCFG_697_INT_HAMSTER
+    ./tools/recluster/main.py -a recluster -c cleanup -g MAN_ST_TASK_GENCFG_697_BASE_HAMSTER
+    ./utils/common/move_background_groups.py -g MSK_ST_TASK_GENCFG_697_BASE,ST_TASK_GENCFG_697_BASE,SAS_MAIL_LUCENE -f "lambda x: x.disk > 1000"
+    ./tools/recluster/main.py -a recluster -c alloc_hosts,generate_intlookups -g MAN_ST_TASK_GENCFG_697_BASE_HAMSTER
+    ./tools/recluster/main.py -a recluster -c alloc_hosts,generate_intlookups -g MSK_ST_TASK_GENCFG_697_BASE_HAMSTER
+
+Посмотреть файлы, чтение которых вызывает major fault-ы:
+    sudo perf trace -F -p 589324
+
+Установить лимит по памяти для конкретного контейнера:
+    sudo portoctl set ISS-AGENT--2181_toloka_zookeeper_O4CXwE3zPVM/iss_hook_start memory_limit 4G
+
+Погрепать группу в логах backend-а( порт 7100 - wbe_unstable, 7300 - api_trunk, 7400 - api_unstable):
+    sky run "tail -10000 /usr/local/www/logs/current-gencfgd-7100-loadlog | grep MAN_TEST_LONCHER_WIT_MTN" G@ALL_GENCFG_NEW
+
+Запустить top в batch-режиме и отгрепать текущий cpu usage определенного инстанса (на примере поднятой java):
+    sky run "COLUMNS=1000 top -c -b -n 2 | grep 7332 | grep iss | grep server | grep -v grep | tail -1 | awk '{print \$9}'" G@VLA_WEB_MOBILE_REPORT_ASSISTANT
+
+Посмотреть размер таблиц в clickhouse (очень приближенно) можно следующим запросом:
+    SELECT table, formatReadableSize(sum(bytes)) as size, min(min_date) as min_date, max(max_date) as max_date FROM system.parts WHERE active GROUP BY table ORDER BY sum(bytes);
+
+Приконнектиться к Базе данных для capacity viewer:
+    psql --host pgaas.mail.yandex.net --port 12000 --username rx --dbname rxcapacity
+
+Пулучить то, что мы экспортим в powerdns:
+    curl -s 'http://api.gencfg.yandex-team.ru/trunk/dns/ips'
+
+Посмотреть, какие процессы отжирают сеть (хотя бы примерно):
+    sudo iftop -P

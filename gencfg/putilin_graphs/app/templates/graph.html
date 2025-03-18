@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+
+{% block scripts %}
+  {{ super() }}
+
+  <script>
+    var prevRequest = {};
+    $(document).ready(function() {
+
+        $.urlParam = function(graphUrl, name){
+            var results = new RegExp('[\?&]' + name + '=([^&#]*)').exec(graphUrl);
+            if (results == null){
+               return null;
+            } else {
+               return results[1] || 0;
+            }
+        }
+
+        var getParamField = function(graphUrl, field) {
+            var val = $.urlParam(field);
+            if (val)
+                return val;
+            
+            /* TODO: fix the double encoding */
+            params = JSON.parse(decodeURIComponent(decodeURIComponent($.urlParam(graphUrl, "params"))));
+            return params[field];
+        }
+
+        function afterSetExtremes(e, elemSelector, graphUrl) {
+            console.log(e);
+            if (!e.trigger) {
+                // setExtremes was called manually
+                //
+                // no need to run this function, because setExtremes was called inside this function 
+                // triggered the second call of this function
+                return;
+            }
+            var chart = $(elemSelector).highcharts();
+            var start_ts = null;
+            var end_ts = Math.round(e.max / 1000);
+            if (e.trigger == "rangeSelectorButton") {
+                if (e.rangeSelectorButton.type != "all") {
+                    var selectedRangeInSeconds = Math.round(e.rangeSelectorButton._range / 1000);
+                    start_ts = end_ts - selectedRangeInSeconds;
+                } else {
+                    // We have some data since mid-August but lets skip a couple of weeks
+                    // Thursday, 1 September 2016 г., 00:00:00
+                    start_ts = 1472688000;
+                }
+            } else {
+                start_ts = Math.round(e.min / 1000);
+            }
+            console.log("Data needed for " + start_ts + ".." + end_ts);
+
+            chart.showLoading('Loading data from server...');
+
+            if (prevRequest[elemSelector]) {
+                prevRequest[elemSelector].abort();
+            }
+
+            prevRequest[elemSelector] = $.getJSON(graphUrl + "&zoom_level=auto&start_ts=" + start_ts + "&end_ts=" + end_ts, function (data) {
+                console.log("Got data for " + start_ts + ".." + end_ts);
+                prevRequest[elemSelector] = null;
+                for (var i = 0; i < data.length; ++i) { 
+                    for (var j = 0; j < data.length; ++j) {
+                        if (chart.series[i].name == data[j].name) {
+                            chart.series[i].setData(data[j].data, false);
+                        }
+                    }
+                }
+                // setTimeout because: https://stackoverflow.com/questions/21364527/highstock-setextremes-with-a-custom-range-selector-button
+                setTimeout(function() {
+                    chart.xAxis[0].setExtremes(start_ts * 1000, end_ts * 1000)
+                }, 1);
+                chart.redraw();
+                chart.hideLoading();
+            });
+        }
+
+        function makeGraph(graphUrl, elemSelector, title) {
+            $.getJSON(graphUrl, function (data) {
+                if (data.length == 0) {
+                    $(elemSelector).html('<div class="alert"> ' + title + '<div class="alert alert-danger" style="width: 500px; margin-left: auto; margin-right: auto" align="center"> Got zero points when requesting for <a href="' + graphUrl + '?' + extraCgi + '">Data Points</a></div></div>');
+                    return;
+                }
+                $(elemSelector).highcharts('StockChart', {
+                    chart: {
+                        zoomType: 'x',
+                    },
+                    title: {
+                        text: title
+                    },
+                    xAxis: {
+                        type: 'datetime',
+                        ordinal: false,
+                        events : {
+                            afterSetExtremes : function(e) {
+                                afterSetExtremes(e, elemSelector, graphUrl);
+                            }
+                        },
+                        max: getParamField(graphUrl, "end_ts") * 1000
+                    },
+                    yAxis: {
+                        min: 0,
+                    },
+                    tooltip: {
+                      shared: true,
+                      crosshairs: true,
+                      useHTML: true,
+                      // pointFormat: '<span style="color:{point.color}">\u25CF</span> {series.name}: <b>{point.y:.2f}</b><br/>',
+                      formatter: function (tooltip) {
+                          var items = this.points || splat(this),
+                              series = items[0].series,
+                              s;
+
+                          // sort the values
+                          items.sort(function(a, b){
+                              return ((a.y < b.y) ? -1 : ((a.y > b.y) ? 1 : 0));
+                          });
+                          items.reverse();
+                          html = "" + Highcharts.dateFormat(tooltip.getXDateFormat(items[0], items[0].series.tooltipOptions, items[0].series.xAxis), new Date(this.x)) + "<br>";
+                          for (var i = 0; i < items.length; ++i) {
+                              if (i > 11) {
+                                  continue;
+                              }
+
+                              // RX-362: add sum of all instances usage
+                              if (items[i].series.name == 'HOST USAGE') {
+                                  var instances_usage = 0.0;
+                                  for (var j = 0; j < items.length; ++j) {
+                                      if (items[j].series.type == 'area') {
+                                          instances_usage += items[j].point.y;
+                                      }
+                                  }
+                                  series_extra_msg = ' (<b>' + instances_usage.toFixed(2) + '</b> in instances)';
+                              } else {
+                                  series_extra_msg = ''
+                              }
+
+
+                              if (items[i].point && items[i].point.high && items[i].point.low) {
+                                  html += '<span style="color:' + items[i].color + '">\u25CF</span> '
+                                          + items[i].series.name + ' : <b>'
+                                            + items[i].point.low.toFixed(2) + ' - ' + items[i].point.high.toFixed(2)
+                                          + '</b><br/>'
+                              } else {
+                                  html += '<span style="color:' + items[i].color + '">\u25CF</span> '
+                                          + items[i].series.name + ' : <b>'
+                                            + items[i].y.toFixed(2)
+                                          + '</b>' + series_extra_msg + ' <br/>'
+                              }
+                          }
+                          return html
+                          // return tooltip.defaultFormatter.call(this, tooltip);
+                      },
+                    },
+                    legend: {
+                      enabled: true,
+                      maxHeight: 250,
+                    },
+                    plotOptions: {
+                        area: {
+                            stacking: "normal",
+                            marker: {
+                                radius: 2
+                            },
+                            lineWidth: 1,
+                            states: {
+                                hover: {
+                                    lineWidth: 1
+                                }
+                            },
+                            threshold: null
+                        },
+                      line: {
+                        lineWidth: 1,
+                        states: {
+                            hover: {
+                                lineWidth: 1
+                            }
+                        },
+                      }
+                    },
+                    rangeSelector : {
+                        buttons: [{
+                            type: 'hour',
+                            count: 12,
+                            text: '12h'
+                        }, {
+                            type: 'day',
+                            count: 1,
+                            text: '1d'
+                        }, {
+                            type: 'day',
+                            count: 3,
+                            text: '3d'
+                        }, {
+                            type: 'week',
+                            count: 1,
+                            text: '1w'
+                        },  {
+                            type: 'month',
+                            count: 1,
+                            text: '1m'
+                        }, {
+                            type: 'year',
+                            count: 1,
+                            text: '1y'
+                        }, {
+                            type: 'all',
+                            text: 'All'
+                        }],
+                        allButtonsEnabled: true,
+                        inputEnabled: false, // it supports only days
+                    },
+                    navigator: {
+                        margin: 5,
+                        adaptToUpdatedData: false,
+                    },
+
+                    series: data
+                });
+                var chart = $(elemSelector).highcharts();
+                chart.rangeSelector.buttons[4].setState(2);
+                chart.rangeSelector.clickButton(4, 4, true);
+            });
+        }
+        $(function () {
+            {% if signal.name == 'cpu_usage' %}
+                makeGraph("{{graph_url | safe}}", "#cpugraph", "{{graph_title | safe}}");
+            {% elif signal.name == 'memory_usage' %}
+                makeGraph("{{graph_url | safe}}", "#memorygraph", "{{graph_title | safe}}");
+            {% elif signal.name == 'net_rx' %}
+                makeGraph("{{graph_url | safe}}", "#netrxgraph", "{{graph_title | safe}}");
+            {% elif signal.name == 'net_tx' %}
+                makeGraph("{{graph_url | safe}}", "#nettxgraph", "{{graph_title | safe}}");
+            {% endif %}
+        });
+    });
+   </script>
+{% endblock %}
+
+{% block content %}
+  {{ super() }}
+
+  {% if signal.name == 'cpu_usage' %}
+    <div id="cpugraph" style="min-width: 310px; height: 500px; margin: 0 auto">
+        <i class="fa fa-spin fa-2x fa-cog"></i>
+    </div>
+  {% elif signal.name == 'memory_usage' %}
+    <div id="memorygraph" style="min-width: 310px; height: 500px; margin: 0 auto">
+        <i class="fa fa-spin fa-2x fa-cog"></i>
+    </div>
+  {% elif signal.name == 'net_rx' %}
+    <div id="netrxgraph" style="min-width: 310px; height: 500px; margin: 0 auto">
+        <i class="fa fa-spin fa-2x fa-cog"></i>
+    </div>
+  {% elif signal.name == 'net_tx' %}
+    <div id="nettxgraph" style="min-width: 310px; height: 500px; margin: 0 auto">
+        <i class="fa fa-spin fa-2x fa-cog"></i>
+    </div>
+  {% endif %}
+{% endblock %}

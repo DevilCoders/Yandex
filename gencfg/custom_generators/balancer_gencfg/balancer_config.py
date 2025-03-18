@@ -1,0 +1,4 @@
+BRANCH_VERSION = 1
+TAG_PREFIX = "balancer-stable-%s-r" % BRANCH_VERSION
+
+GENCFG_API_TIMEOUT = 300

@@ -1,0 +1,143 @@
+{% extends "bootstrap/base.html" %}
+
+{% import "bootstrap/wtf.html" as wtf %}
+
+{% block title %}Graphs{% endblock %}
+
+{% block metas %}
+  {# Sometimes we get HUGE Urls(20K+) #}
+  {# And cdns reset such requests. To work around it, we don't send referrers #}
+  <meta name="referrer" content="origin">
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+
+  {# <script src="https://code.highcharts.com/highcharts.js"></script> #}
+  {# <script src="https://code.highcharts.com/stock/highstock.js"></script> #}
+  <script src="{{url_for('static', filename='js/highstock.js')}}"></script>
+  <script src="https://code.highcharts.com/modules/heatmap.js"></script>
+  {# <script src="https://code.highcharts.com/highcharts-more.js"></script> #}
+  <script src="{{url_for('static', filename='js/highcharts-more.js')}}"></script>
+
+  <script src="https://code.highcharts.com/modules/exporting.js"></script>
+
+  <script src="{{url_for('static', filename='js/bootstrap-table.js')}}"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-table/1.11.1/extensions/sticky-header/bootstrap-table-sticky-header.js"></script>
+  <script src="{{url_for('static', filename='js/bootstrap-table-tree-column.js')}}"></script>
+
+  <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/iframe-resizer/3.5.15/iframeResizer.js"> </script>
+  <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/iframe-resizer/3.5.15/iframeResizer.contentWindow.js"> </script>
+
+  <script>
+    var BootstrapTable = $.fn.bootstrapTable.Constructor;
+    BootstrapTable.prototype.hideMultipleRows = function(rowParams) {
+      this.toggleMultipleRows(rowParams, false); 
+    }
+
+    BootstrapTable.prototype.showMultipleRows = function(rowParams) {
+      this.toggleMultipleRows(rowParams, true); 
+    }
+    
+    BootstrapTable.prototype.toggleMultipleRows = function(rowParams, visible) {
+      var that = this;
+      $.each(rowParams, function(index, params) { 
+        /* copy and paste from toggleMultipleRows */
+        var row, index;
+
+        if (params.hasOwnProperty('index')) {
+            row = that.getData()[params.index];
+        } else if (params.hasOwnProperty('uniqueId')) {
+            row = that.getRowByUniqueId(params.uniqueId);
+        }
+
+        if (!row) {
+            return;
+        }
+
+        index = $.inArray(row, that.hiddenRows);
+
+        if (!visible && index === -1) {
+            that.hiddenRows.push(row);
+        } else if (visible && index > -1) {
+            that.hiddenRows.splice(index, 1);
+        }
+      });
+      this.initBody(true);
+    }
+    $.fn.bootstrapTable.methods.push('showMultipleRows');
+    $.fn.bootstrapTable.methods.push('hideMultipleRows');
+  </script>
+
+  <script>
+    $(document).ready(function() {
+      if (window.self != window.top) {
+        // in iframe
+        $("nav.navbar").hide();
+      }
+
+      $.ajaxSetup({
+          error: handleXhrError
+      });
+
+      function handleXhrError(xhr) {
+          console.log("handleXhrError()");
+          console.log(xhr);
+          if (xhr.statusText === 'abort') {
+              return;
+          }
+          document.open();
+          document.write(xhr.responseText);
+          document.close();
+      }
+
+      Highcharts.setOptions({
+          global: {
+              timezoneOffset: -3 * 60 /* Moscow Time */
+          }
+      });
+    });
+  </script>
+{% endblock %}
+
+{% block styles %}
+  {{ super() }}
+  <link href="{{url_for('static', filename='css/font-awesome.min.css')}}" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-table/1.11.1/bootstrap-table.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-table/1.11.1/extensions/group-by/bootstrap-table-group-by.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-table/1.11.1/extensions/sticky-header/bootstrap-table-sticky-header.css" rel="stylesheet">
+  <link href="{{url_for('static', filename='css/bootstrap-table-tree-column.css')}}" rel="stylesheet">
+{% endblock %}
+
+{% block content %}
+<nav class="navbar navbar-default">
+  <div class="container-fluid">
+    <!-- Brand and toggle get grouped for better mobile display -->
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1" aria-expanded="false">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="{{url_for('index')}}">🚲  🖱🏚 🚲 </a>
+    </div>
+
+    <!-- Collect the nav links, forms, and other content for toggling -->
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li {% if request.endpoint == "host_anomalies" %} class="active" {% endif %}><a href="{{url_for('host_anomalies')}}">Host anomalies</a></li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">ABC resource distribution<span class="caret"></span></a>
+          <ul class="dropdown-menu">
+            <li {% if request.endpoint == "abc" %}class="active"{% endif %}><a href="{{url_for('abc')}}">A->B->C bot</a> </li>
+            <li {% if request.endpoint == "pgh" %}class="active"{% endif %}><a href="{{url_for('pgh')}}"> metaprj </a> </li>
+          </ul>
+        </li>
+        <li {% if request.endpoint == "total_graph" %} class="active" {% endif %}><a href="{{url_for('total_graph')}}">Total used/allocated</a></li>
+        <li {% if request.endpoint == "openstack" %} class="active" {% endif %}><a href="{{url_for('openstack')}}">Openstack used/allocated</a></li>
+      </ul>
+    </div><!-- /.navbar-collapse -->
+  </div><!-- /.container-fluid -->
+</nav>
+{% endblock %}

@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+
+{% block scripts %}
+  {{ super() }}
+
+  <script>
+    var binsCount = {{bins_count}};
+    var binSize = {{bin_size}};
+    var usageVsField = {{usage_vs_field|tojson|safe}};
+
+    $(document).ready(function() {
+        function getBinNames() {
+            var res = [];
+            for (var i = 0; i < binsCount; ++i) {
+                res.push("~" + 100 * (i + 0.5) * binSize + "%")
+            }
+
+            return res;
+        }
+        
+        function prepareSeriesData(field, fieldSorterFunc) {
+            var keys = getFieldValues(field, fieldSorterFunc);
+            var result = [];
+            for (var bin = 0; bin < binsCount; ++bin) {
+                $(keys).each(function (index) {
+                    key = keys[index];
+                    result.push([bin, index, usageVsField[field][key][bin]]);
+                });
+            }
+
+            return result;
+        }
+
+        function getFieldValues(field, fieldSorterFunc) {
+            fieldValues = Object.keys(usageVsField[field]).sort(fieldSorterFunc).reverse();
+            return fieldValues;
+        }
+
+        function makeGraph(elemId, title, field, fieldSorterFunc) {
+              var fieldValues = getFieldValues(field, fieldSorterFunc);
+              var binNames = getBinNames();
+              var preparedSeriesData = prepareSeriesData(field, fieldSorterFunc);
+
+              Highcharts.chart(elemId, {
+                  chart: {
+                      type: 'heatmap',
+                      marginTop: 40,
+                      marginBottom: 80,
+                      plotBorderWidth: 1
+                  },
+
+                  title: {
+                      text: 'Peak usage per ' + title
+                  },
+
+                  xAxis: {
+                      categories: binNames,
+                      title: "CPU Usage"
+                  },
+
+                  yAxis: {
+                      categories: fieldValues,
+                      title: title
+                  },
+
+                  colorAxis: {
+                      min: 0,
+                      minColor: '#FFFFFF',
+                      maxColor: Highcharts.getOptions().colors[0]
+                  },
+
+                  legend: {
+                      align: 'right',
+                      layout: 'vertical',
+                      margin: 0,
+                      verticalAlign: 'top',
+                      y: 25,
+                      symbolHeight: 280
+                  },
+
+                  tooltip: {
+                      formatter: function () {
+                          return '<i>' + this.series.xAxis.categories[this.point.x] + '</i> peak usage <br>' +
+                            ' on <br><b>' +  this.point.value + "</b>  <i>" + this.series.yAxis.categories[this.point.y] + '</i> host(s) </b>';
+                      }
+                  },
+
+                  series: [{
+                      borderWidth: 1,
+                      turboThreshold: 0,
+                      data: preparedSeriesData,
+                      dataLabels: {
+                          enabled: true,
+                          color: '#000000'
+                      }
+                  }]
+
+              });
+            }
+            console.log(usageVsField);
+
+            makeGraph("model_memory", "model/memory", "model_memory", function(a, b) { 
+                if (a == "OTHER")
+                    return 1;
+                if (b == "OTHER")
+                    return -1;
+
+                fieldsA = a.split("/");
+                fieldsB = b.split("/");
+
+                modelA = fieldsA[0];
+                modelB = fieldsB[0];
+                memA = +fieldsA[1].slice(0, -2);
+                memB = +fieldsB[1].slice(0, -2);
+
+                if ((modelA < modelB) || ((modelA == modelB) && (memA < memB))) {
+                    return -1;
+                } else if (modelA == modelB && memA == memB) {
+                    return 0;
+                } else {
+                    return 1;
+                }
+            });
+
+            makeGraph("dc", "dc", "dc", null);
+            makeGraph("model", "model", "model", null);
+            makeGraph("memory", "memory", "memory", function(a, b){ 
+                return +a.slice(0, -2) - +b.slice(0, -2);
+            });
+        });
+   </script>
+{% endblock %}
+
+{% block content %}
+  {{ super() }}
+  <div class="container">
+      <h1 class="text-center"> {{project}}</h1>
+
+      <div id="model_memory" style="min-width: 310px; min-height: 650px; margin: 0 auto">
+      </div>
+
+      <div id="model" style="min-width: 310px; min-height: 650px; margin: 0 auto">
+      </div>
+
+      <div id="dc" style="min-width: 310px; min-height: 650px; margin: 0 auto">
+      </div>
+      <div id="memory" style="min-width: 310px; min-height: 650px; margin: 0 auto">
+      </div>
+  </div>
+
+{% endblock %}

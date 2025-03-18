@@ -1,0 +1,381 @@
+{
+  "opts": {
+    "name": "imgs",
+    "domain": "im-tub.yandex.ru",
+    "reuse_port": true,
+    "cache": true,
+    "ban": true,
+    "rr": true,
+    "fallback": true,
+    "webp": true,
+    "http2": true,
+    "http2_alpn_freq": 1.0,
+    "stats_attr_balancer": "improxy_balancer",
+    "stats_attr_backend": "improxy_backend",
+    "rs_hosts": {
+      "sas": "sas2-0088.search.yandex.net",
+      "man": "man1-4303.search.yandex.net",
+      "vla": "vla1-4382.search.yandex.net"
+    },
+    "ips_only": [
+      "77.88.21.61",
+      "2a02:6b8::3:61"
+    ],
+    "prj_references": {
+      "serp": "oo_serp"
+    },
+    "http": {
+        "http2": true,
+        "http2_alpn_freq": 1.0
+    }
+  },
+  "ssl": {
+    "enable": true,
+    "certKey": "secrets/key",
+    "cert": "secrets/cert",
+    "tls_tickets": ["secrets/1st_images.sha256.tls.key", "secrets/2st_images.sha256.tls.key"],
+    "secrets_log": true
+  },
+  "index_types": {
+    "imgsth": {
+      "name": "imgs-main",
+      "regexp": [
+        {
+          "match": "url",
+          "template": "/i\\\\?id=([a-fA-F0-9]+)(-\\\\d+-\\\\d+)?(-sr)?(&.*)?"
+        }
+      ],
+      "rewrite": "/i?id=%1%4",
+      "id_regexp": "id=([a-fA-F0-9]+)",
+      "stats_attr": "images_main",
+      "weight_file": "heavy.weight",
+      "fallback_weight_file": "fallback_heavy.weight",
+      "shardFunc": "consistent_hashing",
+      "sharded": true,
+      "thdb_file": "imgsth.version",
+      "cgi_hashable_params": ["id", "n", "enc", "q", "w", "h"]
+    },
+    "imglth": {
+      "name": "imgs-large",
+      "regexp": [
+        {
+          "match": "url",
+          "template": "/i\\\\?id=([a-fA-F0-9]+)-(\\\\d+-\\\\d+)?(l)-?\\\\d*(&.*)?"
+        }
+      ],
+      "rewrite": "/i?id=%1%4",
+      "id_regexp": "id=([a-fA-F0-9]+)",
+      "stats_attr": "images_large",
+      "weight_file": "heavy.weight",
+      "fallback_weight_file": "fallback_heavy.weight",
+      "shardFunc": "consistent_hashing",
+      "sharded": true,
+      "thdb_file": "imglth.version",
+      "cgi_hashable_params": ["id", "n", "enc", "q", "w", "h"]
+    },
+    "imgsrlth": {
+      "name": "imgs-sr-large",
+      "regexp": [
+        {
+          "match": "url",
+          "template": "/i\\\\?id=([a-fA-F0-9]+)-(\\\\d+-\\\\d+)?(srl)-?\\\\d*(&.*)?"
+        }
+      ],
+      "rewrite": "/i?id=%1%4",
+      "id_regexp": "id=([a-fA-F0-9]+)",
+      "stats_attr": "images_sr-large",
+      "weight_file": "heavy.weight",
+      "fallback_weight_file": "fallback_heavy.weight",
+      "shardFunc": "consistent_hashing",
+      "sharded": true,
+      "thdb_file": "imgsrlth.version",
+      "cgi_hashable_params": ["id", "n", "enc", "q", "w", "h"]
+    }
+  },
+  "instances": {
+    "balancers": {
+      "sas": {
+        "enable": true,
+        "group": ["SAS_IMGS_IMPROXY_PRESTABLE"]
+      },
+      "man": {
+        "enable": true,
+        "group": ["MAN_IMGS_IMPROXY_PRESTABLE"]
+      },
+      "vla": {
+        "enable": true,
+        "group": ["VLA_IMGS_IMPROXY_PRESTABLE"]
+      }
+    },
+    "bans": {
+      "id_regexp": "\\\\?id=([a-fA-F0-9]+)",
+      "backends": {
+        "prod": {
+          "sas": {
+            "host": "localhost",
+            "port_group": "SAS_IMGS_IMPROXY_BAN",
+            "connect_timeout": "5ms",
+            "backend_timeout": "10ms",
+            "keepalive_count": 16,
+            "attempts": 1
+          },
+          "man": {
+            "host": "localhost",
+            "port_group": "MAN_IMGS_IMPROXY_BAN",
+            "connect_timeout": "5ms",
+            "backend_timeout": "10ms",
+            "keepalive_count": 16,
+            "attempts": 1
+          },
+          "vla": {
+            "host": "localhost",
+            "port_group": "VLA_IMGS_IMPROXY_BAN",
+            "connect_timeout": "5ms",
+            "backend_timeout": "10ms",
+            "keepalive_count": 16,
+            "attempts": 1
+          }
+        },
+        "on_error": {
+          "prod": {
+            "sas": {
+              "name": ["SAS_IMGS_IMPROXY_BAN"],
+              "connect_timeout": "20ms",
+              "backend_timeout": "50ms",
+              "keepalive_count": 4,
+              "attempts": 3
+            },
+            "man": {
+              "name": ["MAN_IMGS_IMPROXY_BAN"],
+              "connect_timeout": "20ms",
+              "backend_timeout": "50ms",
+              "keepalive_count": 4,
+              "attempts": 3
+            },
+            "vla": {
+              "name": ["VLA_IMGS_IMPROXY_BAN"],
+              "connect_timeout": "20ms",
+              "backend_timeout": "50ms",
+              "keepalive_count": 4,
+              "attempts": 3
+            }
+          }
+        }
+      }
+    },
+    "cachers": {
+      "weights_file": "cacher.weight",
+      "global_timeout": "500ms",
+      "connect_timeout": "25ms",
+      "backend_timeout": "90ms",
+      "keepalive_count": 1024,
+      "attempts": 1,
+      "id_regexp": "(/i\\\\?id=[-0-9a-z]+)(&.*)?",
+      "backends": {
+        "sas": {
+          "imgsth": {
+            "enable": true,
+            "groups": ["SAS_IMGS_THUMB_CACHER", "SAS_IMGS_THUMB_CACHER_NEW"]
+          },
+          "imglth": {
+            "enable": true,
+            "groups": ["SAS_IMGS_LARGE_THUMB_CACHER", "SAS_IMGS_LARGE_THUMB_CACHER_NEW"]
+          },
+          "imgsrlth": {
+            "enable": true,
+            "groups": ["SAS_IMGS_LARGE_THUMB_CACHER", "SAS_IMGS_LARGE_THUMB_CACHER_NEW"]
+          }
+        },
+        "man": {
+          "imgsth": {
+            "enable": true,
+            "groups": ["MAN_IMGS_THUMB_CACHER"]
+          },
+          "imglth": {
+            "enable": true,
+            "groups": ["MAN_IMGS_LARGE_THUMB_CACHER"]
+          },
+          "imgsrlth": {
+            "enable": true,
+            "groups": ["MAN_IMGS_LARGE_THUMB_CACHER"]
+          }
+        },
+        "vla": {
+          "imgsth": {
+            "enable": true,
+            "groups": ["VLA_IMGS_THUMB_CACHER", "VLA_IMGS_THUMB_CACHER_NEW"]
+          },
+          "imglth": {
+            "enable": true,
+            "groups": ["VLA_IMGS_LARGE_THUMB_CACHER", "VLA_IMGS_LARGE_THUMB_CACHER_NEW"]
+          },
+          "imgsrlth": {
+            "enable": true,
+            "groups": ["VLA_IMGS_LARGE_THUMB_CACHER", "VLA_IMGS_LARGE_THUMB_CACHER_NEW"]
+          }
+        }
+      }
+    },
+    "backends": {
+      "imgsth": {
+        "prod": {
+          "sas": {
+            "enable": true,
+            "name": ["SAS_IMGS_THUMB_NEW"],
+            "disable_fallback": true,
+            "is_shift_ports": false
+          },
+          "man": {
+            "enable": true,
+            "name": ["MAN_IMGS_THUMB_NEW"],
+            "disable_fallback": true,
+            "is_shift_ports": false
+          },
+          "vla": {
+            "enable": true,
+            "name": ["VLA_IMGS_THUMB_NEW"],
+            "disable_fallback": true,
+            "is_shift_ports": false
+          }
+        },
+        "on_error": {
+          "prod": {
+            "sas": {
+              "enable": true,
+              "name": [
+                "MAN_IMGS_THUMB_NEW",
+                "VLA_IMGS_THUMB_NEW"
+              ],
+              "disable_fallback": true,
+              "is_shift_ports": false
+            },
+            "man": {
+              "enable": true,
+              "name": [
+                "SAS_IMGS_THUMB_NEW",
+                "VLA_IMGS_THUMB_NEW"
+              ],
+              "disable_fallback": true,
+              "is_shift_ports": false
+            },
+            "vla": {
+              "enable": true,
+              "name": [
+                "MAN_IMGS_THUMB_NEW",
+                "SAS_IMGS_THUMB_NEW"
+              ],
+              "disable_fallback": true,
+              "is_shift_ports": false
+            }
+          }
+        }
+      },
+      "imglth": {
+        "prod": {
+          "sas": {
+            "enable": true,
+            "name": ["SAS_IMGS_LARGE_THUMB"],
+            "disable_fallback": true,
+            "is_shift_ports": false
+          },
+          "man": {
+            "enable": true,
+            "name": ["MAN_IMGS_LARGE_THUMB"],
+            "disable_fallback": true,
+            "is_shift_ports": false
+          },
+          "vla": {
+            "enable": true,
+            "name": ["VLA_IMGS_LARGE_THUMB"],
+            "disable_fallback": true,
+            "is_shift_ports": false
+          }
+        },
+        "on_error": {
+          "prod": {
+            "sas": {
+              "enable": true,
+              "name": [
+                "MAN_IMGS_LARGE_THUMB",
+                "VLA_IMGS_LARGE_THUMB"
+              ],
+              "disable_fallback": true,
+              "is_shift_ports": false
+            },
+            "man": {
+              "enable": true,
+              "name": [
+                "SAS_IMGS_LARGE_THUMB",
+                "VLA_IMGS_LARGE_THUMB"
+              ],
+              "disable_fallback": true,
+              "is_shift_ports": false
+            },
+            "vla": {
+              "enable": true,
+              "name": [
+                "MAN_IMGS_LARGE_THUMB",
+                "SAS_IMGS_LARGE_THUMB"
+              ],
+              "disable_fallback": true,
+              "is_shift_ports": false
+            }
+          }
+        }
+      },
+      "imgsrlth": {
+        "prod": {
+          "sas": {
+            "enable": true,
+            "name": ["SAS_IMGS_LARGE_THUMB"],
+            "disable_fallback": true,
+            "is_shift_ports": false
+          },
+          "man": {
+            "enable": true,
+            "name": ["MAN_IMGS_LARGE_THUMB"],
+            "disable_fallback": true,
+            "is_shift_ports": false
+          },
+          "vla": {
+            "enable": true,
+            "name": ["VLA_IMGS_LARGE_THUMB"],
+            "disable_fallback": true,
+            "is_shift_ports": false
+          }
+        },
+        "on_error": {
+          "prod": {
+            "sas": {
+              "enable": true,
+              "name": [
+                "MAN_IMGS_LARGE_THUMB",
+                "VLA_IMGS_LARGE_THUMB"
+              ],
+              "disable_fallback": true,
+              "is_shift_ports": false
+            },
+            "man": {
+              "enable": true,
+              "name": [
+                "SAS_IMGS_LARGE_THUMB",
+                "VLA_IMGS_LARGE_THUMB"
+              ],
+              "disable_fallback": true,
+              "is_shift_ports": false
+            },
+            "vla": {
+              "enable": true,
+              "name": [
+                "MAN_IMGS_LARGE_THUMB",
+                "SAS_IMGS_LARGE_THUMB"
+              ],
+              "disable_fallback": true,
+              "is_shift_ports": false
+            }
+          }
+        }
+      }
+    }
+  }
+}

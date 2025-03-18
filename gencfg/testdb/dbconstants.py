@@ -1,0 +1,61 @@
+TEST_OWNERS = ["test_owner1", "test_owner2"]
+EXTRA_GROUP_OWNERS = ["terry", "c1r1aas"] + TEST_OWNERS
+EXTRA_GROUP_WATCHERS = EXTRA_GROUP_OWNERS
+
+ITYPES = {'addrsmiddle', 'addrsupper', 'admin', 'alematedmaster', 'alematedworker', 'antirobot', 'audioupper',
+          'balancer', 'balancerfast', 'balancerheavy', 'ban', 'barnav', 'base', 'cachedaemon', 'cacher', 'cbrd',
+          'clickdaemon', 'daemon', 'dataupdaterd', 'dcron', 'degradation', 'dehtmld', 'distributor', 'docviewer',
+          'erratum', 'exhibitor', 'experiment', 'expert', 'explogdaemon', 'favicon', 'feedfinder', 'flask', 'front',
+          'fusion', 'gecnfgapi', 'gecnfgbackend', 'headmeter', 'headwelder', 'hilitedaemon', 'improxycacher',
+          'indexerproxydisc', 'int', 'intsaas', 'isscacher', 'isscassandra', 'its', 'juggler', 'mediaportraits',
+          'memcache', 'mmeta', 'mongo', 'mongodb', 'monsys', 'nanny', 'nerproxy', 'newsd', 'newsidx', 'newsnginx',
+          'newsupper', 'nginx', 'nishooterfront', 'noapache', 'none', 'panelgenerator', 'peopless', 'poetrylover',
+          'portoproton', 'portoprotonvm', 'proxywizard', 'qsuserdatabase', 'querysearchbase', 'readis', 'realsearch',
+          'realsearchdistributor', 'report', 'rerank', 'resinfod', 'robot', 'rtyserver', 'sandbox', 'sbapifront',
+          'searchproxy', 'site', 'spider', 'storiesapi', 'suggest', 'testservice', 'testservice1', 'testservice2',
+          'testservice3', 'testservice4', 'thumb', 'tscalcmaster', 'tscalcslave', 'upper', 'viewer', 'walleapi',
+          'wallecron', 'walledmc', 'wallefsm', 'walletarget', 'walleui', 'wizard', 'wmc', 'yasmagent', 'yasmalertfront',
+          'yasmalertserver', 'yasmdumper', 'yasmfront', 'yasmhserver', 'yasmserver', 'yasmsnapshooter', 'ylite',
+          'zookeeper', 'acrobot', 'antiinfrarecount', 'antispam', 'bdr', 'cassandra', 'cmmaster', 'cuckoo', 'dnsmr',
+          'elasticsearch', 'etcd', 'extdaqua', 'extdetu', 'extdmrpi', 'graphite', 'grimhold', 'haproxy', 'httpd',
+          'kiwi', 'leprosus', 'mascot', 'master', 'mfasdirectmasks', 'o2master', 'o2worker', 'oxymon', 'proxyadmin',
+          'pth', 'pyamod', 'qypth', 'rotor', 'rsync', 'rtmr', 'rtpth', 'rtspider', 'sbapi', 'slbmon', 'spider',
+          'sticker', 'testservice', 'ukropkiwi', 'ukropyt', 'vdb', 'vmware', 'vparser', 'webspam', 'zk', 'zora',
+          'zookeeperrest', 'verstak', 'yasmcollector', 'yasmambry', 'intl2', 'yasmsrv', 'apphost', 'informant',
+          'juggleractive', 'juggleraggregator', 'jugglerapi', 'jugglerbanshee', 'jugglercacher', 'jugglerconfigcacher',
+          'jugglerfrontend', 'jugglerleader', 'jugglermisc', 'jugglersender', 'jugglertaskrunner', 'porto', 'portovm',
+          'ahadapter', 'clustermaster', 'unitsconverter', 'directspam', 'updaterd'}
+
+CTYPES = {
+    "comtrbackup": {"description": "Comtr in msk/sas/man (deprecated)"},
+    "experiment": {"description": "Experimental machines (usually temporary group)"},
+    "experiment-comtr": {"description": "Unknown (remove it)"},
+    "hamster": {"description": "Hamster intances (full vertical for internal users)"},
+    "inplacepriemka": {"description": "Some robot stuff (priemka on robot machines)"},
+    "isstest": {"description": "Some iss testing stuff (somehow named <isstest> instead <test>) (deprecated)"},
+    "none": {"description": "Instances with undetected/undefined ctype"},
+    "prestable": {"description": "Prestable cluster"},
+    "priemka": {"description": "Priemka cluster (on separate machines)"},
+    "priemkavm": {"description": "Priemka cluster (located on virtual machines)"},
+    "priemkainproduction": {"description": "Priemka cluster (on production machines)"},
+    "prod": {"description": "Production machines (preferrably in Msk/Man)"},
+    "prodtest": {"description": "Machines, similar to production, which are used for load testing"},
+    "test": {"description": "Testws machines"},
+}
+
+METAPRJS = {
+    'addrs': {"description": "Machines, used in addrs projects"},
+    'freshness': {"description": "Machines, used in fasttier/fusion/quick/saas_fresh projects"},
+    'imgs': {"description": "Machines, used in Imgs projects (thumbs/basesearchers/mmetas/nmetas/..."},
+    'internal': {"description": "Internal services, like sandbox/golovan/experiments/service_balancer/..."},
+    'maintenance': {"description": "Machines on maintenance, like unworking for some reason or unconfigured"},
+    'music': {"description": "Machines for music"},
+    'news': {"description": "Machines, used in news projects (all stack including balancer)"},
+    'reserve': {"description": "Machines in reserve (.*_RESERVED{.*})"},
+    'robot': {"description": "Robot machines (usually controlled by robot admins)"},
+    'saas': {"description": "Machines for saas"},
+    'unknown': {"description ": "Machines of unknown/not specified project"},
+    'video': {"description": "Machines, used in video projects"},
+    'web': {"description": "Machines, used in web projects"},
+    'rcss': {"description": "Machines, used in rcss projects"},
+}

@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block scripts %}
+  {{ super() }}
+
+  <script type="text/javascript">
+      var data = {{ data | tojson | safe }};
+      function expandRow(index, row, $detail) {
+          group_name = $.trim(row[0]);
+          console.log(group_name);
+          console.log(data[group_name]);
+          html = '';
+          for (var memusage = 0; memusage < 2; ++memusage) {
+              memusage = (memusage === 1 ? true : false);
+              var outliers = data[group_name][memusage]['outliers'];
+              var outlier_graph_links = data[group_name][memusage]['outlier_graph_links'];
+
+              if (outliers.length == 0)
+                  continue
+
+              html += '<div class="col-xs-4"> <h6> ' + (memusage ? "Memory" : "CPU") + ' </h6>';
+              html += '<ol>';
+              console.log("FUCK!");
+              console.log(memusage);
+              console.log(data[group_name][memusage]);
+              for (var outlierIdx = 0; outlierIdx < outliers.length; ++outlierIdx) {
+                  outlier = outliers[outlierIdx];
+                  graph_link = outlier_graph_links[outlierIdx];
+                  html += '<li> <a href="' + graph_link + '"> ' + outlier[0] + ':' + outlier[1] + ' </a> </li>'; 
+              }
+              html += '</ol></div>'
+              $detail.html(html);
+          }
+      }
+
+      $(document).ready(function() {
+          $('#anomalies_table').on('expand-row.bs.table', function (e, index, row, $detail) {
+              expandRow(index, row, $detail);
+          });
+      });
+  </script>
+{% endblock %}
+  
+
+{% block content %}
+{{ super() }}
+<div class="container">
+  <h1 class="text-center"> Host Anomalies </h1>
+  <table id="anomalies_table"
+         class="table"
+         data-search="true"
+         data-toggle="table"
+         data-sticky-header="true"
+         data-pagination="true"
+         data-page-size=25
+         data-pagination-v-align="both"
+         data-show-pagination-switch="true"
+         data-detail-view="true">
+    <thead>
+      <tr>
+        <th data-sortable="true" data-searchable="true"> Group </th>
+        <th data-sortable="true"> Total instances # </th>
+        <th data-sortable="true"> CPU outliers #</th>
+        <th data-sortable="true"> CPU outliers % </th>
+        <th data-sortable="true"> Mem outliers # </th>
+        <th data-sortable="true"> Mem outliers % </th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for group, group_data in data.items() %} 
+      <tr>
+        <td> {{ group }} </a> </td>
+        {% set n_instances = group_data[False]['n_instances'] %}
+        <td> {{ n_instances }} </td>
+
+        {% for memusage in [False, True] %}
+          {% set n_outliers = group_data[memusage]['outliers'] | length %} 
+          <td> {{ n_outliers }}
+            {% if n_outliers > 0 and n_outliers < 10 %}
+              <small>
+                <a href={{url_for('instance_graph', params=group_data[memusage]['graph_params_serialized'])}}>(graph)</a>
+              </small>
+            {% endif %}
+          </td>
+          <td> {{ (100.0 * n_outliers / n_instances) | round(2) }}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

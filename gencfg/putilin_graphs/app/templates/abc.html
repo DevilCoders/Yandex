@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+
+{% block scripts %}
+  {{ super() }}
+  <script type="text/javascript">
+    var heatmapEndpoint = "{{heatmap_endpoint}}";
+    var dataEndpoint = "{{data_endpoint}}";
+
+    function formatNumber(v) {
+        // convert number to string, e. g. : 123456 -> 123K, 123456789 -> 123M , 12.23235235 -> 12.23
+        abs_v = Math.abs(v)
+
+        if (abs_v < 1000) {
+            return v.toFixed(2);
+        }
+
+        if (abs_v < 1000000) {
+            return (v / 1000).toFixed(2) + 'K';
+        }
+
+        if (abs_v < 10000000000) {
+            return (v / 1000000).toFixed(2) + 'M';
+        }
+    }
+
+    function genUsageString(signal_name, usage, total) {
+        if (total == 0.0) {
+            return '<div> <div id="sort_value" style="display: none">0</div> NO DATA </div>';
+        }
+
+        var usage_pct = (100.0 * usage / total).toFixed(2);
+        return '<div> <div id="sort_value" style="display: none">' + usage + '</div>' + formatNumber(usage) + ' / ' + formatNumber(total) + ' (' + usage_pct + '%)' + '</div>';
+    }
+
+    function oneLineStyle(value, row, index, field) {
+        return {
+            css: { 'overflow' : 'hidden', 'white-space': 'nowrap', 'text-overflow': 'ellipsis' }
+        };
+    }
+
+    function customSorter(a, b) {
+        var a_value = parseFloat($($.parseHTML(a)).find('#sort_value').text());
+        var b_value = parseFloat($($.parseHTML(b)).find('#sort_value').text());
+        if (a_value > b_value) return 1;
+        if (a_value < b_value) return -1;
+        return 0;
+    }
+
+    $(document).ready(function() {
+        var $table = $("#abctable");
+
+        var idToChildrenIds = {};
+
+        var hideAllRowChildren = function (rowId) {
+          var toHide = [];
+
+          var findRowsToHide = function(rowId) {
+            $.each(idToChildrenIds[rowId], function(index, childrenRowId) {
+                toHide.push({'uniqueId': childrenRowId});
+                findRowsToHide(childrenRowId);
+            });
+          }
+
+          findRowsToHide(rowId);
+          $table.bootstrapTable('hideMultipleRows', toHide);
+        }
+
+        var showRowDirectChildren = function (rowId) {
+          var toShow = [];
+          $.each(idToChildrenIds[rowId], function(index, childrenRowId) {
+            toShow.push({'uniqueId': childrenRowId});
+          });
+
+          $table.bootstrapTable('showMultipleRows', toShow);
+        }
+
+        var myOnload = function(data) {
+          var toHide = []
+          $.each(data, function(index, row) {
+            if (row.pid) {
+              if (!(row.pid in idToChildrenIds)) {
+                idToChildrenIds[row.pid] = []
+              }
+              idToChildrenIds[row.pid].push(row.id);
+              toHide.push({'uniqueId': row.id});
+            }
+          });
+          $table.bootstrapTable('hideMultipleRows', toHide);
+        }
+
+        var onPostBody = function() {
+          var shownRowsIds = {}
+          $table.find('tbody > tr').each(function(index, row) {
+            var $row = $(row);
+            var id = $row.data('uniqueid');
+            shownRowsIds[id] = true;
+          });
+
+          $table.find('tbody > tr').each(function(index, row) {
+            var $row = $(row);
+            var id = $row.data('uniqueid');
+            if (!(id in idToChildrenIds)) {
+              $row.find('.tree-buttons').hide();
+            } else if (idToChildrenIds[id][0] in shownRowsIds) {
+              $row.find('.button-show-children').hide();
+            } else {
+              $row.find('.button-hide-children').hide();
+            }
+          });
+
+          $('.button-show-children,.button-hide-children').click(function() {
+            var $button = $(this);
+            var row = $button.closest('tr');
+            var rowId = row.data('uniqueid');
+
+            if ($button.hasClass('button-show-children')) {
+              showRowDirectChildren(rowId);
+            } else {
+              hideAllRowChildren(rowId);
+            }
+          });
+        }
+
+        $table.bootstrapTable({
+          treeShowField: 'project',
+          uniqueId: 'id',
+          stickyHeader: true,
+          onPostBody: onPostBody
+        });
+        $table.bootstrapTable('showLoading');
+
+        $.getJSON(dataEndpoint, function(data) {
+          var tableData = [];
+          $.each(data, function(index, rowData) {
+            var updatedRowData = {
+              project: '<a href="' + heatmapEndpoint + '?' + rowData.project_path + '">' + rowData.project + "</a>",
+              buttons: '<span class="tree-buttons"> <a class="button-show-children"><i class="glyphicon glyphicon-plus icon-plus"></i></a> <a class="button-hide-children"> <i class="glyphicon glyphicon-minus icon-minus"></i></a> </span> ',
+              id: rowData.id,
+              have_stats_pct: genUsageString('have_stats_count', rowData.num_clickhouse_hosts, rowData.num_hosts),
+              memory_usage: genUsageString('memory_usage', rowData.memory_usage, rowData.memory_total),
+              cpu_usage: genUsageString('cpu_usage', rowData.cpu_usage, rowData.cpu_total),
+              hdd_usage: genUsageString('hdd_usage', rowData.hdd_usage, rowData.hdd_total),
+              ssd_usage: genUsageString('ssd_usage', rowData.ssd_usage, rowData.ssd_total),
+            }
+            if ('pid' in rowData) {
+              updatedRowData.pid = rowData.pid;
+            }
+            tableData.push(updatedRowData);
+          });
+          $table.bootstrapTable('hideLoading');
+          $table.bootstrapTable('load', tableData);
+          myOnload(tableData);
+        });
+    });
+  </script>
+{% endblock %}
+
+{% block content %}
+{{ super() }}
+<div class="container-fluid">
+  <h1 class="text-center"> ABC </h1>
+
+  <table id="abctable" class="table table-hover">
+      <thead>
+      <tr>
+          <th data-field="buttons"></th>
+          <th data-field="project" data-sortable="true" data-cell-style="oneLineStyle">Project</th>
+          <th data-field="have_stats_pct" data-sortable="true" data-sorter="customSorter" data-cell-style="oneLineStyle">Have stats PCT</th>
+          <th data-field="memory_usage" data-sortable="true" data-sorter="customSorter" data-cell-style="oneLineStyle">Memory usage (in Gb)</th>
+          <th data-field="cpu_usage" data-sortable="true" data-sorter="customSorter" data-cell-style="oneLineStyle">Cpu usage (in PW)</th>
+          <th data-field="hdd_usage" data-sortable="true" data-sorter="customSorter" data-cell-style="oneLineStyle">HDD usage (in Gb)</th>
+          <th data-field="ssd_usage" data-sortable="true" data-sorter="customSorter" data-cell-style="oneLineStyle">SSD usage (in Gb)</th>
+      </tr>
+      </thead>
+</div>
+{% endblock %}

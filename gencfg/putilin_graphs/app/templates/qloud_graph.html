@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+
+{% block scripts %}
+  {{ super() }}
+
+  <script>
+    var prevRequest = {};
+    $(document).ready(function() {
+        function afterSetExtremes(e, elemSelector, graphUrl, extraCgi) {
+            console.log(e);
+            if (!e.trigger) {
+                // setExtremes was called manually
+                //
+                // no need to run this function, because setExtremes was called inside this function
+                // triggered the second call of this function
+                return;
+            }
+            var chart = $(elemSelector).highcharts();
+
+            var start_ts = null;
+            var end_ts = Math.round(e.max / 1000);
+            if (e.trigger == "rangeSelectorButton") {
+                if (e.rangeSelectorButton.type != "all") {
+                    var selectedRangeInSeconds = Math.round(e.rangeSelectorButton._range / 1000);
+                    start_ts = end_ts - selectedRangeInSeconds;
+                } else {
+                    // We have some data since mid-August but lets skip a couple of weeks
+                    // Thursday, 1 September 2016 г., 00:00:00
+                    start_ts = 1472688000;
+                }
+            } else {
+                start_ts = Math.round(e.min / 1000);
+            }
+            console.log("Data needed for " + start_ts + ".." + end_ts);
+
+            chart.showLoading('Loading data from server...');
+
+            if (prevRequest[elemSelector]) {
+                prevRequest[elemSelector].abort();
+            }
+
+            prevRequest[elemSelector] = $.getJSON(graphUrl + "?zoom_level=auto&start_ts=" + start_ts + "&end_ts=" + end_ts + "&" + extraCgi, function (data) {
+                console.log("Got data for " + start_ts + ".." + end_ts);
+                prevRequest[elemSelector] = null;
+
+                for (var i = 0; i < chart.series.length; ++i) {
+                    for (var j = 0; j < data.length; ++j) {
+                        if (chart.series[i].name == data[j].name) {
+                            chart.series[i].setData(data[j].data, false);
+                        }
+                    }
+                }
+                // setTimeout because: https://stackoverflow.com/questions/21364527/highstock-setextremes-with-a-custom-range-selector-button
+                setTimeout(function() {
+                    chart.xAxis[0].setExtremes(start_ts * 1000, end_ts * 1000)
+                }, 1);
+                chart.redraw();
+                chart.hideLoading();
+            });
+        }
+
+        function makeGraph(graphUrl, extraCgi, elemSelector, signalName, signalDescription) {
+            $.getJSON(graphUrl + "?" + extraCgi, function (data) {
+                if (data.length == 0) {
+                    $(elemSelector).html('<center> ' + signalDescription + '</center> <div class="alert alert-danger" style="width: 500px; margin-left: auto; margin-right: auto" align="center"> Got zero points when requesting for <a href="' + graphUrl + '?' + extraCgi + '">Data Points</a></div>');
+                    return;
+                }
+                $(elemSelector).highcharts('StockChart', {
+                    chart: {
+                        zoomType: 'x',
+                    },
+                    title: {
+                        text: signalDescription
+                    },
+                    xAxis: {
+                        type: 'datetime',
+                        ordinal: false,
+                        events : {
+                            afterSetExtremes : function(e) {
+                                afterSetExtremes(e, elemSelector, graphUrl, extraCgi);
+                            }
+                        },
+                        max: Math.round(new Date() / 1)
+                    },
+                    yAxis: {
+                        title: {
+                            text: signalName
+                        },
+                        min: 0,
+                    },
+                    tooltip: {
+                      shared: true,
+                      crosshairs: true,
+                      // pointFormat: '<span style="color:{point.color}">\u25CF</span> {series.name}: <b>{point.y:.2f}</b><br/>',
+                      formatter: function (tooltip) {
+                          var items = this.points || splat(this),
+                              series = items[0].series,
+                              s;
+
+                          // sort the values
+                          items.sort(function(a, b){
+                              return ((a.y < b.y) ? -1 : ((a.y > b.y) ? 1 : 0));
+                          });
+                          items.reverse();
+                          html = "" + Highcharts.dateFormat(tooltip.getXDateFormat(items[0], items[0].series.tooltipOptions, items[0].series.xAxis), new Date(this.x)) + "<br>";
+                          for (var i = 0; i < items.length; ++i) {
+                              if (items[i].point && items[i].point.high && items[i].point.low) {
+                                  html += '<span style="color:' + items[i].color + '">\u25CF</span> '
+                                          + items[i].series.name + ' : <b>'
+                                            + items[i].point.low.toFixed(2) + ' - ' + items[i].point.high.toFixed(2)
+                                          + '</b><br/>'
+                              } else {
+                                  html += '<span style="color:' + items[i].color + '">\u25CF</span> '
+                                          + items[i].series.name + ' : <b>'
+                                            + items[i].y.toFixed(2)
+                                          + '</b><br/>'
+                              }
+                          }
+                          return html
+                          // return tooltip.defaultFormatter.call(this, tooltip);
+                      },
+                    },
+                    legend: {
+                      enabled: true,
+                      maxHeight: 250,
+                    },
+                    plotOptions: {
+                        area: {
+                            stacking: "normal",
+                            marker: {
+                                radius: 2
+                            },
+                            lineWidth: 1,
+                            states: {
+                                hover: {
+                                    lineWidth: 1
+                                }
+                            },
+                            threshold: null
+                        },
+                        line: {
+                            lineWidth: 1,
+                            states: {
+                                hover: {
+                                    lineWidth: 1
+                                }
+                            }
+                        }
+                    },
+                    rangeSelector : {
+                        buttons: [{
+                            type: 'hour',
+                            count: 12,
+                            text: '12h'
+                        }, {
+                            type: 'day',
+                            count: 1,
+                            text: '1d'
+                        }, {
+                            type: 'day',
+                            count: 3,
+                            text: '3d'
+                        }, {
+                            type: 'week',
+                            count: 1,
+                            text: '1w'
+                        },  {
+                            type: 'month',
+                            count: 1,
+                            text: '1m'
+                        }, {
+                            type: 'year',
+                            count: 1,
+                            text: '1y'
+                        }, {
+                            type: 'all',
+                            text: 'All'
+                        }],
+                        allButtonsEnabled: true,
+                        inputEnabled: false, // it supports only days
+                    },
+                    navigator: {
+                        margin: 5,
+                        adaptToUpdatedData: false,
+                    },
+
+                    series: data
+                });
+                var chart = $(elemSelector).highcharts();
+                chart.rangeSelector.buttons[4].setState(2);
+                chart.rangeSelector.clickButton(4, 4, true);
+            });
+        }
+        $(function () {
+            $("#{{signal_name|safe}}").height('{{height}}');
+            makeGraph("{{graph_base_url|safe}}", "{{extra_cgi|safe}}", "#{{signal_name|safe}}", "{{signal_name|safe}}", "{{signal_description|safe}}");
+        });
+    });
+   </script>
+{% endblock %}
+
+{% block content %}
+  {{ super() }}
+  
+  <div id="{{signal_name}}" style="width: 100%; height: 100%; max-height: 800px; margin: 0 auto">
+      <i class="fa fa-spin fa-2x fa-cog"></i>
+  </div>
+
+{% endblock %}

@@ -1,0 +1,33 @@
+./analyzer.py -f msk.sqlite -s ../optimizers/sas/configs/msk.web.yaml -t 300
+./analyzer.py -f msk.sqlite -s ../optimizers/sas/configs/msk.web.yaml -t 200 -u instance_cpu_usage,host_cpu_usage
+
+./analyzer.py -f sas.sqlite -s ../optimizers/sas/configs/sas.web.yaml -t 300
+./analyzer.py -f sas.sqlite -s ../optimizers/sas/configs/sas.web.yaml -t 200 -u instance_cpu_usage,host_cpu_usage
+
+./analyzer.py -f man.sqlite -s ../optimizers/sas/configs/man.web.yaml -t 300
+./analyzer.py -f man.sqlite -s ../optimizers/sas/configs/man.web.yaml -t 200 -u instance_cpu_usage,host_cpu_usage
+
+./analyzer.py -f sas.usage.sqlite -i intlookup-sas-rus.py,intlookup-sas-ukr.py,intlookup-sas-platinum.py,intlookup-sas-geo.py,intlookup-sas-f.py,intlookup-sas-b.py,intlookup-sas-bf.py,intlookup-sas-ukr1.py,intlookup-sas-kz.py,intlookup-sas-tk.py -t 300 -u host_cpu_usage -x "{'host_cpu_usage_timeout' : 50 }"
+
+Получить cpu usage по отдельным частям интернета для определенного tier-а. Парамерты: tier и модель процессора.
+ - select region, tier, sum(instance_qps) / sum(instance_cpu_usage) from data where tier = 'RusTier0' and host_cpu_model = 'E5620' group by region order by 1;
+
+Получить мощности, которые используются шардами всех типов (относительные веса для генерилки):
+ - select tier, sum(instance_cpu_usage) / (max(shard_id) + 1) * 29.17 from data group by tier order by 1;
+То же самое, но нормированное на RusTier0
+ - select tier, sum(instance_cpu_usage) / (max(shard_id) + 1) / (select sum(instance_cpu_usage) / (max(shard_id) + 1) from data where tier = 'RusTier0' group by tier) * 1000 from data group by tier order by 1;
+
+Узнать текущий unanswer_rate для всех tier-ов:
+ - select host_cpu_model, sum(instance_unanswer_rate * instance_qps) / sum(instance_qps) * 100 from data where tier = 'RusTier0' group by host_cpu_model
+
+Посмотреть 99% медиану сгруппированную по моделям машин и мощности инстанса:
+ - select sum(time_median99) / count(*), count(*), host_cpu_model, config_power from data where tier = 'RusTier0' group by host_cpu_model, config_power order by 2;
+
+Посмотреть 99% медиану в зависимости от количества базовых этого tier-а на машине:
+ - select sum(time1) / count(*), count1, count(*) from (select sum(time_median99) / count(*) as time1, count(*) as count1, host from data where host_cpu_model = 'E5-2660' and tier = 'RusTier0' group by host) group by count1;
+
+Посчитать отношение выделенной мощности к реальной нагрузке на cpu, которую создает инстанс:
+ - select instance_cpu_usage / config_power * 100, shard_id from data where tier = 'RusTier0' and type = 'MSK_WEB_BASE' and instance_cpu_usage <> 'NULL' order by 1
+
+Выбрать стойки, которые потребляют больше всего:
+ - select queue || '-' || rack from (select sum(cpu), count(*), queue, rack from (select avg(host_cpu_usage) as cpu, rack, queue from data group by host) group by rack, queue order by 1 desc limit 10);
