@@ -1,0 +1,31 @@
+OWNER(
+    g:antirobot
+)
+
+RECURSE(
+    build
+    captcha/captcha_test_service
+    captcha/fingerprint
+    captcha/greed_example
+    captcha_cloud_api
+    cbb
+    config
+    daemon
+    daemon/arcadia_test
+    daemon_lib/benchmarks
+    daemon_lib/ut
+    daemon_lib/ut_medium
+    device_validator
+		docs
+    idl
+    idl/python
+    lib/benchmarks
+    lib/hypocrisy
+    lib/hypocrisy/tools/make_bundle
+    lib/hypocrisy/ut
+    lib/p0f_parser
+    lib/ut
+    scripts
+    tools
+    yasm_panels
+)

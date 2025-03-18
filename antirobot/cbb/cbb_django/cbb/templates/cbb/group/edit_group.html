@@ -1,0 +1,139 @@
+{% extends "cbb/index.html" %}
+{% block title %} - {% if form.group_id.value %}Редактирование{% else %}Добавление{% endif%} группы{% endblock %}
+{% block name %}{% if form.group_id.value %}Редактирование{% else %}Добавление{% endif%} группы {{form.group_id.value|default:''}}{% endblock %}
+{% block script %}
+  <link rel="stylesheet" href="/static/jquery-ui-1.12.1/jquery-ui.min.css" media="screen"/>
+  <link rel="stylesheet" href="/static/cbb/css/staff-people.css" media="screen"/>
+
+  <script src="/static/jquery-ui-1.12.1/jquery-ui.min.js"></script>
+  <script src="//yastatic.net/staff-card/_/staff-card.min.js" type="text/javascript"></script>
+  <script src="/static/cbb/js/staff-people.js" type="text/javascript"></script>
+  <script>
+    let responsible_people_view; // PeopleView instance
+
+    function view_expire()
+    {
+      var default_type = '0';
+      for (var i=0; i < document.editgroup.default_type.length; i++)
+      {
+        if (document.editgroup.default_type[i].checked)
+        {
+          default_type = document.editgroup.default_type[i].value;
+          break;
+        }
+      }
+      var period_to_expire = document.getElementById('pte');
+      if (default_type == '1' || default_type == '3') {
+        period_to_expire.style.display = 'block';
+      }
+      else
+      {
+        period_to_expire.style.display = 'none';
+      }
+    }
+
+    $(document).ready(function() {
+        const id_responsible_people = '#id_responsible_people'
+
+        responsible_people_view = new CBB.StaffPeople.PeopleView(
+            '#responsible-view',
+            '#btn-add-responsible-person',
+            JSON.parse($(id_responsible_people).val()),
+            {{ edit_mode|yesno:"true,false" }}
+        )
+
+        $('input[type=reset]').click(function() {
+            responsible_people_view.reset()
+        })
+
+        $('#editgroup').submit(function() {
+            let a = responsible_people_view.get_data()
+            $(id_responsible_people).val(JSON.stringify(responsible_people_view.get_data()))
+            console.log($(id_responsible_people).val())
+            console.log(a)
+            return true
+        })
+
+        responsible_people_view.show()
+    })
+
+  </script>
+{% endblock %}
+{% block content %}
+  <form class="form-horizontal" action="{% if form.group_id.value %}{% url "antirobot.cbb.cbb_django.cbb:admin.edit_group" form.group_id.value %}{% else %}{% url "antirobot.cbb.cbb_django.cbb:admin.add_group" %}{% endif %}" method="post" name="editgroup" id="editgroup">
+    {% csrf_token %}
+    <div class="form-group {% if form.errors.name %} has-error {% endif %}">
+      <label class="col-sm-2 control-label">Название</label>
+      <div class="col-sm-4">
+        {{ form.name }}
+        <label class="help-block">Строчные латинские буквы и числа без пробелов</label>
+        {% if form.errors.name %}
+          <div class="help-block">{{ form.errors.name }}</div>
+        {% endif %}
+      </div>
+    </div>
+    <div class="form-group {% if form.errors.group_descr %} has-error {% endif %}">
+      <label class="col-sm-2 control-label">Описание</label>
+      <div class="col-sm-4">
+        {{ form.group_descr }}
+        {% if form.errors.group_descr %}
+          <div class="help-block">{{ form.errors.group_descr }}</div>
+        {% endif %}
+      </div>
+    </div>
+    <div class="form-group">
+      <!-- TODO: disable when editing -->
+      <label class="col-sm-2 control-label">Тип</label>
+      {% if form.group_id.value %}
+        <div class="col-sm-4">
+          {% for choice, label in form.default_type.field.choices %}
+            {% if form.default_type.value == choice %}
+              <p class="form-control-static">{{ label }} {% if form.is_internal.value %}(внутренняя){% endif %}</p>
+            {% endif %}
+          {% endfor %}
+        </div>
+      {% endif %}
+        <div class="radio col-sm-5" id="dt" onchange="view_expire();" {% if form.group_id.value %} style="display: none" {% endif %}>
+          {{ form.default_type }}
+        </div>
+    </div>
+    <div class="form-group {% if form.errors.period_to_expire %} has-error {% endif %}" id="pte" style="display: {% if form.default_type.value in '13' %}block{% else %}none{% endif %}">
+      <label class="col-sm-2 control-label">Дефолтное протухание</label>
+      <div class="col-sm-4">
+        <div>{{ form.period_to_expire }}</div>
+        {% if form.errors.period_to_expire %}
+          <div class="help-block">{{ form.errors.period_to_expire }}</div>
+        {% endif %}
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="col-sm-2 control-label">Ответственные
+      {% if edit_mode %}
+        <br><a href='#' id=btn-add-responsible-person>+Добавить</a>
+      {% endif %}
+      </label>
+      <div class="col-sm-4 form-control-static" id=responsible-view class=staff-list>
+      </div>
+    </div>
+    {{ form.group_id }}
+    {{ form.responsible_people }}
+    {% if edit_mode %}
+    <div class="form-group">
+      <div class="col-sm-offset-2 col-sm-10">
+        <input class="btn btn-primary" type="submit" value="Сохранить" />
+        <input class="btn btn-default" type="reset" value="Отменить" />
+      </div>
+    </div>
+    {% endif %}
+  </form>
+  {% if form.group_id.value and edit_mode %}
+    <form class="form-horizontal" method='post' action="{% url "antirobot.cbb.cbb_django.cbb:admin.delete_group" form.group_id.value %}" name="delete_group" id=delete_group">
+      {% csrf_token %}
+      <div class="form-group">
+        <div class="col-sm-offset-2 col-sm-4">
+          <input type='submit' class='btn btn-danger pull-right' value="Удалить"/>
+        </div>
+      </div>
+    </form>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,136 @@
+#include <antirobot/daemon_lib/match_rule_lexer.h>
+#include <util/generic/string.h>
+
+
+namespace NAntiRobot {
+
+
+namespace NMatchRequest {
+
+%%{
+    machine al_lexer;
+
+    unsigned = digit+;
+    integer = ('+' | '-' )? unsigned;
+    float = integer '.' unsigned;
+
+    not_squote_or_escape = [^'\\];
+    not_dquote_or_escape = [^"\\];
+    not_regex_quote_or_escape = [^/\\];
+    escaped_something = /\\./;
+
+    string_sq = "'" ( not_squote_or_escape | escaped_something )* "'";
+    string_dq = '"' ( not_dquote_or_escape | escaped_something )* '"';
+
+    regex = '/' ( not_regex_quote_or_escape | escaped_something )* '/' 'i'?;
+
+    delim = ';' (space)*;
+    ident = (alpha | '_') alnum*;
+    group = '#' unsigned;
+    ip4  = digit{1,3} '.' digit{1,3} '.' digit{1,3} '.' digit {1,3};
+    cidr4 = ip4 ('/' digit+)?;
+    ip6_group = xdigit{1,4};
+    ip6 =
+          ( '::' (ip6_group ':')* (ip6_group | ip4) )
+        | ( (ip6_group ':')+ ':'? (ip6_group ':')* (ip6_group | ip4) )
+        ;
+
+    cidr6 = ip6 ('/' digit+)?;
+
+    main := |*
+        unsigned => { tok = EToken::Unsigned; tokval = TString(ts, te); fbreak; };
+        integer => { tok = EToken::Integer; tokval = TString(ts, te); fbreak; };
+        float => { tok = EToken::Float; tokval = TString(ts, te); fbreak; };
+        string_sq => { tok = EToken::String; tokval = TString(ts, te); fbreak; };
+        string_dq => { tok = EToken::String; tokval = TString(ts, te); fbreak; };
+        regex => { tok = EToken::Regex; tokval = TString(ts, te); fbreak; };
+        'rule_id' => { tok = EToken::RuleId; fbreak; };
+        'doc' => { tok = EToken::Doc; fbreak; };
+        'enabled' => { tok = EToken::Enabled; fbreak; };
+        'ip' => { tok = EToken::Ip; tokval = TString(ts, te); fbreak; };
+        'ip_from' => { tok = EToken::IpFrom; tokval = TString(ts, te); fbreak; };
+        'no' => { tok = EToken::False; fbreak; };
+        'nonblock' => { tok = EToken::Nonblock; fbreak; };
+        'rem' => { tok = EToken::Rem; fbreak; };
+        'cgi' => { tok = EToken::Cgi; fbreak; };
+        'yes' => { tok = EToken::True; fbreak; };
+        'header' => { tok = EToken::Header; fbreak; };
+        'has_header' => { tok = EToken::HasHeader; fbreak; };
+        'num_header' => { tok = EToken::NumHeader; fbreak; };
+        'csheader' => { tok = EToken::CSHeader; fbreak; };
+        'has_csheader' => { tok = EToken::HasCSHeader; fbreak; };
+        'num_csheader' => { tok = EToken::NumCSHeader; fbreak; };
+        'factor' => { tok = EToken::Factor; fbreak; };
+        'ident_type' => { tok = EToken::IdentType; fbreak; };
+        'arrival_time' => { tok = EToken::ArrivalTime; fbreak; };
+        'service_type' => { tok = EToken::ServiceType; fbreak; };
+        'is_tor' => { tok = EToken::IsTor; fbreak; };
+        'is_proxy' => { tok = EToken::IsProxy; fbreak; };
+        'is_vpn' => { tok = EToken::IsVpn; fbreak; };
+        'is_hosting' => { tok = EToken::IsHosting; fbreak; };
+        'is_mobile' => { tok = EToken::IsMobile; fbreak; };
+        'is_whitelist' => { tok = EToken::IsWhitelist; fbreak; };
+        'country_id' => { tok = EToken::CountryId; fbreak; };
+        'degradation' => { tok = EToken::Degradation; fbreak; };
+        'panic_mode' => { tok = EToken::PanicMode; fbreak; };
+        'request' => { tok = EToken::Request; fbreak; };
+        'in_robot_set' => { tok = EToken::InRobotSet; fbreak; };
+        'hodor' => { tok = EToken::Hodor; fbreak; };
+        'hodor_hash' => { tok = EToken::HodorHash; fbreak; };
+        'is_mikrotik' => { tok = EToken::IsMikrotik; fbreak; };
+        'is_squid' => { tok = EToken::IsSquid; fbreak; };
+        'is_ddoser' => { tok = EToken::IsDdoser; fbreak; };
+        'jws_info' => { tok = EToken::JwsInfo; fbreak; };
+        'yandex_trust_info' => { tok = EToken::YandexTrustInfo; fbreak; };
+        'random' => { tok = EToken::Random; fbreak; };
+        'may_ban' => { tok = EToken::MayBan; fbreak; };
+        'exp_bin' => { tok = EToken::ExpBin; fbreak; };
+        'valid_autoru_tamper' => { tok = EToken::ValidAutoRuTamper; fbreak; };
+        'cookie_age' => { tok = EToken::CookieAge; fbreak; };
+        'current_timestamp' => { tok = EToken::CurrentTimestamp; fbreak; };
+        ident => { tok = EToken::Ident; tokval = TString(ts, te); fbreak; };
+        group => { tok = EToken::Group; tokval = TString(ts, te); fbreak; };
+        cidr4 => { tok = EToken::Cidr4; tokval = TString(ts, te); fbreak; };
+        cidr6 => { tok = EToken::Cidr6; tokval = TString(ts, te); fbreak; };
+        delim => { tok = EToken::Delim; fbreak; };
+        space+;
+        '=' => { tok = EToken::Assign; fbreak; };
+        '==' => { tok = EToken::Equal; fbreak; };
+        '>' => { tok = EToken::More; fbreak; };
+        '>=' => { tok = EToken::MoreEqual; fbreak; };
+        '<' => { tok = EToken::Less; fbreak; };
+        '<=' => { tok = EToken::LessEqual; fbreak; };
+        '!=' => { tok = EToken::NotEqual; fbreak; };
+        any => { tok = EToken::Char; tokval = TString(*ts); fbreak; };
+    *|;
+}%%
+
+%%write data;
+
+TLexer::TTokValue TLexer::GetNextToken() {
+    EToken tok = EToken::End;
+    TString tokval;
+
+    %%{
+        write exec;
+    }%%
+
+    LastToken = {tok, tokval};
+    return LastToken;
+}
+
+TLexer::TLexer(const TString& text)
+    : Text(text)
+    , LastToken{NotAToken, TString()}
+    , ts(0)
+    , te(0)
+    , p(Text.begin())
+    , pe((char*)Text.end())
+    , eof(pe)
+{
+    %%write init;
+}
+} // namespace NMatchRequest
+
+
+} // namespace NAntiRobot

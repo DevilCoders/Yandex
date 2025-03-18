@@ -1,0 +1,273 @@
+<% macro antirobot_alerts(signal, signal_readable, warn_from, warn_to, crit_from, crit_to, description, itype="antirobot", ctype="prod,prestable", prj="prod-antirobot-yp", alert_to_chat=False, long_window=False, spi_alert=False) %>
+<% for geo in list_geo(itype=itype) %>
+{
+    "name": "antirobot_golovan_alert_<< signal_readable >>_<< geo >>",
+    "signal": "<< signal >>",
+    "mgroups": [
+        "ASEARCH"
+    ],
+    "tags": {
+        "geo": [
+            "<< geo >>"
+        ],
+        "itype": [
+            "<< itype >>"
+        ],
+        <% if ctype|length %>
+        "ctype": [
+            "<< ctype >>"
+        ],
+        <% endif %>
+        "prj": [
+            "<< prj >>"
+        ]
+    },
+    "juggler_check": {
+        <% if spi_alert %>
+        "tags": [
+            "warden_alert_create_spi",
+            "warden_alert_start_flow"
+        ],
+        <% endif %>
+        "notifications": [
+            {
+                "template_name": "on_status_change",
+                "description": "1231",
+                "template_kwargs": {
+                    "status": [
+                        "CRIT",
+                        "OK"
+                    ],
+                    "login": [
+                        "toshchakov",
+                        "ashagarov",
+                        "rzhikharevich",
+                        <% if alert_to_chat %>
+                        "antirobot_critical",
+                        <% endif %>
+                    ],
+                    "method": [
+                        "telegram",
+                        "yachats"
+                    ]
+                }
+            }
+        ],
+        "host": "yasm_antirobot_golovan_alert_<< signal_readable >>_<< geo >>",
+        "meta": {
+            "yasm_alert_name": "antirobot_golovan_alert_<< signal_readable >>_<< geo >>",
+            "urls": [
+                {
+                    "url": "https://yasm.yandex-team.ru/chart-alert/alerts=antirobot_golovan_alert_<< signal_readable >>_<< geo >>;",
+                    "type": "yasm_alert",
+                    "title": "Алерт в Головане"
+                }
+            ]
+        },
+        "service": "antirobot_golovan_alert_<< signal_readable >>_<< geo >>",
+        "aggregator": "logic_or",
+    },
+    "value_modify": {
+        "type": "aver",
+        <% if long_window %>
+        "window": 300
+        <% else %>
+        "window": 30
+        <% endif %>
+    },
+    "warn": [
+        << warn_from >>,
+        << warn_to >>
+    ],
+    "crit": [
+        << crit_from >>,
+        << crit_to >>
+    ]
+},
+<% endfor %>
+<% endmacro %>
+
+[
+<< antirobot_alerts(signal = "perc(unistat_daemon-http_server.time_1ms_deee,unistat_daemon-http_server.time_10s_deee)",
+                    signal_readable = "perc_http_server_time_1ms",
+                    warn_from=75, warn_to=75,
+                    crit_from="null", crit_to=75,
+                    alert_to_chat = True,
+                    description="Доля запросов в кэшер обрабатываемых быстрее 1ms") >>
+
+<< antirobot_alerts(signal = "perc(unistat_daemon-http_server.time_10ms_deee,unistat_daemon-http_server.time_10s_deee)",
+                    signal_readable = "perc_http_server_time_10ms",
+                    warn_from=90, warn_to=90,
+                    crit_from="null", crit_to=90,
+                    alert_to_chat = True,
+                    description="Доля запросов в кэшер обрабатываемых быстрее 10ms") >>
+
+<< antirobot_alerts(signal = "perc(unistat_daemon-http_server.time_90ms_deee,unistat_daemon-http_server.time_10s_deee)",
+                    signal_readable = "perc_http_server_time_90ms",
+                    warn_from=99, warn_to=99,
+                    crit_from="null", crit_to=99,
+                    alert_to_chat = True,
+                    description="Доля запросов в кэшер обрабатываемых быстрее 90ms",
+                    spi_alert = True) >>
+
+<< antirobot_alerts(signal = "perc(unistat_daemon-http_server.time_190ms_deee,unistat_daemon-http_server.time_10s_deee)",
+                    signal_readable = "perc_http_server_time_190ms",
+                    warn_from=99, warn_to=99,
+                    crit_from="null", crit_to=99,
+                    alert_to_chat = True,
+                    description="Доля запросов в кэшер обрабатываемых быстрее 190ms",
+                    spi_alert = True) >>
+
+<< antirobot_alerts(signal = "div(unistat_daemon-wizard_errors_deee, normal())",
+                    signal_readable = "wizard_errors",
+                    warn_from=200, warn_to=200,
+                    crit_from=200, crit_to="null",
+                    long_window=True,
+                    description="Ошибки визарда") >>
+
+<< antirobot_alerts(signal = "div(unistat_daemon-cbb_errors_deee, normal())",
+                    signal_readable = "cbb_errors",
+                    warn_from=200, warn_to=200,
+                    crit_from=200, crit_to="null",
+                    description="Ошибки ЕББ",
+                    spi_alert=True) >>
+
+<< antirobot_alerts(signal = "div(unistat_daemon-captcha_generation_errors_deee, normal())",
+                    signal_readable = "captcha_generation_errors",
+                    warn_from=100, warn_to=100,
+                    crit_from=100, crit_to="null",
+                    alert_to_chat = True,
+                    description="Ошибки генерации Капчи",
+                    spi_alert=True) >>
+
+<< antirobot_alerts(signal = "perc(unistat_daemon-captcha_check_errors_deee,sum(unistat_daemon-captcha_correct_inputs_deee,unistat_daemon-captcha_incorrect_inputs_deee,unistat_daemon-captcha_check_errors_deee))",
+                    signal_readable = "perc_captcha_check_errors",
+                    warn_from=40, warn_to=40,
+                    crit_from=40, crit_to="null",
+                    alert_to_chat = True,
+                    description="Ошибки проверки Капчи",
+                    spi_alert=True) >>
+
+<< antirobot_alerts(signal = "perc(balancer_report-report-antirobot-backend_fail_summ,sum(balancer_report-report-antirobot-fail_summ,balancer_report-report-antirobot-succ_summ))",
+                    itype="balancer",
+                    ctype="",
+                    prj="l7-balancer",
+                    signal_readable = "perc_balancer_fails",
+                    warn_from=3, warn_to=3,
+                    crit_from=3, crit_to="null",
+                    description="Процент фейлов на Балансере",
+                    spi_alert=True) >>
+
+<< antirobot_alerts(signal = "perc(unistat_daemon-processing_queue.processing_reqs.spilled_reqs_deee,unistat_daemon-process_server.time_10s_deee)",
+                    signal_readable = "perc_spilled_processing",
+                    warn_from=1.5, warn_to=1.5,
+                    crit_from=1.5, crit_to="null",
+                    long_window=True,
+                    description="Процент пролитых запросов на процессинг") >>
+
+<< antirobot_alerts(signal = "perc(sum(unistat_daemon-forward_request_1st_try_deee,unistat_daemon-forward_request_2nd_try_deee,unistat_daemon-forward_request_3rd_try_deee),unistat_daemon-forward_request_all_deee)",
+                    signal_readable = "perc_of_failed_forwardings_by_3_tries",
+                    warn_from=97, warn_to=97,
+                    crit_from="null", crit_to=97,
+                    long_window=True,
+                    description="Процент форвардингов которые успешно прошли за первые три попытки") >>
+
+<< antirobot_alerts(signal = "div(unistat_daemon-read_req_timeouts_deee, normal())",
+                    signal_readable = "read_req_timeouts",
+                    warn_from=100, warn_to=100,
+                    crit_from=100, crit_to="null",
+                    description="Количество таймаутов при чтении запроса") >>
+
+<< antirobot_alerts(signal = "div(unistat_daemon-reply_fails_deee, normal())",
+                    signal_readable = "reply_fails",
+                    warn_from=100, warn_to=100,
+                    crit_from=100, crit_to="null",
+                    description="Количество фейлов при попытке ответить на запрос") >>
+
+<< antirobot_alerts(signal = "div(unistat_daemon-processor_response_apply_queue.spilled_applies_deee, normal())",
+                    signal_readable = "spilled_processor_response_applies",
+                    warn_from=100, warn_to=100,
+                    crit_from=100, crit_to="null",
+                    description="Количество пролитий при добавлении в очередь которая разгребает ответы процессора на кэшере") >>
+
+<< antirobot_alerts(signal = "div(portoinst-cpu_wait_cores_tmmv, counter-instance_tmmv)",
+                    signal_readable = "average_cpu_wait_by_host",
+                    warn_from=5, warn_to=5,
+                    crit_from=5, crit_to="null",
+                    alert_to_chat = True,
+                    description="Среднее cpu_wait в ядрах на хостах") >>
+
+<< antirobot_alerts(signal = "div(portoinst-cpu_throttled_cores_tmmv, counter-instance_tmmv)",
+                    signal_readable = "average_cpu_throttled_by_host",
+                    warn_from=0.1, warn_to=0.1,
+                    crit_from=0.1, crit_to="null",
+                    alert_to_chat = True,
+                    description="Среднее cpu_throttled в ядрах на хостах") >>
+
+<< antirobot_alerts(signal = "div(unistat_daemon-page_400_deee, normal())",
+                    signal_readable = "page_400_shows",
+                    warn_from=2000, warn_to=2000,
+                    crit_from=2000, crit_to="null",
+                    description="Показы страницы 400") >>
+
+<< antirobot_alerts(signal = "div(unistat_daemon-missed_once_robots_deee, normal())",
+                    signal_readable = "robots_missed_once",
+                    warn_from=200000, warn_to=200000,
+                    crit_from=200000, crit_to="null",
+                    description="Пропущенные первые роботные запросы") >>
+
+<< antirobot_alerts(signal = "div(unistat_daemon-missed_multiple_robots_deee, normal())",
+                    signal_readable = "robots_missed_multiple_times",
+                    warn_from=200000, warn_to=200000,
+                    crit_from=200000, crit_to="null",
+                    description="Пропущенные вторые и более роботные запросы") >>
+
+<< antirobot_alerts(signal = "div(unistat_daemon-cacher_request_whitelisted_deee, normal())",
+                    signal_readable = "cacher_request_whitelisted",
+                    warn_from=100, warn_to=100,
+                    crit_from=100, crit_to="null",
+                    description="Количество обеленных формулой на кешере") >>
+
+<< antirobot_alerts(signal = "unistat_daemon-captcha_correct_checkbox_inputs_deee",
+                    signal_readable = "captcha_correct_checkbox_inputs",
+                    warn_from=0, warn_to=0,
+                    crit_from="null", crit_to=0,
+                    alert_to_chat = True,
+                    long_window=True,
+                    description="Количество корректных вводов галочки") >>
+
+<< antirobot_alerts(signal = "unistat_daemon-captcha_correct_inputs_deee",
+                    signal_readable = "captcha_correct_inputs",
+                    warn_from=0, warn_to=0,
+                    crit_from="null", crit_to=0,
+                    alert_to_chat = True,
+                    long_window=True,
+                    description="Количество корректных вводов капч") >>
+
+<< antirobot_alerts(signal = "div(unistat_daemon-other_exceptions_count_deee, normal())",
+                    signal_readable = "other_exceptions_count",
+                    warn_from=5, warn_to=5,
+                    crit_from=5, crit_to="null",
+                    alert_to_chat = True,
+                    description="Количество неизвестных exceptions") >>
+
+<< antirobot_alerts(signal = "quant(portoinst-memory_anon_unevict_limit_usage_perc_hgram, 99)",
+                    itype="smart-captcha",
+                    prj="smart-captcha",
+                    ctype="prod",
+                    signal_readable = "smartcaptcha_memory",
+                    warn_from=5, warn_to=5,
+                    crit_from=90, crit_to="null",
+                    alert_to_chat = True,
+                    description="SmartCaptcha Memory usage") >>
+
+<< antirobot_alerts(signal = "div(portoinst-cpu_throttled_cores_tmmv, counter-instance_tmmv)",
+                    itype="smart-captcha",
+                    prj="smart-captcha",
+                    ctype="prod",
+                    signal_readable = "smartcaptcha_cpu_throttled_by_host",
+                    warn_from=0.1, warn_to=0.1,
+                    crit_from=0.1, crit_to="null",
+                    alert_to_chat = True,
+                    description="Среднее cpu_throttled в ядрах на хостах") >>
+]

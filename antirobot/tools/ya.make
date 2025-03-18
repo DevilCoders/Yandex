@@ -1,0 +1,46 @@
+OWNER(g:antirobot)
+
+RECURSE(
+    access_service_mock
+    ammo_generator
+    antiddos
+    antirobot_eventlog_udf
+    api_captcha_mock
+    balancer_mock
+    cbb_api_mock
+    check_fnames
+    check_formula
+    check_spravka
+    cloud_api_tool
+    dump_cbb
+    evlog_split
+    evlogdump
+    fnames
+    fury_mock
+    generate_proto_descriptor
+    get_rps
+    headers_parser
+    instance_hashing_counter
+    ip2backend
+    json_config_checker
+    jws_tool
+    kickstart
+    nanny_mock
+    resource_manager_mock
+    prepare_requests_cbb
+    prepare_requests_cbb/lib/test
+    processor_mock
+    req2info
+    robotset_upload
+    unistat_proxy
+    wizard_mock
+    yasm_stats
+    yql_checker
+    yt2proto
+)
+
+IF (NOT SANITIZER_TYPE)
+    RECURSE(
+        daily_routine
+    )
+ENDIF()

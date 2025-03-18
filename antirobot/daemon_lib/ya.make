@@ -1,0 +1,248 @@
+LIBRARY()
+
+OWNER(g:antirobot)
+
+PEERDIR(
+    ADDINCL antirobot/captcha
+    antirobot/captcha_cloud_api/proto
+    antirobot/idl
+    antirobot/lib
+    antirobot/lib/hypocrisy
+    antirobot/lib/ja3_parser
+    antirobot/lib/p0f_parser
+    catboost/libs/model
+    contrib/libs/jwt-cpp
+    contrib/libs/kyotocabinet
+    contrib/libs/re2
+    metrika/uatraits/data
+    metrika/uatraits/library
+    infra/yp_service_discovery/libs/sdlib
+    kernel/geo
+    kernel/hosts/owner
+    kernel/matrixnet
+    kernel/qtree/richrequest
+    kernel/xmlreq
+    library/cpp/archive
+    library/cpp/blockcodecs
+    library/cpp/cgiparam
+    library/cpp/charset
+    library/cpp/config
+    library/cpp/containers/concurrent_hash
+    library/cpp/containers/heap_dict
+    library/cpp/containers/sorted_vector
+    library/cpp/digest/md5
+    library/cpp/eventlog
+    library/cpp/html/pcdata
+    library/cpp/http/cookies
+    library/cpp/http/io
+    library/cpp/http/misc
+    library/cpp/http/server
+    library/cpp/http/static
+    library/cpp/iterator
+    library/cpp/json
+    library/cpp/langs
+    library/cpp/lcookie
+    library/cpp/mime/types
+    library/cpp/protobuf/json
+    library/cpp/regex/pire
+    library/cpp/regex/regexp_classifier
+    library/cpp/sighandler
+    library/cpp/streams/lz
+    library/cpp/string_utils/base64
+    library/cpp/string_utils/quote
+    library/cpp/string_utils/scan
+    library/cpp/string_utils/url
+    library/cpp/svnversion
+    library/cpp/threading/future
+    library/cpp/threading/rcu
+    library/cpp/threading/synchronized
+    library/cpp/timezone_conversion
+    library/cpp/tvmauth/client
+    library/cpp/uilangdetect
+    library/cpp/uri
+    library/cpp/yconf
+    quality/ab_testing/usersplit_lib/hash_calc
+    search/fields
+    search/idl
+    search/wizard/config
+    search/wizard/face
+    search/wizard/remote
+    util/draft
+    ydb/library/yql/public/udf
+    ydb/public/sdk/cpp/client/ydb_driver
+    ydb/public/sdk/cpp/client/ydb_table
+    yql/library/purecalc
+    ysite/yandex/reqanalysis
+    yweb/webdaemons/icookiedaemon/icookie_lib
+    yweb/weblibs/signurl
+    library/cpp/deprecated/atomic
+)
+
+YQL_LAST_ABI_VERSION()
+
+SRCS(
+    addr_list.cpp
+    admin.cpp
+    antiddos.cpp
+    antirobot_cookie.cpp
+    antirobot_service.cpp
+    autoru_offer.cpp
+    autoru_tamper.cpp
+    backend_sender.cpp
+    bad_request_handler.cpp
+    block_set.cpp
+    blocked_handler.cpp
+    blocker.cpp
+    cache_sync.cpp
+    cacher_factors.cpp
+    cacher_robot_detector.cpp
+    captcha_api_check.cpp
+    captcha_check.cpp
+    captcha_descriptor.cpp
+    captcha_format.cpp
+    captcha_format_api.cpp
+    captcha_format_html.cpp
+    captcha_format_json.cpp
+    captcha_format_xml.cpp
+    captcha_freq_checker.cpp
+    captcha_fury_check.cpp
+    captcha_gen.cpp
+    captcha_key.cpp
+    captcha_page.cpp
+    captcha_page_params.cpp
+    captcha_parse.cpp
+    captcha_req_replier.cpp
+    captcha_request.cpp
+    captcha_signature_data.cpp
+    captcha_stat.cpp
+    catboost.cpp
+    cbb.cpp
+    cbb_banned_ip_holder.cpp
+    cbb_cache.cpp
+    cbb_id.cpp
+    cbb_iplist_manager.cpp
+    cbb_list_watcher.cpp
+    cbb_relist_manager.cpp
+    cbb_textlist_manager.cpp
+    china_redirect_stats.cpp
+    classificator.cpp
+    classify_experiments.cpp
+    cloud_grpc_client.cpp
+    config.cpp
+    config_global.cpp
+    convert_factors.cpp
+    cpu_usage.cpp
+    disabling_flags.cpp
+    dynamic_thread_pool.cpp
+    entity_dictionary.cpp
+    environment.cpp
+    eventlog_err.cpp
+    exp_bin.cpp
+    factors.cpp
+    rule_set.cpp
+    forward_request.cpp
+    forwarding_stats.cpp
+    fullreq_handler.cpp
+    fullreq_info.cpp
+    geo_checker.cpp
+    get_host_name_request.cpp
+    host_ops.cpp
+    incremental_rule_set.cpp
+    instance_hashing.cpp
+    its_file_handler.cpp
+    its_files_watcher.cpp
+    json_config.cpp
+    jsonp.cpp
+    many_requests.cpp
+    many_requests_handler.cpp
+    market_stats.cpp
+    match_rule_lexer.rl6
+    match_rule_parser.cpp
+    matrixnet.cpp
+    neh_requesters.cpp
+    page_template.cpp
+    panic_flags.cpp
+    parse_cbb_response.cpp
+    partners_captcha_stat.cpp
+    prepared_rule.cpp
+    reloadable_data.cpp
+    req_replier.cpp
+    req_types.cpp
+    reqinfo_request.cpp
+    request_classifier.cpp
+    request_context.cpp
+    request_features.cpp
+    request_group_classifier.cpp
+    request_params.cpp
+    request_time_stats.cpp
+    resource_selector.cpp
+    return_path.cpp
+    robot_detector.cpp
+    robot_set.cpp
+    rps_filter.cpp
+    rule.cpp
+    search_engine_recognizer.cpp
+    server.cpp
+    server_error_handler.cpp
+    server_error_stats.cpp
+    server_exceptions_stat.cpp
+    static_handler.cpp
+    threat_level.cpp
+    time_stats.cpp
+    timedelta_checker.cpp
+    training_set_generator.cpp
+    trusted_users.cpp
+    tvm.cpp
+    uid.cpp
+    unified_agent_log.cpp
+    user_base.cpp
+    user_metric.cpp
+    user_name_list.cpp
+    user_reply.cpp
+    verochka_stats.cpp
+    wizards.cpp
+    work_mode.cpp
+    xml_reqs_helpers.cpp
+    ydb_session_storage.cpp
+    yql_io_spec.cpp
+    yql_rule_set.cpp
+)
+
+RESOURCE(
+    antirobot/captcha/generated/js_print_mapping.json js_print_mapping.json
+)
+
+RESOURCE(
+    antirobot/config/header_hashes.json header_hashes.json
+)
+
+GENERATE_ENUM_SERIALIZATION(backend_sender.h)
+GENERATE_ENUM_SERIALIZATION(block_set.h)
+GENERATE_ENUM_SERIALIZATION(blocker.h)
+GENERATE_ENUM_SERIALIZATION(cacher_factors.h)
+GENERATE_ENUM_SERIALIZATION(cacher_robot_detector.h)
+GENERATE_ENUM_SERIALIZATION(captcha_fury_check.h)
+GENERATE_ENUM_SERIALIZATION(captcha_key.h)
+GENERATE_ENUM_SERIALIZATION(captcha_request.h)
+GENERATE_ENUM_SERIALIZATION(captcha_stat.h)
+GENERATE_ENUM_SERIALIZATION(cbb_banned_ip_holder.h)
+GENERATE_ENUM_SERIALIZATION(classify_experiments.h)
+GENERATE_ENUM_SERIALIZATION(client_type.h)
+GENERATE_ENUM_SERIALIZATION(disabling_stat.h)
+GENERATE_ENUM_SERIALIZATION(environment.h)
+GENERATE_ENUM_SERIALIZATION(json_config.h)
+GENERATE_ENUM_SERIALIZATION(many_requests.h)
+GENERATE_ENUM_SERIALIZATION(market_stats.h)
+GENERATE_ENUM_SERIALIZATION(match_rule_lexer.h)
+GENERATE_ENUM_SERIALIZATION(partners_captcha_stat.h)
+GENERATE_ENUM_SERIALIZATION(req_types.h)
+GENERATE_ENUM_SERIALIZATION(request_params.h)
+GENERATE_ENUM_SERIALIZATION(robot_detector.h)
+GENERATE_ENUM_SERIALIZATION(robot_set.h)
+GENERATE_ENUM_SERIALIZATION(server_error_stats.h)
+GENERATE_ENUM_SERIALIZATION(server_exceptions_stat.h)
+GENERATE_ENUM_SERIALIZATION(stat.h)
+GENERATE_ENUM_SERIALIZATION(unified_agent_log.h)
+GENERATE_ENUM_SERIALIZATION(user_metric.h)
+
+END()

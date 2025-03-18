@@ -1,0 +1,114 @@
+Расшифровка работы скрипта extract_eventlog_data.py
+
+STEP 1
+    MAP: mapSetKeyTokenFilterRandom()
+    INPUT: antirobot/eventlog_b
+    OUTPUT: (1)
+
+    Собираем в одну таблицу все события, связанные с капчей, если токен начинается на '1' или '2' (случайная капча)
+
+    CAPTCHA_EVENTS = set([EV_CAPTCHA_REDIRECT, EV_CAPTCHA_SHOW, EV_CAPTCHA_CHECK, EV_CAPTCHA_IMAGE_SHOW])
+
+    Результирующая таблица:
+        token | timestamp | event  (1)
+
+STEP 2
+    REDUCE: reduceExtractGoodRandomCaptchaReqids()
+    INPUT: (1)
+    OUTPUT: (2)
+
+    Собираем CaptchaData
+
+    Результирующая таблица:
+        reqid | 'CAPTCHA' | {uidStr | ip | ts | <CaptchaData>}   (2)
+
+        где <CaptchaData>:
+            wasShow | wasImageShow | wasAttempt | wasSuccess | wasEnteredHiddenImage
+
+STEP 3
+    MAP: mapAntirobotFactorsSetKeyReqid()
+    INPUT: antirobot/eventlog_b
+    OUTPUT: append to (2)
+
+    Сбор факторов
+
+    Результирующая таблица:
+        reqid | 'FACTORS' | <factors_event>  (2 append)
+
+        где <factors_event> событие TAntirobotFactors
+
+STEP 4
+    REDUCE: reduceJoinCaptchaDataAndFactors
+    INPUT: (2)
+    OUTPUT: (3)
+
+    Объединение данных по капче и факторов полученных на шаге 2 и 3
+
+    Результирующая таблица:
+        uid | timestamp | <captcha_factors_data>  (3)
+
+        где <captcha_factors_data> может быть двух видов:
+            1. reqid | ip | uid | wasXmlSearch | <CaptchaData> | isRobot | factorsVersion | <factors>
+            2. reqid | ip | uid | 0            | <CaptchaData> | 0
+
+            вариант 1) если для reqid'а было событие с факторами
+            вариант 2) в противном случае
+
+        раскрывая <CaptchaData> как {wasShow | wasImageShow | wasAttempt | wasSuccess | wasEnteredHiddenImage}
+        получаем:
+
+        <captcha_factors_data> (т.е record.value)
+            0       1    2     3              4         5              6            7            8                       9         10               11
+            reqid | ip | uid | wasXmlSearch | wasShow | wasImageShow | wasAttempt | wasSuccess | wasEnteredHiddenImage | isRobot | factorsVersion | <factors>
+
+
+STEP 5
+    MAP: mapRandomRobotRemoveSetKeyUid()
+    INPUT: antirobot/eventlog_b
+    OUTPUT: append to (3)
+
+    Извлекаем записи RANDOM_ROBOT_REMOVE и добавляем их в таблицу (3)
+
+    Результирующая таблица:
+        uid | timestamp | 'RANDOM_ROBOT_REMOVE'     (3 append)
+
+
+STEP 6
+    MAP: mapCountRandomCaptchaRedirectsOfUid()
+    INPUT: antirobot/eventlog_b
+    OUTPUT: (4)
+
+    Извлекаем события редиректов и random_robot_remove
+
+    1) uid | timestamp | 'RANDOM_CAPTHCHA_REDIRECT'
+    2) uid | timestamp | 'RANDOM_ROBOT_REMOVE'
+
+STEP 7
+    REDUCE: reduceCountRandomCaptchaRedirectsOfUid()
+    INPUT: (4)
+    OUTPUT: append to (3)
+
+    Считаем редиректы и события RANDOM_ROBOT_REMOVE для uid, и добавляем их в таблицу (3)
+
+    Результирующая таблица:
+        uid | '0000 NUM_REDIRECTS | numRedir numRemovals
+
+STEP 8
+    REDUCE: reduceExtractCorrectReqsFromUid()
+    INPUT: (3)
+    OUTPUT: (5)
+
+    Формируем финальную таблицу с факторами и данными по капче
+
+    Результирующая таблица:
+        reqid | 'RANDOM' | <data>
+
+        где <data>:
+            ip | uid | <flags> | <numRedir> | factorsVersion | <factors>
+
+            или, раскрывая <flags>:
+            ip | uid | wasXmlSearch | wasShow | wasImageShow | wasAttempt | wasSuccess | wasEnteredHiddenImage | isRobot | numRedir | numRemoval | factorsVersion | <factors>
+
+    После чтения таблицы на выходе получим следующий формат:
+
+    reqid | ip | uid | wasXmlSearch | wasShow | wasImageShow | wasAttempt | wasSuccess | wasEnteredHiddenImage | isRobot | numRedir | numRemoval | factorsVersion | <factors>

@@ -1,0 +1,20 @@
+OWNER(g:antirobot)
+
+RECURSE(
+    access_log
+    cbb_add_service_flags
+    ddos_detector
+    ddos_detector_go
+    genaccessip
+    genaccessip/ut
+    gencfg
+    genits
+    learn
+    log_viewer
+    metrics
+    nanny_release
+    parsers
+    prepare_entity_info
+    send_mail
+    utils
+)

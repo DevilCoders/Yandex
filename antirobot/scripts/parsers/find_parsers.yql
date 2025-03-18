@@ -1,0 +1,29 @@
+-- Этот скрипт используется в https://nirvana.yandex-team.ru/project/antirobot Parser fight
+-- (пример запуска: https://nirvana.yandex-team.ru/flow/959d9a97-448b-47b3-a246-ef92257d5b6d/56f748e4-b8f9-49d8-8a4c-f7bbf69dd076/graph/FlowchartEndpoint/e57e2e50-55d7-45c5-9c62-acd2311169fd )
+
+$daemon = {{input1->table_quote()}};
+$tls = {{input2->table_quote()}};
+$bans = {{output1->table_quote()}};
+
+INSERT INTO $bans WITH TRUNCATE
+SELECT  user_ip,
+        Ip::IsIPv4(Ip::FromString(user_ip))  as is_ipv4,
+        COUNT(*) as amount
+FROM $daemon as daemon
+LEFT JOIN $tls as tls
+ON Yson::ConvertToString(daemon._rest['ja3']) == tls.ja3
+WHERE   service == 'web' AND -- web service
+        ident_type LIKE '2-%' AND -- only with spravka identification
+        matrixnet > threshold AND  -- enemy by threshold
+        web_req_count < 20 AND
+        may_ban == true AND
+        ip_list == "" -- not in whitelist
+GROUP BY
+            IF(Ip::IsIPv4(Ip::FromString(daemon.user_ip)),
+                daemon.user_ip,
+                Ip::ToString(Ip::GetSubnet(Ip::FromString(daemon.user_ip), 64))
+            ) as user_ip
+HAVING
+       (COUNT(*) > {{param["threshold_bad_request"]}} AND CAST(COUNT_IF(tls.robotness == 1) as Double)/ COUNT(*) > {{param["bad_part_limit"]}}) OR
+       (COUNT(*) > {{param["threshold_sly_robot"]}} AND CAST(COUNT_IF(tls.robotness is NULL or tls.robotness != 0) as Double)/ COUNT(*) > {{param["bad_part_limit"]}})
+;

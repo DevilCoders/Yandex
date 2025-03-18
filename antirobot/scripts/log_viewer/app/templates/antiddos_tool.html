@@ -1,0 +1,121 @@
+{% extends 'main.html' %}
+
+{% block page_header %}
+{{ super() }}
+{% endblock %}
+
+{% block header %}
+    <h2>Call antiddos_tool to check antiddos rules</h2>
+    <h4>See syntax <a target=_blank href="https://wiki.yandex-team.ru/jandekspoisk/sepe/antirobotonline/docs/antiddos-tool/">here</a></h4>
+{% endblock %}
+
+{% block content %}
+    <div class="flex-container">
+        <div class="col1">
+            <form id="rule_form" method="POST" name='check_addos'>
+                One or more rules to check:
+                <div>
+                <textarea class="form-control" cols="150" id="id_rules" name="rules" rows="10">{{ rule }}</textarea>
+                </div>
+
+                <input id=id_rule_submit name=submit type=submit value="Parse!">
+            </form>
+        </div>
+
+        <div class="col2">
+            <h5>Checking result:</h5>
+            <div id="id_parse_result"></div>
+        </div>
+    </div>
+
+    <p>
+
+    <div class="flex-container">
+        <div class="col1">
+            <div>
+                The following request will be checked with the rules. Editable.
+            </div>
+            <form id="request_form" method="POST" name='check_addos'>
+                <div>
+                    <textarea class="form-control" cols="150" id="id_request" name="request" rows="20">{{ request }}</textarea>
+                </div>
+
+                <input id=id_request_submit name=submit type=submit value="Check!">
+            </form>
+        </div>
+        <div class="col2">
+            <h5>Checking result:</h5>
+            <div id="id_check_result"></div>
+            <div>
+            <div id="id_match_result" class="strong"></div>
+        </div>
+    </div>
+
+<script>
+    $(document).ready(function() {
+        const parse_ok = "The rule(s) is OK!"
+        const parse_fail = "The rule(s) is invalid:"
+
+        let form = $('#rule_form')
+
+        form.submit(function(e) {
+            e.preventDefault(); // avoid to execute the actual submit of the form.
+
+            let parse_result = $('#id_parse_result')
+            parse_result.addClass('loading').html('')
+
+            $.ajax({
+                type: "POST",
+                url: {{ url_for('ajax_check_addos_rule')|tojson }}, // the script where you handle the form input.
+                data: form.serialize(), // serializes the form's elements.
+                success: function(data) {
+                    parse_result.removeClass('loading')
+                    if (data.success) {
+                        $("#id_parse_result").html(parse_ok)
+                    } else {
+                        $("#id_parse_result").html(parse_fail + '<br>' + data.message);
+                    }
+                },
+                fail: function() {
+                    parse_result.html("Server call has failed.")
+                }
+            });
+        })
+
+        let request_form = $('#request_form')
+        request_form.submit(function(e) {
+            e.preventDefault() // avoid to execute the actual submit of the form.
+
+            let fdata = new FormData()
+            fdata.append("rules", $("#id_rules").val())
+            fdata.append("request", $("#id_request").val())
+
+            let match_result = $('#id_match_result')
+            match_result.addClass('loading').html('')
+
+            $.ajax({
+                type: "POST",
+                url: {{ url_for('ajax_check_addos_request')|tojson }},
+                data: fdata,
+                processData: false,
+                contentType: false,
+                success: function(data) {
+                    match_result.removeClass('loading')
+
+                    if (data.success) {
+                        $("#id_check_result").html("")
+                        match_result.html(data.matched != 0 ? "The request matches!" : "Doesn't match.")
+                    } else {
+                        $("#id_check_result").html("Something went wrong: " + '<br>' + data.message);
+                    }
+                },
+                fail: function() {
+                    match_result.removeClass('loading')
+                    match_result.html("Server call has failed.")
+                }
+            })
+        })
+    })
+</script>
+
+{% endblock %}

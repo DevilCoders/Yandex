@@ -1,0 +1,49 @@
+USE hahn;
+
+DECLARE $last_logs_num AS Int64;
+DECLARE $logs_refix AS String;
+DECLARE $regex AS String;
+DECLARE $results_limit AS Int64;
+
+--- UDF: antirobot/tools/antirobot_eventlog_udf
+PRAGMA File('libantirobot_eventlog_udf.so', 'https://proxy.sandbox.yandex-team.ru/1584601758');
+PRAGMA udf('libantirobot_eventlog_udf.so');
+
+$script = @@
+from antirobot.scripts.antirobot_eventlog import event
+from antirobot.scripts.antirobot_eventlog.event import Event
+
+def get_request(event_str):
+    EV_REQUEST_DATA = event.EV_TO_ID['TRequestData']
+    if not event_str:
+        return None
+    e = Event(str(event_str), set([EV_REQUEST_DATA]))
+    if not e:
+       return None
+    return '\n'.join(e.Event.Data.splitlines())
+@@;
+
+$udf = CustomPython2::get_request(Callable<(String?)->String?>, $script);
+
+$log_tables = (
+    SELECT AGGREGATE_LIST(Name)
+    FROM (
+        SELECT Path as Name
+        FROM FOLDER($logs_refix)
+        WHERE Type = 'table'
+        ORDER BY Name
+        LIMIT $last_logs_num
+    )
+);
+
+DEFINE ACTION $get_requests($input_table, $regex) AS
+    SELECT request
+    FROM (
+        SELECT $udf(`event`) AS request
+        FROM $input_table
+    )
+    WHERE request IS NOT NULL AND request LIKE $regex
+    LIMIT $results_limit;
+END DEFINE;
+
+EVALUATE FOR $table IN $log_tables DO $get_requests($table, $regex);
