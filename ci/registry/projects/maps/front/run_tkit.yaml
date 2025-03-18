@@ -1,0 +1,58 @@
+title: Run TKit
+description: Runs your tkit config in CI environment (docker, docker-compose, nvm, pgmigrate included)
+maintainers: maps-front-infra
+sources: /ci/tasklet/registry/common/misc/run_command
+auto-rollback-mode: EXECUTE
+
+tasklet:
+  implementation: RunCommand
+
+requirements:
+  ram: 1GB
+  disk: 20GB
+  sandbox:
+    client_tags: GENERIC & LINUX & SSD & LXC
+    container_resource: 3017678514
+    dns: dns64
+    privileged: true
+
+parameters:
+  config:
+    arc_mount_config:
+      enabled: true
+    logs_config:
+      stdout_ci_badge: true
+      redirect_stderr_to_stdout: true
+    cmd_line: |
+      set -eo pipefail
+      export ACTUAL_CI_SCRIPT_PATH="$${CI_SCRIPT_PATH:-tools/ci.js}"
+      export ACTUAL_DOCKER_REGISTRY_LOGIN="$${DOCKER_REGISTRY_LOGIN:-zomb-podrick}"
+      export ACTUAL_DOCKER_REGISTRY_TOKEN="$${DOCKER_REGISTRY_TOKEN:-$QTOOLS_TOKEN}"
+      echo '==== Preparing environment globally ===='
+      . $HOME/.nvm/nvm.sh
+      if [[ -n "$ACTUAL_DOCKER_REGISTRY_TOKEN" ]]; then
+        for i in {1..5}; do
+          if docker login -u "$ACTUAL_DOCKER_REGISTRY_LOGIN" --password-stdin registry.yandex.net <<< "$ACTUAL_DOCKER_REGISTRY_TOKEN"; then break; fi
+          sleep 5
+        done
+      fi
+      wget "https://crls.yandex.net/allCAs.pem" -O $HOME/allCAs.pem
+      export NODE_EXTRA_CA_CERTS="$HOME/allCAs.pem"
+      echo '#!/bin/sh' > /usr/local/bin/jq
+      echo 'ya tool jq "$@"' >> /usr/local/bin/jq
+      chmod +x /usr/local/bin/jq
+      taskId="$(node -p 'process.argv[1].match(/SB:TASKLET_RUN_COMMAND:(\d*)/)[1]' "$GSID")"
+      curl -s https://sandbox.yandex-team.ru/api/v1.0/task/$taskId/context | jq '.initial_input_parameters.context' 1> /root/context.json 2> /dev/null
+      export CONTEXT_PATH=/root/context.json
+      export PATH=$PATH:$PWD/maps/front/tools/mmm/bin
+      echo '==== Preparing environment for project ===='
+      cd ${context.config_info.dir}
+      nvm install
+      npm config set registry https://npm.yandex-team.ru
+      npm i @yandex-int/tkit @yandex-int/maps-stand-tools $${ADDITIONAL_PACKAGES} --no-package-lock --no-save
+      echo '==== Running CI itself ==='
+      node "$ACTUAL_CI_SCRIPT_PATH"
+
+versions:
+  stable: 2876764261
+  testing: 2876764261

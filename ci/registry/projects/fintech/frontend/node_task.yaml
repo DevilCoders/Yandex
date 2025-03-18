@@ -1,0 +1,53 @@
+title: Run Node Task
+description: Run fintech Node.js task in Arcadia CI
+maintainers: fintech-frontend-infra
+sources: /ci/tasklet/registry/common/misc/run_command
+auto-rollback-mode: EXECUTE
+
+tasklet:
+  implementation: RunCommand
+
+versions:
+  stable: 2876764261
+  testing: 2876764261
+
+requirements:
+  ram: 1GB
+  disk: 20GB
+  sandbox:
+    client_tags: GENERIC & LINUX & SSD & LXC
+    # https://github.yandex-team.ru/search-interfaces/trendbox-ci/blob/master/docs/formats/0.2/recipes/build-lxc.md
+    # https://sandbox.yandex-team.ru/task/1063932817/view
+    # Node: 14.15.0
+    # PNPM: 6.x
+    container_resource: 2398593458
+    dns: dns64
+    privileged: true
+
+parameters:
+  config:
+    arc_mount_config:
+      enabled: true
+    logs_config:
+      stdout_ci_badge: true
+      redirect_stderr_to_stdout: true
+    cmd_line: |
+      set -eux
+
+      export PATH=/usr/local/bin:/usr/bin:$PATH
+
+      uname -a
+      echo -n 'python'; python --version
+      echo -n 'python3'; python3 --version
+      echo -n 'Node '; node --version
+      echo -n 'pnpm '; pnpm --version
+
+      curl -o $HOME/allCAs.pem "https://crls.yandex.net/allCAs.pem"
+      export NODE_EXTRA_CA_CERTS="$HOME/allCAs.pem"
+
+      cd ${context.config_info.dir}
+
+      pnpm i --frozen-lockfile --unsafe-perm
+
+      eval "$NODE_COMMAND"
+

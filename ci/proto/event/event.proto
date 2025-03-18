@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package ci;
+option java_package = "ru.yandex.ci.engine.event";
+option java_multiple_files = true;
+
+import "ci/tasklet/common/proto/service.proto";
+import "ci/proto/common.proto";
+
+// При любых изменениях этих событий необходимо пересобрать logfeller/configs/parsers/ci-events.desc :
+// ./update-logfeller-parser.sh
+// и закоммитить файл
+
+message Event {
+    EventType event_type = 1;
+    uint64 timestamp_millis = 2;
+
+    string launch_id = 3;
+    int32 launch_number = 4;
+    ArcRevision previous_revision = 5;
+    ArcRevision target_revision = 6;
+    ConfigInfo config_info = 7;
+    LaunchPullRequestInfo launch_pull_request_info = 8;
+
+    // Уникальный идентификатор запущенного flow, доступен только после создания - в статусах ET_RUNNING и далее
+    string flow_launch_id = 11;
+
+    // Только для ET_CREATED
+    bool delayed = 9;
+
+    // Только для ET_FINISHED
+    bool success = 10;
+
+    // теги из секции a.yaml ci.releases[releaseId].tags для релизных процессов
+    // и ci.actions[actionId].tag для экшенов
+    repeated string tags = 12;
+
+    ci.common.FlowType flow_type = 13;
+    
+    // Уникальный идентификатор flow в рамках конфигурационного файла
+    string flow_id = 14;
+}
+
+enum EventType {
+    ET_UNKNOWN = 0;
+
+    // Flow была создан. Также содержит информацию о том был ли запуск отложен.
+    ET_CREATED = 1;
+
+    // Flow начал выполняться.
+    ET_RUNNING = 2;
+
+    // Во время выполнения flow произошли ошибки.
+    ET_RUNNING_WITH_ERRORS = 3;
+
+    // Flow ожидает ручного подтверждения задачи.
+    ET_WAITING_FOR_MANUAL_TRIGGER = 4;
+
+    // Flow ожидает пока освободится стадия релиза.
+    ET_WAITING_FOR_STAGE = 5;
+
+    // Flow ожидает запуска по расписанию.
+    ET_WAITING_FOR_SCHEDULE_EVENT = 6;
+
+    // Flow не выполняется.
+    ET_IDLE = 7;
+
+    // Flow завершился. Содержит информацию об успешном или неуспешном завершении flow.
+    ET_FINISHED = 8;
+
+    // Flow был отменен
+    ET_CANCELED = 9;
+
+    // Flow завершен и ожидает очистки
+    ET_WAITING_FOR_CLEANUP = 10;
+
+    // Flow выполняет очистку
+    ET_CLEANING = 11;
+}

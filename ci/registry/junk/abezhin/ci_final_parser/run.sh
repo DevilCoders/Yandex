@@ -1,0 +1,1 @@
+./ci_final_parser run --local --input "$(cat input.json)" CIFinalize

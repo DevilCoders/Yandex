@@ -1,0 +1,225 @@
+syntax = "proto3";
+
+package frontend;
+
+option java_package = "ru.yandex.ci.api.internal.frontend.release";
+
+import "ci/proto/common.proto";
+import "ci/proto/frontend_flow_api.proto"; // TODO: <-- strange dependency, only for LaunchState
+
+service ReleaseService {
+
+    rpc GetReleaseProcessStateVersion (GetReleaseProcessStateVersionRequest) returns (GetReleaseProcessStateVersionResponse);
+
+    rpc GetReleases (GetReleasesRequest) returns (GetReleasesResponse);
+
+    rpc GetRelease (GetReleaseRequest) returns (GetReleaseResponse);
+
+    rpc GetCommits (GetCommitsRequest) returns (GetCommitsResponse);
+
+    rpc GetCommitsToCherryPick (GetCommitsToCherryPickRequest) returns (GetCommitsResponse);
+
+    // Returns list of known flows to start release with
+    rpc GetReleaseFlows (GetReleaseFlowsRequest) returns (GetReleaseFlowsResponse);
+
+    rpc StartRelease (StartReleaseRequest) returns (StartReleaseResponse);
+
+    rpc StartRollbackRelease (StartRollbackReleaseRequest) returns (StartReleaseResponse);
+
+    rpc CancelRelease (CancelReleaseRequest) returns (CancelReleaseResponse);
+
+    rpc UpdateAutoReleaseSettings (UpdateAutoReleaseSettingsRequest) returns (UpdateAutoReleaseSettingsResponse);
+
+    rpc ChangeDisplacementState (DisplacementChangeRequest) returns (DisplacementChangeResponse);
+
+}
+
+message GetReleaseProcessStateVersionRequest {
+    ci.common.ReleaseProcessId release_process_id = 1;
+    int64 known_state_version = 2;
+}
+
+message GetReleaseProcessStateVersionResponse {
+    ci.common.ReleaseProcessId release_process_id = 1;
+    int64 state_version = 2;
+    bool updated = 3;
+}
+
+message GetReleasesRequest {
+    ci.common.ReleaseProcessId release_process_id = 1;
+    int32 offset_number = 2;
+    int32 limit = 3;
+
+    bool dont_return_cancelled = 999; // temporary flag. Remove after https://st.yandex-team.ru/DEVTOOLSUI-368
+}
+
+message GetReleasesResponse {
+    repeated ci.common.ReleaseLaunch releases = 1;
+    ci.common.Offset offset = 2;
+}
+
+message GetReleaseRequest {
+    // Порядок поиска:
+    // 1) Если передан id.number - ищем по прямому ключу
+    // 2) Если передан version.major и version.minor - ищем по комбинации (проверяя, что существует только один launch)
+    // 3) Если передан version.major - ищем по major
+    // 4) Если передан version.full - ищем по full
+    // 5) Не задано ничего - падаем
+
+    ci.common.ReleaseLaunchId id = 1;
+    ci.common.Version version = 2;
+}
+
+message GetReleaseResponse {
+    ci.common.ReleaseLaunch release = 1;
+    LaunchState launch_state = 2;
+    ci.common.Project project = 3;
+    ci.common.ReleaseState release_state = 4;
+}
+
+message GetCommitsRequest {
+    oneof id {
+        // deprecated: use free_commits
+        ci.common.ReleaseProcessId release_process_id = 1 [deprecated = true]; // For unattached to launch commits
+
+        ci.common.ReleaseLaunchId release_launch_id = 2; // For release commits
+        ci.common.BranchId free_commits = 6;   // For unattached (free) to launch commits in branch
+        ci.common.BranchId branch_commits = 7; // For commits captured in trunk by branch
+    }
+
+    // запрос коммитов из релизной ветки, может возвращать коммиты в ветке + хвост коммитов из целевой ветки (транк)
+    // branch и offset_commit_number для загрузки следующей пачки
+    // должны соответствовать тому, что есть в последнем коммите текущей пачки.
+    // deprecated: use offset
+    int64 offset_commit_number = 3 [deprecated = true];
+    int32 limit = 4;
+
+    // next field from GetCommitsResponse
+    CommitOffset offset = 5;
+}
+
+message GetCommitsToCherryPickRequest {
+    ci.common.BranchId target_branch = 1;
+    string source_branch = 2;
+
+    int32 limit = 3;
+    // next field from GetCommitsResponse
+    CommitOffset offset = 4;
+}
+
+message GetCommitsResponse {
+    reserved 1;
+    reserved 'commits';
+
+    ci.common.Offset offset = 2;
+    repeated ci.common.ReleaseCommit release_commits = 3;
+    ci.common.ReleaseCommit restartable_release_commit = 5;
+
+    CommitOffset next = 4;
+}
+
+message CommitOffset {
+    string branch = 1;
+    int64 number = 2;
+}
+
+message CancelReleaseRequest {
+    ci.common.ReleaseLaunchId id = 1;
+    string reason = 2;
+}
+
+message CancelReleaseResponse {
+    ci.common.ReleaseLaunch release = 1;
+}
+
+message ConfirmReleaseRequest {
+    repeated string stages = 1;
+}
+
+message RollbackReleaseRequest {
+    string id = 1;
+}
+
+message GetReleaseFlowsRequest {
+    ci.common.ReleaseProcessId release_process_id = 1;
+
+    // Обязательный - мы больше не поддерживаем получение списка flow без указания версии конфигурации
+    ci.common.OrderedArcRevision config_revision = 4;
+
+    // Передается в случае запуска rollback релиза и не должен передаваться в случае обычных релизов
+    // Этот релиз не может быть другим FT_ROLLBACK релизом
+    ci.common.ReleaseLaunchId rollback_launch = 5;
+}
+
+message GetReleaseFlowsResponse {
+    // Список flow для запуска (первым всегда идет flow по умолчанию - соответствующий trunk-у)
+    repeated ci.common.FlowDescription flows = 1;
+
+    // Есть ли у этого запуска настройки вытеснения, значение аналогично полю в сообщении ReleaseLaunch
+    bool has_displacement = 2;
+
+    // Включено ли вытеснение по умолчанию (если оно есть)
+    bool displacement_enabled = 3;
+}
+
+message StartReleaseRequest {
+    ci.common.ReleaseProcessId release_process_id = 1;
+    // deprecated: use branch and commit instead
+    // DO NOT USE: WILL NOT WORK WITH RELEASE BRANCHES
+    ci.common.OrderedArcRevision revision = 2 [deprecated = true];
+    bool cancel_others = 3;
+    bool prevent_displacement = 12;
+    ci.common.OrderedArcRevision config_revision = 4; //Null for last configuration
+
+    string branch = 5;
+    ci.common.CommitId commit = 6;
+
+    // Flow, с которым нужно запустить релиз
+    // Если не передан, то будет использован flow по умолчанию
+    ci.common.FlowProcessId flow_process_id = 7;
+    // Тип запускаемого flow
+    ci.common.FlowType flow_type = 8;
+
+    // Если flow_type = FT_ROLLBACK, то поле обязательное - оно указывает на релиз,
+    // откуда мы должны скопировать все созданные артефакты. Этот релиз не может быть другим FT_ROLLBACK релизом
+    // Для всех остальных flow_type-ов не должен быть заполнен
+    ci.common.ReleaseLaunchId rollback_launch = 9;
+
+    // Текстовое описание причины запуска релиза (любого типа)
+    string launch_reason = 10;
+
+    ci.common.FlowVars flow_vars = 11;
+}
+
+message StartReleaseResponse {
+    ci.common.ReleaseLaunch release_launch = 1;
+}
+
+message StartRollbackReleaseRequest {
+    ci.common.ReleaseLaunchId rollback_launch = 1;
+    ci.common.FlowProcessId flow_process_id = 2;
+    ci.common.OrderedArcRevision config_revision = 6; // Null to use default config, it should be null almost always
+    string rollback_reason = 3;
+    bool cancel_others = 4;
+    bool disable_autorelease = 5;
+}
+
+
+message UpdateAutoReleaseSettingsRequest {
+    ci.common.ReleaseProcessId release_process_id = 1;
+    bool enabled = 2;
+    string message = 3;
+}
+
+message UpdateAutoReleaseSettingsResponse {
+    ci.common.AutoReleaseState auto = 1;
+}
+
+message DisplacementChangeRequest {
+    ci.common.ReleaseLaunchId id = 1;
+    ci.common.DisplacementState state = 2;
+}
+
+message DisplacementChangeResponse {
+    ci.common.ReleaseLaunch release = 1;
+}

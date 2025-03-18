@@ -1,0 +1,75 @@
+service: strust
+title: Trust.Gateway
+ci:
+  secret: sec-01eqdg0td3374vm67tcty525r4
+  runtime:
+    sandbox-owner: TRUST
+  triggers:
+    - on: pr
+      flow: trust-gateway-test-flow
+  releases:
+    trust-gateway-release:
+      title: Trust.Gateway release
+      flow: trust-gateway-release-flow
+      stages:
+        single:
+          title: Single
+  flows:
+    trust-gateway-release-flow:
+      title: Trust.Gateway release
+      jobs:
+        build: &Build
+          title: Build
+          task: common/arcadia/ya_package
+          stage: single
+          input:
+            packages: trust/gateway/package/package.json
+            resource_type: TRUST_GATEWAY_APP
+            package_type: docker
+            docker_image_repository: trust
+            docker_push_image: true
+            docker_user: robot-trust-ci
+            docker_token_vault_name: docker.registry.token
+            docker_build_network: host
+            release_to_ya_deploy: true
+        development-deploy:
+          needs: build
+          title: Deploy to development
+          task: common/deploy/release
+          manual: false
+          input:
+            config:
+              sandboxResourceType: TRUST_GATEWAY_APP
+              commonReleaseData:
+                releaseStage: unstable
+                releaseNotes: Release from CI
+              stageName: trust-gateway
+        testing-deploy:
+          needs: development-deploy
+          title: Deploy to testing
+          task: common/deploy/release
+          manual: false
+          input:
+            config:
+              sandboxResourceType: TRUST_GATEWAY_APP
+              commonReleaseData:
+                releaseStage: testing
+                releaseNotes: Release from CI
+              stageName: trust-gateway
+        production-deploy:
+          needs: testing-deploy
+          title: Deploy to production
+          task: common/deploy/release
+          manual: true
+          input:
+            config:
+              sandboxResourceType: TRUST_GATEWAY_APP
+              commonReleaseData:
+                releaseStage: stable
+                releaseNotes: Release from CI
+              stageName: trust-gateway
+    trust-gateway-test-flow:
+      title: Trust.Gateway test
+      jobs:
+        build:
+          <<: *Build

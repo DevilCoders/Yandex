@@ -1,0 +1,216 @@
+service: market
+title: Hello World Project
+ci:
+  secret: sec-XXXXXX
+  # Заголовок запуска в UI для релизов формируется из поля ci.flow[].title
+  # это текущее поведение по-умолчанию, которому соответствует значение release-title-source: flow
+  # значение release указывает, что заголовок для запуска релиза нужно брать из самого релиза ci.releases[].title
+  # Предполагается, что пользователи не будут использовать это поле явно. Оно нужно только для фиксации
+  # у существующих пользователей, перед тем как поведение по-умолчанию будет изменено на release.
+  release-title-source: release
+  runtime:
+    sandbox:
+      owner: MARKET
+      kill-timeout: 1h 15m
+      notifications:
+        - statuses: [ TIMEOUT, FAILURE, EXCEPTION ]
+          transport: telegram
+          recipients:
+            - andreevdm
+            - pochemuto
+
+  config-edit-approvals:
+    - service: ci-1
+    - service: ci-1
+      scope: s-1
+
+  permissions:
+    default-permissions-for-owner: []
+    start-flow:
+      - service: ci-1
+        scope: s-1
+    start-hotfix:
+      - service: ci-2
+        scope: s-2
+    cancel-flow:
+      - service: ci-3
+        scope: s-3
+    rollback-flow:
+      - service: ci-4
+        scope: s-4
+    add-commit:
+      - service: ci-5
+        scope: s-5
+    create-branch:
+      - service: ci-6
+        scope: s-6
+    start-job:
+      - service: ci-7
+        scope: s-7
+    kill-job:
+      - service: ci-8
+        scope: s-8
+    skip-job:
+      - service: ci-9
+        scope: s-9
+    manual-trigger:
+      - service: ci-10
+        scope:
+          - s-10-1
+          - s-10-2
+    toggle-autorun:
+      - service: ci-11
+        scope: s-11
+
+  releases:
+    my-release:
+      title: My Release
+      flow: my-flow
+      auto:
+        conditions:
+          - min-commits: 3
+            schedule:
+              days: MON, TUE, THU-FRI
+              start: "15:00"
+              end: "20:00"
+            since-last-release: 30m
+      filters:
+        - st-queues: [ MARKET ]
+          sub-paths: [ '**.java', 'ya.make' ]
+      stages:
+        build:
+          title: Build
+        deploy:
+          title: Testing
+      tags: [ my-release, java-release ] # теги будут добавлены к событиям в Juggler и YT
+      permissions:
+        default-permissions-for-owner: release
+        start-flow:
+          - service: ci
+
+  triggers:
+    - on: commit
+      flow: my-flow
+      filters:
+        - st-queues: [ FEI, DEVTOOLS ]
+          author-services: [ ci, testenv ]
+        - st-queues: [ MARKET ]
+          sub-paths: [ '**.java', 'ya.make' ]
+          not-sub-paths: 'ignored/**'
+
+    - on: commit
+      flow: my-flow
+
+  actions:
+    pr-for-my-flow:
+      flow: my-flow
+      triggers:
+        - on: pr
+          into: release-branch
+      cleanup:
+        delay: 1s
+        on-status:
+          - WAITING_FOR_MANUAL_TRIGGER
+        conditions:
+          - reasons: new-diff-set
+            interrupt: true
+          - reasons: pr-discarded
+            interrupt: true
+          - reasons: pr-merged # Default configuration, all reasons have this configuration by default
+            cleanup: true
+            interrupt: false
+          - reasons: finish
+            cleanup: false
+            interrupt: false
+      runtime:
+        # можно переопределить поля ci.runtime для любого action
+        sandbox:
+          owner: MARKET-ACTIONS
+          # остальные поля будут использоваться из корневого ci.runtime
+      tags: [ my-action, java-action ] # теги будут добавлены к событиям в Juggler и YT
+      permissions:
+        default-permissions-for-owner:
+          - pr
+          - commit
+        start-flow:
+          - service: ci
+            scope: administration
+      max-active: 4
+      max-start-per-minute: 16
+      binary-search:
+        min-interval-duration: 4h
+        min-interval-size: 14
+
+  flows:
+    my-flow:
+      title: My Flow
+      description: My Flow description
+      jobs:
+        echo-hello-world:
+          title: Print Hello World
+          task: common/misc/run_command
+          if: ${context.flow_triggered_by == 'robot-ci'}
+          stage: build
+          input:
+            config:
+              cmd_line: "echo 'Hello world!'"
+
+        deploy:
+          title: Deploy To Testing
+          description: Job description
+          task: common/deploy/release
+          stage: deploy
+          version: prestable
+          needs: echo-hello-world
+          kill-timeout: 40m
+          input:
+            config:
+              sandboxResourceType: MY_APP
+              commonReleaseData:
+                releaseStage: testing
+                releaseNotes: Release from CI
+              stageName: my-app-testing
+
+          attempts:
+            max: 4
+            backoff: exp
+            initial-backoff: 15s
+            max-backoff: 1h 3m 10s
+            if-output: ${output_params.value > 1}
+            sandbox:
+              reuse-tasks: true
+              use-attempts: 4
+              exclude-statuses:
+                - FAILURE
+                - STOPPED
+
+          requirements:
+            disk: 15GB
+            cores: 2
+            ram: 4 GB
+            tmpfs: 300 MB
+
+            sandbox:
+              client_tags: SSD
+              container_resource: 9
+              porto_layers:
+                - 10
+                - 11
+              semaphores:
+                acquires:
+                  - name: sample-semaphore
+                    capacity: 1
+                    weight: 1
+                  - name: user-${context.flow_triggered_by}
+                release:
+                  - BREAK
+                  - FINISH
+              dns: dns64
+              host: sas1-1337
+              cpu_model: 'E5-2650 v2'
+              platform: linux_ubuntu_16.04_xenial
+              privileged: true
+              tcpdump_args: "-A 'tcp port 8080'"
+              priority:
+                class: BACKGROUND
+                subclass: LOW

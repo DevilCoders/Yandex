@@ -1,0 +1,1164 @@
+type: object
+required: [ "service", "title" ]
+$schema: "http://json-schema.org/draft-04/schema#"
+
+# 'autocheck', 'runtime', ... fields should be defined under 'ci' section. Check it with "not: anyOf: ..."
+not:
+  anyOf:
+    - required: [ "autocheck" ]
+    - required: [ "runtime" ]
+    - required: [ "secret" ]
+    - required: [ "releases" ]
+    - required: [ "flows" ]
+    - required: [ "triggers" ]
+    - required: [ "large-autostart" ]
+    - required: [ "fast-targets" ]
+    - required: [ "strong" ]
+
+properties:
+  service:
+    $ref: "#/definitions/abc_slug"
+  title:
+    $ref: "#/definitions/title"
+  sox:
+    type: object
+    additionalProperties: false
+    properties:
+      approval-scope:
+        $ref: "#/definitions/abc_slug"
+  ci:
+    type: object
+    additionalProperties: false
+    dependencies:
+      runtime: [ "secret" ]
+      secret: [ "runtime" ]
+      releases: [ "secret","runtime" ]
+      triggers: [ "secret","runtime" ]
+      flows: [ "secret","runtime" ]
+    properties:
+      secret:
+        $ref: "#/definitions/secret"
+      additional-secrets:
+        $ref: "#/definitions/id_list"
+      release-title-source:
+        $ref: "#/definitions/release_title_source"
+      permissions:
+        $ref: "#/definitions/permissions"
+      config-edit-approvals:
+        $ref: "#/definitions/permission_rule_list"
+      releases:
+        $ref: "#/definitions/releases"
+      requirements:
+        $ref: "#/definitions/requirements"
+      runtime:
+        $ref: "#/definitions/runtime_config"
+      autocheck:
+        $ref: "#/definitions/autocheck"
+      triggers: # DEPRECATED
+        $ref: "#/definitions/triggers"
+      actions:
+        $ref: "#/definitions/actions"
+      flows:
+        $ref: "#/definitions/flows"
+
+definitions:
+
+  autocheck:
+    type: object
+    additionalProperties: false
+    properties:
+      fast-targets:
+        $ref: "#/definitions/path_list"
+      fast-mode:
+        type: string
+        enum:
+          - "auto"
+          - "sequential"
+      large-sandbox-owner:
+        $ref: "#/definitions/short_string"
+      large-autostart:
+        oneOf:
+          - type: array
+            items:
+              $ref: "#/definitions/large_autostart"
+          - $ref: "#/definitions/large_autostart"
+          - type: array
+            items:
+              $ref: "#/definitions/large_autostart_simple"
+          - $ref: "#/definitions/large_autostart_simple"
+      native-sandbox-owner:
+        $ref: "#/definitions/short_string"
+      native-builds:
+        type: object
+        additionalProperties: false
+        patternProperties:
+          "^((\\w|-){0,255}[A-Za-z0-9])?$":
+            oneOf:
+              - type: array
+                items:
+                  $ref: "#/definitions/target_path"
+              - $ref: "#/definitions/target_path"
+      strong:
+        oneOf:
+          - type: boolean
+          - type: object
+            additionalProperties: false
+            properties:
+              abc-scopes:
+                oneOf:
+                  - type: array
+                    minItems: 1
+                    uniqueItems: true
+                    items:
+                      $ref: "#/definitions/abc_slug"
+                  - $ref: "#/definitions/abc_slug"
+
+
+  releases:
+    type: object
+    additionalProperties: false
+    patternProperties:
+      "^((\\w|-){0,255}[A-Za-z0-9])?$":
+        type: object
+        additionalProperties: false
+        required: [ "flow" ]
+        properties:
+          title:
+            $ref: "#/definitions/title"
+          description:
+            $ref: "#/definitions/description"
+          stages:
+            $ref: "#/definitions/stages"
+          flow:
+            $ref: "#/definitions/id"
+          flow-vars-ui:
+            $ref: "#/definitions/flow_vars_ui"
+          hotfix-flows:
+            oneOf:
+              - $ref: "#/definitions/flow_with_flow_vars"
+              - type: array
+                items:
+                  $ref: "#/definitions/flow_with_flow_vars"
+          rollback-flows:
+            oneOf:
+              - $ref: "#/definitions/rollback_flow_with_flow_vars"
+              - type: array
+                items:
+                  $ref: "#/definitions/rollback_flow_with_flow_vars"
+          filters:
+            type: array
+            items:
+              $ref: "#/definitions/filter"
+          auto:
+            $ref: "#/definitions/release_auto"
+          branches:
+            $ref: "#/definitions/release_branches"
+          start-version:
+            type: integer
+            minimum: 1
+          flow-vars:
+            type: object
+            additionalProperties: true
+          displacement-on-manual-start:
+            type: string
+            enum:
+              - "auto"
+              - "enabled"
+              - "disabled"
+          rollback-config: # DEPRECATED
+            type: object
+            additionalProperties: true
+          requirements:
+            $ref: "#/definitions/requirements"
+          runtime:
+            $ref: "#/definitions/runtime_config"
+          tags:
+            $ref: "#/definitions/short_string_list"
+          permissions:
+            $ref: "#/definitions/permissions"
+
+  stages:
+    anyOf:
+      - type: object
+        additionalProperties: false
+        patternProperties:
+          "^((\\w|-){0,255}[A-Za-z0-9])?$":
+            type: object
+            additionalProperties: false
+            properties:
+              title:
+                $ref: "#/definitions/title"
+              displace:
+                $ref: "#/definitions/displace"
+              rollback:
+                type: boolean
+
+      - type: array
+        items:
+          $ref: "#/definitions/stage"
+
+  actions:
+    type: object
+    additionalProperties: false
+    patternProperties:
+      "^((\\w|-){0,255}[A-Za-z0-9])?$":
+        type: object
+        additionalProperties: false
+        required: [ "flow" ]
+        properties:
+          title:
+            $ref: "#/definitions/title"
+          description:
+            $ref: "#/definitions/description"
+          flow:
+            $ref: "#/definitions/id"
+          triggers:
+            type: array
+            items:
+              $ref: "#/definitions/action_trigger"
+          flow-vars:
+            type: object
+            additionalProperties: true
+          flow-vars-ui:
+            $ref: "#/definitions/flow_vars_ui"
+          cleanup:
+            $ref: "#/definitions/cleanup"
+          requirements:
+            $ref: "#/definitions/requirements"
+          runtime:
+            $ref: "#/definitions/runtime_config"
+          tags:
+            $ref: "#/definitions/short_string_list"
+          permissions:
+            $ref: "#/definitions/permissions"
+          max-active:
+            type: integer
+            minimum: 0
+            maximum: 10000
+          max-start-per-minute:
+            type: integer
+            minimum: 0
+            maximum: 1000
+          binary-search:
+            $ref: "#/definitions/binary_search_config"
+          tracker-watcher:
+            $ref: "#/definitions/tracker_watcher"
+
+  flows:
+    type: object
+    additionalProperties: false
+    patternProperties:
+      "^((\\w|-){0,255}[A-Za-z0-9])?$":
+        type: object
+        additionalProperties: false
+        required: [ "jobs" ]
+        properties:
+          title:
+            $ref: "#/definitions/title"
+          description:
+            $ref: "#/definitions/description"
+          show-in-actions: # DEPRECATED
+            type: boolean
+          cleanup-jobs:
+            $ref: "#/definitions/jobs"
+          jobs:
+            $ref: "#/definitions/jobs"
+
+  jobs:
+    type: object
+    additionalProperties: false
+    patternProperties:
+      "^((\\w|-){0,255}[A-Za-z0-9])?$":
+        type: object
+        additionalProperties: false
+        required: [ "task" ]
+        properties:
+          title:
+            $ref: "#/definitions/title"
+          description:
+            $ref: "#/definitions/description"
+          task:
+            $ref: "#/definitions/task_id_path"
+          needs:
+            $ref: "#/definitions/id_list"
+          needs-type:
+            type: string
+            enum:
+              - "any"
+              - "all"
+              - "fail"
+          stage:
+            $ref: "#/definitions/id"
+          manual:
+            $ref: "#/definitions/manual"
+          requirements:
+            $ref: "#/definitions/requirements"
+          version:
+            $ref: "#/definitions/short_string"
+          input:
+            type: object
+            additionalProperties: true
+          if:
+            $ref: "#/definitions/long_string"
+          context-input:
+            type: object
+            additionalProperties: true
+          multiply:
+            $ref: "#/definitions/multiply_template"
+          kill-timeout: # TODO: replace with runtime/sandbox/kill-timeout after migration?
+            $ref: "#/definitions/duration"
+          attempts:
+            $ref: "#/definitions/job_attempts"
+          runtime: # Will overwrite kill-timeout
+            $ref: "#/definitions/runtime_config"
+
+
+  short_string:
+    type: string
+    maxLength: 256
+
+  long_string:
+    type: string
+    maxLength: 2048
+
+  secret:
+    # No special schema validation here
+    # See high-level validation in SecurityStateService
+    allOf:
+      - $ref: "#/definitions/short_string"
+
+  id:
+    allOf:
+      - $ref: "#/definitions/short_string"
+      - pattern: "^((\\w|-){0,255}[A-Za-z0-9])?$"
+
+  title:
+    allOf:
+      - $ref: "#/definitions/short_string"
+      - pattern: "^.{0,256}?$"
+
+  description:
+    allOf:
+      - $ref: "#/definitions/long_string"
+
+  prompt:
+    allOf:
+      - $ref: "#/definitions/short_string"
+      - pattern: "^.{0,256}?$"
+
+  path:
+    allOf:
+      - $ref: "#/definitions/long_string"
+      - pattern: "^[a-zA-Z0-9_\\- .~,()\\[\\]\\{\\}+=#$@!]+(/{1}[a-zA-Z0-9_\\- .~,()\\[\\]\\{\\}+=#$@!]+)*$"
+
+  abc_slug:
+    allOf:
+      - $ref: "#/definitions/short_string"
+      - pattern: "^[a-z0-9_\\-.]*$"
+
+  data_size:
+    allOf:
+      - $ref: "#/definitions/short_string"
+      - pattern: "^((\\d+[,.])\\d*|[,.]?\\d+)\\s*(([TGMK]B?)|B)$"
+
+  target_path:
+    allOf:
+      - $ref: "#/definitions/long_string"
+      - pattern: "^[a-zA-Z0-9_\\- .~,()\\[\\]\\{\\}+=#$@!]+(/{1}([a-zA-Z0-9_\\- .~,()\\[\\]\\{\\}+=#$@!]+|\\*{1}))*$"
+
+  task_id_path:
+    allOf:
+      - $ref: "#/definitions/long_string"
+      - pattern: "^[a-zA-Z0-9_\\- .~,()\\[\\]\\{\\}+=#$@!]+(/{1}([a-zA-Z0-9_\\- .~,()\\[\\]\\{\\}+=#$@!](?!(\\.yaml$)|(\\.yml$)))+)*$"
+
+  release_branch_pattern:
+    allOf:
+      - $ref: "#/definitions/short_string"
+      - pattern: "^releases/[a-zA-Z0-9_-]+/([a-zA-Z-0-9_\\.$\\{\\}-]+/?)+$"
+
+  release_title_source:
+    type: string
+    enum:
+      - "release"
+      - "flow"
+      - "RELEASE" # TO BE REMOVED
+      - "FLOW" # TO BE REMOVED
+
+  uri:
+    allOf:
+      - $ref: "#/definitions/long_string"
+      - format: uri
+
+  uri_list:
+    oneOf:
+      - type: array
+        items:
+          $ref: "#/definitions/uri"
+      - $ref: "#/definitions/uri"
+
+  short_string_list:
+    oneOf:
+      - type: array
+        items:
+          $ref: "#/definitions/short_string"
+      - $ref: "#/definitions/short_string"
+
+  id_list:
+    oneOf:
+      - type: array
+        items:
+          $ref: "#/definitions/id"
+      - $ref: "#/definitions/id"
+
+  path_list:
+    oneOf:
+      - type: array
+        items:
+          $ref: "#/definitions/path"
+      - $ref: "#/definitions/path"
+
+  integer_list:
+    oneOf:
+      - type: array
+        items:
+          type: integer
+      - type: integer
+
+  flow_with_flow_vars:
+    oneOf:
+      - $ref: "#/definitions/id"
+      - type: object
+        additionalProperties: false
+        required: [ 'flow' ]
+        properties:
+          flow:
+            $ref: "#/definitions/id"
+          flow-vars:
+            type: object
+            additionalProperties: true
+          flow-vars-ui:
+            $ref: "#/definitions/flow_vars_ui"
+
+
+  rollback_flow_with_flow_vars:
+    oneOf:
+      - $ref: "#/definitions/id"
+      - type: object
+        additionalProperties: false
+        required: [ 'flow' ]
+        properties:
+          flow:
+            $ref: "#/definitions/id"
+          flow-vars:
+            type: object
+            additionalProperties: true
+          flow-vars-ui:
+            $ref: "#/definitions/flow_vars_ui"
+          accept-flows:
+            $ref: "#/definitions/path_list"
+
+  tracker_watcher:
+    type: object
+    additionalProperties: false
+    properties:
+      queue:
+        $ref: "#/definitions/id"
+      issues:
+        $ref: "#/definitions/id_list"
+      status:
+        $ref: "#/definitions/id"
+      close-status:
+        $ref: "#/definitions/id_list"
+      flow-var:
+        $ref: "#/definitions/id"
+      secret:
+        $ref: "#/definitions/yav_secret_spec"
+
+  yav_secret_spec:
+    type: object
+    additionalProperties: false
+    properties:
+      uuid:
+        $ref: "#/definitions/short_string"
+      key:
+        $ref: "#/definitions/short_string"
+
+  on:
+    type: string
+    enum:
+      - "pr"
+      - "commit"
+
+  into_branches:
+    type: string
+    enum:
+      - "trunk"
+      - "release-branch"
+
+  into:
+    oneOf:
+      - $ref: "#/definitions/into_branches"
+      - type: array
+        items:
+          $ref: "#/definitions/into_branches"
+
+  discovery:
+    type: string
+    enum:
+      - "default"
+      - "any"
+      - "dir"
+      - "graph"
+      - "pci-dss"
+
+  displace:
+    oneOf:
+      - type: boolean
+      - type: object
+        additionalProperties: false
+        required: [ "on-status" ]
+        properties:
+          on-status:
+            type: array
+            items:
+              type: string
+              enum:
+                - "RUNNING"
+                - "RUNNING_WITH_ERRORS"
+                - "FAILURE"
+                - "WAITING_FOR_MANUAL_TRIGGER"
+                - "WAITING_FOR_STAGE"
+                - "WAITING_FOR_SCHEDULE"
+
+  manual:
+    oneOf:
+      - type: boolean
+      - type: object
+        additionalProperties: false
+        properties:
+          enabled:
+            type: boolean
+          prompt:
+            $ref: "#/definitions/prompt"
+          approvers:
+            oneOf:
+              - $ref: "#/definitions/long_string"
+              - $ref: "#/definitions/permission_rule_list"
+
+  release_auto:
+    oneOf:
+      - type: boolean
+      - type: object
+        additionalProperties: false
+        properties:
+          enabled:
+            type: boolean
+          conditions:
+            oneOf:
+              - type: array
+                items:
+                  $ref: "#/definitions/auto_conditions"
+              - $ref: "#/definitions/auto_conditions"
+
+  auto_conditions:
+    type: object
+    additionalProperties: false
+    properties:
+      min-commits:
+        type: integer
+        minimum: 0
+      schedule:
+        $ref: "#/definitions/schedule"
+      since-last-release:
+        $ref: "#/definitions/duration"
+
+  job_attempts:
+    oneOf:
+      - $ref: "#/definitions/job_max_attempts"
+      - type: object
+        additionalProperties: false
+        properties:
+          max:
+            $ref: "#/definitions/job_max_attempts"
+          backoff:
+            type: string
+            enum:
+              - "const"
+              - "exp"
+          initial-backoff:
+            $ref: "#/definitions/duration"
+          max-backoff:
+            $ref: "#/definitions/duration"
+          if-output:
+            $ref: "#/definitions/long_string"
+          sandbox:
+            $ref: "#/definitions/job_attempts_sandbox"
+          tasklet:
+            $ref: "#/definitions/job_attempts_tasklet"
+
+  job_attempts_sandbox:
+    type: object
+    additionalProperties: false
+    properties:
+      exclude-statuses:
+        $ref: "#/definitions/short_string_list"
+      reuse-tasks:
+        type: boolean
+      use-attempts:
+        type: integer
+        minimum: 2
+
+  job_attempts_tasklet:
+    type: object
+    additionalProperties: false
+    properties:
+      exclude-server-errors:
+        $ref: "#/definitions/short_string_list"
+
+
+  job_max_attempts:
+    type: integer
+    minimum: 1
+
+  schedule:
+    type: object
+    additionalProperties: false
+    properties:
+      start: # backward compatibility CI-2239
+        $ref: "#/definitions/time"
+      end: # backward compatibility CI-2239
+        $ref: "#/definitions/time"
+      time:
+        $ref: "#/definitions/time_range"
+      days:
+        $ref: "#/definitions/day_of_week_ranges"
+      day-type:
+        type: string
+        enum:
+          - "workdays"
+          - "holidays"
+          - "not-pre-holidays"
+
+  day_of_week_ranges:
+    allOf:
+      - $ref: "#/definitions/short_string"
+
+  time_range:
+    allOf:
+      - $ref: "#/definitions/short_string"
+      - pattern: "^((2[0123])|([01]?[0-9]))(:[0-5][0-9])? *- *((2[0123])|([01]?[0-9]))(:[0-5][0-9])? +.+$"
+
+  single_time:
+    allOf:
+      - $ref: "#/definitions/short_string"
+      - pattern: "^((2[0123])|([01]?[0-9])):[0-5][0-9]$"
+
+  time:
+    oneOf:
+      - $ref: "#/definitions/single_time"
+        # число до 23 трактуем просто как часты, выше 60, как минуты после конвертации из 1:00
+        # это позволяет использовать две формы: 15 и 15:00 без экранирования
+        # спецэффект, 1 - это один час, и 60 - это тоже один час
+      - type: integer
+        minimum: 0
+        maximum: 23
+      - type: integer
+        minimum: 60 # после конвертации из 1:00
+        maximum: 1439 # 24 * 60 + 59
+
+
+  duration:
+    allOf:
+      - $ref: "#/definitions/short_string"
+      - pattern: "^([0-9] *w)? *([0-9]+ *d)? *([0-9]+ *h)? *([0-9]+ *m)? *([0-9]+ *s)?$"
+
+  release_branches:
+    additionalProperties: false
+    required: [ "pattern" ]
+    properties:
+      enabled:
+        type: boolean
+      pattern:
+        $ref: "#/definitions/release_branch_pattern"
+      forbid-trunk-releases:
+        type: boolean
+      auto-create:
+        type: boolean
+      auto:
+        $ref: "#/definitions/release_auto"
+      independent-stages:
+        type: boolean
+      default-config-source:
+        type: string
+        enum:
+          - "trunk" # Default
+          - "branch"
+
+
+  sandbox_priority:
+    oneOf:
+      - $ref: "#/definitions/short_string"
+      - type: object
+        additionalProperties: false
+        properties:
+          class:
+            type: string
+            enum:
+              - "USER"
+              - "SERVICE"
+              - "BACKGROUND"
+          subclass:
+            type: string
+            enum:
+              - "LOW"
+              - "NORMAL"
+              - "HIGH"
+
+  sandbox-semaphore-acqiure:
+    type: object
+    additionalProperties: false
+    required: ["name"]
+    properties:
+      name:
+        # Could be JMES expression
+        $ref: "#/definitions/long_string"
+      capacity:
+        type: integer
+        minimum: 1
+      weight:
+        type: integer
+        minimum: 1
+
+  sandbox_semaphores:
+    type: object
+    additionalProperties: false
+    required: ["acquires"]
+    properties:
+      acquires:
+        oneOf:
+          - type: array
+            items:
+              $ref: "#/definitions/sandbox-semaphore-acqiure"
+          - $ref: "#/definitions/sandbox-semaphore-acqiure"
+      release:
+        $ref: "#/definitions/short_string_list"
+
+  requirements_sandbox:
+    type: object
+    additionalProperties: false
+    properties:
+      client_tags:
+        $ref: "#/definitions/long_string"
+      tasks_resource:
+        # Could be JMES expression
+        $ref: "#/definitions/long_string"
+      container_resource:
+        # Could be JMES expression or a number (for backward compatibility)
+        oneOf:
+          - type: integer
+          - $ref: "#/definitions/long_string"
+      porto_layers:
+        $ref: "#/definitions/integer_list"
+      semaphores:
+        $ref: "#/definitions/sandbox_semaphores"
+      cpu_model:
+        $ref: "#/definitions/short_string"
+      dns:
+        type: string
+        enum:
+          - "default"
+          - "local"
+          - "dns64"
+      host:
+        $ref: "#/definitions/short_string"
+      platform:
+        $ref: "#/definitions/short_string"
+      privileged:
+        type: boolean
+      priority:
+        $ref: "#/definitions/sandbox_priority"
+      tcpdump_args:
+        $ref: "#/definitions/long_string"
+
+  requirements:
+    type: object
+    additionalProperties: false
+    properties:
+      disk:
+        $ref: "#/definitions/data_size"
+      ram:
+        $ref: "#/definitions/data_size"
+      cores:
+        type: integer
+      tmpfs:
+        $ref: "#/definitions/data_size"
+      sandbox:
+        $ref: "#/definitions/requirements_sandbox"
+
+  filter:
+    type: object
+    additionalProperties: false
+    properties:
+      discovery:
+        $ref: "#/definitions/discovery"
+      st-queues:
+        $ref: "#/definitions/short_string_list"
+      not-st-queues:
+        $ref: "#/definitions/short_string_list"
+      author-services:
+        $ref: "#/definitions/short_string_list"
+      not-author-services:
+        $ref: "#/definitions/short_string_list"
+      not-authors:
+        $ref: "#/definitions/short_string_list"
+      sub-paths:
+        $ref: "#/definitions/uri_list"
+      not-sub-paths:
+        $ref: "#/definitions/uri_list"
+      abs-paths:
+        $ref: "#/definitions/uri_list"
+      not-abs-paths:
+        $ref: "#/definitions/uri_list"
+      feature-branches:
+        $ref: "#/definitions/uri_list"
+      not-feature-branches:
+        $ref: "#/definitions/uri_list"
+
+  action_trigger:
+    type: object
+    additionalProperties: false
+    required: [ "on" ]
+    properties:
+      on:
+        $ref: "#/definitions/on"
+      into:
+        $ref: "#/definitions/into"
+      filters:
+        type: array
+        items:
+          $ref: "#/definitions/filter"
+      required:
+        type: boolean
+        default: true
+
+  triggers: # DEPRECATED
+    type: array
+    items:
+      $ref: "#/definitions/trigger"
+
+  trigger:
+    type: object
+    additionalProperties: true # DEPRECATED: flow-vars, cleanup
+    required: [ "on", "flow" ]
+    properties:
+      on:
+        $ref: "#/definitions/on"
+      flow:
+        $ref: "#/definitions/id"
+      into:
+        $ref: "#/definitions/into"
+      filters:
+        type: array
+        items:
+          $ref: "#/definitions/filter"
+      required:
+        type: boolean
+        default: true
+
+  cleanup:
+    type: object
+    additionalProperties: false
+    properties:
+      delay:
+        $ref: "#/definitions/duration"
+      on-status:
+        type: array
+        items:
+          type: string
+          enum:
+            - "SUCCESS"
+            - "FAILURE"
+            - "RUNNING_WITH_ERRORS"
+            - "WAITING_FOR_MANUAL_TRIGGER"
+            - "WAITING_FOR_SCHEDULE"
+      conditions:
+        oneOf:
+          - $ref: "#/definitions/cleanup_condition"
+          - type: array
+            items:
+              $ref: "#/definitions/cleanup_condition"
+
+  cleanup_condition:
+    type: object
+    additionalProperties: false
+    properties:
+      reasons:
+        oneOf:
+          - $ref: "#/definitions/cleanup_reason_type"
+          - type: array
+            items:
+              $ref: "#/definitions/cleanup_reason_type"
+      cleanup:
+        type: boolean
+      interrupt:
+        type: boolean
+
+  cleanup_reason_type:
+    type: string
+    enum:
+      - "new-diff-set"
+      - "pr-merged"
+      - "pr-discarded"
+      - "finish"
+
+  stage:
+    type: object
+    required: [ "id" ]
+    properties:
+      id:
+        $ref: "#/definitions/id"
+      title:
+        $ref: "#/definitions/title"
+      displace:
+        $ref: "#/definitions/displace"
+
+  large_tests_toolchains:
+    type: string
+    # how to update enum: https://st.yandex-team.ru/CI-3273
+    enum:
+      - "clang8-darwin-x86_64-maps-mobile"
+      - "clang8-ios-x86_64-maps-mobile"
+      - "default-android-i686-maps-mobile"
+      - "default-android-x86_64-maps-mobile"
+      - "default-darwin-x86_64-maps-mobile"
+      - "default-darwin-x86_64-release"
+      - "default-ios-x86_64-maps-mobile"
+      - "default-linux-x86_64-release"
+      - "default-linux-x86_64-release-asan"
+      - "default-linux-x86_64-release-fuzzing"
+      - "default-linux-x86_64-release-jdk15"
+      - "default-linux-x86_64-release-jdk16"
+      - "default-linux-x86_64-release-msan"
+      - "default-linux-x86_64-release-musl"
+      - "default-linux-x86_64-release-ubsan"
+      - "default-linux-x86_64-relwithdebinfo"
+      - "default-linux-x86_64-system-python-27"
+      - "default-linux-x86_64-system-python-35"
+      - "default-linux-x86_64-system-python-36"
+      - "default-win-x86_64-debug"
+      - "local-ios-x86_64"
+
+  large_autostart:
+    type: object
+    required: [ "target" ]
+    properties:
+      target:
+        $ref: "#/definitions/target_path"
+      toolchains:
+        oneOf:
+          - type: array
+            items:
+              $ref: "#/definitions/large_tests_toolchains"
+          - $ref: "#/definitions/large_tests_toolchains"
+
+  large_autostart_simple:
+    $ref: "#/definitions/uri"
+
+  sandbox_task_status:
+    type: string
+    enum:
+      - "EXCEPTION"
+      - "RELEASED"
+      - "DRAFT"
+      - "ENQUEUING"
+      - "TIMEOUT"
+      - "WAIT_MUTEX"
+      - "FINISHING"
+      - "WAIT_RES"
+      - "WAIT_TASK"
+      - "SUSPENDING"
+      - "EXECUTING"
+      - "STOPPING"
+      - "EXPIRED"
+      - "NOT_RELEASED"
+      - "SUCCESS"
+      - "ASSIGNED"
+      - "STOPPED"
+      - "TEMPORARY"
+      - "NO_RES"
+      - "DELETED"
+      - "RELEASING"
+      - "ENQUEUED"
+      - "WAIT_TIME"
+      - "FAILURE"
+      - "WAIT_OUT"
+      - "RESUMING"
+      - "PREPARING"
+      - "SUSPENDED"
+
+  sandbox_notification:
+    type: object
+    required: [ "recipients", "statuses", "transport" ]
+    properties:
+      recipients:
+        $ref: "#/definitions/short_string_list"
+      transport:
+        type: string
+        enum:
+          - "telegram"
+          - "email"
+          - "jabber"
+          - "q"
+      statuses:
+        oneOf:
+          - type: array
+            items:
+              $ref: "#/definitions/sandbox_task_status"
+          - $ref: "#/definitions/sandbox_task_status"
+
+  runtime_config:
+    oneOf:
+      - type: object
+        additionalProperties: false
+        required: [ "sandbox-owner" ]
+        properties:
+          sandbox-owner:
+            $ref: "#/definitions/short_string"
+      - type: object
+        additionalProperties: false
+        required: [ "get-output-on-fail" ]
+        properties:
+          get-output-on-fail:
+            type: boolean
+      - type: object
+        additionalProperties: false
+        required: [ "sandbox" ]
+        properties:
+          sandbox:
+            $ref: "#/definitions/runtime_sandbox"
+          get-output-on-fail:
+            type: boolean
+
+  runtime_sandbox:
+    type: object
+    additionalProperties: false
+    properties:
+      owner: # Will be validated statically
+        $ref: "#/definitions/short_string"
+      kill-timeout:
+        $ref: "#/definitions/duration"
+      notifications:
+        oneOf:
+          - type: array
+            items:
+              $ref: "#/definitions/sandbox_notification"
+          - $ref: "#/definitions/sandbox_notification"
+      tags:
+        $ref: "#/definitions/short_string_list"
+      hints:
+        $ref: "#/definitions/short_string_list"
+      priority:
+        $ref: "#/definitions/sandbox_priority"
+      keep-polling-stopped:
+        type: boolean
+
+
+  multiply_template:
+    type: object
+    required: [ "by" ]
+    properties:
+      by:
+        $ref: "#/definitions/long_string"
+      title:
+        $ref: "#/definitions/short_string"
+      description:
+        $ref: "#/definitions/long_string"
+      max-jobs:
+        type: integer
+        default: 20
+        maximum: 99
+      as-field: # DEPRECATED
+        $ref: "#/definitions/short_string"
+
+  flow_vars_ui:
+    type: object
+    additionalProperties: false
+    required: [ "schema" ]
+    properties:
+      schema:
+        $ref: "http://json-schema.org/draft-04/schema#"
+
+  permissions:
+    type: object
+    additionalProperties: false
+    properties:
+      default-permissions-for-owner:
+        oneOf:
+          - type: array
+            items:
+              $ref: "#/definitions/permissions_for_owner"
+          - $ref: "#/definitions/permissions_for_owner"
+      start-flow:
+        $ref: "#/definitions/permission_rule_list"
+      start-hotfix:
+        $ref: "#/definitions/permission_rule_list"
+      cancel-flow:
+        $ref: "#/definitions/permission_rule_list"
+      rollback-flow:
+        $ref: "#/definitions/permission_rule_list"
+      add-commit:
+        $ref: "#/definitions/permission_rule_list"
+      create-branch:
+        $ref: "#/definitions/permission_rule_list"
+      start-job:
+        $ref: "#/definitions/permission_rule_list"
+      kill-job:
+        $ref: "#/definitions/permission_rule_list"
+      skip-job:
+        $ref: "#/definitions/permission_rule_list"
+      toggle-autorun:
+        $ref: "#/definitions/permission_rule_list"
+      manual-trigger:
+        $ref: "#/definitions/permission_rule_list"
+
+  permissions_for_owner:
+    type: string
+    enum:
+      - "pr"
+      - "commit"
+      - "release"
+
+  permission_rule:
+    type: object
+    additionalProperties: false
+    required: [ "service" ]
+    properties:
+      service:
+        $ref: "#/definitions/id"
+      scope:
+        $ref: "#/definitions/id_list"
+      role:
+        $ref: "#/definitions/id_list"
+      duty:
+        $ref: "#/definitions/id_list"
+
+  permission_rule_list:
+    oneOf:
+      - type: array
+        items:
+          $ref: "#/definitions/permission_rule"
+      - $ref: "#/definitions/permission_rule"
+
+
+  binary_search_config:
+    type: object
+    additionalProperties: false
+    properties:
+      min-interval-duration:
+        $ref: "#/definitions/duration"
+      min-interval-size:
+        type: integer
+        minimum: 2
+        maximum: 10000
+      close-intervals-older-than:
+        $ref: "#/definitions/duration"

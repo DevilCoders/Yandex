@@ -1,0 +1,254 @@
+syntax = "proto3";
+
+package ci;
+
+//
+// Типы, используемые для взаимодействия тасклета и CI. В TaskletContext и CiService.
+//
+option java_package = "ru.yandex.ci.job";
+option java_multiple_files = true;
+option go_package = "a.yandex-team.ru/ci/tasklet/common/proto;common";
+
+import "google/protobuf/descriptor.proto";
+import "google/protobuf/wrappers.proto";
+import "google/protobuf/timestamp.proto";
+
+message JobInstanceId {
+    string flow_launch_id = 1;
+    string job_id = 2;
+    int32 number = 3;
+}
+
+message ArcRevision {
+    string hash = 1;
+    /** Порядковый номер комита в бранче. Используется в основном для информационных целей. Может использоваться как часть монтируемого пути для только для задач, запускаемых из `trunk`
+    * * В транке равен SVN ревизии.
+    * * В пулл реквесте равен diffSetId
+    * * В пользовательских ветках равен -1
+    * Гарантируется строго монотонное возрастание и уникальность в рамках бранча. Непрерывность НЕ гарантируется. */
+    int64 number = 2;
+    // Номер PR, в рамках которого был сделан этот коммит
+    // Доступен только в том случае, если этот атрибут есть в коммите (в trunk или pull-request)
+    // Значение 0 говорит о том, что PR не известен
+    int64 pull_request_id = 3;
+}
+
+message Commit {
+    ArcRevision revision = 1;
+    google.protobuf.Timestamp date = 2;
+    repeated string issues = 3;
+    string message = 4;
+    string author = 5;
+    int32 pull_request_id = 6;
+}
+
+message CommitOffset {
+    string branch = 1;
+    int64 number = 2;
+}
+
+message TaskletContext {
+    // Unique job identifier, should be used for Tasklet Progress operation
+    JobInstanceId job_instance_id = 1;
+
+    // Target revision, same as target_commit.revision
+    ArcRevision target_revision = 3;
+
+    // Target commit this release/action was started on
+    Commit target_commit = 16;
+
+    // Target branch
+    string branch = 13;
+
+    // UID of YAV secret (`ci/secret` option)
+    string secret_uid = 4;
+
+    // Configuration of current flow (a.yaml location)
+    ConfigInfo config_info = 6;
+
+    // Pull request information (available only in PR actions)
+    LaunchPullRequestInfo launch_pull_request_info = 8;
+
+    // User who started this flow (`robot-ci` is an author of auto-releases and pre/post commit actions)
+    string flow_triggered_by = 9;
+
+    // HTTP URL for CI flow (action or release)
+    string ci_url = 10;
+
+    // HTTP URL for CI flow (action or release) opened at this particular job
+    string ci_job_url = 17;
+
+    // Title (action or release), visible in CI interface
+    string title = 12;
+
+    // Unique version of this release/action
+    Version version_info = 14;
+
+    // Flow type
+    FlowType flow_type = 15;
+
+    // Original version we rolling back to
+    // Available only when flow_type is ROLLBACK (i.e. this is `Rollback to` operation)
+    Version rollback_to_version = 18;
+
+    // Опционально заполняется логином пользователя, который вручную запустил кубик
+    // Если же запуск был автоматический, но перед кубиком стоял manual, то логином пользователя, который
+    // отключил этот триггер (выполнил Disable на гендальфе)
+    string job_triggered_by = 19;
+
+    // Дата и время отключения manual триггера (если таковой был) для этого кубика
+    google.protobuf.Timestamp job_triggered_at = 20;
+
+    // Дата и время запуска текущего кубика
+    google.protobuf.Timestamp job_started_at = 22;
+
+    // Дата и время начала работы этого flow (релиза, пре-коммитной или пост-коммитной проверок)
+    google.protobuf.Timestamp flow_started_at = 21;
+
+    // В релизах - предыдущий завершенный релиз.
+    // В пул реквестах - upstream revision.
+    // В посткоммитных экшенах - предыдущий коммит.
+    // Для получения ченджлога, используйте: https://docs.yandex-team.ru/ci/job-advanced#changelog
+    ArcRevision previous_revision = 2;
+
+    // Deprecated: используйте ручку GetCommits сервиса ci https://docs.yandex-team.ru/ci/job-advanced#changelog
+    ReleaseVscInfo release_vsc_info = 5 [deprecated = true];
+
+    // Unique launch number, not much of use anymore
+    // Deprecated: Use version_info.full instead
+    int32 launch_number = 7 [deprecated = true];
+
+    // Version for CI-1644
+    // Deprecated: use version_info
+    string version = 11 [deprecated = true];
+
+    enum FlowType {
+        DEFAULT = 0;
+        HOTFIX = 1;
+        ROLLBACK = 2;
+    }
+}
+
+message Version {
+    string full = 1; // Full text presentation of a version, CI-1644
+
+    string major = 2;
+    string minor = 3;
+}
+
+message ReleaseVscInfo {
+    // Ревизия предыдущего релиза. Релиз может быть отменен, а значит изменения из него будут доставлены текущим релизом
+    ArcRevision previous_release_revision = 5;
+}
+
+message ConfigInfo {
+    string path = 1 [deprecated = true]; // Path to a.yaml, useeless
+
+    string dir = 2; // Directory of a project (where a.yaml is located)
+    string id = 3; // ID of current action/release
+}
+
+message TaskletProgress {
+    JobInstanceId job_instance_id = 1;
+
+    float progress = 2;
+    string text = 3;
+    reserved 4; // interrupt_allowed not used
+    string id = 5; // status id
+    string module = 6; // https://docs.yandex-team.ru/ci/job-advanced#progress
+    string url = 7;
+    Status status = 8;
+    CiEnv ci_env = 9; // Internal, you should ignore it
+
+    enum Status {
+        RUNNING = 0;
+        FAILED = 1;
+        SUCCESSFUL = 2;
+    }
+}
+
+message LaunchPullRequestInfo {
+    PullRequest pull_request = 1;
+    PullRequestDiffSet diff_set = 2;
+    PullRequestVcsInfo vcs_info = 3;
+    PullRequestMergeRequirementId merge_requirement_id = 4;
+    repeated PullRequestIssue issues = 5;
+    repeated string labels = 6;
+}
+
+message PullRequest {
+    int64 id = 1;
+    string author = 2; // Author
+
+    // Summary - это заголовок Pull Request-а, может быть пустым для старых PR
+    // Заполняется строго в момент запуска Flow и может не отражать текущее значение
+    // Изменение заголовка PR не приводит к перезапуску Flow
+    string summary = 3;
+
+    // Description - это описание Pull Request-а, может быть пустым для старых PR
+    // Аналогично summary, заполняется в момент запуска Flow
+    string description = 4;
+}
+
+message PullRequestDiffSet {
+    int64 id = 1;
+}
+
+message PullRequestVcsInfo {
+    string merge_revision_hash = 1; // Ревизия, на которой выполняется проверка
+    string upstream_revision_hash = 2; // HEAD ветки, в которую вливается PR, на момент создания итерации PR'а
+    string upstream_branch = 3; // Ветка, в которую делается PR
+    string feature_revision_hash = 4; // Head ветки, из которой делается PR, на момент создания итерации PR'а
+    google.protobuf.StringValue feature_branch = 5; // Ветка, из которой делается PR
+}
+
+message PullRequestMergeRequirementId {
+    string system = 1;
+    string type = 2;
+}
+
+message PullRequestIssue {
+    string id = 1;
+}
+
+message GetCommitsRequest {
+    string flow_launch_id = 1;
+    Type type = 4; // тип запроса, default FROM_PREVIOUS_STABLE
+
+    ci.CommitOffset offset = 2;
+    int32 limit = 3; // Maximum number of records to fetch in single request, cannot be more than 1000
+
+    CiEnv ci_env = 5; // Internal, you should ignore it
+
+    enum Type {
+        // вернуть коммиты до последнего релиза, завершившегося успешно
+        // в рамках какого релиза коммиты едут, можно определить по TimelineCommit.release
+        FROM_PREVIOUS_STABLE = 0;
+        // будут включены только коммиты до предыдущего активного релиза (который потенциально может быть отменен)
+        FROM_PREVIOUS_ACTIVE = 1;
+    }
+}
+
+message GetCommitsResponse {
+    repeated ci.Commit commits = 1 [deprecated = true]; // используйте timeline_commits
+    repeated TimelineCommit timeline_commits = 3; // для экшенов возвращается только коммит,
+                                                  // на котором был произведен запуск
+    ci.CommitOffset next = 2;
+}
+
+message TimelineCommit {
+    ci.Commit commit = 1;
+    Release release = 2; // релиз, с которым коммит будет доставлен в случае успешного завершения релиза.
+                         // или пусто в случае, если запрашиваются коммиты для action
+}
+
+message Release {
+    string title = 1;
+    Version version = 2;
+    string ci_url = 3;
+}
+
+enum CiEnv {
+    CI_STABLE = 0;
+    CI_TESTING = 1;
+}

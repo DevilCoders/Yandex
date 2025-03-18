@@ -1,0 +1,3 @@
+RECURSE(
+    storage-observer-tests
+)

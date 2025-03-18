@@ -1,0 +1,122 @@
+shared:
+  db: &db
+    pluginName: postgres
+    connectProtocol: tcp
+    tls:
+      enabled: true
+      enableHostVerification: false
+    connectAddr: "${DB_ADDRESS}"
+    user: "${DB_USER}"
+    password: "${DB_PASSWORD}"
+    maxConnLifetime: 2m #Don't allow long connections in case of master switch
+    maxConns: 100
+    maxIdleConns: 20
+    connectAttributes:
+      binary_parameters: yes
+  s3: &s3
+    state: "enabled"
+    enableRead: true
+    provider:
+      filestore:
+        fileMode: "0666"
+        dirMode: "0766"
+      s3store:
+        region: "eu-west-1"
+        endpoint: "https://s3.mds.yandex.net"
+        s3ForcePathStyle: true
+
+
+log:
+  stdout: true
+  level: debug,info
+
+persistence:
+  defaultStore: default
+  visibilityStore: visibility
+  advancedVisibilityStore: es-visibility
+  numHistoryShards: 512
+
+  datastores:
+    default:
+      sql:
+        <<: *db
+        databaseName: temporal
+
+    visibility:
+      sql:
+        <<: *db
+        databaseName: temporal_visibility
+
+    es-visibility:
+      elasticsearch:
+        version: "v7"
+        url:
+          scheme: "https"
+          host: "${ELASTIC_ADDRESS}"
+        username: admin
+        password: ${ELASTIC_PASSWORD}
+        indices:
+          visibility: temporal_visibility_v1_dev
+
+archival:
+  history:
+    <<: *s3
+  visibility:
+    <<: *s3
+
+namespaceDefaults:
+  archival:
+    history:
+      state: "enabled"
+      URI: "s3://${S3_BUCKET}"
+    visibility:
+      state: "enabled"
+      URI: "s3://${S3_BUCKET}"
+
+global:
+  membership:
+    maxJoinDuration: 30s
+    broadcastAddress: "${BIND_ADDRESS}"
+  metrics:
+    prometheus:
+      timerType: histogram
+      listenAddress: "localhost:31337"
+    tags:
+      temporal_service: "${SERVICE}"
+
+services:
+  frontend:
+    rpc:
+      grpcPort: 7233
+      membershipPort: 6933
+      bindOnIP: '::'
+
+  matching:
+    rpc:
+      grpcPort: 7235
+      membershipPort: 6935
+      bindOnIP: '::'
+
+  history:
+    rpc:
+      grpcPort: 7234
+      membershipPort: 6934
+      bindOnIP: '::'
+
+clusterMetadata:
+  enableGlobalNamespace: false
+  failoverVersionIncrement: 10
+  masterClusterName: "active"
+  currentClusterName: "active"
+  clusterInformation:
+    active:
+      enabled: true
+      initialFailoverVersion: 1
+      rpcName: "frontend"
+      rpcAddress: "${GRPC_ADDRESS}"
+
+publicClient:
+  hostPort: "${GRPC_ADDRESS}"
+
+
+

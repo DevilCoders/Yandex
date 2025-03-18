@@ -1,0 +1,31 @@
+OWNER(g:ci)
+
+RECURSE(
+    abc
+    arcanum
+    ayamler
+    calendar
+    charts
+    ci
+    grpc
+    http-client-base
+    infra
+    juggler
+    logs
+    observer
+    old-ci
+    pci-express
+    release-machine
+    sandbox
+    staff
+    storage
+    taskletv2
+    teamcity
+    testenv
+    tracker
+    trendbox
+    tsum
+    tvm
+    xiva
+    yav
+)

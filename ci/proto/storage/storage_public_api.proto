@@ -1,0 +1,124 @@
+syntax = "proto3";
+
+package ci.proto.storage;
+
+option java_package = "ru.yandex.ci.storage.api";
+
+import "ci/proto/common/info_panel.proto";
+import "ci/proto/storage/check.proto";
+import "ci/proto/storage/check_iteration.proto";
+import "ci/proto/storage/aggregate_statistics.proto";
+import "ci/proto/storage/common.proto";
+import "google/protobuf/timestamp.proto";
+
+service CommonPublicApi {
+    rpc GetCheckCircuits(GetCheckCircuitsRequest) returns (GetCheckCircuitsRequest.Response);
+}
+
+service ActionsPublicApi {
+}
+
+service SearchPublicApi {
+    rpc FindLastCheckByPullRequest (FindLastCheckByPullRequestRequest) returns (FindLastCheckByPullRequestRequest.Response);
+}
+
+service RawDataPublicApi {
+    rpc StreamCheckIterationResults (StreamCheckResultsRequest) returns (stream TestResultPublicViewModel);
+}
+
+message GetCheckCircuitsRequest {
+    uint64 check_id = 1;
+
+    message Response {
+        repeated Circuit circuits = 1;
+
+        message Circuit {
+            IterationType circuit_type = 1;
+            IterationPublicViewModel aggregate_iteration = 2;
+            repeated IterationPublicViewModel iterations = 3;
+        }
+    }
+}
+
+message FindLastCheckByPullRequestRequest {
+    uint64 pull_request_id = 1;
+
+    message Response {
+        CheckPublicViewModel check = 1;
+    }
+}
+
+message StreamCheckResultsRequest {
+    uint64 check_id = 1;
+    IterationType iteration_type = 2;
+    Filters filters = 3;
+
+    message Filters {
+        repeated ResultType result_types = 1;
+        // expression - java regex
+        string path_expression = 2;
+        string test_name_expression = 3;
+        string subtest_name_expression = 4;
+    }
+}
+
+message IterationPublicViewModel {
+    IterationId id = 1;
+
+    CheckStatus status = 2;
+    AggregateStatistics statistics = 3;
+
+    google.protobuf.Timestamp finish = 4;
+    google.protobuf.Timestamp start = 5;
+    google.protobuf.Timestamp created = 6;
+
+    IterationInfo info = 7;
+    ci.proto.common.info.InfoPanel info_panel = 8;
+}
+
+message CheckPublicViewModel {
+    uint64 id = 1;
+
+    int64 diff_set_id = 2;
+    string owner = 3;
+    google.protobuf.Timestamp created = 4;
+
+    OrderedRevision left_revision = 5;
+    OrderedRevision right_revision = 6;
+
+    CheckType type = 7;
+    CheckStatus status = 8;
+
+    ArchiveState archive_state = 9;
+}
+
+message TestResultPublicViewModel {
+    uint64 hid = 1;
+    uint64 suite_hid = 2;
+    string toolchain = 3;
+    string branch = 4;
+    uint64 revision_number = 5;
+    uint64 autocheck_chunk_hid = 6;
+    int32 autocheck_partition = 7;
+
+    ResultType result_type = 8;
+    TestStatus test_status = 9;
+
+    string uid = 10;
+    string path = 11;
+    string name = 12;
+    string subtest_name = 13;
+
+    repeated string tags = 14;
+    map<string, double> metrics = 15;
+
+    google.protobuf.Timestamp created = 16;
+
+    ResultSource source = 17;
+
+    message ResultSource {
+        IterationId iteration_id = 1;
+        string task_id = 2;
+        bool task_is_right = 3;
+    }
+}

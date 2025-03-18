@@ -1,0 +1,230 @@
+annotations:
+  stagectl_epoch: 861
+  stagectl_vcs:
+    svn_branch: cad82ad57cd64de3c0a29692323b4cb6999083ef
+    svn_revision: 9559750
+    svn_tag: ''
+labels:
+  deploy:
+    disabled_clusters:
+    - man
+  deploy_engine: env_controller
+  du_patchers_target_revision:
+    ObserverApi: 11
+  du_sidecar_target_revision:
+    ObserverApi:
+      logbrokerToolsLayer: 2739742779
+      podBin: 3006211268
+  notifications_last_timestamp: 1655452134933829000
+  tags: []
+meta:
+  account_id: abc:service:7838
+  acl:
+  - action: allow
+    permissions:
+    - read
+    - read_secrets
+    - write
+    - create
+    - ssh_access
+    - root_ssh_access
+    subjects:
+    - robot-drug-deploy
+  id: ci-observer-api-stable
+  inherit_acl: true
+  project_id: ci
+spec:
+  deploy_unit_settings:
+    ObserverApi:
+      alerting:
+        notification_channels:
+          ERROR: ci_observer_api_stable
+        state: enabled
+  deploy_units:
+    ObserverApi:
+      endpoint_sets:
+      - port: 8080
+      logbroker_config:
+        logs_virtual_disk_id_ref: disk_ssd
+        sidecar_volume:
+          storage_class: ssd
+      logbroker_tools_sandbox_info:
+        revision: 2739742779
+      multi_cluster_replica_set:
+        replica_set:
+          clusters:
+          - cluster: sas
+            spec:
+              replica_count: 1
+          - cluster: vla
+            spec:
+              replica_count: 1
+          deployment_strategy:
+            max_unavailable: 1
+          pod_template_spec:
+            spec:
+              disk_volume_requests:
+              - id: disk_ssd
+                labels:
+                  mount_path: /
+                  used_by_infra: true
+                  volume_type: root_fs
+                quota_policy:
+                  bandwidth_guarantee: 15728640
+                  bandwidth_limit: 15728640
+                  capacity: 107374182400
+                storage_class: ssd
+              - id: disk_hdd
+                quota_policy:
+                  bandwidth_guarantee: 5242880
+                  bandwidth_limit: 20971520
+                  capacity: 107374182400
+                storage_class: hdd
+              host_infra:
+                monitoring:
+                  labels:
+                    itype: ci
+              pod_agent_payload:
+                meta:
+                  sidecar_volume:
+                    storage_class: ssd
+                spec:
+                  boxes:
+                  - id: ObserverApiBox
+                    rootfs:
+                      layer_refs:
+                      - layer
+                      - observer-api-app
+                    static_resources:
+                    - mount_point: /secrets
+                      resource_ref: secrets
+                    virtual_disk_id_ref: disk_ssd
+                    volumes:
+                    - mode: read_write
+                      mount_point: /logs
+                      volume_ref: logs
+                    - mode: read_write
+                      mount_point: /hprof
+                      volume_ref: hprof
+                  mutable_workloads:
+                  - workload_ref: ObserverApi
+                  - workload_ref: SolomonAgent
+                  resources:
+                    layers:
+                    - checksum: 'EMPTY:'
+                      id: layer
+                      url: sbr:2527306889
+                      virtual_disk_id_ref: disk_ssd
+                    - checksum: MD5:fd83cbb0a71550f1074c76c1cc1a7317
+                      id: observer-api-app
+                      meta:
+                        sandbox_resource:
+                          attributes:
+                            backup_task: 'true'
+                            branch: trunk
+                            build_type: release
+                            package_path: ci/internal/observer/api/package.json
+                            platform: Linux-4.19.183-42.2mofed-x86_64-with-Ubuntu-12.04-precise
+                            resource_name: ci-observer-api
+                            resource_version: 4291b962df96a094ddbe2b7bd2c306fb0aea5255
+                            svn_path: arcadia-arc:/#4291b962df96a094ddbe2b7bd2c306fb0aea5255
+                            svn_revision: '9595625'
+                            ttl: '30'
+                          resource_id: '3217133254'
+                          resource_type: CI_OBSERVER_API_APP
+                          task_id: '1344628676'
+                          task_type: YA_MAKE_2
+                      url: sbr:3217133254
+                      virtual_disk_id_ref: disk_ssd
+                    static_resources:
+                    - access_permissions: '660'
+                      files:
+                        files:
+                        - file_name: ci-common.properties
+                          multi_secret_data:
+                            format: java
+                            secret_alias: ci-common-stable
+                        - file_name: ci-observer.properties
+                          multi_secret_data:
+                            format: java
+                            secret_alias: ci-observer-stable
+                      id: secrets
+                      verification:
+                        disabled: true
+                      virtual_disk_id_ref: disk_ssd
+                  volumes:
+                  - generic: {}
+                    id: logs
+                    virtual_disk_id_ref: disk_ssd
+                  - generic: {}
+                    id: hprof
+                    virtual_disk_id_ref: disk_hdd
+                  workloads:
+                  - box_ref: ObserverApiBox
+                    env:
+                    - name: RESTART
+                      value:
+                        literal_env:
+                          value: '2'
+                    id: ObserverApi
+                    liveness_check:
+                      http_get:
+                        expected_answer: '{"status":"UP"}'
+                        path: actuator/health
+                        port: 8080
+                        time_limit:
+                          initial_delay_ms: 60000
+                          max_execution_time_ms: 10000
+                    readiness_check:
+                      http_get:
+                        expected_answer: '{"status":"UP"}'
+                        path: actuator/health
+                        port: 8080
+                        time_limit:
+                          initial_delay_ms: 15000
+                          max_execution_time_ms: 10000
+                    start:
+                      command_line: /ci-observer-api/bin/ci-observer-api.sh --environment=stable
+                        --logdir=/logs
+                    transmit_logs: true
+                  - box_ref: ObserverApiBox
+                    id: SolomonAgent
+                    liveness_check:
+                      tcp_check:
+                        port: 9666
+                        time_limit:
+                          initial_delay_ms: 60000
+                          max_execution_time_ms: 10000
+                    readiness_check:
+                      tcp_check:
+                        port: 9666
+                        time_limit:
+                          initial_delay_ms: 15000
+                          max_execution_time_ms: 10000
+                    start:
+                      command_line: /solomon-agent/solomon-agent --config /solomon-agent/solomon-agent-observer.conf
+                    transmit_logs: true
+              resource_requests:
+                anonymous_memory_limit: 5368709120
+                memory_guarantee: 6442450944
+                memory_limit: 6442450944
+                network_bandwidth_guarantee: 10485760
+                vcpu_guarantee: 1000
+                vcpu_limit: 1000
+              secret_refs:
+                ci-common-stable:
+                  secret_id: sec-01en9f3c1nzqgm67d5eng9vq42
+                  secret_version: ver-01g65nn76t3syprb9mt1gdbw94
+                ci-observer-stable:
+                  secret_id: sec-01fbrtxyczry787m6tgcdc3mvw
+                  secret_version: ver-01g5168z80rtybk5xb192ewrcn
+      network_defaults:
+        network_id: _CINETS_
+      patchers_revision: 11
+      pod_agent_sandbox_info:
+        revision: 3006211268
+      revision: 139
+  revision: 141
+  revision_info:
+    description: 'CI autocommit: Release: CI Observer #472, url: https://a.yandex-team.ru/projects/ci/ci/releases/flow?dir=ci&id=ci-observer-release&version=472'
+

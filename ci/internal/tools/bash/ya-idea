@@ -1,0 +1,274 @@
+#!/bin/bash
+
+# скрипт для запуска ya ide idea "со вкусом" Директа
+# оригинал тут: https://a.yandex-team.ru/arc/trunk/arcadia/direct/bin/ya-idea
+# отличия от ya ide idea:
+#  - находит только java-модули (не компилирует python/go)
+#  - автоматически создаёт название для Idea-пректа
+#  - указывет флажки --local, --group-modules, --yt-store, --ignore-recurses
+
+YA_IDEA_DEBUG=false
+# переменные и функции можно переопределить в ~/.ya/direct-ya-idea.overrides.sh под свой вкус
+YA_IDEA_PROJECT_ROOT=~/IdeaProjects/
+# способ вычисления директории для Idea
+PROJECT_PATH_METHOD=new
+# режим обновления, при отличии версии запускаемого файла и файла из рабочей копии
+# ask - спрашивать о обновлении, auto - обновлять автоматически, never - не обновлять автоматически
+UPDATE_MODE=never
+# дополнительные таргеты (от корня аркадии)
+ADDITIONAL_TARGETS=()
+# дополнительные параметры ya make
+EXTRA_YA_MAKE_PARAMS=""
+# дополнительные параметры генерации проеекта
+EXTRA_YA_IDEA_IDE_PARAMS="-DYA_IDE_IDEA=yes --with-content-root-modules"
+
+DO_YA_CHECKOUT=false
+# игнорирование рекурсивной сборки ya.make. В случае игнорирования собираемые модули будут указаны явно в -l
+IGNORE_RECURSES=false
+# после создания проекта автоматически его открывать
+AUTO_OPEN=false
+# включает отправку метрик в репорт
+ENABLE_SNITCHING=false
+
+STAT_DIR="${HOME}/.ya/direct-ya-stat"
+
+function get-arcadia-root {
+    local R="$PWD"
+    while [[ ! -e "${R}/.arcadia.root" ]]; do
+        if [[ "${R}" == "/" ]]; then
+            echo "$0: must be run from inside Arcadia checkout" >&2
+            exit  1
+        fi
+        R="$(dirname "${R}")"
+    done
+    echo "$R"
+}
+
+YA_BIN=${YA_BIN:-$(get-arcadia-root)/ya}
+JQ="$($YA_BIN tool jq --print-path)"
+
+# при обновлении версии скрипт постарается автообновиться
+YA_IDEA_VERSION=13
+
+set -e
+ARGS=( "$@" )
+
+function ya-idea {
+    local startTime=$(date +%s)
+    local R="$(get-arcadia-root)"
+
+    local proj_name=${1:-$(ya-idea-current-project)}
+    local targets="."
+    if [[ "$IGNORE_RECURSES" == true ]]; then
+        targets=`find . \( -path './perl'  -o -path './infra' -o -path './autotests' -o -path './qa' -o -path './**/src' -o -path './**/ut-gen' \) -prune -o -name ya.make | grep 'ya.make$' | xargs grep -lE 'JAVA_PROGRAM|JAVA_LIBRARY|JTEST|JUNIT5' | perl -pe 's/\/ya.make//; s/^/-C /; s/\n/ /;'`
+    fi
+    local addditional_targets=$(for x in ${ADDITIONAL_TARGETS[@]}; do echo -C $R/$x; done)
+    local make_opts="--stat-dir ${STAT_DIR} --stat --yt-store ${EXTRA_YA_MAKE_PARAMS}"
+    if [[ "$IGNORE_RECURSES" == true ]]; then
+        make_opts="--ignore-recurses $make_opts"
+    fi
+
+    # https://docs.yandex-team.ru/ya-make/usage/ya_ide/idea
+    local idea_opts="--group-modules tree --omit-test-data --iml-in-project-root --local ${EXTRA_YA_IDEA_IDE_PARAMS} -r $YA_IDEA_PROJECT_ROOT$proj_name"
+
+    if [[ -e "${R}/.svn" && "$DO_YA_CHECKOUT" == true ]]; then
+        echo "Start ya make --checkout -j0 ..."
+        time $YA_BIN make --checkout -j0 $make_opts $targets $addditional_targets
+    fi
+    echo "Start ya ide idea"
+    if [[ "$YA_IDEA_DEBUG" == true ]]; then
+        echo $YA_BIN ide idea $make_opts $idea_opts $targets $addditional_targets
+    fi
+    time $YA_BIN ide idea $make_opts $idea_opts $targets $addditional_targets \
+            && echo $YA_IDEA_PROJECT_ROOT$proj_name/$proj_name.ipr
+    local exit_code=$?
+
+    local endTime=$(date +%s)
+    if [[ "$ENABLE_SNITCHING" == true ]]; then
+        log-task-completion $((endTime-startTime)) ${PWD#$R}
+    fi
+    return $exit_code
+}
+
+
+# May be not work on Linux
+function ya-idea-open {
+    local proj_name=${1:-$(ya-idea-current-project)}
+    local cmd;
+    local os_name=`uname`;
+    if [ $os_name == 'Linux' ]; then
+	    cmd='idea'
+    else
+	    cmd='open'
+    fi
+    if [ -f $YA_IDEA_PROJECT_ROOT$proj_name/$proj_name.ipr ]; then
+        $cmd $YA_IDEA_PROJECT_ROOT$proj_name/$proj_name.ipr
+    else
+        # поддержка directory-based проектов
+	# в Linux открытие через open -b не работает
+        local proj_dir=$YA_IDEA_PROJECT_ROOT$proj_name
+        # пробуем открыть Idea Ultimate, если не получилось -- Idea CE
+        open -b com.jetbrains.intellij $proj_dir 2>/dev/null || open -b com.jetbrains.intellij.ce $proj_dir
+    fi
+}
+
+
+# Expects two arguments - durationSeconds (double) and path (string)
+function log-task-completion {
+    local intapi_url='https://intapi.direct.yandex.ru/'
+    local logging_method='metrics/add'
+    local logging_url="${intapi_url}${logging_method}"
+
+    local cache_hit=0
+    local tasks=0
+    local types_times=''
+    if [[ -s "${STAT_DIR}/cache-hit.json" ]]; then
+        cache_hit=$($JQ .cache_hit <"$STAT_DIR/cache-hit.json")
+        tasks=$($JQ .all_run_tasks <"$STAT_DIR/cache-hit.json")
+    fi
+    if [[ -s "${STAT_DIR}/longest-tasks.json" ]]; then
+        types_times=$($JQ -c 'group_by(.type) | map({name: ("ya-idea.build.task_type.\(.[0].type).sec" | gsub("[^a-zA-Z0-9_.-]"; "_") | gsub("(?<head>.{128}).*"; "\(.head)")), value: ((map(.elapsed) | add)/1000) }) | .[]' <${STAT_DIR}/longest-tasks.json | tr '\n' ',')
+    fi
+
+    local common_context="$(get_metrics_context $2)"
+
+    curl --trace-ascii - -X POST \
+        -H 'Content-Type: application/json' \
+        -H 'Accept: application/json' \
+        --max-time 2 \
+        -d '{"common_context": '"$common_context"',
+             "metrics": [
+                {"name":"ya_idea.build.sec", "value":'$1'},
+                '$types_times'
+                {"name":"ya_idea.build.cache-hit-ratio", "value":'$cache_hit'},
+                {"name":"ya_idea.build.tasks", "value":'$tasks'}
+           ]}' \
+        $logging_url >>"${HOME}/.ya/direct-ya-idea.log" 2>&1 || echo "Warning: Can't send metrics, details: ${HOME}/.ya/direct-ya-idea.log"
+}
+
+function get_metrics_context {
+    local path="$1"
+    local platform=$(uname)
+    local cpu=""
+    local hw=""
+    if [ "$platform" == 'Darwin' ]; then
+        cpu=$(sysctl -n machdep.cpu.brand_string || unknown)
+        hw=$(sysctl -n hw.model || unknown)
+    else
+        cpu=$(cat /proc/cpuinfo | awk -F ': *' '/^model name/ {print $2}' | head -1 || unknown)
+        hw=unknown
+    fi
+    $JQ -n --arg platform "$platform" \
+            --arg hardware "$hw" \
+            --arg cpu "$cpu" \
+            --arg uniqId "$((RANDOM + 32768 * (RANDOM + 32768 * RANDOM)))" \
+            --arg login "$USER" \
+            --arg vcs "$(get_vcs)" \
+            --arg path "$path" \
+            '{
+            platform: $platform,
+            hardware: $hardware,
+            cpu: $cpu,
+            uniqId: $uniqId,
+            login: $login,
+            vcs: $vcs,
+            path: $path,
+            }' # после обновления jq можно будет написать '$ARGS.named'
+}
+
+function ya-idea-current-project {
+    if [[ "$PROJECT_PATH_METHOD" == "old" ]]; then
+        ya-idea-current-project-old
+    else
+        ya-idea-current-project-new
+    fi
+}
+
+
+function ya-idea-current-project-new {
+    local R="$(get-arcadia-root)"
+    local wc_part="$(basename "${R}")"
+    local subdir="${PWD:${#R}+1}"
+    subdir=${subdir//\//_}
+    echo "${wc_part}-${subdir}"
+}
+
+
+function ya-idea-current-project-old {
+    local default_proj_name=$(basename "$PWD")
+    if [[ "$default_proj_name" == "direct" ]]; then
+        default_proj_name="direct-$(basename "$(dirname "$PWD")")"
+    fi
+    echo "$default_proj_name"
+}
+
+
+function get_vcs {
+    local R="$(get-arcadia-root)"
+    if [ -e "$R/.hg" ]; then echo hg
+    elif [ -e "$R/.svn" ]; then echo svn
+    elif [ -e "$R/.arc" ]; then echo arc
+    else echo unknown
+    fi
+}
+
+
+function self_update {
+    local R="$(get-arcadia-root)"
+    local old="$0"
+    local new="$R/direct/bin/ya-idea"
+    if [ ! -f "$new" ]; then return; fi
+    if [ ! -f "$old" ]; then return; fi
+    local old_version=$(awk -F= '/^YA_IDEA_VERSION=[0-9]+$/ {print $2}' "$old")
+    local new_version=$(awk -F= '/^YA_IDEA_VERSION=[0-9]+$/ {print $2}' "$new")
+    if [[ ! "$old_version" || ! "$new_version" || "$old_version" -ge "$new_version" ]]; then return; fi
+
+    echo "File $old differ from $new"
+
+    if [ "$UPDATE_MODE" == "ask" ]; then
+        diff -u "$old" "$new" || true
+        echo -n "Do you want to update (y/n)? "
+        local answer
+        read answer
+        if [ "$answer" == "${answer#[Yy]}" ] ;then
+            echo Update skipped
+            return
+        fi
+    elif [ "$UPDATE_MODE" != "auto" ]; then
+        echo "Update skipped (UPDATE_MODE=$UPDATE_MODE)"
+        return
+    fi
+    echo "Copy $R/direct/bin/ya-idea to $0"
+    cp "$R/direct/bin/ya-idea" "$0.tmp"
+    mv "$0.tmp" "$0"
+    echo "Respawn..."
+    exec "$0" "$ARGS"
+}
+
+
+test -f ~/.ya/direct-ya-idea.overrides.sh && source ~/.ya/direct-ya-idea.overrides.sh
+
+if [ "$UPDATE_MODE" != "never" ]; then
+    self_update
+fi
+
+mode=${1:-default}
+if [ "$mode" == "--help" ] || [ "$mode" == "-h" ]; then
+    echo "Usage: $0 [build|open]"
+    echo "       build (default) - create Idea project"
+    echo "       open - open created project in Idea"
+elif [ "$mode" == "default" ] || [ "$mode" == "build" ]; then
+    ya-idea
+    if [[ "$AUTO_OPEN" == true ]]; then
+        ya-idea-open
+    fi
+elif [ "$mode" == "open" ]; then
+    ya-idea-open
+elif [ "$mode" == "nop" ]; then
+    echo nop
+else
+    echo "ERROR: Unsupported mode $mode"
+    exit 1
+fi
+
+

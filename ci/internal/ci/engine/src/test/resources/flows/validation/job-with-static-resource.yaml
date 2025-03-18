@@ -1,0 +1,58 @@
+service: ci
+title: Test
+ci:
+  secret: sec-xxx
+  runtime:
+    sandbox:
+      owner: CI
+
+  flows:
+    flow-with-static-resource:
+      jobs:
+        job-with-static-resource:
+          task: ci_test/some_task_1
+          version: stable
+          input:
+            # Поле, названное как в Protobuf поддерживается
+            simple_data_field:
+              # Поле в camelCase нотации тоже поддерживается парсером Protobuf (по умолчанию, см. CI-978)
+              simpleString: "some string"
+
+        job-with-static-primitive-resource:
+          task: ci_test/some_task_2
+          version: stable
+          input:
+            primitives:
+              # Все примитивные значения будут проверены специальным образом - мы доверяем тому,
+              # что результатом выражения будет нужный тип данных
+              int_field: ${tasks.job-1-x.int_field}
+              string_field: String ${tasks.job-1-x.string_field}
+              double_field: ${tasks.job-1-x.double_field}
+              boolean_field: ${tasks.job-1-x.double_field}
+
+        job-with-multiply1:
+          task: ci_test/some_task_1
+          needs: job-with-static-resource
+          multiply:
+            by: ${tasks.upstream}
+            max-jobs: 21
+            title: Total - ${index} out of ${size}
+          input:
+            simple_data_field: ${by}
+
+        # Можно создать еще один multiply, не связанный по графу с предыдущим
+        job-with-multiply2:
+          task: ci_test/some_task_1
+          multiply:
+            by: ${tasks.upstream}
+            max-jobs: 21
+            title: Total - ${index} out of ${size}
+          input:
+            simple_data_field: ${by}
+
+        job-with-condition:
+          task: ci_test/some_task_1
+          if: ${tasks.job-1-x.int_field > `0`}
+          input:
+            simple_data_field:
+              simple_string: "some string"

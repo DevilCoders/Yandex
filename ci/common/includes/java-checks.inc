@@ -1,0 +1,164 @@
+USE_ERROR_PRONE()
+
+JAVAC_FLAGS(
+    -Xep:MissingSummary:OFF
+    -Xep:FallThrough:OFF
+    -Xep:SameNameButDifferent:OFF
+    -Xep:UnusedMethod:OFF
+
+    #-Xep:FieldMissingNullable:WARN
+    -Xep:ReturnMissingNullable:WARN
+    -Xep:ParameterMissingNullable:WARN
+    -Xep:ReturnsNullCollection:WARN
+)
+
+IF(NOT YA_IDE_IDEA)
+ JAVAC_FLAGS(
+     -Werror
+ )
+ENDIF()
+
+
+LINT(extended)
+
+JAVA_DEPENDENCIES_CONFIGURATION(
+    FORBID_DEFAULT_VERSIONS
+    FORBID_DIRECT_PEERDIRS
+    FORBID_CONFLICT
+    FORBID_CONFLICT_DM_RECENT
+)
+
+
+CHECK_JAVA_DEPS(yes)
+#Conflict between protobuf-java and protobuf-javalite ¯\_(ツ)_/¯
+JAVA_IGNORE_CLASSPATH_CLASH_FOR(
+    com.google.protobuf.Any$1
+    com.google.protobuf.Any$Builder
+    com.google.protobuf.Any
+    com.google.protobuf.AnyOrBuilder
+    com.google.protobuf.AnyProto
+    com.google.protobuf.Api$1
+    com.google.protobuf.Api$Builder
+    com.google.protobuf.Api
+    com.google.protobuf.ApiOrBuilder
+    com.google.protobuf.ApiProto
+    com.google.protobuf.BoolValue$1
+    com.google.protobuf.BoolValue$Builder
+    com.google.protobuf.BoolValue
+    com.google.protobuf.BoolValueOrBuilder
+    com.google.protobuf.BytesValue$1
+    com.google.protobuf.BytesValue$Builder
+    com.google.protobuf.BytesValue
+    com.google.protobuf.BytesValueOrBuilder
+    com.google.protobuf.DoubleValue$1
+    com.google.protobuf.DoubleValue$Builder
+    com.google.protobuf.DoubleValue
+    com.google.protobuf.DoubleValueOrBuilder
+    com.google.protobuf.Duration$1
+    com.google.protobuf.Duration$Builder
+    com.google.protobuf.Duration
+    com.google.protobuf.DurationOrBuilder
+    com.google.protobuf.DurationProto
+    com.google.protobuf.Empty$1
+    com.google.protobuf.Empty$Builder
+    com.google.protobuf.Empty
+    com.google.protobuf.EmptyOrBuilder
+    com.google.protobuf.EmptyProto
+    com.google.protobuf.Enum$1
+    com.google.protobuf.Enum$Builder
+    com.google.protobuf.Enum
+    com.google.protobuf.EnumOrBuilder
+    com.google.protobuf.EnumValue$1
+    com.google.protobuf.EnumValue$Builder
+    com.google.protobuf.EnumValue
+    com.google.protobuf.EnumValueOrBuilder
+    com.google.protobuf.Field$1
+    com.google.protobuf.Field$Builder
+    com.google.protobuf.Field$Cardinality$1
+    com.google.protobuf.Field$Cardinality
+    com.google.protobuf.Field$Kind$1
+    com.google.protobuf.Field$Kind
+    com.google.protobuf.Field
+    com.google.protobuf.FieldMask$1
+    com.google.protobuf.FieldMask$Builder
+    com.google.protobuf.FieldMask
+    com.google.protobuf.FieldMaskOrBuilder
+    com.google.protobuf.FieldMaskProto
+    com.google.protobuf.FieldOrBuilder
+    com.google.protobuf.FloatValue$1
+    com.google.protobuf.FloatValue$Builder
+    com.google.protobuf.FloatValue
+    com.google.protobuf.FloatValueOrBuilder
+    com.google.protobuf.Int32Value$1
+    com.google.protobuf.Int32Value$Builder
+    com.google.protobuf.Int32Value
+    com.google.protobuf.Int32ValueOrBuilder
+    com.google.protobuf.Int64Value$1
+    com.google.protobuf.Int64Value$Builder
+    com.google.protobuf.Int64Value
+    com.google.protobuf.Int64ValueOrBuilder
+    com.google.protobuf.ListValue$1
+    com.google.protobuf.ListValue$Builder
+    com.google.protobuf.ListValue
+    com.google.protobuf.ListValueOrBuilder
+    com.google.protobuf.Method$1
+    com.google.protobuf.Method$Builder
+    com.google.protobuf.Method
+    com.google.protobuf.MethodOrBuilder
+    com.google.protobuf.Mixin$1
+    com.google.protobuf.Mixin$Builder
+    com.google.protobuf.Mixin
+    com.google.protobuf.MixinOrBuilder
+    com.google.protobuf.NullValue$1
+    com.google.protobuf.NullValue
+    com.google.protobuf.Option$1
+    com.google.protobuf.Option$Builder
+    com.google.protobuf.Option
+    com.google.protobuf.OptionOrBuilder
+    com.google.protobuf.SourceContext$1
+    com.google.protobuf.SourceContext$Builder
+    com.google.protobuf.SourceContext
+    com.google.protobuf.SourceContextOrBuilder
+    com.google.protobuf.SourceContextProto
+    com.google.protobuf.StringValue$1
+    com.google.protobuf.StringValue$Builder
+    com.google.protobuf.StringValue
+    com.google.protobuf.StringValueOrBuilder
+    com.google.protobuf.Struct$1
+    com.google.protobuf.Struct$Builder
+    com.google.protobuf.Struct$FieldsDefaultEntryHolder
+    com.google.protobuf.Struct
+    com.google.protobuf.StructOrBuilder
+    com.google.protobuf.StructProto
+    com.google.protobuf.Syntax$1
+    com.google.protobuf.Syntax
+    com.google.protobuf.Timestamp$1
+    com.google.protobuf.Timestamp$Builder
+    com.google.protobuf.Timestamp
+    com.google.protobuf.TimestampOrBuilder
+    com.google.protobuf.TimestampProto
+    com.google.protobuf.Type$1
+    com.google.protobuf.Type$Builder
+    com.google.protobuf.Type
+    com.google.protobuf.TypeOrBuilder
+    com.google.protobuf.TypeProto
+    com.google.protobuf.UInt32Value$1
+    com.google.protobuf.UInt32Value$Builder
+    com.google.protobuf.UInt32Value
+    com.google.protobuf.UInt32ValueOrBuilder
+    com.google.protobuf.UInt64Value$1
+    com.google.protobuf.UInt64Value$Builder
+    com.google.protobuf.UInt64Value
+    com.google.protobuf.UInt64ValueOrBuilder
+    com.google.protobuf.Value$1
+    com.google.protobuf.Value$Builder
+    com.google.protobuf.Value$KindCase
+    com.google.protobuf.Value
+    com.google.protobuf.ValueOrBuilder
+    com.google.protobuf.WrappersProto
+)
+
+# Temporal staff
+JAVA_IGNORE_CLASSPATH_CLASH_FOR(
+    io.temporal.internal.testservice.CronUtils
+)

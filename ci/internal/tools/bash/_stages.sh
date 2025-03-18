@@ -1,0 +1,131 @@
+#!/bin/bash
+
+# GENERATED AUTOMATICALLY BY refresh_stages.sh
+case $STAGE in
+ci-api-testing)
+    UNIT="api"
+    BOX="api"
+    ;;
+ci-ayamler-api-testing)
+    UNIT="ayamler-api"
+    BOX="api"
+    ;;
+ci-event-reader-testing)
+    UNIT="event-reader"
+    BOX="event-reader"
+    ;;
+ci-observer-api-testing)
+    UNIT="ObserverApi"
+    BOX="ObserverApiBox"
+    ;;
+ci-observer-reader-testing)
+    UNIT="ObserverReader"
+    BOX="ObserverReaderBox"
+    ;;
+ci-storage-api-testing)
+    UNIT="storage-api"
+    BOX="storage-api-box"
+    ;;
+ci-storage-exporter-testing)
+    UNIT="storage-exporter"
+    BOX="storage-exporter"
+    ;;
+ci-storage-post-processor-testing)
+    UNIT="PostProcessorUnit"
+    BOX="PostProcessorBox"
+    ;;
+ci-storage-reader-testing)
+    UNIT="StorageReaderUnit"
+    BOX="StorageReaderBox"
+    ;;
+ci-storage-shard-testing)
+    UNIT="StorageShard"
+    BOX="StorageShardBox"
+    ;;
+ci-storage-tms-testing)
+    UNIT="storage-tms"
+    BOX="storage-tms"
+    ;;
+ci-tms-testing)
+    UNIT="tms"
+    BOX="tms"
+    ;;
+ci-storage-api-prestable)
+    UNIT="storage-api"
+    BOX="storage-api"
+    ;;
+ci-storage-post-processor-prestable)
+    UNIT="PostProcessorUnit"
+    BOX="PostProcessorBox"
+    ;;
+ci-storage-reader-prestable)
+    UNIT="storage-reader"
+    BOX="storage-reader"
+    ;;
+ci-storage-shard-prestable)
+    UNIT="storage-shard"
+    BOX="storage-shard"
+    ;;
+ci-storage-tms-prestable)
+    UNIT="storage-tms"
+    BOX="storage-tms"
+    ;;
+ci-api-stable)
+    UNIT="api"
+    BOX="api"
+    ;;
+ci-ayamler-api-stable)
+    UNIT="ayamler-api"
+    BOX="api"
+    ;;
+ci-event-reader-stable)
+    UNIT="event-reader"
+    BOX="event-reader"
+    ;;
+ci-observer-api-stable)
+    UNIT="ObserverApi"
+    BOX="ObserverApiBox"
+    ;;
+ci-observer-reader-stable)
+    UNIT="ObserverReader"
+    BOX="ObserverReaderBox"
+    ;;
+ci-storage-api-stable)
+    UNIT="storage-api"
+    BOX="storage-api-box"
+    ;;
+ci-storage-post-processor-stable)
+    UNIT="PostProcessorUnit"
+    BOX="PostProcessorBox"
+    ;;
+ci-storage-reader-stable)
+    UNIT="StorageReader"
+    BOX="StorageReader"
+    ;;
+ci-storage-shard-stable)
+    UNIT="StorageShard"
+    BOX="StorageShardBox"
+    ;;
+ci-storage-tms-stable)
+    UNIT="storage-tms"
+    BOX="storage-tms"
+    ;;
+ci-tms-stable)
+    UNIT="tms"
+    BOX="tms"
+    ;;
+testenv-prod)
+    UNIT="engine"
+    BOX="engine"
+    ;;
+*)
+    UNIT=""
+    BOX=""
+    ;;
+esac
+
+export STAGE
+export UNIT
+export BOX
+export ALL_STAGES=(ci-api-testing ci-ayamler-api-testing ci-event-reader-testing ci-observer-api-testing ci-observer-reader-testing ci-storage-api-testing ci-storage-exporter-testing ci-storage-post-processor-testing ci-storage-reader-testing ci-storage-shard-testing ci-storage-tms-testing ci-tms-testing ci-storage-api-prestable ci-storage-post-processor-prestable ci-storage-reader-prestable ci-storage-shard-prestable ci-storage-tms-prestable ci-api-stable ci-ayamler-api-stable ci-event-reader-stable ci-observer-api-stable ci-observer-reader-stable ci-storage-api-stable ci-storage-post-processor-stable ci-storage-reader-stable ci-storage-shard-stable ci-storage-tms-stable ci-tms-stable testenv-prod )
+

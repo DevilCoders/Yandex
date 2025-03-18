@@ -1,0 +1,175 @@
+syntax = "proto3";
+
+package ci.tracker.create_issue;
+
+import "ci/tasklet/common/proto/service.proto";
+import "tasklet/api/tasklet.proto";
+import "tasklet/services/yav/proto/yav.proto";
+import "tasklet/services/ci/proto/ci.proto";
+
+// How to move issue to another state
+message Transition {
+    // Target transition status, one of possible values in order of priority match:
+    // 1) Transition id, not recommended
+    // 2) Target status key
+    // 3) Target status display (RU)
+
+    // WARNING: Both 2 and 3 options will not throw error if issue is already on requested status.
+    // With option 1 it is possible to get error if issue is already on requested state, basically because
+    // we can't tell that.
+
+    // Assuming `Transition{id: readyForTestTran, to: StatusRef{id: 27, key: readyForTest, display: Можно тестировать}}`
+    // 'readyForTestTran' match by p.1, 'readyForTest' matched by p.2, 'Можно тестировать' matched by p.p2,
+    string status = 1;
+
+    // Resolution, one of possible values in order of priority match:
+    // 1) Resolution key
+    // 2) Resolution display (RU)
+    string resolution = 2; // Optional resolution (useful to close the issue)
+
+    bool ignore_no_transition = 3; // If no transition found - ignore it
+    bool ignore_error = 4; // Ignore transition error (if something happens to Startrek)
+}
+
+message LinkedIssueUpdate {
+    // Add a comment to a linked issue (always add a new comment, do not check if same comment from same robot exists)
+    // Supports multiple templates:
+    // * {{revision}} - revision (arc-hash for branches or SVN-revision for trunk)
+    // * {{issues}} - link of tickets, matches with queues from config.link.queues
+    // * {{commits}} - list of commits, matches with rule from config.link.type
+    string comment = 1;
+
+    // Allow transition for linked issues
+    Transition transition = 2;
+}
+
+// How to link commits to current release issue
+message LinkingRules {
+    GetCommitsRequest.Type type = 1;
+    int32 max_commits = 2; // Maximum number of commits to include into Ticket, cannot be more than 999
+
+    // Accept only issues from this queues and link to release, when empty - accept from all queues
+    // Make sure your robot have access to create issues from all those queues
+    repeated string queues = 3;
+}
+
+// Main config
+message Config {
+    yav_service.YavSecretSpec secret = 1; // Token to access Tracker API, `uuid` field is ignored, must be primary token from a.yaml
+    LinkingRules link = 2; // Linking rules
+}
+
+message Checklist {
+    string text = 1; // Visible text
+    bool checked = 2; // Checked by default
+}
+
+message UpdateTemplate {
+
+    // Add a comment, supports multiple templates:
+    // * {{revision}} - revision (arc-hash for branches or SVN-revision for trunk)
+    // * {{issues}} - link of tickets, matches with queues from config.link.queues
+    // * {{commits}} - list of commits, matches with rule from config.link.type
+    string comment = 1;
+
+    // Default update configuration for linked issues, matched with issues only from current build
+    // I.e. we update issues from changelist only, do not update manually linked issues
+    LinkedIssueUpdate linked = 20;
+
+    // Separate configurations for each queue
+    map<string, LinkedIssueUpdate> linked_queues = 21;
+}
+
+// All standard Tracker fields
+message Template {
+    string queue = 1; // Make sure your robot has access to create and modify issues in this queue
+    string type = 2;
+    string summary = 3;
+
+    // Version will be created if not exists
+    // Mandatory or not, depending on Rules.on_duplicate option
+    // When on_duplicate is UPDATE or FAIL this value is mandatory;
+    //  all existing issued will be matched against this `type` and `fix_version`
+    string fix_version = 15;
+
+    // Supports multiple templates
+    // * {{revision}} - revision (arc-hash for branches or SVN-revision for trunk)
+    // * {{issues}} - link of tickets, matches with queues from config.link.queues
+    // * {{commits}} - list of commits, matches with rule from config.link.type
+    string description = 4;
+
+    string assignee = 5;
+    string priority = 6;
+    repeated string followers = 8;
+    repeated string tags = 10;
+    string parent = 12;
+    string epic = 13;
+
+    // Components to add, identified by name
+    // Each component must exists
+    repeated string components = 16;
+
+    // ABC Services to add, identified either by slug or service id (field 'ID' in ABC)
+    // ABC slug will be validated but id will not
+    repeated string abc_services = 17;
+
+    repeated Checklist checklist = 14; // Checklist to render in issue
+
+    // Default update configuration for all linked issues
+    LinkedIssueUpdate linked = 20;
+
+    // Separate configurations for each queue
+    map<string, LinkedIssueUpdate> linked_queues = 21;
+}
+
+
+message Rules {
+    OnDuplicate on_duplicate = 1; // What should we do if issue with same Template.fix_version already exists
+    enum OnDuplicate {
+        NEW = 0; // Just create new issue
+        UPDATE = 1; // Update existing issue, adding comment with new tickets; Template.fix_version is mandatory
+        FAIL = 2; // Raise an exception; Template.fix_version is mandatory
+    }
+}
+
+message Issue {
+    string issue = 1; // Issue number we just created
+    bool is_new = 2;
+}
+
+message Input {
+    ci.TaskletContext context = 1;
+
+    Config config = 2;
+
+    // Create issue rules
+    Rules rules = 5;
+
+    // Template for new issues
+    Template template = 3;
+
+    // Template for updated issues
+    UpdateTemplate update_template = 4;
+}
+
+message Output {
+    Issue issue = 1; // Create issue
+    Config config = 2; // Default configuration using during creation, could be overwritten
+}
+
+message Context {
+    option (tasklet.context) = true;
+
+    string id = 1 [(tasklet.inject) = true];
+    yav_service.YavService yav = 2 [(tasklet.inject) = true];
+    ci.CiService ci = 3 [(tasklet.inject) = true];
+}
+
+message CreateIssue {
+    option (tasklet.tasklet_interface) = true;
+
+    Context ctx = 1;
+
+    Input input = 2 [(tasklet.input) = true];
+    Output output = 3 [(tasklet.output) = true];
+}

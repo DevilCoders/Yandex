@@ -1,0 +1,1 @@
+./update_beta_tasklet run UpdateASRBeta --local --input "$(cat ./monolith_params.json)"

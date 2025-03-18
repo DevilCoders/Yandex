@@ -1,0 +1,788 @@
+service: cidemo
+title: Yandex CI Demo Projects
+
+arcanum:
+  auto_merge:
+    requirements:
+      - system: arcanum
+        type: approved
+        data:
+          min_approvers_count: 1
+          ignore_self_ship: true
+
+
+shared:
+
+  auto: &auto
+    conditions:
+      - min-commits: 4
+      - since-last-release: 1h
+
+ci:
+
+  secret: sec-01e8agdtdcs61v6emr05h5q1ek
+  runtime:
+    sandbox-owner: CI
+
+  releases:
+    demo-common-misc-run_command:
+      title: Демо тасклета common/misc/run_command
+      flow: demo-common-misc-run_command
+      flow-vars:
+        version: stable
+      filters:
+        - sub-paths: [ common/misc/**, common/sandbox/build_lxc_image* ]
+        - abs-paths: [ ci/demo-project/** ]
+      auto:
+        <<: *auto
+
+    demo-common-sandbox-build-lxc-image:
+      title: Демо тасклета common/sandbox/build_lxc_image
+      flow: demo-common-sandbox-build-lxc-image
+      filters:
+        - sub-paths: [ common/sandbox/build_lxc_image* ]
+      auto:
+        <<: *auto
+
+    demo-picklock:
+      title: Демо работы с секретницей
+      flow: demo-picklock
+      auto:
+        <<: *auto
+
+    demo-changelog:
+      title: Демо работы с формированием changelog-а
+      flow: demo-changelog
+      auto:
+        <<: *auto
+
+  actions:
+    demo-common-misc-run_command:
+      title: Проверка common/misc/run_command в PR
+      flow: demo-common-misc-run_command
+      flow-vars:
+        version: testing
+      triggers:
+        - on: pr
+          filters:
+            - sub-paths: [ a.yaml, common/misc/**, common/sandbox/build_lxc_image* ]
+
+    demo-changelog:
+      title: Проверка demo/changelog в PR
+      flow: demo-changelog
+      triggers:
+        - on: pr
+          filters:
+            - sub-paths: [ a.yaml, demo/** ]
+
+    demo-common-monitoring:
+      title: Проверка common/monitoring в PR
+      description: |
+        * common/monitoring/infra_close
+        * common/monitoring/infra_create
+        * common/monitoring/infra_check_events
+        * common/monitoring/juggler_watch
+      flow: common-monitoring
+      triggers:
+        - on: pr
+          filters:
+            - sub-paths: [ a.yaml, common/monitoring/** ]
+
+
+  flows:
+    demo-common-sandbox-build-lxc-image:
+      title: Flow задачи common/sandbox/build_lxc_image
+      jobs:
+        start:
+          title: Запуск тестового flow
+          task: dummy
+
+        build-image:
+          title: Build LXC image with Java and Maven
+          task: common/sandbox/build_lxc_image
+          needs: start
+          input:
+            custom_attrs:
+              ttl: 14
+            custom_script: |
+              set -ex
+              apt-get update
+              apt-get install -y maven yandex-jdk8 yandex-openjdk11 fuse
+
+    demo-common-misc-run_command:
+      title: Flow тасклета common/misc/run_command
+      jobs:
+        start:
+          description: Just a start for flow
+          task: dummy
+
+        run-simple:
+          description: Run Simple command
+          task: common/misc/run_command
+          version: ${flow-vars.version}
+          needs: start
+          input:
+            config:
+              cmd_line: |
+                pwd
+                echo "Hello, \"$${ENV_VAR}\"!"
+                echo "And don't expect \"$${EMPTY_VAR}\""
+                echo "Current SANDBOX_TASK_ID = $SANDBOX_TASK_ID"
+                [ -z "$SANDBOX_TASK_ID" ] && exit 1 || echo "Task is OK"
+                echo "Current SANDBOX_TASK_OWNER = $SANDBOX_TASK_OWNER"
+                [ -z "$SANDBOX_TASK_OWNER" ] && exit 1 || echo "Owner is OK"
+              environment_variables:
+                - key: ENV_VAR
+                  value: world
+                - key: EMPTY_VAR
+                  value: ""
+
+        run-ya:
+          description: Run ya make in Arcadia
+          task: common/misc/run_command
+          version: ${flow-vars.version}
+          needs: start
+          input:
+            config:
+              cmd_line: |
+                pwd
+                echo "Current PATH is $PATH"
+                $ARC_BIN status
+                arc status
+                ./ya make ci/demo-project --stat
+                ya make ci/demo-project --stat
+                ci/demo-project/graph-discovery/example2/cpp_project1/cpp_hello_world/hello
+                cp ci/demo-project/graph-discovery/example2/cpp_project1/cpp_hello_world/hello $RESULT_RESOURCES_PATH/
+              arc_mount_config:
+                enabled: true
+                extra_params:
+                  - --yav-token-via-ssh
+              result_resources:
+                - path: hello
+                  description: Hello World binary from ci/demo-project
+                  type: OTHER_RESOURCE
+                  attributes:
+                    ttl: "7"
+
+        run-arc:
+          description: Check arc commands
+          task: common/misc/run_command
+          version: ${flow-vars.version}
+          needs: start
+          input:
+            config:
+              cmd_line: |
+                set -ex
+                pwd
+                echo "Current PATH is $PATH"
+
+                echo "YA_USER=$YA_USER"
+                [ "$YA_USER" != "robot-ci-internal" ] && exit 1 || echo "YA_USER is OK"
+
+                echo "LOGNAME=$LOGNAME"
+                [ "$LOGNAME" != "robot-ci-internal" ] && exit 1 || echo "LOGNAME is OK"
+
+                echo "text" > test-1.txt
+                arc add test-1.txt
+                arc commit -m "Simple commit"
+                arc info
+
+                LAST_AUTHOR=`arc info | grep "author:"`
+                echo "LAST_AUTHOR=$LAST_AUTHOR"
+                [ "$LAST_AUTHOR" != "author: robot-ci-internal" ] && exit 1 || echo "LAST_AUTHOR is OK"
+              arc_mount_config:
+                enabled: true
+
+
+        run-decrypted:
+          description: Test arc decryption
+          task: common/misc/run_command
+          version: ${flow-vars.version}
+          needs: start
+          input:
+            config:
+              cmd_line: |
+                ls -al ci/demo-project
+                cat ci/demo-project/sample-secret
+              arc_mount_config:
+                enabled: true
+                yav_token:
+                    uuid: sec-01e8agdtdcs61v6emr05h5q1ek
+                    key: arc.encryption.token
+
+
+        run-over-lxc:
+          description: Run command available only in LXC container with Arcadia
+          task: common/misc/run_command
+          version: ${flow-vars.version}
+          needs: start
+          requirements:
+            cores: 4
+            sandbox:
+              client_tags: GENERIC & LINUX & SSD & LXC
+              container_resource: 2782777528
+          input:
+            config:
+              # В контейнере довезена Аркадия и смонтирована в $ARCADIA_PATH
+              cmd_line: |
+                set -ex
+                arc status
+
+                source /opt/nvm/nvm.sh
+                nvm use 16
+                node -e 'console.log(process.env.ARCADIA_PATH)'
+              arc_mount_config:
+                enabled: true
+
+        run-with-docker:
+          description: Run command with Docker
+          task: common/misc/run_command
+          version: ${flow-vars.version}
+          needs: start
+          requirements:
+            cores: 4
+            sandbox:
+              client_tags: GENERIC & LINUX & SSD & LXC
+              container_resource: 2782777528
+              dns: dns64
+          input:
+            config:
+              cmd_line: |
+                docker login -u robot-ci-internal -p $DOCKER_OAUTH registry.yandex.net
+                docker run hello-world
+              secret_environment_variables: # OAuth токен для авторизации в registry.yandex.net
+                - key: DOCKER_OAUTH
+                  secret_spec:
+                    key: docker.token
+
+        run-with-resources:
+          description: Run command and produce some resources
+          task: common/misc/run_command
+          version: ${flow-vars.version}
+          needs: start
+          input:
+            config:
+              cmd_line: |
+                echo "Building resources..."
+                mkdir -p $RESULT_RESOURCES_PATH/single
+                echo `pwd` > $RESULT_RESOURCES_PATH/single/arcadia_path.txt
+
+                mkdir -p $RESULT_RESOURCES_PATH/dir-none
+                echo "1" > $RESULT_RESOURCES_PATH/dir-none/1.txt
+                echo "2" > $RESULT_RESOURCES_PATH/dir-none/2.txt
+
+                mkdir -p $RESULT_RESOURCES_PATH/dir-with-index
+                echo "1" > $RESULT_RESOURCES_PATH/dir-with-index/1.txt
+                echo "2" > $RESULT_RESOURCES_PATH/dir-with-index/2.txt
+
+                mkdir -p $RESULT_RESOURCES_PATH/dir-tar
+                echo "1" > $RESULT_RESOURCES_PATH/dir-tar/1.txt
+                echo "2" > $RESULT_RESOURCES_PATH/dir-tar/2.txt
+
+                mkdir -p $RESULT_RESOURCES_PATH/dir-tgz
+                echo "1" > $RESULT_RESOURCES_PATH/dir-tgz/1.txt
+                echo "2" > $RESULT_RESOURCES_PATH/dir-tgz/2.txt
+
+                echo '{"key": "file", "resource_name": "dir-none"}' > $RESULT_RESOURCES_PATH/dir-none.json
+                echo '{"resource_name": "dir-with-index"}' > $RESULT_RESOURCES_PATH/dir-with-index.json
+                echo '{"key": "file", "resource_name": "dir-tar"}' > $RESULT_RESOURCES_PATH/dir-tar.json
+              result_resources:
+                - path: single/arcadia_path.txt
+                  description: Path in Arcadia
+                  type: OTHER_RESOURCE
+                  ci_badge: true
+                - path: dir-none
+                  description: Dir without compression
+                  compression_type: none
+                  type: OTHER_RESOURCE
+                  ci_badge: true
+                  attributes_path: dir-none.json
+                - path: dir-with-index
+                  description: Dir without compression with target file in dir
+                  compression_type: none
+                  type: OTHER_RESOURCE
+                  ci_badge: true
+                  ci_badge_path: 1.txt
+                  attributes:
+                    key: base
+                  attributes_path: dir-with-index.json
+                - path: dir-tar
+                  description: Dir with tar compression
+                  compression_type: tar
+                  type: OTHER_RESOURCE
+                  ci_badge: true
+                  attributes:
+                    key: base
+                  attributes_path: dir-tar.json
+                - path: dir-tgz
+                  description: Dir with tar.gz compression
+                  type: OTHER_RESOURCE
+                  attributes:
+                    release: stable
+                    resource_name: my-dir
+                  ci_badge: true
+
+        run-with-resources-direct-links:
+          description: Run command and produce some resources
+          task: common/misc/run_command
+          version: ${flow-vars.version}
+          needs: start
+          input:
+            config:
+              direct_output_links: true
+              cmd_line: |
+                echo "Building resources..."
+                mkdir -p $RESULT_RESOURCES_PATH/single
+                echo `pwd` > $RESULT_RESOURCES_PATH/single/arcadia_path.txt
+
+                mkdir -p $RESULT_RESOURCES_PATH/dir-none
+                echo "1" > $RESULT_RESOURCES_PATH/dir-none/1.txt
+                echo "2" > $RESULT_RESOURCES_PATH/dir-none/2.txt
+
+                mkdir -p $RESULT_RESOURCES_PATH/dir-with-index
+                echo "1" > $RESULT_RESOURCES_PATH/dir-with-index/1.txt
+                echo "2" > $RESULT_RESOURCES_PATH/dir-with-index/2.txt
+
+                mkdir -p $RESULT_RESOURCES_PATH/dir-tar
+                echo "1" > $RESULT_RESOURCES_PATH/dir-tar/1.txt
+                echo "2" > $RESULT_RESOURCES_PATH/dir-tar/2.txt
+
+                mkdir -p $RESULT_RESOURCES_PATH/dir-tgz
+                echo "1" > $RESULT_RESOURCES_PATH/dir-tgz/1.txt
+                echo "2" > $RESULT_RESOURCES_PATH/dir-tgz/2.txt
+              result_resources:
+                - path: single/arcadia_path.txt
+                  description: Path in Arcadia
+                  type: OTHER_RESOURCE
+                  ci_badge: true
+                - path: dir-none
+                  description: Dir without compression
+                  compression_type: none
+                  type: OTHER_RESOURCE
+                  ci_badge: true
+                - path: dir-with-index
+                  description: Dir without compression with target file in dir
+                  compression_type: none
+                  type: OTHER_RESOURCE
+                  ci_badge: true
+                  ci_badge_path: 1.txt
+                - path: dir-tar
+                  description: Dir with tar compression
+                  compression_type: tar
+                  type: OTHER_RESOURCE
+                  ci_badge: true
+                - path: dir-tgz
+                  description: Dir with tar.gz compression
+                  type: OTHER_RESOURCE
+                  attributes:
+                    release: stable
+                    resource_name: my-dir
+                  ci_badge: true
+
+
+        check-run-with-resources:
+          description: Check if produced resource has attribute
+          task: dummy
+          needs: run-with-resources
+          if: ${tasks.run-with-resources.resources[?type == 'OTHER_RESOURCE'].attributes | [?release == 'stable'].release | single(@) == 'stable' }
+
+        run-with-external-resources:
+          description: Run command and inject external resources
+          task: common/misc/run_command
+          version: ${flow-vars.version}
+          needs: start
+          input:
+            config:
+              result_external_resources_from_files: true
+              cmd_line: |
+                touch $RESULT_EXTERNAL_RESOURCES_PATH/2512315288
+                touch $RESULT_EXTERNAL_RESOURCES_PATH/2512315300
+
+        run-with-external-resources-direct-links:
+          description: Run command and inject external resources
+          task: common/misc/run_command
+          version: ${flow-vars.version}
+          needs: start
+          input:
+            config:
+              cmd_line: |
+                touch $RESULT_EXTERNAL_RESOURCES_PATH/2512315288
+                touch $RESULT_EXTERNAL_RESOURCES_PATH/2512315300
+              result_external_resources_from_files: true
+              direct_output_links: true
+
+        check-run-with-external-resources:
+          description: Check if produced two resource of OTHER_RESOURCE
+          task: dummy
+          needs: run-with-external-resources
+          if: ${length(tasks.run-with-external-resources.resources[?type == 'OTHER_RESOURCE']) == `2` }
+
+        run-with-badges:
+          description: Publish custom badges
+          task: common/misc/run_command
+          version: ${flow-vars.version}
+          needs: start
+          input:
+            config:
+              cmd_line: |
+                echo '{ "id": "startrek-1", "module": "STARTREK", "url": "https://st.yandex-team.ru/CI-2392", "text": "Link for CI-2392", "status": "SUCCESSFUL" }' > $RESULT_BADGES_PATH/file1
+                echo '{ "id": "luna-1", "module": "LUNAPARK", "url": "https://lunapark.yandex-team.ru/2846110", "text": "Sample Run", "status": "SUCCESSFUL" }' >> $RESULT_BADGES_PATH/file1 # Multiple badges in single file
+                echo '{ "id": "arcadia-1", "module": "ARCADIA", "url": "https://a.yandex-team.ru/arc_vcs/ci/tasklet/registry/common/misc/run_command/impl/__init__.py", "text": "Link to Tasklet implementation", "status": "SUCCESSFUL" }' > $RESULT_BADGES_PATH/file2
+                echo '' > $RESULT_BADGES_PATH/file3 # File must exists, but may be empty
+              result_badges:
+                - path: file1
+                - path: file2
+                - path: file3
+
+        run-with-badges-and-resource:
+          description: Publish custom badges
+          task: common/misc/run_command
+          version: ${flow-vars.version}
+          needs: start
+          input:
+            config:
+              fixed_sandbox_resources: # packed .m2 cached
+                - key: m2-cache
+                  resource_id: 2332782439
+              cmd_line: |
+                echo '{{ "id": "startrek-1", "module": "STARTREK", "url": "https://st.yandex-team.ru/CI-2392", "text": "Link for CI-2392", "status": "SUCCESSFUL" }}' > $RESULT_BADGES_PATH/file1
+                echo '{{ "id": "luna-1", "module": "LUNAPARK", "url": "https://lunapark.yandex-team.ru/2846110", "text": "Sample Run", "status": "SUCCESSFUL" }}' >> $RESULT_BADGES_PATH/file1
+                echo '{{ "id": "arcadia-1", "module": "ARCADIA", "url": "https://a.yandex-team.ru/arc_vcs/ci/tasklet/registry/common/misc/run_command/impl/__init__.py", "text": "Link to Tasklet implementation", "status": "SUCCESSFUL" }}' > $RESULT_BADGES_PATH/file2
+                echo '' > $RESULT_BADGES_PATH/file3
+              result_badges:
+                - path: file1
+                - path: file2
+                - path: file3
+
+        run-with-resources-and-fail-with-output:
+          description: Run command and fail
+          task: common/misc/run_command
+          version: ${flow-vars.version}
+          needs: start
+          runtime:
+            get-output-on-fail: true
+          input:
+            config:
+              cmd_line: |
+                echo "Building resources..."
+                mkdir -p $RESULT_RESOURCES_PATH/single
+                echo `pwd` > $RESULT_RESOURCES_PATH/single/arcadia_path.txt
+                exit 1
+              result_resources:
+                - path: single/arcadia_path.txt
+                  description: Path in Arcadia
+                  type: OTHER_RESOURCE
+                  ci_badge: true
+
+        run-with-resources-accept-fail-with-output:
+          task: common/misc/run_command
+          version: ${flow-vars.version}
+          needs: run-with-resources-and-fail-with-output
+          needs-type: fail
+          input:
+            config:
+              cmd_line: |
+                echo "Result SANDBOX task: ${tasks.run-with-resources-and-fail-with-output.resources[0].id}"
+
+        run-with-resources-and-fail:
+          description: Run command and fail
+          task: common/misc/run_command
+          version: ${flow-vars.version}
+          needs: start
+          input:
+            config:
+              cmd_line: |
+                echo "Building resources..."
+                mkdir -p $RESULT_RESOURCES_PATH/single
+                echo `pwd` > $RESULT_RESOURCES_PATH/single/arcadia_path.txt
+                exit 1
+              result_resources:
+                - path: single/arcadia_path.txt
+                  description: Path in Arcadia
+                  type: OTHER_RESOURCE
+                  ci_badge: true
+
+        run-with-resources-accept-fail:
+          task: dummy
+          needs: run-with-resources-and-fail
+          needs-type: fail
+
+        additional-resources:
+          description: Get additional resources and unpack it
+          task: common/misc/run_command
+          version: ${flow-vars.version}
+          needs: start
+          requirements:
+            tmpfs: 100MB
+          input:
+            config:
+              fixed_sandbox_resources: # packed .m2 cached
+                - key: m2-cache
+                  resource_id: 2332782439
+              dynamic_sandbox_resources:
+                - key: some-dir # Dir from "/dir-none" (from another launch)
+                  type: OTHER_RESOURCE
+                  attrs:
+                    some_filter_attr: "2"
+                    ttl: inf
+                - key: some-tgz # Dir from "/single/arcadia_path.txt" (from another launch)
+                  type: OTHER_RESOURCE
+                  attrs:
+                    some_filter_attr: attr-1
+                    ttl: inf
+              dynamic_sandbox_resource_refs:
+                - key: some-dir-ref # Dir from "/dir-none" (from another launch)
+                  type: OTHER_RESOURCE
+                  attrs:
+                    some_filter_attr: "2"
+                    ttl: inf
+              cmd_line: |
+                tar -xvf {m2-cache}
+                ls -al .m2
+                ls -al {some-dir}/1.txt
+                ls -al {some-dir}/2.txt
+                mkdir -p $SANDBOX_TMP/some-tgz
+                tar -xvf {some-tgz} -C $SANDBOX_TMP/some-tgz
+                ls -al $SANDBOX_TMP/some-tgz/arcadia_path.txt
+                echo "some-dir-ref={some-dir-ref}"
+
+
+        run-with-output:
+          description: Run command and produce some output
+          task: common/misc/run_command
+          version: ${flow-vars.version}
+          needs: start
+          input:
+            config:
+              cmd_line: |
+                echo "echo 1" > $RESULT_RESOURCES_PATH/tasks
+                echo "echo 2" >> $RESULT_RESOURCES_PATH/tasks
+                echo "title" > $RESULT_RESOURCES_PATH/titles
+              result_output:
+                - path: tasks
+                - path: titles
+
+        check-run-with-output-true:
+          description: Check produced output (true)
+          task: dummy
+          needs: run-with-output
+          if: ${length(tasks.run-with-output.result_output[?path == 'tasks'].string[]) == `2`}
+
+        check-run-with-output-false:
+          description: Check produced output (false)
+          task: dummy
+          needs: run-with-output
+          if: ${length(tasks.run-with-output.result_output[?path == 'titles'].string[]) == `2`}
+
+        check-run-multiply-by:
+          description: Check produced output multiplied
+          task: common/misc/run_command
+          version: ${flow-vars.version}
+          needs: run-with-output
+          multiply:
+            by: |
+              ${tasks.run-with-output.result_output[?path == 'tasks'].string[].{"value": @ }}
+            title: Execute parameterized command ${by.value}
+          input:
+            config:
+              cmd_line: ${by.value}
+
+        run-with-stderr-redirect:
+          description: Redirect stderr to stdout
+          task: common/misc/run_command
+          version: ${flow-vars.version}
+          needs: start
+          input:
+            config:
+              cmd_line: |
+                echo stdout
+                echo stderr >&2
+              logs_config:
+                redirect_stderr_to_stdout: true
+
+        run-with-logs-badges:
+          description: Display stdout and stderr badges
+          task: common/misc/run_command
+          version: ${flow-vars.version}
+          needs: start
+          input:
+            config:
+              cmd_line: |
+                echo stdout
+                echo stderr >&2
+              logs_config:
+                stdout_ci_badge: true
+                stderr_ci_badge: true
+
+        run-with-logs-badges-and-stderr-redirect:
+          description: Display single logs badge when stderr is redirected to stdout
+          task: common/misc/run_command
+          version: ${flow-vars.version}
+          needs: start
+          input:
+            config:
+              cmd_line: |
+                echo stdout
+                echo stderr >&2
+              logs_config:
+                redirect_stderr_to_stdout: true
+                stdout_ci_badge: true
+                stderr_ci_badge: true
+
+        run-with-timestamps:
+          description: Run with timestamp
+          task: common/misc/run_command
+          version: ${flow-vars.version}
+          needs: start
+          input:
+            config:
+              cmd_line: |
+                echo stdout1
+                sleep 1
+                echo stdout2
+                echo stderr1 >&2
+                echo stderr2 >&2
+              logs_config:
+                add_timestamp: true
+
+        run-with-timestamps-and-stderr-redirect:
+          description: Run with timestamp and redirect stderr to stdout
+          task: common/misc/run_command
+          version: ${flow-vars.version}
+          needs: start
+          input:
+            config:
+              cmd_line: |
+                echo stdout1
+                sleep 1
+                echo stdout2
+                echo stderr1 >&2
+                echo stderr2 >&2
+              logs_config:
+                redirect_stderr_to_stdout: true
+                add_timestamp: true
+
+
+    demo-picklock:
+      title: Flow работы с секретницей
+      jobs:
+        picklock:
+          title: Работа с секретницей
+          description: Извлекает секреты из yav и использует их
+          task: demo/picklock
+          input:
+            yav_filter:
+              keys:
+                - who.killed.laura.palmer
+
+    demo-changelog:
+      title: Flow работы с формированием changelog-а
+      jobs:
+        changelog:
+          title: Формирование ченжлога
+          description: Получает список коммитов, используя ручку ci GetCommits и формирует строку ченжлога
+          task: demo/changelog
+          input: { }
+
+    common-monitoring:
+      title: Flow работы с Infra и Juggler-ом
+      jobs:
+        start:
+          title: Начало проверок
+          task: dummy
+
+        infra-create:
+          title: Публикация Infra события
+          task: common/monitoring/infra_create
+          needs: start
+          input:
+            config:
+              textual:
+                title: "Self-checking monitoring tasklets: ${context.title}"
+                description: "${context.ci_url}"
+              status:
+                severity: MINOR
+                type: MAINTENANCE
+              placement:
+                serviceId: 3346
+                environmentId: 5189
+                dataCenters:
+                  - myt
+                  - man
+                  - vla
+
+        action:
+          title: Эмуляция ожидания действий внутри Infra
+          task: common/misc/run_command
+          needs: infra-create
+          attempts: 3
+          input:
+            config:
+              cmd_line:
+                echo "Some delay..."
+
+        infra-close:
+          title: Закрытие Infra события
+          task: common/monitoring/infra_close
+          needs: action
+          input:
+            config: {}
+
+        infra-check-events:
+          title: Ожидание завершения infra события
+          task: common/monitoring/infra_check_events
+          needs: infra-create
+          input:
+            config:
+              wait_for_finish: true
+              filters:
+                - placement:
+                    serviceId: 3346
+                    environmentId: 5189
+                  status:
+                    type: MAINTENANCE
+                    severity: MINOR
+
+        infra-check-no-major-events:
+          title: Проверка отсутствия major событий
+          task: common/monitoring/infra_check_events
+          needs: infra-create
+          input:
+            config:
+              wait_for_finish: true
+              filters:
+                - placement:
+                    serviceId: 3346
+                    environmentId: 5189
+                  status:
+                    type: MAINTENANCE
+                    severity: MAJOR
+
+        infra-check-events-with-time-before-infra-event:
+          title: Ожидание завершения infra событий в 2 часовом интервале
+          task: common/monitoring/infra_check_events
+          needs: infra-create
+          input:
+            config:
+              wait_for_finish: true
+              time_before_infra_event: "2h 0min"
+              filters:
+                - placement:
+                    serviceId: 3346
+                    environmentId: 5189
+                  status:
+                    type: MAINTENANCE
+                    severity: MINOR
+
+        monitoring:
+          title: Проверка мониторинга Juggler-а
+          task: common/monitoring/juggler_watch
+          needs: start
+          input:
+            config:
+              delay_minutes: 1
+              duration_minutes: 1
+              filters:
+                - namespace: devtools.ci
+                  service: bazinga-heartbeat
+                  tags: [ "stable" ]

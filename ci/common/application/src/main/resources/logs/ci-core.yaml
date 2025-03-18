@@ -1,0 +1,108 @@
+Configuration:
+  status: debug
+  packages: ru.yandex.ci.common.application.logging
+
+  properties:
+    property:
+      - name: baseDir
+        value: "${sys:log.dir:-./logs}"
+      - name: appName
+        value: "${sys:app.name}"
+      - name: logPattern
+        value: "%d %-5p [%X{request-id}] [%c{1} %t] %m%n"
+      - name: mainLogPeriod
+        value: "${sys:MAIN_LOG_PERIOD:-30d}"
+
+  Appenders:
+    RollingFile:
+      - name: Main
+        fileName: "${baseDir}/${appName}.log"
+        filePattern: "${baseDir}/${appName}.%d{yyyy-MM-dd}.%i.log.gz"
+        CiTaskDenyFilter:
+          -
+        PatternLayout:
+          Pattern: "${logPattern}"
+        Policies:
+          SizeBasedTriggeringPolicy:
+            size: 1 GB
+          TimeBasedTriggeringPolicy:
+            interval: 1
+        DefaultRolloverStrategy:
+          max: 99
+          Delete:
+            basePath: ${baseDir}
+            maxDepth: 1
+            IfFileName:
+              glob: ${appName}.*.log*
+            IfLastModified:
+              age: ${mainLogPeriod}
+
+      - name: Debug
+        fileName: "${baseDir}/debug.${appName}.log"
+        filePattern: "${baseDir}/debug.${appName}.%i.log.gz"
+        PatternLayout:
+          Pattern: "${logPattern}"
+        Policies:
+          SizeBasedTriggeringPolicy:
+            size: 1 GB
+        DefaultRolloverStrategy:
+          max: 5
+
+      - name: Ydb
+        fileName: "${baseDir}/ydb.${appName}.log"
+        filePattern: "${baseDir}/ydb.${appName}.%i.log.gz"
+        PatternLayout:
+          Pattern: "${logPattern}"
+        Policies:
+          SizeBasedTriggeringPolicy:
+            size: 1 GB
+        DefaultRolloverStrategy:
+          max: 3
+
+      - name: Error
+        fileName: "${baseDir}/error.${appName}.log"
+        filePattern: "${baseDir}/error.${appName}.%d{yyyy-MM-dd}.%i.log.gz"
+        PatternLayout:
+          Pattern: "${logPattern}"
+        Policies:
+          SizeBasedTriggeringPolicy:
+            size: 1 GB
+          TimeBasedTriggeringPolicy:
+            interval: 1
+        DefaultRolloverStrategy:
+          max: 20
+          Delete:
+            basePath: ${baseDir}
+            maxDepth: 1
+            IfFileName:
+              glob: error.${appName}.*.log*
+            IfLastModified:
+              age: 5d
+
+  Loggers:
+    Root:
+      level: info
+      AppenderRef:
+        - ref: Main
+          level: info
+
+    Logger:
+      - name: ru.yandex.ci
+        level: debug
+        AppenderRef:
+          - ref: Debug
+            level: debug
+          - ref: Error
+            level: error
+
+      - name: GRPC_CALLS
+        level: trace
+        AppenderRef:
+          - ref: Debug
+
+      - name: yandex.cloud.repository.db
+        level: debug
+        additivity: false
+        AppenderRef:
+          - ref: Ydb
+            level: debug

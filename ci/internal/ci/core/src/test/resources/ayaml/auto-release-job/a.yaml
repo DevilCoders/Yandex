@@ -1,0 +1,185 @@
+service: ci
+title: Flow with dummy job
+ci:
+  secret: sec-01dy7t26dyht1bj4w3yn94fsa
+  runtime:
+    sandbox-owner: CI
+
+  releases:
+    r1:
+      flow: f1 # No stages selected for release
+      title: Release1
+      stages:
+        s1:
+          title: S1
+        s2:
+          title: S2
+
+    r1-1:
+      flow: f1 # demo/woodflow/woodcutter id DENY
+      title: Release1
+      stages:
+        s1:
+          title: S1
+        s2:
+          title: S2
+          rollback: true
+
+    r1-2:
+      flow: f1-2 # only dummy task on s2
+      title: Release1
+      stages:
+        s1:
+          title: S1
+        s2:
+          title: S2
+          rollback: true
+
+    r2:
+      flow: f2
+      title: Release2
+      stages:
+        s1:
+          title: S1
+        s2:
+          title: S2
+          rollback: true
+
+    r2-1:
+      flow: f2
+      title: Release2
+      hotfix-flows:
+        - f2-2
+      stages:
+        s1:
+          title: S1
+        s2:
+          title: S2
+          rollback: true
+
+    r3:
+      flow: f3
+      stages:
+        s1:
+          title: S1
+          rollback: true
+
+    r4:
+      flow: f1-2
+      title: Release1
+      stages:
+        s1:
+          title: S1
+        s2:
+          title: S2
+          rollback: true
+      rollback-flows:
+        - f2
+
+    r4-1:
+      flow: f1-2
+      title: Release1
+      stages:
+        s1:
+          title: S1
+        s2:
+          title: S2
+          rollback: true
+      hotfix-flows:
+        - f3 # Cannot generate - no matched tasks at s2
+      rollback-flows:
+        - flow: f2
+          accept-flows: f1-2
+
+    r5:
+      flow: f1
+      title: Release1
+      stages:
+        s1:
+          title: S1
+        s2:
+          title: S2
+      rollback-flows:
+        - f3 # Invalid, no stages marked as 'rollback: true'
+
+  flows:
+
+    f1:
+      title: Flow1
+      jobs:
+        prepare1:
+          title: Prepare 1
+          task: demo/woodflow/woodcutter
+          stage: s1
+        prepare2:
+          title: Prepare 2
+          task: demo/woodflow/woodcutter
+          needs: prepare1
+          stage: s2
+        finish:
+          title: Complete
+          task: dummy
+          needs: prepare2
+          stage: s2
+
+    f1-2:
+      title: Flow 1-2
+      jobs:
+        prepare1:
+          title: Prepare 1
+          task: demo/woodflow/woodcutter_allow
+          stage: s1
+        finish:
+          title: Complete
+          task: dummy
+          needs: prepare1
+          stage: s2
+
+
+    f2:
+      title: Flow2
+      jobs:
+        prepare1:
+          title: Prepare 1
+          task: demo/woodflow/woodcutter_allow
+          stage: s1
+        prepare2:
+          title: Prepare 2
+          task: demo/woodflow/woodcutter_allow
+          needs: prepare1
+          stage: s2
+        finish:
+          title: Complete
+          task: dummy
+          needs: prepare2
+          stage: s2
+
+    f2-2:
+      title: Flow2
+      jobs:
+        prepare2:
+          title: Prepare 2
+          task: demo/woodflow/woodcutter_allow
+          stage: s2
+
+    f3:
+      title: Flow3
+      jobs:
+        prepare1:
+          task: demo/woodflow/woodcutter_skip
+          stage: s1
+        prepare2:
+          title: Prepare 2
+          task: demo/woodflow/woodcutter_allow
+          needs: prepare1
+          stage: s1
+        finish:
+          title: Complete
+          task: dummy
+          needs: prepare2
+          stage: s1
+          requirements:
+            cores: 16
+            ram: 32 GB
+            sandbox:
+              client_tags: GENERIC & LINUX & SSD

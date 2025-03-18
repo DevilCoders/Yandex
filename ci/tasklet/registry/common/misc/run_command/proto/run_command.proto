@@ -1,0 +1,144 @@
+syntax = "proto3";
+
+package RunCommandCi;
+option go_package = "a.yandex-team.ru/ci/tasklet/registry/common/misc/run_command/proto;runcommandpb";
+
+import "ci/tasklet/common/proto/sandbox.proto";
+import "ci/tasklet/common/proto/service.proto";
+import "tasklet/api/tasklet.proto";
+import "tasklet/services/yav/proto/yav.proto";
+import "tasklet/services/ci/proto/ci.proto";
+
+message SandboxResourcePlaceholder {
+    string key = 1;
+    string resource_type = 2;
+    reserved 3; // bool executable = 3;
+}
+
+message EnvironmentVariable {
+    string key = 1;
+    string value = 2;
+}
+
+message SecretEnvironmentVariable {
+    string key = 1;
+    yav_service.YavSecretSpec secret_spec = 2;
+}
+
+message SecretFileVariable {
+    string key = 1;
+    yav_service.YavSecretSpec secret_spec = 2;
+}
+
+message FixedSandboxResourcePlaceholder {
+    string key = 1;
+    int64 resource_id = 2;
+}
+
+message DynamicSandboxResourcePlaceholder {
+    string key = 1;
+
+    // Only basic filters
+    string type = 2; // Resource type is required
+    map<string, string> attrs = 3; // Resource attributes
+    repeated string state = 4; // Find resources with provided statuses, find resources with `READY` status by default
+}
+
+message ArcMountConfig {
+    string revision_hash = 1;
+    yav_service.YavSecretSpec arc_token = 2;
+
+    bool enabled = 3;
+
+    repeated string extra_params = 4;
+
+    yav_service.YavSecretSpec yav_token = 5;
+}
+
+message ResultResourceConfig {
+    string path = 1;
+    string type = 2;
+    string description = 3;
+
+    string compression_type = 4;
+    bool optional = 5;
+
+    map<string, string> attributes = 6;
+    string attributes_path = 9;
+
+    bool ci_badge = 7;
+    string ci_badge_path = 8;
+}
+
+message ResultOutputConfig {
+    string path = 1;
+}
+
+message ResultBadges {
+    string path = 1;
+}
+
+message LogsConfig {
+    bool redirect_stderr_to_stdout = 1;
+    bool stdout_ci_badge = 2;
+    bool stderr_ci_badge = 3;
+    bool add_timestamp = 4;
+}
+
+message Config {
+    string cmd_line = 1;
+    repeated SandboxResourcePlaceholder sandbox_resource_placeholders = 2; // default = ARCADIA_PROJECT
+    repeated EnvironmentVariable environment_variables = 3;
+    repeated SecretEnvironmentVariable secret_environment_variables = 4;
+    repeated SecretFileVariable secret_file_variables = 8;
+    repeated FixedSandboxResourcePlaceholder fixed_sandbox_resources = 5;
+    repeated DynamicSandboxResourcePlaceholder dynamic_sandbox_resources = 14;
+    repeated DynamicSandboxResourcePlaceholder dynamic_sandbox_resource_refs = 15;
+    ArcMountConfig arc_mount_config = 6;
+    repeated ResultResourceConfig result_resources = 7;
+    repeated ResultOutputConfig result_output = 9;
+    repeated ResultBadges result_badges = 11;
+    bool result_external_resources_from_files = 10;
+    bool direct_output_links = 12;
+    LogsConfig logs_config = 13;
+}
+
+message Input {
+    ci.TaskletContext context = 1;
+    Config config = 2;
+    repeated ci.SandboxResource sb_resources = 3;
+}
+
+message State {
+    bool success = 1;
+    string message = 2;
+    int32 return_code = 3;
+}
+
+message OutputContent {
+    string path = 1;
+    repeated string string = 2;
+}
+
+message Output {
+    State state = 1;
+    repeated ci.SandboxResource resources = 2;
+    repeated OutputContent result_output = 3;
+}
+
+message Context {
+    option (tasklet.context) = true;
+
+    string id = 1 [(tasklet.inject) = true];
+    yav_service.YavService yav = 2 [(tasklet.inject) = true];
+    ci.CiService ci = 3 [(tasklet.inject) = true];
+}
+
+message RunCommand {
+    option (tasklet.tasklet_interface) = true;
+
+    Context ctx = 1;
+
+    Input input = 2 [(tasklet.input) = true];
+    Output output = 3 [(tasklet.output) = true];
+}

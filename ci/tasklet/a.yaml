@@ -1,0 +1,112 @@
+service: ci
+title: Yandex CI Common Tasklets
+
+shared:
+  stages: &stages
+    stages:
+      - id: build
+        title: Сборка
+      - id: testing
+        title: Тестирование
+      - id: release
+        title: Релиз
+
+
+ci:
+  secret: sec-01e8agdtdcs61v6emr05h5q1ek
+  runtime:
+    sandbox-owner: CI
+
+  actions:
+    common-misc-run_command:
+      title: Компиляция тасклета common/misc/run_command
+      flow: build-tasklet-without-tests
+      flow-vars:
+        tasklet: ci/tasklet/registry/common/misc/run_command
+        name: TASKLET_RUN_COMMAND
+      triggers:
+        - on: pr
+          filters:
+            - sub-paths: [ registry/common/misc/run_command/** ]
+
+    demo-changelog:
+      title: Компиляция тасклета demo/changelog
+      flow: build-tasklet-without-tests
+      flow-vars:
+        tasklet: ci/tasklet/registry/demo/changelog
+        name: TASKLET_CHANGELOG
+      triggers:
+        - on: pr
+          filters:
+            - sub-paths: [ registry/demo/changelog/** ]
+
+  releases:
+    common-misc-run_command:
+      title: Сборка тасклета common/misc/run_command
+      flow: release-tasklet-without-tests
+      flow-vars:
+        tasklet: ci/tasklet/registry/common/misc/run_command
+        name: TASKLET_RUN_COMMAND
+      filters:
+        - discovery: dir
+          abs-paths: [ ci/tasklet/registry/common/misc/run_command/** ]
+      <<: *stages
+
+    demo-changelog:
+      title: Сборка тасклета demo/changelog
+      flow: release-tasklet-without-tests
+      flow-vars:
+        tasklet: ci/tasklet/registry/demo/changelog
+        name: TASKLET_CHANGELOG
+      filters:
+        - discovery: dir
+          abs-paths: [ ci/tasklet/registry/demo/changelog/** ]
+      <<: *stages
+
+  flows:
+    build-tasklet-without-tests:
+      jobs:
+        build:
+          title: Сборка тасклета ${flow-vars.tasklet}
+          task: common/sandbox/deploy_binary_task
+          input:
+            target: ${flow-vars.tasklet}
+            attrs:
+              tasklet_name: ${flow-vars.name}
+
+
+    release-tasklet-without-tests:
+      jobs:
+        build:
+          title: Сборка тасклета ${flow-vars.tasklet}
+          stage: build
+          task: common/sandbox/deploy_binary_task
+          input:
+            target: ${flow-vars.tasklet}
+            attrs:
+              tasklet_name: ${flow-vars.name}
+
+        release_testing:
+          title: Публикация в тестинг ${flow-vars.tasklet}
+          stage: testing
+          task: common/releases/release_to_sandbox
+          needs: build
+          input:
+            config:
+              sandbox_resource_type: SANDBOX_TASKS_BINARY
+              common_release_data:
+                release_stage: testing
+
+        release_production:
+          title: Публикация в прод ${flow-vars.tasklet}
+          stage: release
+          task: common/releases/release_to_sandbox
+          needs: release_testing
+          manual:
+            enabled: true
+            prompt: "Release tasklet?"
+          input:
+            config:
+              sandbox_resource_type: SANDBOX_TASKS_BINARY
+              common_release_data:
+                release_stage: stable

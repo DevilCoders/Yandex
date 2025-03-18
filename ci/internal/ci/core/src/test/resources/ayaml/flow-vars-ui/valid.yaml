@@ -1,0 +1,118 @@
+service: ci
+title: Yandex CI
+
+definitions:
+  # documentationStart
+  flow-vars-ui: &flow-vars-ui
+    schema:
+      # json-схема
+      required: [ iterations, stage ]
+      type: object
+      properties:
+        title:
+          title: Заголовок ресурса
+          type: string
+        iterations:
+          title: Количество итераций
+          type: integer
+          minimum: 0
+          maximum: 5
+
+        percentile:
+          type: number
+          minimum: 0.01
+          maximum: 1.0
+
+        type:
+          title: Тип запуска
+          type: string
+          enum:
+            - release
+            - not-release
+          default: release
+
+        do-tests:
+          title: Запустить тесты
+          description: Будь осторожен, Люк!
+          type: boolean
+          default: true
+
+        stage:
+          type: object
+          properties:
+            stable:
+              type: boolean
+            prestable:
+              type: boolean
+            testing:
+              title: Тестинг
+              type: boolean
+
+        resources:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - DOCKER_IMAGE
+              - LOGS
+
+        dependency_resources:
+          type: array
+          items:
+            type: integer
+            enum:
+              - 111
+              - 444
+              - 888
+    # documentationEnd
+
+
+ci:
+  secret: sec-01dy7t26dyht1bj4w3yn94fsa
+  runtime:
+    sandbox-owner: CI
+
+  actions:
+    flow-var-action:
+      flow: flow-with-flow-vars
+      flow-vars-ui:
+        <<: *flow-vars-ui
+
+  releases:
+
+    flow-var-release:
+      flow: flow-with-flow-vars
+
+      flow-vars-ui:
+        <<: *flow-vars-ui
+
+      flow-vars:
+        additional-flow-var: 17
+
+      hotfix-flows:
+        - flow: some-flow
+          flow-vars-ui:
+            <<: *flow-vars-ui
+
+      rollback-flows:
+        - flow: some-flow
+          accept-flows: flow-with-flow-vars
+          flow-vars-ui:
+            <<: *flow-vars-ui
+
+  flows:
+    flow-with-flow-vars:
+      jobs:
+        single:
+          task: dummy
+          title: ${flow-vars.title}
+          description: |
+            type: ${flow-vars.type}
+            do-tests: ${flow-vars.do-tests}
+            testing: ${flow-vars.testing}
+
+    some-flow:
+      jobs:
+        single:
+          task: dummy

@@ -1,0 +1,179 @@
+service: ci
+title: test-project
+ci:
+  secret: sec-01e8agdtdcs61v6emr05h5q1ek
+  runtime:
+    sandbox-owner: CI
+
+  permissions:
+    skip-job:
+      - service: ci
+        scope: test
+    toggle-autorun:
+      - service: ci
+        scope: test
+
+  actions:
+    simple-action:
+      flow: release-frontend
+      permissions:
+        start-flow:
+          - service: abc
+          - service: ci
+            scope: administration
+        manual-trigger:
+          - service: ci
+            scope: admin
+
+  releases:
+    backend:
+      title: Release backend component
+      description: |
+        Some description for backend release.
+        Multiline
+      flow: release-backend
+      stages:
+        build:
+          title: Сборка
+          rollback: true
+      hotfix-flows: hotfix-backend
+      rollback-flows:
+        - flow: rollback-backend
+          accept-flows: hotfix-backend
+      branches:
+        pattern: releases/ci/backend-${version}
+
+    frontend:
+      title: Release frontend component
+      description: Description for frontend release
+      flow: release-frontend
+      stages:
+        build:
+          title: Сборка
+          displace: true
+          rollback: true
+      branches:
+        pattern: releases/ci/frontend-${version}
+        default-config-source: branch
+      permissions:
+        start-flow:
+          - service: some
+          - service: service
+          - service: ci
+            scope: administration
+        manual-trigger:
+          - service: ci
+            scope: admin
+
+    no-branches-backend:
+      title: Release backend component without branches
+      flow: release-backend
+      stages:
+        build:
+          title: Сборка
+
+    auto-create-branch-backend:
+      title: Release backend component with auto-create branches
+      flow: release-backend
+      stages:
+        build:
+          title: Сборка
+      hotfix-flows: hotfix-backend
+      branches:
+        pattern: releases/ci/backend-${version}
+        auto-create: true
+
+    with-flow-vars:
+      flow: flow-with-flow-vars
+      permissions:
+        start-flow:
+          - service: cidemo
+          - service: ci
+      flow-vars:
+        declared-in-release-flow-vars: in release!
+      flow-vars-ui:
+        schema:
+          type: object
+          required:
+            - title
+            - stages
+            - iterations
+          properties:
+            title:
+              type: string
+            stages:
+              type: object
+              additionalProperties: false
+              properties:
+                testing:
+                  type: boolean
+                prestable:
+                  type: boolean
+                stable:
+                  type: boolean
+            iterations:
+              type: integer
+            some-not-required-field:
+              type: number
+
+  flows:
+
+    release-frontend:
+      title: Release frontend flow
+      jobs:
+        single:
+          title: Single
+          stage: build
+          task: dummy/task
+          manual:
+            enabled: true
+            approvers:
+              service: abc
+
+    release-backend:
+      title: Release backend flow
+      jobs:
+        single:
+          title: Single
+          stage: build
+          task: dummy/task
+          manual:
+            enabled: true
+            approvers:
+              - service: abc1
+                scope: cde1
+
+        last:
+          title: Last
+          task: dummy/task
+          needs: single
+          manual:
+            enabled: true
+            approvers:
+              - service: abc2
+                scope: cde2
+
+
+    hotfix-backend:
+      title: Hotfix backend flow
+      description: Run hotfix
+      jobs:
+        single:
+          title: Single Hotfix
+          stage: build
+          task: dummy/task
+
+    rollback-backend:
+      title: Rollback backend flow
+      description: Run rollback
+      jobs:
+        single:
+          title: Single Rollback
+          stage: build
+          task: dummy/task
+
+    flow-with-flow-vars:
+      title: Release frontend flow ${flow-vars.title}
+      jobs:
+        single:
+          task: dummy

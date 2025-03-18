@@ -1,0 +1,103 @@
+service: ci
+title: Arcadia
+ci:
+  secret: sec-01dy7t26dyht1bj4w3yn94fsa
+  runtime:
+    sandbox-owner: CI
+  releases:
+    my-app:
+      title: My Application
+      stages:
+        build:
+          title: Сборка
+        testing:
+          title: Тестинг
+        stable:
+          title: Продакшейн
+      flow: my-app-release
+      # Внутри фильра действует условие И. Между фильтрами ИЛИ
+      # Отфитльтровываются комиты, если попадают под одно из следующих условий:
+      # - Коммит напрямую в директорию и содержит привязанный тикет в очереди TESTENV
+      # - Коммит по сборочному графу и автор состоит в abc группе ci или testenv
+      # - Коммит по сборочному графу и содержит привязанный тикет в очереди CI
+      filters:
+        - discovery: dir
+          st-queues: TESTENV
+        - discovery: graph
+          author-services: [ci, testenv]
+        - discovery: graph
+          st-queues: CI
+      tags:
+        - my-app-tag
+        - my-release-custom-tag
+
+  triggers:
+    # Запускатется sawmill в одном из следующих случаев:
+    # - на PR, если есть тикет в очереди CI и автор в abc сервисе ci или testenv
+    # - На PR, если был изменен любой java или ya.make
+    # - На PR, если изменения были бранчах "/user/" или "/feature-"
+    # - На комит в транк (посткомит) всегда
+    - on: pr
+      flow: sawmill
+      # Внутри фильтра действует условие И. Между фильтрами ИЛИ
+      filters:
+        - st-queues: CI
+          author-services: [ci, testenv]
+        - sub-paths: ['**.java', 'ya.make']
+        - feature-branches: ['**/user/**', '**/feature-**']
+        - feature-branches: '**/release-**'
+    - on: commit
+      flow: sawmill
+
+  flows:
+    sawmill:
+      title: Woodcutter
+      description: sawmill flow
+      jobs:
+        woodcutter1:
+          title: Лесоруб1
+          task: example/settlers/woodcutter
+          version: testing
+        woodcutter2:
+          title: Лесоруб2
+          task: example/settlers/woodcutter
+        sawmill:
+          title: Лесопилка
+          task: example/settlers/sawmill
+          needs: [woodcutter1, woodcutter2]
+
+    my-app-release:
+      title: Default deploy
+      jobs:
+        build:
+          title: Сборка
+          task: common/arcadia/ya_package
+          input:
+            config:
+              path: my/path/in/parcadia/package.json
+              run_test: true
+          stage: build
+        testing:
+          title: Выкладка в тестинг
+          task: common/deploy/release
+          needs: build
+          input:
+            config:
+              stage_id: my-app-testing
+              timeout: 1h
+          stage: testing
+        stable:
+          title: Выкладка в прод
+          description: Выкладывает в прод
+          task: common/deploy/release
+          needs: testing
+          manual:
+            prompt: Точно катим?
+            approvers: abc_group
+          input:
+            config:
+              stage_id: my-app-stable
+              timeout: 1h
+          context-input:
+            task_id: 335
+          stage: stable

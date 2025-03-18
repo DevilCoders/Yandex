@@ -1,0 +1,153 @@
+service: ci
+title: CI Temporal
+
+
+shared:
+  temporal-deploy-base-config: &temporal-deploy-base-config
+    patches:
+      - sandbox:
+          sandbox_resource_type: CI_TEMPORAL_BUNDLE
+          static:
+            deploy_unit_id: frontend
+            layer_ref: temporal-bundle
+      - sandbox:
+          sandbox_resource_type: CI_TEMPORAL_BUNDLE
+          static:
+            deploy_unit_id: matching
+            layer_ref: temporal-bundle
+      - sandbox:
+          sandbox_resource_type: CI_TEMPORAL_BUNDLE
+          static:
+            deploy_unit_id: history
+            layer_ref: temporal-bundle
+
+
+ci:
+  secret: sec-01e8agdtdcs61v6emr05h5q1ek
+  runtime:
+    sandbox-owner: CI
+
+  releases:
+    ci-temporal:
+      title: CI Temporal
+      flow: release-temporal
+      auto: true
+      stages:
+        - id: testing
+          title: Build and Testing
+          displace: true
+        - id: prestable
+          title: Prestable
+        - id: stable
+          title: Stable
+          rollback: true
+
+
+  actions:
+    build-temporal-package:
+      flow: build-package
+      triggers:
+        - on: pr
+
+  flows:
+    release-temporal:
+      jobs:
+        build: &build-temporal-package
+          stage: testing
+          title: Build Bundle
+          task: common/arcadia/ya_package_2
+          input:
+            packages: ci/internal/infra/temporal/package.json
+            resource_type: CI_TEMPORAL_BUNDLE
+            package_type: tarball
+
+        testing-deploy:
+          title: Deploy testing
+          description: Deploy (frontend, history, matching)
+          task: common/deploy/create_release
+          needs: build
+          input:
+            config:
+              stage_id: ci-temporal-testing
+              <<: *temporal-deploy-base-config
+
+        testing-monitoring:
+          title: CI Testing monitorings
+          task: common/monitoring/juggler_watch
+          needs: testing-deploy
+          input:
+            config:
+              delay_minutes: 5
+              duration_minutes: 30
+              filters:
+                - namespace: devtools.ci
+                  host: ci-testing
+
+
+        prestable-deploy:
+          stage: prestable
+          title: Deploy prestable
+          description: Deploy (frontend, history, matching)
+          task: common/deploy/create_release
+          needs: testing-monitoring
+          manual: true
+          input:
+            config:
+              stage_id: ci-temporal-prestable
+              <<: *temporal-deploy-base-config
+
+        stable-infra-open:
+          title: Create Infra event
+          stage: stable
+          manual: true
+          task: common/monitoring/infra_create
+          input:
+            config:
+              textual:
+                title: "Release ${context.title}"
+                description: "${context.ci_url}"
+              status:
+                severity: MINOR
+                type: MAINTENANCE
+              placement:
+                serviceId: 51
+                environmentId: 3131
+          needs: prestable-deploy
+
+        stable-deploy:
+          title: Deploy stable
+          description: Deploy (frontend, history, matching)
+          task: common/deploy/create_release
+          needs: stable-infra-open
+          input:
+            config:
+              stage_id: ci-temporal-stable
+              <<: *temporal-deploy-base-config
+
+        stable-monitoring:
+          title: CI Stable monitorings
+          task: common/monitoring/juggler_watch
+          needs: stable-deploy
+          input:
+            config:
+              delay_minutes: 5
+              duration_minutes: 30
+              filters:
+                - namespace: devtools.ci
+                  host: ci-stable
+
+        stable-close-infra:
+          title: Close Infra event
+          task: common/monitoring/infra_close
+          input:
+            config: { }
+          needs: stable-deploy
+
+
+
+    build-package:
+      jobs:
+        build:
+          <<: *build-temporal-package
+
+

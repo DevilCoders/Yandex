@@ -1,0 +1,447 @@
+syntax = "proto3";
+
+package ci.proto.storage;
+
+option java_package = "ru.yandex.ci.storage.api";
+
+import "ci/proto/common/info_panel.proto";
+import "ci/proto/storage/check.proto";
+import "ci/proto/storage/check_iteration.proto";
+import "ci/proto/storage/aggregate_statistics.proto";
+import "ci/proto/storage/common.proto";
+import "google/protobuf/timestamp.proto";
+
+service StorageFrontApiService {
+    rpc GetChecks (GetChecksRequest) returns (GetChecksResponse);
+    rpc GetPostCommitChecks (GetPostCommitChecksRequest) returns (GetPostCommitChecksResponse);
+    rpc GetIteration (GetIterationRequest) returns (GetIterationResponse);
+    rpc SearchSuites (SearchSuitesRequest) returns (SearchSuitesResponse);
+    rpc ListSuite (ListSuiteRequest) returns (ListSuiteResponse);
+    rpc GetDiffDetails (GetDiffDetailsRequest) returns (GetDiffDetailsResponse);
+    rpc SearchDiffs (SearchDiffsRequest) returns (SearchDiffsResponse);
+    rpc ListLargeTestsToolchains (ListLargeTestsToolchainsRequest) returns (ListLargeTestsToolchainsResponse);
+    rpc SearchLargeTests (SearchLargeTestsRequest) returns (SearchLargeTestsResponse);
+    rpc StartLargeTests (StartLargeTestsRequest) returns (StartLargeTestsResponse);
+    rpc ScheduleLargeTests (ScheduleLargeTestsRequest) returns (ScheduleLargeTestsResponse);
+    rpc GetSuggest (GetSuggestRequest) returns (GetSuggestResponse);
+    rpc GetRunCommand (GetRunCommandRequest) returns (GetRunCommandResponse);
+    rpc CancelCheck (FrontCancelCheckRequest) returns (FrontCancelCheckResponse);
+}
+
+message FrontCancelCheckRequest {
+    string id = 1;
+}
+
+message GetPostCommitChecksRequest {
+    string revision = 1;
+}
+
+message GetPostCommitChecksResponse {
+    repeated CheckViewModel checks = 1;
+}
+
+message FrontCancelCheckResponse {
+    CheckViewModel check = 1;
+}
+
+message GetRunCommandRequest {
+    DiffId id = 1 [deprecated = true];
+    oneof param {
+        DiffId diff_id = 2;
+        TestStatusId status_id = 3;
+    }
+}
+
+message GetRunCommandResponse {
+    string command = 1;
+}
+
+message GetSuggestRequest {
+    IterationId iteration_id = 1;
+    CheckSearchEntityType entity_type = 2;
+    string value = 3;
+}
+
+message GetSuggestResponse {
+    repeated string results = 1;
+}
+
+message GetChecksRequest {
+    repeated string ids = 1;
+}
+
+message GetChecksResponse {
+    repeated CheckViewModel checks = 1;
+}
+
+message CheckViewModel {
+    string id = 1;
+
+    int64 diff_set_id = 2;
+    string owner = 3;
+    google.protobuf.Timestamp created = 4;
+    repeated string tags = 5;
+
+    OrderedRevision left_revision = 6;
+    OrderedRevision right_revision = 7;
+
+    CheckType type = 8;
+    CheckStatus status = 9;
+
+    // Состояние Large тестов по версии FULL контура
+    LargeTestsState large_tests_state = 10;
+
+    ArchiveState archive_state = 11;
+
+    // iteration with number zero - aggregate of all iterations of this type.
+    repeated IterationViewModel fast_iterations = 20;
+    repeated IterationViewModel full_iterations = 21;
+    repeated IterationViewModel heavy_iterations = 22;
+
+    ci.proto.common.info.InfoPanel info_panel = 31;
+
+    repeated SuspiciousAlert suspicious_alerts = 40;
+
+    string testenv_id = 100;
+}
+
+message LargeTestsState {
+
+    // Заполняется только в том случае, если у нас есть хотя бы одна итерация в FULL контуре с testenv_id
+    // testenv_id - атрибут контура, не проверки
+    string testenv_id = 1;
+
+    // Large tests availability attribute
+    LargeTestsStartAttribute start_attr = 2;
+
+    // Current large tests discovery status
+    bool large_tests_discovery_in_progress = 3;
+
+    // Current option to start Large tests after discovery is complete
+    bool run_large_tests_after_discovery = 4;
+}
+
+enum LargeTestsStartAttribute {
+    // Large тесты не могут быть запущены по какой-то причине (например, это тестинг)
+    LTSA_UNSUPPORTED = 0;
+
+    // Large тесты запускаются из TestEnv, должна быть кнопка на старый CI Backend
+    LTSA_TESTENV = 1;
+
+    // Large тесты запускаются из Storage/CI, можно запускать
+    LTSA_CI_ALLOW = 2;
+
+    // Large тесты запускаются из Storage/CI, нельзя запускать из-за некорректной настройки в бранчах
+    // Параметр delegated-config в config/branches/releases/<project>.yaml
+    LTSA_CI_DENY_BRANCH_SETTINGS = 3;
+}
+
+message IterationViewModel {
+    IterationId id = 1;
+
+    CheckStatus status = 2;
+    AggregateStatistics statistics = 3;
+
+    google.protobuf.Timestamp finish = 4;
+    google.protobuf.Timestamp start = 5;
+    google.protobuf.Timestamp created = 6;
+
+    repeated string toolchains = 7 [deprecated = true];
+    IterationInfo info = 8;
+    ci.proto.common.info.InfoPanel info_panel = 11;
+    repeated ToolchainViewModel toolchains_statistics = 10;
+
+    repeated SuspiciousAlert suspicious_alerts = 40;
+}
+
+message ToolchainViewModel {
+    string name = 1;
+    uint32 passed = 2;
+    uint32 failed = 3;
+    uint32 skipped = 4;
+    uint32 special_cases = 5;
+}
+
+message SuspiciousAlert {
+    string message = 1;
+}
+
+enum StatusFilter {
+    STATUS_ALL = 0;
+    STATUS_PASSED = 1;
+    STATUS_FAILED = 2;
+    STATUS_FAILED_WITH_DEPS = 3;
+    STATUS_SKIPPED = 4;
+}
+
+enum CategoryFilter {
+    CATEGORY_ALL = 0;
+    CATEGORY_CHANGED = 1;
+}
+
+enum SpecialCasesFilter {
+    SPECIAL_CASE_NONE = 0;
+    SPECIAL_CASE_EXTERNAL = 1;
+    SPECIAL_CASE_INTERNAL = 2;
+    SPECIAL_CASE_TIMEOUT = 3;
+    SPECIAL_CASE_MUTED = 4;
+    SPECIAL_CASE_FLAKY = 5;
+    SPECIAL_CASE_ADDED = 6;
+    SPECIAL_CASE_DELETED = 7;
+    SPECIAL_CASE_BROKEN_BY_DEPS = 8;
+    SPECIAL_CASE_FAILED_IN_STRONG_MODE = 9;
+}
+
+message SuiteSearch {
+    StatusFilter status_filter = 1;
+    repeated ResultType result_type = 2;
+
+    CategoryFilter category = 3;
+    SpecialCasesFilter special_cases = 4;
+
+    string toolchain = 5;
+    string path = 6;
+
+    string test_name = 7;
+    string subtest_name = 8;
+}
+
+message SuitePageId {
+    string forward_suite_id = 1;
+    string backward_suite_id = 2;
+    string forward_path = 3;
+    string backward_path = 4;
+}
+
+message GetIterationRequest {
+    IterationId id = 1;
+}
+
+message SuitePaging {
+    SuitePageId forward_page_id = 1; // optional
+    SuitePageId backward_page_id = 2; // optional
+}
+
+message GetIterationResponse {
+    IterationViewModel iteration = 1;
+}
+
+message SearchSuitesRequest {
+    IterationId id = 1;
+    SuiteSearch search = 2;
+
+    SuitePageId page_id = 10; // optional for first page, use value from response
+}
+
+message SearchSuitesResponse {
+    IterationViewModel iteration = 1;
+    repeated DiffViewModel suites = 2;
+
+    SuitePaging paging = 3;
+
+    repeated TestDiffType diff_types = 4; // possible diff types for this filter
+}
+
+message DiffId {
+    IterationId iteration_id = 1;
+    TestId testId = 2;
+    ResultType result_type = 3;
+    string path = 4;
+}
+
+message DiffViewModel {
+    DiffId id = 1;
+
+    ResultType type = 10;
+    string name = 12;
+    TestDiffType diff_type = 13;
+    string subtestName = 14;
+    repeated string tags = 15;
+
+    TestStatus left = 20;
+    TestStatus right = 21;
+
+    bool isSuite = 30;
+    bool isMuted = 31;
+    bool isStrongMode = 32;
+
+    string strongModeAYaml = 33;
+
+    DiffStatistics statistics = 40;
+
+    int32 numberOfChildren = 100 [deprecated = true];
+}
+
+message DiffStatistics {
+    int32 unknown = 1;
+    int32 passed = 2;
+    int32 failed = 3;
+    int32 skipped = 4;
+    int32 timeout = 5;
+    int32 flaky = 6;
+    int32 internal = 7;
+    int32 deleted = 8;
+}
+
+message ListSuiteRequest {
+    SuiteSearch search = 3;
+    DiffId diff_id = 4;
+    int32 page = 5;
+}
+
+message ListSuiteResponse {
+    repeated DiffViewModel children = 1;
+    bool hasMore = 2;
+}
+
+message GetDiffDetailsRequest {
+    DiffId id = 1;
+    SuiteSearch search = 2;
+}
+
+message GetDiffDetailsResponse {
+    repeated DiffDetailsViewModel children = 1; // Diff per toolchain
+}
+
+message DiffDetailsViewModel {
+    DiffViewModel diff = 1;
+    bool highlight = 2;
+    repeated TestRun test_runs = 3;
+}
+
+message TestRunId {
+    IterationId iteration_id = 1;
+    TestId test_id = 2;
+    string task_id = 3;
+    int32 number = 4;
+    bool is_right = 5;
+    int32 partition = 6;
+}
+
+message GetTestRunRequest {
+    TestRunId id = 1;
+}
+
+message TestRun {
+    TestRunId id = 1;
+    string uid = 3;
+    TestStatus status = 4;
+    map<string, LinksValue> links = 5;
+    map<string, double> metrics = 6;
+
+    string snippet = 10;
+
+    string oldTestId = 100;
+}
+
+message GetTestRunResponse {
+    TestRunId id = 1;
+    bool muted = 2;
+    string uid = 3;
+    TestStatus status = 4;
+    map<string, LinksValue> links = 5;
+    map<string, double> metrics = 6;
+
+    string snippet = 10;
+}
+
+message LinksValue {
+    repeated string link = 1;
+}
+
+enum NotificationFilter {
+    NF_NONE = 0;
+    NF_MUTED = 1;
+    NF_NOT_MUTED = 2;
+}
+
+message DiffsSearch {
+    repeated ResultType result_type = 3;
+    repeated TestDiffType diff_type = 4;
+
+    string toolchain = 5;
+
+    string name = 6;
+    string subtest_name = 10;
+    string path = 7;
+
+    repeated string tags = 8;
+
+    NotificationFilter notification_filter = 9;
+}
+
+message DiffPageId {
+    int32 id = 1; // 0 - empty
+}
+
+message DiffPaging {
+    DiffPageId forward_page_id = 1; // optional
+    DiffPageId backward_page_id = 2; // optional
+}
+
+message SearchDiffsRequest {
+    IterationId iterationId = 1;
+    DiffsSearch search = 2;
+    DiffPageId page_id = 3; // optional for first page, use value from response
+}
+
+message SearchDiffsResponse {
+    IterationViewModel iteration = 1;
+    repeated DiffViewModel diffs = 2;
+    DiffPaging paging = 3;
+}
+
+message ListLargeTestsToolchainsRequest {
+    string check_id = 1;
+}
+
+message LargeTestToolchain {
+    string toolchain = 1;
+}
+
+message ListLargeTestsToolchainsResponse {
+    string check_id = 1;
+    repeated LargeTestToolchain toolchains = 2;
+}
+
+enum LargeTestStatus {
+    LTS_ALL = 0;
+    LTS_DISCOVERED = 1;
+    LTS_RUNNING = 2;
+    LTS_SUCCESS = 3;
+    LTS_FAILURE = 4;
+}
+
+message SearchLargeTestsRequest {
+    string check_id = 1;
+    string path = 2;
+    string toolchain = 3; // Сделать repeated?
+    LargeTestStatus large_tests_status = 4; // Сделать repeated?
+}
+
+message LargeTestResponse {
+    DiffId test_diff = 1; // Уникальный идентификатор теста для запуска
+    LargeTestStatus left_status = 2; // Заполнен только в том случае, если тест существует слева
+    LargeTestStatus right_status = 3; // Заполнен только в том случае, если тест существует справа
+}
+
+message SearchLargeTestsResponse {
+    repeated LargeTestResponse tests = 1;
+}
+
+message StartLargeTestsRequest {
+    repeated DiffId test_diffs = 1; // Уникальный идентификатор теста для запуска
+}
+
+message StartLargeTestsResponse {
+
+}
+
+message ScheduleLargeTestsRequest {
+    string check_id = 1;
+    bool run_large_tests_after_discovery = 2;
+}
+
+message ScheduleLargeTestsResponse {
+
+}

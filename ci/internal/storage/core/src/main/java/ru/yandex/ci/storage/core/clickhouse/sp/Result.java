@@ -1,0 +1,294 @@
+package ru.yandex.ci.storage.core.clickhouse.sp;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+import javax.annotation.Nullable;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import ru.yandex.misc.enums.IntEnum;
+import ru.yandex.misc.enums.IntEnumResolver;
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+@SuppressWarnings(
+        {"MissingOverride", "VisibilityModifier", "RedundantModifier", "StaticVariableName", "DeclarationOrder"}
+)
+public class Result {
+    private static final Logger logger = LoggerFactory.getLogger(Result.class);
+
+    @JsonProperty("id")
+    public String id;
+
+    @JsonProperty("toolchain")
+    public String toolchain;
+
+    @JsonProperty("status")
+    public Status status;
+
+    @JsonProperty("error_type")
+    public ErrorType errorType;
+
+    @JsonProperty("owners")
+    public Owners owners;
+
+    @JsonProperty("uid")
+    public String uid;
+
+    @JsonProperty("type")
+    public TestType type;
+
+    @JsonProperty("size")
+    public TestSize size;
+
+    @JsonProperty("path")
+    public String path;
+
+    @JsonProperty("name")
+    public String name;
+
+    @JsonProperty("subtest_name")
+    public String subtestName;
+
+    @JsonProperty("rich-snippet")
+    public String richSnippet;
+
+    @JsonProperty("links")
+    public Map<String, List<String>> links;
+
+    @JsonProperty("duration")
+    public Double duration;
+
+    @JsonProperty("tags")
+    public List<String> tags;
+
+    @JsonProperty("metrics")
+    public Map<String, Number> metrics;
+
+    @JsonProperty("result")
+    public Map<String, TestOutput> resultOutput;
+
+    @JsonProperty("suite")
+    public Boolean isSuite;
+
+    @JsonProperty("suite_id")
+    public String suiteId;
+
+    @JsonProperty("requirements")
+    public Map<String, Object> requirements;
+
+    public Result() {
+    }
+
+    public Result(String id, String toolchain, Status status, ErrorType errorType, Owners owners, String uid,
+                  TestType type, TestSize size, String path, String name, String subtestName, String richSnippet,
+                  LinkedHashMap<String, List<String>> links, Double duration, List<String> tags,
+                  LinkedHashMap<String, Number> metrics, LinkedHashMap<String, TestOutput> resultOutput,
+                  Boolean isSuite, String suiteId, Map<String, Object> requirements) {
+        this.id = id;
+        this.toolchain = toolchain;
+        this.status = status;
+        this.errorType = errorType;
+        this.owners = owners;
+        this.uid = uid;
+        this.path = path;
+        this.type = type;
+        this.links = links;
+        this.richSnippet = richSnippet;
+        this.subtestName = subtestName;
+        this.duration = duration;
+        this.size = size;
+        this.name = name;
+        this.tags = tags;
+        this.metrics = metrics;
+        this.resultOutput = resultOutput;
+        this.isSuite = isSuite;
+        this.suiteId = suiteId;
+        this.requirements = requirements;
+    }
+
+    public enum TestType implements IntEnum {
+        CONFIGURE(1) {
+            public <T> T accept(Visitor<T> visitor) {
+                return visitor.visitConfigure();
+            }
+        },
+        BUILD(2) {
+            public <T> T accept(Visitor<T> visitor) {
+                return visitor.visitBuild();
+            }
+        },
+        TEST(3) {
+            public <T> T accept(Visitor<T> visitor) {
+                return visitor.visitTest();
+            }
+        },
+        STYLE(4) {
+            public <T> T accept(Visitor<T> visitor) {
+                return visitor.visitStyle();
+            }
+        };
+
+        private final int value;
+
+        TestType(int value) {
+            this.value = value;
+        }
+
+        public int value() {
+            return value;
+        }
+
+        @Nullable
+        @JsonCreator
+        public static TestType fromString(@Nullable String key) {
+            return key == null
+                    ? null
+                    : TestType.valueOf(key.toUpperCase());
+        }
+
+        public static IntEnumResolver<TestType> R = IntEnumResolver.r(TestType.class);
+
+        public abstract <T> T accept(Visitor<T> visitor);
+
+        public interface Visitor<T> {
+            T visitConfigure();
+
+            T visitBuild();
+
+            T visitTest();
+
+            T visitStyle();
+        }
+    }
+
+    public enum TestSize implements IntEnum {
+        SMALL(1) { // Simple metatest in autocheck, report-unit, ...
+
+            public <T> T accept(Visitor<T> visitor) {
+                return visitor.visitSmall();
+            }
+        },
+        MEDIUM(2) {
+            public <T> T accept(Visitor<T> visitor) {
+                return visitor.visitMedium();
+            }
+        },
+        FAT(3) {  // Fat autogenerated test in autocheck
+
+            public <T> T accept(Visitor<T> visitor) {
+                logger.error("TestSize.FAT is deprecated.");
+
+                return null;
+            }
+        },
+        TE_JOB(4) { // Custom non-metatest tests in non-autocheck bases
+
+            public <T> T accept(Visitor<T> visitor) {
+                return visitor.visitTeJob();
+            }
+        },
+        LARGE(5) {
+            public <T> T accept(Visitor<T> visitor) {
+                return visitor.visitLarge();
+            }
+        };
+
+        private final int value;
+
+        TestSize(int value) {
+            this.value = value;
+        }
+
+        public int value() {
+            return value;
+        }
+
+        @Nullable
+        @JsonCreator
+        public static TestSize fromString(@Nullable String key) {
+            return key == null
+                    ? null
+                    : TestSize.valueOf(key.toUpperCase());
+        }
+
+        public static IntEnumResolver<TestSize> R = IntEnumResolver.r(TestSize.class);
+
+        public abstract <T> T accept(Visitor<T> visitor);
+
+        public interface Visitor<T> {
+            T visitSmall();
+
+            T visitMedium();
+
+            T visitLarge();
+
+            T visitTeJob();
+        }
+    }
+
+    public enum Status implements IntEnum {
+        OK(1),
+        FAILED(2),
+        SKIPPED(3),
+        DISCOVERED(4);
+
+        private final int value;
+
+        Status(int value) {
+            this.value = value;
+        }
+
+        public int value() {
+            return value;
+        }
+
+        @Nullable
+        @JsonCreator
+        public static Status fromString(@Nullable String key) {
+            if ("NOT_LAUNCHED".equals(key)) {
+                return SKIPPED;
+            }
+            return key == null
+                    ? null
+                    : Status.valueOf(key.toUpperCase());
+        }
+
+        public static IntEnumResolver<Status> R = IntEnumResolver.r(Status.class);
+    }
+
+    public enum ErrorType implements IntEnum {
+        REGULAR(1),
+        TIMEOUT(2),
+        FLAKY(3),
+        BROKEN_DEPS(4),
+        XFAILED(5),  // can not succeed
+        XPASSED(6),  // must not succeed
+        INTERNAL(7);  // autocheck internal problem
+
+        private final int value;
+
+        ErrorType(int value) {
+            this.value = value;
+        }
+
+        public int value() {
+            return value;
+        }
+
+        @Nullable
+        @JsonCreator
+        public static ErrorType fromString(@Nullable String key) {
+            return key == null
+                    ? null
+                    : ErrorType.valueOf(key.toUpperCase());
+        }
+
+        public static IntEnumResolver<ErrorType> R = IntEnumResolver.r(ErrorType.class);
+    }
+}

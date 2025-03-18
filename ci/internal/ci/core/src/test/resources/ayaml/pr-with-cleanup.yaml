@@ -1,0 +1,67 @@
+service: ci
+title: Manual Test
+
+ci:
+  secret: sec-01dy7t26dyht1bj4w3yn94fsa
+  runtime:
+    sandbox-owner: CI
+
+  actions:
+    sawmill:
+      flow: sawmill
+      cleanup:
+        delay: 10m
+      triggers:
+        - on: pr
+          into: trunk
+        - on: pr
+    sawmill2:
+      flow: sawmill
+      cleanup:
+        delay: 9m
+        on-status:
+          - SUCCESS
+          - FAILURE
+          - RUNNING_WITH_ERRORS
+          - WAITING_FOR_MANUAL_TRIGGER
+          - WAITING_FOR_SCHEDULE
+        conditions:
+          - reasons: new-diff-set
+            cleanup: false
+          - reasons: pr-merged
+            interrupt: true
+          - reasons: pr-discarded
+            cleanup: false
+            interrupt: true
+          - reasons: finish # like default configuration
+            cleanup: true
+            interrupt: false
+
+    sawmill3:
+      flow: sawmill
+      cleanup:
+        delay: 8m
+        on-status:
+          - SUCCESS
+        conditions:
+          reasons:
+            - new-diff-set
+            - pr-merged
+            - pr-discarded
+            - finish
+
+  flows:
+    sawmill:
+      title: Simple job
+      cleanup-jobs:
+        cleanup-1:
+          title: Очистка 1
+          task: dummy
+        cleanup-2:
+          title: Очистка 2
+          task: dummy
+      jobs:
+        testing:
+          title: Выкладка в тестинг
+          description: Выкладывает в тестинг
+          task: common/deploy/release

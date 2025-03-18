@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+package ci.proto.storage;
+
+option java_package = "ru.yandex.ci.storage.core";
+
+import "ci/proto/storage/actions.proto";
+import "ci/proto/storage/aggregate_statistics.proto";
+import "ci/proto/storage/events_stream_messages.proto";
+import "ci/proto/storage/check_iteration.proto";
+import "ci/proto/storage/check_task.proto";
+import "ci/proto/storage/common.proto";
+import "google/protobuf/timestamp.proto";
+
+message ChunkAggregateId {
+    IterationId iteration_id = 1;
+    ChunkId chunk_id = 2;
+}
+
+message ChunkAggregate {
+    ChunkAggregateId id = 1;
+
+    ChunkAggregateStatistics statistics = 3;
+
+    google.protobuf.Timestamp created = 4;
+
+    ChunkAggregateState state = 5;
+}
+
+message ChunkFinished {
+    ChunkAggregate aggregate = 1;
+    ChunkAggregate meta_aggregate = 2; // optional
+}
+
+message ShardOutMessages {
+    repeated ShardOutMessage messages = 1;
+    MessageMeta meta = 2;
+}
+
+message ShardOutMessage {
+    MessageMeta meta = 1;
+
+    IterationId iteration_id = 10;
+
+    oneof messages {
+        ChunkAggregate aggregate = 100;
+        ChunkFinished finished = 101;
+        ShardForwardingMessage forwarding = 102;
+    }
+}
+
+message ShardForwardingMessage {
+    FullTaskId full_task_id = 1;
+    int32 partition = 2;
+
+    oneof message {
+        // Main stream
+        Finished finished = 10;
+        TestTypeFinished test_type_finished = 11;
+        TestTypeSizeFinished test_type_size_finished = 12;
+        Pessimize pessimize = 16;
+        TraceStage trace = 17;
+        Metric metric = 22;
+
+        // Events stream
+        CancelMessage cancel = 20;
+    }
+}
+

@@ -1,0 +1,89 @@
+# documentationStart
+service: ci
+title: Woodcutter
+ci:
+  secret: sec-01dy7t26dyht1bj4w3yn94fsa
+  # Level 1, Конфигурация уровня a.yaml, переопределяет все настройки из реестра задач (Level 0)
+  runtime:
+    sandbox:
+      owner: CI
+      tags: [ FROM_CI ] # теги будут добавлены к базовым тэгам
+      priority:
+        class: BACKGROUND
+        subclass: NORMAL
+      notifications:
+        - statuses: [ TIMEOUT, FAILURE, EXCEPTION ] # можно передать список статусов Sandbox-задач
+          transport: email
+          recipients: andreevdm
+
+  actions:
+    my-action:
+      flow: my-flow
+      # Level 2, Конфигурация уровня action, переопределяет настройки из Level 1
+      runtime:
+        sandbox:
+          owner: CI-ACTIONS
+          tags: FROM_ACTION
+          kill-timeout: 2h
+
+  releases:
+    my-release:
+      flow: my-flow
+      # Level 2, Конфигурация уровня action, переопределяет настройки из Level 1
+      runtime:
+        get-output-on-fail: false
+        sandbox:
+          owner: CI-RELEASES
+          tags: FROM_RELEASE
+
+  flows:
+    my-flow:
+      jobs:
+        single:
+          task: dummy
+          # Level 3, Конфигурация уровня action, переопределяет настройки из Level 2
+          runtime:
+            sandbox:
+              tags:
+                - FLOW
+                - MY-FLOW
+
+# documentationEnd
+    target-flow:
+      jobs:
+        from-action:
+          # documentationActionStart
+          task: dummy
+          runtime:
+            get-output-on-fail: true
+            sandbox:
+              owner: CI-ACTIONS
+              tags: [ WOODCUTTER, CI_EXAMPLE, FROM_CI, FROM_ACTION, FLOW, MY-FLOW ]
+              hints: [ "version-${context.version_info.full}" ]
+              priority:
+                class: BACKGROUND
+                subclass: NORMAL
+              kill-timeout: 2h
+              notifications:
+                - statuses: [ TIMEOUT, FAILURE, EXCEPTION ]
+                  transport: email
+                  recipients: andreevdm
+          # documentationActionEnd
+
+        from-release:
+          # documentationReleaseStart
+          task: dummy
+          runtime:
+            sandbox:
+              owner: CI-RELEASES
+              tags: [ WOODCUTTER, CI_EXAMPLE, FROM_CI, FROM_RELEASE, FLOW, MY-FLOW ]
+              hints: [ "version-${context.version_info.full}" ]
+              priority:
+                class: BACKGROUND
+                subclass: NORMAL
+              kill-timeout: 1h 20m
+              notifications:
+                - statuses: [ TIMEOUT, FAILURE, EXCEPTION ]
+                  transport: email
+                  recipients: andreevdm
+          # documentationReleaseEnd

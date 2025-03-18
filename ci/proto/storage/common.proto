@@ -1,0 +1,227 @@
+syntax = "proto3";
+
+package ci.proto.storage;
+
+option java_package = "ru.yandex.ci.storage.core";
+
+import "google/protobuf/timestamp.proto";
+
+message OrderedRevision {
+    string branch = 1;
+    string revision = 2;
+    int64 revision_number = 3;
+    google.protobuf.Timestamp timestamp = 4;
+}
+
+enum CheckStatus {
+    CREATED = 0;
+    RUNNING = 1;
+
+    CANCELLING = 10;
+    CANCELLING_BY_TIMEOUT = 11;
+
+    CANCELLED = 12;
+    CANCELLED_BY_TIMEOUT = 13;
+
+    COMPLETING = 20;
+
+    COMPLETED_SUCCESS = 21;
+
+    COMPLETED_FAILED = 22;
+    COMPLETED_WITH_FATAL_ERROR = 23;
+}
+
+enum CheckTaskType {
+    CTT_AUTOCHECK = 0;
+    CTT_LARGE_TEST = 1;
+    CTT_TESTENV = 2;
+    CTT_NATIVE_BUILD = 3;
+}
+
+enum TestTypeStatus {
+    TTS_RUNNING = 0;
+    TTS_WAITING_FOR_CONFIGURE = 1;
+    TTS_WAITING_FOR_CHUNKS = 2;
+    TTS_NOT_STARTED = 3;
+    TTS_COMPLETED = 10;
+}
+
+// comments can be stale, see actual mapping in
+// https://a.yandex-team.ru/arc_vcs/ci/storage-shard/src/main/java/ru/yandex/ci/storage/shard/task/
+//   TaskResultComparer.java?rev=r8435167#L11
+enum TestDiffType {
+    // 'Passed' is [OK || XFAILED]
+    // 'Failed' is [FAILED || XPASSED]
+    // Pure passed
+    TDT_PASSED = 0;                 // [Ok | XFailed] -> [Ok | XFailed]
+    TDT_PASSED_NEW = 1;             // [None]           -> [Ok | XFailed]
+    TDT_PASSED_FIXED = 2;           // [Failed | XPassed]         -> [Ok | XFailed]
+    TDT_PASSED_BY_DEPS_FIXED = 3;   // [Failed by deps] -> [Ok | XFailed]
+
+    // Pure failed
+    TDT_FAILED = 10;                // [Failed | XPassed] -> [Failed | XPassed] || [Failed by deps] -> [Failed]
+    TDT_FAILED_BROKEN = 11;         // [Ok | XFailed] -> [Failed | XPassed]
+    TDT_FAILED_NEW = 12;            // [None]   -> [Failed | XPassed]
+
+    TDT_FAILED_BY_DEPS = 13;        // [Failed | XPassed | Flaky | Timeout | Failed by deps] -> [Failed by deps]
+    TDT_FAILED_BY_DEPS_BROKEN = 14; // [Ok | XFailed] -> [Failed by deps] || [Failed by deps] -> [XFailed]
+    TDT_FAILED_BY_DEPS_NEW = 15;    // [None]           -> [Failed by deps]
+
+    // Skipped
+    TDT_SKIPPED = 20;        // [Skipped | Discovered] -> [Skipped | Discovered]
+    TDT_SKIPPED_NEW = 21;    // [None]                 -> [Skipped | Discovered]
+
+    // Deleted
+    TDT_DELETED = 30;        // [Status] -> [None]
+
+    // Timeout
+    TDT_TIMEOUT_FIXED = 40;  // [Timeout] -> [Passed]
+    TDT_TIMEOUT_BROKEN = 41; // [Ok | XFailed]  -> [Timeout]
+    TDT_TIMEOUT_FAILED = 42; // [Timeout] -> [Not passed]
+    TDT_TIMEOUT_NEW = 43;    // [None]    -> [Timeout], counts as broken
+
+    // Flaky
+    TDT_FLAKY_FIXED = 50;    // [Flaky]  -> [Passed]
+    TDT_FLAKY_BROKEN = 51;   // [Ok | XFailed | Broken by deps] -> [Flaky]
+    TDT_FLAKY_FAILED = 52;   // [Flaky]  -> [Flaky | Failed | XPassed] || [Failed | XPassed | Timeout]  -> [Flaky]
+    TDT_FLAKY_NEW = 53;      // [None]   -> [Flaky], counts as broken
+
+    // External
+    TDT_EXTERNAL_FIXED = 60;   // [Failed]   -> [Passed]
+    TDT_EXTERNAL_BROKEN = 61;  // [Status]   -> [Failed]
+    TDT_EXTERNAL_FAILED = 62;  // [Internal] -> [Not passed]
+    TDT_EXTERNAL_NEW = 63;     // [None]     -> [Failed], counts as broken
+
+    // Internal
+    TDT_INTERNAL_FIXED = 70;   // [Failed] -> [Ok | XFailed]
+    TDT_INTERNAL_BROKEN = 71;  // [Ok | XFailed] -> [Internal]
+    TDT_INTERNAL_FAILED = 72;  // [Failed | XPassed | Flaky | Internal | Timeout] -> [Internal]
+
+    TDT_INTERNAL_NEW = 73;     // [None]   -> [Failed], counts as broken
+
+    // Suite problems
+    TDT_SUITE_PROBLEMS = 80;   // [Suite problems] -> [Status] | [Status] -> [Suite problems]
+
+    TDT_UNKNOWN = 100;         // [] -> [Status] | [Status] -> []
+}
+
+enum TestStatus {
+    TS_UNKNOWN = 0;
+    TS_DISCOVERED = 1;
+    TS_FAILED = 2;
+    TS_FLAKY = 3;
+    TS_INTERNAL = 4;
+    TS_OK = 5;
+    TS_SKIPPED = 6;
+    TS_TIMEOUT = 7;
+    TS_BROKEN_DEPS = 8;
+    TS_XFAILED = 9;
+    TS_XPASSED = 10;
+    TS_NONE = 11;
+    TS_SUITE_PROBLEMS = 12;
+    TS_MULTIPLE_PROBLEMS = 13; // Status only for toolchain aggregates
+    TS_NOT_LAUNCHED = 14;
+}
+
+enum ResultType {
+    RT_BUILD = 0;
+    RT_CONFIGURE = 1;
+    RT_STYLE_CHECK = 2;
+    RT_STYLE_SUITE_CHECK = 3;
+    RT_TEST_LARGE = 4;
+    RT_TEST_MEDIUM = 5;
+    RT_TEST_SMALL = 6;
+    RT_TEST_SUITE_LARGE = 7;
+    RT_TEST_SUITE_MEDIUM = 8;
+    RT_TEST_SUITE_SMALL = 9;
+    RT_TEST_TESTENV = 10;
+    RT_NATIVE_BUILD = 11;
+}
+
+message MessageMeta {
+    string id = 1;
+    google.protobuf.Timestamp timestamp = 2;
+}
+
+message TraceStage {
+    google.protobuf.Timestamp timestamp = 1;
+    string type = 2;
+    map<string, string> attributes = 3;
+}
+
+enum ChunkType {
+    CT_CONFIGURE = 0;
+    CT_BUILD = 1;
+    CT_STYLE = 2;
+    CT_SMALL_TEST = 3;
+    CT_MEDIUM_TEST = 4;
+    CT_LARGE_TEST = 5;
+    CT_TESTENV = 6;
+    CT_NATIVE_BUILD = 7;
+}
+
+enum ChunkStatus {
+    CS_DIRECT = 0;
+}
+
+message ChunkId {
+    ChunkType type = 1;
+    int32 number = 2;
+}
+
+message TestId {
+    string suiteId = 1;
+    string toolchain = 2;
+    string testId = 3;
+}
+
+enum ChunkAggregateState {
+    CAS_RUNNING = 0;
+    CAS_COMPLETED = 1;
+    CAS_CANCELLED = 2;
+}
+
+enum StorageAttribute {
+    SA_RECHECK_FOR = 0;
+    SA_NO_RECHECK_REASON = 1;
+    SA_IS_OWNER_OUR_GUY = 2;
+    SA_ENVIRONMENT = 3;
+    SA_TESTENV_FINALIZATION_ALLOWED = 4;
+    SA_CANCELLED_BY = 5;
+    SA_CHUNK_DISTRIBUTION_V2 = 7;
+    SA_SEPARATE_POST_PROCESSOR = 8;
+    SA_STRESS_TEST = 9;
+    SA_NOTIFICATIONS_DISABLED = 10;
+    SA_FIRST_FAIL_SENT = 11;
+}
+
+enum CheckSearchEntityType {
+    CSET_PATH = 0;
+    CSET_TEST_NAME = 1;
+    CSET_SUBTEST_NAME = 2;
+}
+
+message TestStatusId {
+    string branch = 1;
+    string suite_hid = 2;
+    string toolchain = 3;
+    string hid = 4;
+}
+
+message Metric {
+    string name = 1;
+    double value = 2;
+    MetricAggregateFunction aggregate = 3;
+    MetricSize size = 4;
+}
+
+enum MetricSize {
+    SECONDS = 0;
+    BYTES = 1;
+    NUMBER = 2;
+}
+
+enum MetricAggregateFunction {
+    SUM = 0;
+    MAX = 1;
+}

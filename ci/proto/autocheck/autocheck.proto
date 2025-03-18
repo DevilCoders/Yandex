@@ -1,0 +1,93 @@
+syntax = "proto3";
+
+package ci.autocheck;
+
+option java_package = "ru.yandex.ci.autocheck";
+
+import "ci/proto/storage/check.proto";
+import "ci/proto/storage/check_iteration.proto";
+import "ci/proto/storage/check_task.proto";
+import "ci/proto/common.proto";
+
+message AutocheckLaunch {
+
+    reserved 1 to 22;
+
+    CheckInfo check_info = 23;
+
+    repeated AutocheckJob left_fast_circuit_jobs = 24;
+    repeated AutocheckJob right_fast_circuit_jobs = 25;
+    repeated AutocheckJob left_full_circuit_jobs = 26;
+    repeated AutocheckJob right_full_circuit_jobs = 27;
+
+    bool skip = 28;     // e.g. robot's commit can be skipped
+}
+
+message AutocheckRecheckLaunch {
+
+    reserved 1 to 5, 8 to 15, 20 to 22;
+
+    CheckInfo check_info = 23;
+    ci.proto.storage.IterationId iteration_id = 24;
+
+    repeated AutocheckJob left_jobs = 6;
+    repeated AutocheckJob right_jobs = 7;
+}
+
+message CheckInfo {
+    ci.common.CommitId left_revision = 1;
+    ci.common.CommitId right_revision = 2;
+
+    string check_author = 3;
+    string pool_name = 4;
+    string gsid = 5;
+
+    ci.proto.storage.DistbuildPriority distbuild_priority = 6;
+    ci.proto.storage.Zipatch zipatch = 7;
+
+    reserved 8 to 9;
+
+    string check_id = 10;
+}
+
+message AutocheckJob {
+
+    reserved 3, 4, 7;
+
+    AutocheckConfiguration configuration = 1;
+    repeated string targets = 2;
+    repeated NativeBuild native_builds = 5 [deprecated = true]; // TODO CI-1259 разобраться, надо ли на самом деле
+    string   custom_targets_list = 6;
+    int32    tests_retries = 8;
+    CiStorageTask storage_task = 9;
+
+    reserved 10 to 19;
+
+    Side side = 20;
+
+    enum Side {
+        UNKNOWN = 0;
+        LEFT = 1;
+        RIGHT = 2;
+    }
+}
+
+message NativeBuild {
+    string toolchain = 1;
+    repeated string targets = 2;
+    string path = 3;
+}
+
+message CiStorageTask {
+    ci.proto.storage.FullTaskId id = 1;
+    string logbroker_topic = 2;
+    string logbroker_source_id = 3;
+}
+
+message AutocheckConfiguration {
+    string id = 1;
+    int32 partition_count = 3;
+    ci.common.CommitId revision = 7;
+    int32 svn_revision = 8;  // TODO: CI-3365, need this field for postcommit checks
+    reserved 2, 4, 5, 6;
+}

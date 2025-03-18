@@ -1,0 +1,64 @@
+service: ci
+title: Test
+ci:
+  secret: sec-xxx
+  runtime:
+    sandbox:
+      owner: CI
+
+  # Проверка всех возможных типов зависимостей - между SANDBOX задачами и тасклетами
+  flows:
+    flow-with-upstream:
+      jobs:
+        job-1:
+          task: ci-test/some-task-1
+        job-with-input-2:
+          task: ci-test/some-sandbox-task-4
+          needs: job-1
+
+    flow-with-multiple-upstreams:
+      jobs:
+        job-1:
+          task: ci-test/some-task-1
+        job-with-input-2:
+          task: ci-test/some-sandbox-task-2
+          needs: job-1
+        job-with-input-3:
+          task: ci-test/some-sandbox-task-4
+          needs: [job-1, job-with-input-2]
+
+    flow-with-static-resource:
+      jobs:
+        job-1-x:
+          task: ci-test/some-task-1
+        job-with-input-2:
+          task: ci-test/some-sandbox-task-4
+          needs: job-1-x
+          input:
+            build_type: "${tasks.job-1-x.simple_data_field.simple_string}"
+
+    flow-with-upstream-between-tasklets:
+      jobs:
+        job-1:
+          task: ci-test/some-task-3
+          input:
+            simple_data_field:
+              simple_string: "test it"
+        job-with-input-2:
+          task: ci-test/some-task-3
+          needs: job-1
+          input:
+            simple_data_field:
+              simple_string: "${tasks.job-1.simple_data_field.simple_string}"
+
+    flow-with-upstream-between-tasklets-merge:
+      jobs:
+        job-1:
+          task: ci-test/some-task-1
+        job-with-input-2:
+          task: ci-test/some-task-2
+          needs: job-1
+          input:
+            simple_data_field:
+              # Обрамлять что-то в кавычки не обязательно
+              simple_string: ${tasks.job-1.simple_data_field.simple_string}

@@ -1,0 +1,501 @@
+syntax = "proto3";
+
+package ci.common;
+option java_package = "ru.yandex.ci.api.proto";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "ci/proto/common/info_panel.proto";
+
+// ======= common.proto [begin] ========
+message OrderedArcRevision {
+    // Arc commit hash
+    string hash = 1;
+
+    // Arc branch
+    string branch = 2;
+
+    // One of possible values:
+    // * if branch == 'trunk' - SVN revision number
+    // * if branch.startsWith('pr:') - diff set id
+    // * if any other branch - just some number (sequenced by CI)
+    int64 number = 3;
+
+    // Pull request (for pull request or if just available in commit)
+    int64 pull_request_id = 4;
+}
+
+message LocalizedName {
+    string ru = 1;
+    string en = 2;
+}
+
+message Offset {
+    google.protobuf.Int64Value total = 1; // not present means total is unknown
+    bool has_more = 2;
+}
+
+message Project {
+    string id = 1; //same as abc_service.slug
+    AbcService abc_service = 6;
+
+    ci.proto.common.info.InfoPanel info_panel = 35;
+}
+
+message AbcService {
+    string slug = 1;
+    LocalizedName name = 2;
+    LocalizedName description = 3;
+    string url = 4;
+}
+// ======= common.proto [end] ========
+
+
+// ======= arc.proto [begin] ========
+// depends from common.proto
+// ------
+// Commit at time line
+message Commit {
+    OrderedArcRevision revision = 1;
+    google.protobuf.Timestamp date = 2;
+    repeated string issues = 3;
+    string message = 4;
+    string author = 5;
+    int32 pull_request_id = 6;
+
+    reserved 7;
+    reserved 'cancelled_releases';
+}
+
+message ArcCommit {
+    string hash = 1;
+    google.protobuf.Timestamp date = 2;
+    repeated string issues = 3;
+    string message = 4;
+    string author = 5;
+}
+
+message CommitId {
+    string commit_id = 1;
+}
+// ======= arc.proto [end] ========
+
+
+// ======= flow.proto [begin] ========
+// depends from
+// ------
+message FlowFullId {
+    string dir = 1;
+    string id = 2;
+}
+
+message FlowLaunchId {
+    string id = 1;
+}
+
+// Уникальный идентификатор 'flow' в Аркадии
+message FlowProcessId {
+    string dir = 1; // Полный путь к каталогу внутри Аркадии, где лежит a.yaml
+    string id = 2; // Идентификатор flow внутри a.yaml
+}
+
+// Идентификатор `flow` вместе с описанием
+message FlowDescription {
+    FlowProcessId flow_process_id = 1;
+    string title = 2; // Название flow для отображения в интерфейсе
+    string description = 3; // Описание flow
+    FlowType flow_type = 4; // Тип flow (его нужно будет вернуть при запуске не дефолтного flow)
+    // Список rollback flow, которые могут быть использованы для отмены этого flow
+    // Если список пуст, то откатить этот flow нельзя
+    // Актуально для релизов
+    repeated FlowProcessId rollback_flows = 28;
+
+    FlowVarsUi flowVarsUi = 29;
+}
+
+message FlowVarsUi {
+    string schema = 1; // json-schema in json format (not yaml as declared in a.yaml)
+}
+
+// id джобы внутри запуска
+message FlowLaunchJobId {
+    FlowLaunchId flow_launch_id = 1;
+    string job_id = 2;
+}
+
+// id конкретного запуска джобы
+message JobLaunchId {
+    FlowLaunchJobId job_id = 1;
+    int32 launch_number = 2;
+}
+
+message StagesState {
+    repeated StageState states = 1;
+}
+
+message BlockedBy {
+    ReleaseLaunchId id = 1;
+    Version version = 2;
+}
+
+message StageState {
+    string id = 1;
+    string title = 2;
+    StageStatus status = 3;
+    ReleaseLaunchId blocked_by_release = 4 [deprecated = true];
+    BlockedBy blocked_by_version = 9; // Замена `blocked_by_release`, содержит как ссылку на релиз, так и версию
+
+    google.protobuf.Timestamp started = 5;
+    google.protobuf.Timestamp finished = 6;
+
+    repeated JobStatusCount jobs_status = 7;
+
+    // Количество столбцов кубиков, в этой стадии
+    // Позволяет высчитать относительную "ширину" стадии, как если бы она выглядела во Flow
+    int32 total_columns = 8;
+
+    enum StageStatus {
+        UNKNOWN = 0;
+        NOT_ACQUIRED = 1;
+        ACQUIRED = 2;
+        RELEASED = 3;
+    }
+
+    message JobStatusCount {
+        StatusChangeWrapper.StatusChangeType type = 1;
+        int32 count = 2;
+    }
+}
+
+// ======= flow.proto [end] ========
+
+
+// ======= release.proto [begin] ========
+// depends from arc.proto, flow.proto
+// ------
+message Version {
+    string full = 1; // полное строковое представление версии
+
+    string major = 2;
+    string minor = 3;
+}
+
+message ProcessId {
+    oneof id {
+        ReleaseProcessId releaseProcessId = 1;
+        FlowProcessId flowProcessId = 2;
+    }
+}
+
+message ReleaseProcessId {
+    string dir = 1;
+    string id = 2;
+}
+
+message ReleaseLaunchId {
+    ReleaseProcessId release_process_id = 1;
+    int32 number = 2;
+}
+
+message LaunchId {
+    ProcessId process_id = 1;
+    int32 number = 2;
+}
+
+message BranchId {
+    ReleaseProcessId release_process_id = 1;
+    string branch = 2;
+}
+
+message CommitDiscoveryState {
+    bool discovered = 1;
+    string discovered_by = 2; // May be empty for old records
+    google.protobuf.Timestamp discovered_at = 3; // May be empty for old records
+}
+
+message ReleaseCommit {
+    Commit commit = 1;
+    repeated ReleaseLaunch cancelled_releases = 2;
+    repeated string branches = 3; // branches, created at specified commit
+
+    // Manual discovery state
+    CommitDiscoveryState manual_discovery = 4;
+}
+
+message DisplacementChange {
+    DisplacementState state = 1; // установленный статус вытеснения
+    string changed_by = 2; // username того, кто изменил настройки вытеснения
+    google.protobuf.Timestamp changed_at = 3; // дата изменения настроек вытеснения
+}
+
+message DisplacedBy {
+    ReleaseLaunchId id = 1;
+    Version version = 2;
+}
+
+message ReleaseLaunch {
+    ReleaseLaunchId id = 1;
+    FlowLaunchId flow_launch_id = 2;
+    FlowDescription flow_description = 19;
+    string title = 3;
+    string triggered_by = 4;
+    OrderedArcRevision revision = 5;
+    OrderedArcRevision previous_revision = 6;
+    int32 commit_count = 7;
+    google.protobuf.Timestamp created = 14;
+    google.protobuf.Timestamp started = 8;
+    google.protobuf.Timestamp finished = 9;
+    reserved 11;
+    StagesState stages_state = 23;
+    LaunchStatus status = 12;
+    string status_text = 13;
+    bool cancelable = 15;
+    int32 cancelled_releases_count = 16;
+    int32 displaced_releases_count = 25;
+    string cancelled_by = 17;
+    string cancelled_reason = 18;
+
+    // Параметры, связанные с вытеснением релизов
+    bool displaced = 20;
+    DisplacedBy displaced_by_version = 26;
+
+    // Есть ли у этого запуска настройки вытеснения
+    // * true - можно менять настройки вытеснения
+    // * false - этот релиз в принципе не поддерживает вытеснение, менять настройки не имеет смысла
+    bool has_displacement = 21;
+    repeated DisplacementChange displacement_changes = 22; // Список изменения настроек вытеснения
+
+    Version version = 24;
+
+    // Если true, то в таймлайне у релиза будет возможность перезапустить на этом же коммите
+    // То есть запустить релиз без свежих коммитов
+    bool restartable = 27;
+
+    // Причина запуска релиза
+    string launch_reason = 28;
+}
+
+message FlowVars {
+    string json = 1; // flow vars (actual values) passed from ui
+}
+
+message Branch {
+    string name = 1;
+    string created_by = 2;
+    google.protobuf.Timestamp created = 3;
+    string base_revision_hash = 4;
+
+    int32 trunk_commits_count = 5;
+    int32 branch_commits_count = 6;
+
+    int32 active_launches_count = 7;
+    int32 completed_launches_count = 8;
+    int32 cancelled_launches_count = 9;
+    repeated LaunchStatusCounter launch_status_counter = 10;
+}
+
+message TimelineBranch {
+    Branch branch = 1;
+    int32 free_branch_commits_count = 2;
+    ReleaseLaunch last_branch_release = 3;
+}
+
+// TODO: move TimelineItem to frontend_timeline_api.proto?
+message TimelineItem {
+    oneof item {
+        ReleaseLaunch release = 1;
+        TimelineBranch timelineBranch = 3;
+    }
+    reserved 2;
+    // Бранч, к которому относится этот элемент таймлайна
+    // Проставляется значение бранча, в котором этот элемент отображается
+    string show_in_branch = 4;
+}
+
+// ======= release.proto [end] ========
+
+
+// ======= config_state.proto [begin] ========
+// depends from flow.proto, release.proto
+// ------
+message ConfigState {
+    string dir = 1;
+    string title = 2;
+    string path = 7;
+    VirtualProcessType virtual_process_type = 8;
+    repeated ReleaseState releases = 3;
+    repeated FlowState flows = 4;
+    google.protobuf.Timestamp created = 5;
+    google.protobuf.Timestamp updated = 6;
+
+}
+
+message ReleaseState {
+    ReleaseProcessId id = 1;
+    string title = 2;
+    string description = 8;
+    AutoReleaseState auto = 3;
+    bool release_from_trunk_allowed = 4;
+    bool release_branches_enabled = 5;
+    bool default_config_from_branch = 9;
+
+    repeated Branch branches = 6;
+    BranchOffset branches_next = 7;
+
+    ci.proto.common.info.InfoPanel info_panel = 35;
+}
+
+message AutoReleaseState {
+    bool enabled = 1;
+    bool editable = 2;
+    LastManualAction last_manual_action = 3;
+
+    message LastManualAction {
+        bool enabled = 1;
+        string login = 2;
+        string message = 3;
+        google.protobuf.Timestamp date = 4;
+    }
+}
+
+message FlowState {
+    FlowProcessId id = 1;
+    string title = 2;
+    string description = 3;
+    repeated LaunchStatusCounter launch_status_counter = 4;
+
+    ci.proto.common.info.InfoPanel info_panel = 35;
+
+    // Contains reference to test history
+    // Not empty only for Large tests, executed recently (i.e. not all Large tests has this reference)
+    TestId test_id = 5;
+}
+
+message TestId {
+    string suite_id = 1;
+    string toolchain = 2;
+}
+
+message BranchOffset {
+    google.protobuf.Timestamp updated = 1;
+    string branch_name = 2;
+}
+
+message CommitOffset {
+    string branch = 1;
+    int64 number = 2;
+}
+
+message StatusChangeWrapper {
+    enum StatusChangeType {
+        NO_STATUS = 0;
+        WAITING_FOR_STAGE = 1;
+        WAITING_FOR_SCHEDULE = 2;
+        QUEUED = 3;
+        RUNNING = 4;
+        INTERRUPTING = 5;
+        KILLED = 6;
+
+        EXECUTOR_SUCCEEDED = 7;
+        EXECUTOR_INTERRUPTED = 8;
+        EXECUTOR_KILLED = 9;
+        FORCED_EXECUTOR_SUCCEEDED = 10;
+        EXECUTOR_FAILED = 11;
+
+        EXECUTOR_EXPECTED_FAILED = 12;
+
+        SUBSCRIBERS_SUCCEEDED = 13;
+        SUBSCRIBERS_FAILED = 14;
+
+        SUCCESSFUL = 15;
+        EXPECTED_FAILED = 16;
+        FAILED = 17;
+        INTERRUPTED = 18;
+    }
+}
+
+// ======= config_state.proto [begin] ========
+
+
+// ======= pull_request.proto [begin] ========
+// depends from
+// ------
+message PullRequestInfo {
+    int64 pull_request_id = 1;
+    int64 diff_set_id = 2;
+}
+
+message PullRequestVcsInfo {
+    string merge_revision_hash = 1; // Ревизия, на которой выполняется проверка
+    string upstream_revision_hash = 2; // HEAD ветки, в которую вливается PR, на момент создания итерации PR'а
+    string upstream_branch = 3; // Ветка, в которую делается PR
+    string feature_revision_hash = 4; // Head ветки, из которой делается PR, на момент создания итерации PR'а
+    // Ветка, из которой делается PR. Равна null, когда PR делается из свна.
+    google.protobuf.StringValue feature_branch = 5;
+}
+// ======= pull_request.proto [end] ========
+
+
+// ======= autocheck_api.proto [begin] ========
+message CiCheckInfo {
+    string id = 1;
+}
+// ======= autocheck_api.proto [end] ========
+
+message CiStorageInfo {
+    bool report_to_ci = 1;
+    string ci_check_id = 2;
+    string ci_iteration_number = 3;
+    string ci_task_id = 4;
+    string ci_logbroker_topic = 5;
+}
+
+message LaunchStatusCounter {
+    ci.common.LaunchStatus status = 1;
+    // our ui developers asked to send int32, cause int64 is converted to string on ui side by default
+    int32 count = 2;
+}
+
+message XivaSubscription {
+    string topic = 1;
+    string service = 2;
+}
+
+// !!! Due to the issue https://github.com/protobufjs/protobuf.js/issues/1414 all enums should be defined
+// in the end of a file, cause protobuf compiler for js doesn't generate types which are placed below enum declaration.
+enum LaunchStatus {
+    UNKNOWN = 0;
+    DELAYED = 1;
+    POSTPONE = 15;
+    STARTING = 2;
+    RUNNING = 3;
+    RUNNING_WITH_ERRORS = 4;
+    FAILURE = 5;
+    WAITING_FOR_MANUAL_TRIGGER = 6;
+    WAITING_FOR_STAGE = 7;
+    WAITING_FOR_SCHEDULE = 8;
+    FINISHED = 9;
+    CANCELED = 10;
+    CANCELLING = 11;
+    WAITING_FOR_CLEANUP = 14;
+    CLEANING = 13;
+    IDLE = 12;
+}
+
+enum FlowType {
+    FT_DEFAULT = 0;
+    FT_HOTFIX = 1;
+    FT_ROLLBACK = 2;
+}
+
+
+enum DisplacementState {
+    DS_DENY = 0; // Вытеснение запрещено: такие релизы могут либо дойти до конца, либо быть отмененными
+    DS_ALLOW = 1;  // Вытеснение разрешено: состояние по умолчанию
+}
+
+enum VirtualProcessType {
+    VP_NONE = 0;
+    VP_LARGE_TESTS = 1;
+    VP_NATIVE_BUILDS = 2;
+}

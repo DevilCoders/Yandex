@@ -1,0 +1,184 @@
+syntax = "proto3";
+
+package ci.proto.storage;
+
+option java_package = "ru.yandex.ci.storage.api";
+
+import "ci/proto/storage/check.proto";
+import "ci/proto/storage/check_iteration.proto";
+import "ci/proto/storage/common.proto";
+import "ci/proto/storage/storage_front_api.proto";
+import "google/protobuf/timestamp.proto";
+
+service StorageFrontHistoryApiService {
+    rpc GetIdByOldId(GetIdByOldIdRequest) returns (GetIdByOldIdResponse);
+    rpc GetTestInfo(GetTestInfoRequest) returns (GetTestInfoResponse);
+    rpc GetTestHistory(GetTestHistoryRequest) returns (GetTestHistoryResponse);
+    rpc GetWrappedRevisions(GetWrappedRevisionsRequest) returns (GetWrappedRevisionsResponse);
+    rpc CountRevisions(CountRevisionsRequest) returns (CountRevisionsResponse);
+    rpc GetLaunches(GetLaunchesRequest) returns (GetLaunchesResponse);
+
+    rpc GetTestMetrics(GetTestMetricsRequest) returns (GetTestMetricsResponse);
+    rpc GetTestMetricHistory(GetTestMetricHistoryRequest) returns (GetTestMetricHistoryResponse);
+}
+
+message GetIdByOldIdRequest {
+    string id = 1;
+}
+
+message GetIdByOldIdResponse {
+    TestStatusId test_id = 1;
+}
+
+message GetWrappedRevisionsRequest {
+    TestStatusId test_id = 1;
+    HistoryFilters filters = 2;
+    WrappedRevisionsBoundaries boundaries = 3;
+}
+
+message GetWrappedRevisionsResponse {
+    repeated TestRevision revisions = 1;
+}
+
+message GetLaunchesRequest{
+    TestStatusId test_id = 1;
+    uint64 revision = 2;
+}
+
+message GetLaunchesResponse {
+    repeated LaunchesByStatus launches = 1;
+}
+
+message LaunchesByStatus {
+    TestStatus status = 1;
+    uint32 number_of_launches = 2;
+    TestRun last_launch = 3;
+}
+
+message CountRevisionsRequest {
+    TestStatusId test_id = 1;
+    HistoryFilters filters = 2;
+    repeated WrappedRevisionsBoundaries boundaries = 3;
+}
+
+message CountRevisionsResponse {
+    repeated WrappedRevisionsNumber boundaries = 1;
+}
+
+message GetTestInfoRequest {
+    TestStatusId test_id = 1; // toolchain = empty|@all means all toolchains
+}
+
+message GetTestInfoResponse {
+    repeated ToolchainStatus toolchains = 1;
+}
+
+message GetTestHistoryRequest {
+    TestStatusId test_id = 1; // empty|@all toolchain means all toolchains
+    HistoryFilters filters = 3;
+    HistoryPager page = 4;
+}
+
+message HistoryFilters {
+    TestStatus status = 1;
+    uint64 from_revision = 2;
+    uint64 to_revision = 3;
+}
+
+message GetTestHistoryResponse {
+    repeated TestRevision revisions = 1;
+    HistoryPager next = 2;
+    HistoryPager previous = 3;
+}
+
+message HistoryPager {
+    uint64 from = 1;
+    uint64 to = 2;
+}
+
+message TestRevision {
+    Revision revision = 1;
+    repeated TestRevisionToolchain toolchains = 2;
+    WrappedRevisionsBoundaries wrapped_revisions_boundaries = 3; // 0,0 if empty
+}
+
+message Revision {
+    uint64 number = 1;
+    string commitId = 2;
+    string message = 3;
+    google.protobuf.Timestamp created = 4;
+    string author = 5;
+}
+
+message WrappedRevisionsBoundaries {
+    uint64 from = 1;
+    uint64 to = 2;
+}
+
+message WrappedRevisionsNumber {
+    WrappedRevisionsBoundaries boundary = 1;
+    uint64 number_of_revisions = 2;
+}
+
+message TestRevisionToolchain {
+    string toolchain = 1;
+    TestStatus previous_status = 2;
+    TestStatus status = 3;
+    string uid = 4;
+}
+
+message ToolchainStatus {
+    Revision revision = 1;
+    string path = 2;
+    string name = 3;
+    string subtest_name = 4;
+    repeated string tags = 5;
+    ResultType type = 6;
+    TestStatus status = 7;
+    bool muted = 8;
+    uint32 fail_score = 9;
+    string uid = 10;
+    string toolchain = 11;
+    MuteAction last_mute_action = 12;
+    uint32 not_flaky_days = 13;
+}
+
+message MuteAction {
+    bool muted = 1;
+    uint64 revision = 2;
+    IterationId iteration_id = 3;
+    google.protobuf.Timestamp timestamp = 4;
+    string reason = 5;
+}
+
+message GetTestMetricsRequest {
+    TestStatusId test_id = 1;
+}
+
+message GetTestMetricsResponse {
+    repeated TestMetrics metrics = 1;
+}
+
+message TestMetrics {
+    string name = 1;
+}
+
+message GetTestMetricHistoryRequest {
+    TestStatusId test_id = 1;
+    string metric_name = 2;
+    TestMetricHistoryFilters filters = 3;
+}
+
+message TestMetricHistoryFilters {
+    google.protobuf.Timestamp from = 1;
+    google.protobuf.Timestamp to = 2;
+}
+
+message GetTestMetricHistoryResponse {
+    repeated TestMetricHistoryPoint points = 1;
+}
+
+message TestMetricHistoryPoint {
+    uint64 revision = 1;
+    double value = 2;
+}

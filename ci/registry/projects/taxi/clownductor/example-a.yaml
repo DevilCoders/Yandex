@@ -1,0 +1,134 @@
+service: your_abc_service_slug
+title: Your project title
+
+ci:
+  secret: sec-1234 # id секрета
+  runtime:
+    sandbox:
+      owner: YOUR_SANDBOX_GROUP
+      kill-timeout: 30m
+
+  actions:
+    deploy-dev-branch:
+      flow: deploy-dev-branch
+      triggers:
+        - on: pr
+          required: false
+          into: # запускаем при PR как в trunk, так и в релизную ветку
+            - trunk
+            - release-branch
+      cleanup:
+        conditions:
+          # при мерже или закрытии PR останавливаем все активные задачи
+          # и запускам cleanup-jobs (удаляем стенд)
+          - reasons: [ pr-merged, pr-discarded ]
+            cleanup: true
+            interrupt: true
+          # при обновлении PR останавливаем все активные задачи
+          # но стенд не удаляем
+          - reasons: new-diff-set
+            cleanup: false
+            interrupt: true
+      flow-vars:
+        service_id: 355571
+        service_name: grocery-superapp
+        project_name: lavka-frontend
+
+  flows:
+    deploy-dev-branch:
+      jobs:
+        create-dev-branch:
+          title: create new dev branch
+          task: projects/taxi/clownductor/create_dev_branch
+          input:
+            config:
+              service_id: ${flow-vars.service_id}
+              data:
+                # pr-{pull_request_id}
+                name: pr-${to_string(not_null(context.launch_pull_request_info.pull_request.id, ''))}
+        build-app:
+          title: build my app
+          task: common/misc/run_command
+          input:
+            config:
+              cmd_line: |
+                cd taxi/my/project/dir
+                make build-my-app
+              arc_mount_config:
+                enabled: true
+                arc_token:
+                  key: arc-token
+              result_output:
+                # Список строк в файле $RESULT_RESOURCES_PATH/docker_image будет помещен в выходные параметры тасклета
+                # например lavka/grocery-superapp/unstable:0.2.808
+                - path: docker_image
+        wait-for-create-branch:
+          title: Wait clown create_dev_branch job
+          task: projects/taxi/clownductor/wait_job
+          needs:
+            - create-dev-branch
+            - build-app
+          # пока билдится апп, бранча может успеть подняться
+          # в таком случае не запускаем этот кубик ожидания
+          if: ${tasks.create-dev-branch.response.success == false}
+          input:
+            config:
+              job_id: ${tasks.create-dev-branch.response.job_id}
+        remove:
+          title: manual remove dev branch
+          task: projects/taxi/clownductor/remove_dev_branch
+          needs: wait-for-create-branch
+          manual: true # ручной запуск
+          input:
+            config:
+              # в этом контексте есть доступ в branch_id
+              # поэтому предпочтительнее использовать его
+              branch_id: ${tasks.create-dev-branch.response.branch_id}
+        deploy:
+          title: deploy app
+          task: projects/taxi/clownductor/deploy
+          needs: wait-for-create-branch
+          input:
+            config:
+              data:
+                env: ${tasks.create-dev-branch.response.env}
+                service_name: ${flow-vars.service_name}
+                project_name: ${flow-vars.project_name}
+                docker_image: ${tasks.build-app.result_output[?path == 'docker_image'].string[] | single(@)}
+                branch_name: ${tasks.create-dev-branch.response.branch_name}
+        wait-for-deploy:
+          title: Wait clown deploy job
+          task: projects/taxi/clownductor/wait_job
+          needs: deploy
+          input:
+            config:
+              job_id: ${tasks.deploy.response.job_id}
+        notify-deploy-finished:
+          title: Notify deploy finished
+          needs: wait-for-deploy
+          task: projects/avocado/send_telegram_message
+          input:
+            config:
+              chat_id: my_chat_id
+              message: |
+                Собрался стенд сервиса ${flow-vars.project_name}/${flow-vars.service_name}
+                [Ссылка на пулл-реквест](https://a.yandex-team.ru/review/${context.launch_pull_request_info.pull_request.id}/details)
+                [Arcadia CI flow](${context.ci_url})
+
+      cleanup-jobs:
+        remove-dev-branch:
+          title: remove stand
+          task: projects/taxi/clownductor/remove_dev_branch
+          kill-timeout: 5m
+          attempts:
+            max: 3
+            backoff: const
+            initial-backoff: 180m
+          input:
+            config:
+              # в этом контексте доступа к branch_id нет
+              # поэтому удаляем по service_id и branch_name
+              service_id: ${flow-vars.service_id}
+              # NOTE: Клаун принудительно добавляет приставку `dev-` при создании бранча
+              # если создавали бранч с именем `my-branch`, то удалять нужно `dev-my-branch`
+              branch_name: dev-pr-${to_string(not_null(context.launch_pull_request_info.pull_request.id, ''))}

@@ -1,0 +1,135 @@
+syntax = "proto3";
+
+package frontend;
+
+option java_package = "ru.yandex.ci.api.internal.frontend.project";
+
+import "google/protobuf/wrappers.proto";
+import "ci/proto/common.proto";
+
+service ProjectService {
+
+    rpc GetProjects (GetProjectsRequest) returns (GetProjectsResponse);
+
+    rpc GetConfigStates (GetConfigStatesRequest) returns (GetConfigStatesResponse);
+
+    rpc GetProject (GetProjectRequest) returns (GetProjectResponse);
+
+    rpc GetProjectInfo (GetProjectInfoRequest) returns (GetProjectInfoResponse);
+
+    rpc GetConfigHistory (GetConfigHistoryRequest) returns (GetConfigHistoryResponse);
+
+    rpc AddFavoriteProject (AddFavoriteProjectRequest) returns (AddFavoriteProjectResponse);
+
+    rpc RemoveFavoriteProject (RemoveFavoriteProjectRequest) returns (RemoveFavoriteProjectResponse);
+
+}
+
+message GetConfigHistoryRequest {
+    string config_dir = 1;
+    int64 offset_commit_number = 3;
+    int32 limit = 4;
+    google.protobuf.StringValue branch = 5; // null means 'trunk'
+    google.protobuf.StringValue offset_commit_hash = 6; // should be set in pair with offset_commit_number
+}
+
+message GetConfigHistoryResponse {
+    repeated ConfigEntity config_entities = 1;
+    ConfigEntity last_valid_entity = 2; //Only if valid config exits and offset_commit_number is empty
+    ci.common.Offset offset = 3;
+}
+
+message GetProjectsRequest {
+    string offset_project_id = 1;
+    int32 limit = 2;
+    bool only_favorite = 3;
+    bool include_invalid_configs = 4;
+
+    // Filter to match projects (will check slug, name_en)?
+    string filter = 5;
+}
+
+message GetProjectsResponse {
+    repeated ListProject projects = 3;
+    ci.common.Offset offset = 2;
+}
+
+message ListProject {
+    ci.common.Project project = 1;
+    bool is_favorite = 2;
+    repeated ci.common.AbcService abc_hierarchy = 3;
+}
+
+message GetProjectRequest {
+    string project_id = 1;
+    bool include_invalid_configs = 2;
+
+    // Loading configs of different types: standard or virtual configs (for large tests/native builds)
+    // Empty list means VP_NONE (i.e. default behaviour)
+    repeated ci.common.VirtualProcessType virtual_process_type = 3;
+}
+
+message GetProjectResponse {
+    ci.common.Project project = 1;
+    repeated ci.common.ConfigState configs = 2;
+    ci.common.XivaSubscription xiva_subscription = 3;
+}
+
+message GetProjectInfoRequest {
+    string project_id = 1;
+    bool include_invalid_configs = 2; // For backward compatibility with GetProjectRequest
+}
+
+message GetProjectInfoResponse {
+    repeated ProcessTypeDetails process_type_details = 1;
+
+    message ProcessTypeDetails {
+        ci.common.VirtualProcessType process_type = 1;
+        int32 config_count = 2; // Total number of CI configuration files/tests for this process_type
+    }
+}
+
+message GetConfigStatesRequest {
+    bool include_invalid_configs = 1;
+}
+
+message GetConfigStatesResponse {
+    repeated ProjectConfigs projects = 1;
+}
+
+message ProjectConfigs {
+    ci.common.Project project = 1;
+    repeated ci.common.ConfigState configs = 2;
+}
+
+message AddFavoriteProjectRequest {
+    string project_id = 1;
+}
+
+message AddFavoriteProjectResponse {
+}
+
+message RemoveFavoriteProjectRequest {
+    string project_id = 1;
+}
+
+message RemoveFavoriteProjectResponse {
+}
+
+message ConfigEntity {
+    ci.common.Commit commit = 1;
+    bool valid = 2;
+    repeated ConfigProblem problems = 4;
+    bool has_token = 5;
+    string token_status = 6;
+}
+
+message ConfigProblem {
+    enum Level {
+        CRIT = 0;
+        WARN = 1;
+    }
+    Level level = 1;
+    string title = 2;
+    string description = 3;
+}

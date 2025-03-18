@@ -1,0 +1,56 @@
+service: ci
+title: CI Health
+
+
+ci:
+  secret: sec-01e8agdtdcs61v6emr05h5q1ek
+  runtime:
+    sandbox-owner: CI
+
+
+  releases:
+    ci-health:
+      title: CI Health configs release
+      flow: release-health-configs
+      auto: true
+
+
+  flows:
+    release-health-configs:
+      jobs:
+        build:
+          title: Build Configs
+          task: common/arcadia/ya_package_2
+          input:
+            packages: ci/internal/infra/health/package.json
+            resource_type: CI_HEALTH_CONFIG
+            package_type: tarball
+
+        logshatter-stable-deploy:
+          title: Logshatter Configs
+          task: common/deploy/create_release
+          needs: build
+          input:
+            config:
+              stage_id: ci-health-stable
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_HEALTH_CONFIG
+                    static:
+                      deploy_unit_id: logshatter
+                      layer_ref: config
+
+        clickphite-stable-deploy:
+          title: Clickphite Configs
+          task: common/deploy/create_release
+          needs: logshatter-stable-deploy
+          input:
+            config:
+              stage_id: ci-health-stable
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_HEALTH_CONFIG
+                    static:
+                      deploy_unit_id: clickphite
+                      layer_ref: config
+

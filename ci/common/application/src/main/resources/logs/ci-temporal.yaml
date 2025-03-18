@@ -1,0 +1,48 @@
+Configuration:
+  status: debug
+  packages: ru.yandex.ci.common.temporal.logging
+
+  Appenders:
+    UnifiedAgent:
+      - name: TemporalUnifiedAgent
+        host: localhost
+        port: 16400
+        TemporalJsonLayout:
+          service: ${appName}
+        TemporalFilter:
+          -
+        AgentProperty:
+          - name: MaxStackTraceDepth
+            value: 20
+
+    RollingFile:
+      - name: Temporal # TODO: remove
+        fileName: "${baseDir}/temporal.${appName}.log"
+        filePattern: "${baseDir}/temporal.${appName}.%d{yyyy-MM-dd}.%i.log.gz"
+        PatternLayout:
+          Pattern: "%d %-5p [%c{1} wf:%X{WorkflowId} a:%X{ActivityId} r:%X{RunId}] %m%n"
+        TemporalFilter:
+          -
+        Policies:
+          SizeBasedTriggeringPolicy:
+            size: 1 GB
+          TimeBasedTriggeringPolicy:
+            interval: 1
+        DefaultRolloverStrategy:
+          max: 99
+          Delete:
+            basePath: ${baseDir}
+            maxDepth: 1
+            IfFileName:
+              glob: temporal.${appName}.*.log*
+            IfLastModified:
+              age: 7d
+
+  Loggers:
+    Root:
+      level: info
+      AppenderRef:
+        - ref: Temporal
+          level: info
+        - ref: TemporalUnifiedAgent
+          level: info

@@ -1,0 +1,1476 @@
+service: ci
+title: Yandex CI
+
+arcanum:
+  auto_merge:
+    requirements:
+      - system: arcanum
+        type: st_issue_linked
+      - system: arcanum
+        type: comment_issues_closed
+
+  review:
+    groups:
+      - name: developers
+        roles: developer
+
+    rules:
+      - subpaths: "**, !registry/**"
+        reviewers:
+          name: developers
+          ship: 1
+          assign: 1
+
+shared:
+  requirements: &build-requirements
+    cores: 16
+    ram: 32 GB
+    sandbox:
+      client_tags: GENERIC & LINUX & SSD
+
+  common-ya-make-params: &common-ya-make-params
+    ya_yt_store_threads: 50
+
+  common-ya-package-params: &common-ya-package-params
+    <<: *common-ya-make-params
+    package_type: tarball
+
+  run-tests: &run-tests
+    title: Run Tests
+    description: Run all small and medium tests for ${flow-vars.tests-target}
+    task: common/arcadia/ya_make
+    input:
+      targets: ${flow-vars.tests-target}
+      test: true
+      definition_flags: -DUSE_PREBUILT_TOOLS=yes
+      host_platform_flags: USE_PREBUILT_TOOLS=yes
+      disable_test_timeout: true
+      <<: *common-ya-make-params
+    requirements:
+      <<: *build-requirements
+    needs:
+      - start-build
+
+ci:
+  secret: sec-01e8agdtdcs61v6emr05h5q1ek
+  release-title-source: RELEASE
+  runtime:
+    sandbox-owner: CI
+  releases:
+    ci-release:
+      title: CI
+      description: |
+        [CI](https://docs.yandex-team.ru/ci/), который мы катаем с помощью самого CI.
+        - Настроена автоматическая раскатка версий в тестинг с вытеснением релизов из тестовых стадий.
+        - Релиз в прод - по кнопке.
+      flow: release-ci
+      hotfix-flows:
+        - hotfix-ci
+      auto:
+        conditions:
+          - min-commits: 1
+            since-last-release: 4h
+      branches:
+        pattern: releases/ci/main/${version}
+      filters:
+        - sub-paths: [
+          'a.yaml',
+          'internal/ci/**',
+          'internal/common/**',
+          'clients/**',
+          'common/**',
+          'core/**',
+          'internal/docs/**',
+          'proto/**'
+        ]
+        - abs-paths: [ 'iceberg/commune-bazinga-ydb' ]
+      stages:
+        - id: build
+          title: Build
+          displace: true
+        - id: testing
+          title: Testing
+          displace: true
+        - id: ready-for-stable-deploy
+          title: Ready for stable
+          displace: true
+        - id: stable
+          title: Stable
+          rollback: true
+      flow-vars:
+        tests-target: ci/internal/ci
+
+    ci-storage-release:
+      title: 💾 Storage
+      description: |
+        Storage - замена TestEnv и StreamProcessor-а.
+        - Релиз - по кнопке.
+        - Перед релизом проверяем, что в Prestable всё в порядке (в течение часа): https://solomon.yandex-team.ru/?project=ci&cluster=prestable&dashboard=ci_storage
+      flow: release-ci-storage
+      auto: true
+      branches:
+        pattern: releases/ci/storage/${version}
+      filters:
+        - sub-paths: [
+          'clients/**',
+          'common/**',
+          'internal/common/**',
+          'core/**',
+          'proto/**',
+          'internal/storage/**',
+          'ci/internal/ci/core/**',
+          'a.yaml'
+        ]
+        - abs-paths: [ 'iceberg/commune-bazinga-ydb' ]
+      stages:
+        - id: build
+          title: Build
+        - id: testing
+          title: Testing
+        - id: prestable
+          title: Prestable
+        - id: stable
+          title: Stable
+          rollback: true
+      flow-vars:
+        tests-target: ci/internal/storage
+
+    ci-ayamler-release:
+      title: CI AYamler
+      description: |
+        Сервис для отслеживания настроек a.yaml на всех ревизиях.
+        - Катается руками.
+      flow: release-ci-ayamler
+      auto:
+        conditions:
+          # Сервис не катаем часто, чтобы не сбрасывать накопленные кэши
+          - min-commits: 1
+            since-last-release: 4h
+            schedule:
+              time: 12:00 - 13:00 MSK
+              days: MON-FRI
+              day-type: workdays
+      branches:
+        pattern: releases/ci/ayamler/${version}
+      filters:
+        - sub-paths: [
+          'clients/**',
+          'core/**',
+          'proto/**',
+          'common/**',
+          'internal/common/**',
+          'internal/ayamler/**',
+          'a.yaml'
+        ]
+      stages:
+        - id: build
+          title: Build
+          displace: true
+        - id: testing
+          title: Testing
+          displace: true
+        - id: ready-for-stable-deploy
+          title: Ready for stable
+          displace: true
+        - id: stable
+          title: Stable
+          rollback: true
+      flow-vars:
+        tests-target: ci/internal/ayamler
+
+    ci-observer-release:
+      title: CI Observer
+      description: |
+        Источник метрик для автосборки.
+        - Катается в stable руками
+        - Перед выкаткой даём релизу проработать в тестинге в течение часа, открываем в браузере две вкладки графика `Autocheck stages percentiles` и зрительно проверяем, что они примерное совпадают
+          - [график в проде](https://solomon.yandex-team.ru/?project=ci&cluster=stable&service=observer-api%20main&graph=ci_observer-api_autocheck_stages_durations&percentile=80&advised_pool=ANY_POOL&iteration=any&stage_type=any&check_type=TRUNK_PRE_COMMIT)
+          - [график в тестинге](https://solomon.yandex-team.ru/?project=ci&cluster=testing&service=observer-api%20main&graph=ci_observer-api_autocheck_stages_durations&percentile=80&advised_pool=ANY_POOL&iteration=any&stage_type=any&check_type=TRUNK_PRE_COMMIT)
+      flow: release-ci-observer
+      auto:
+        conditions:
+          # Катаемся раз в неделю, т.к. правки будут достаточно редкими
+          - min-commits: 1
+            since-last-release: 4h
+            schedule:
+              time: 12:00 - 13:00 MSK
+              days: TUE
+              day-type: workdays
+      branches:
+        pattern: releases/ci/observer/${version}
+      filters:
+        - sub-paths: [
+          'clients/**',
+          'common/**',
+          'core/**',
+          'proto/**',
+          'internal/common/**',
+          'internal/observer/**',
+          'internal/storage/core/**',
+          'a.yaml'
+        ]
+      stages:
+        - id: build
+          title: Build
+          displace: true
+        - id: testing
+          title: Testing
+          displace: true
+        - id: stable
+          title: Stable
+          rollback: true
+      flow-vars:
+        tests-target: ci/internal/storage
+
+  autocheck:
+    fast-targets:
+      ci
+    strong: true
+
+  flows:
+    release-ci:
+      title: CI
+      jobs:
+
+        # ~ BUILD ~
+        start-build: &ci-start-build
+          title: Build applications
+          task: dummy
+          stage: build
+
+        build-api: &ci-build-api
+          title: Build API
+          task: common/arcadia/ya_package_2
+          input:
+            <<: *common-ya-package-params
+            packages: ci/internal/ci/api/package.json
+            resource_type: CI_API_APP
+            custom_version: ${context.version_info.full}
+            patch_package_version: True
+          requirements:
+            <<: *build-requirements
+          needs:
+            - start-build
+
+        build-tms: &ci-build-tms
+          title: Build TMS
+          task: common/arcadia/ya_package_2
+          input:
+            packages: ci/internal/ci/tms/package.json
+            resource_type: CI_TMS_APP
+            <<: *common-ya-package-params
+            custom_version: ${context.version_info.full}
+
+          requirements:
+            <<: *build-requirements
+          needs:
+            - start-build
+
+        build-event-reader: &ci-build-even-reader
+          title: Build Event Reader
+          task: common/arcadia/ya_package_2
+          input:
+            packages: ci/internal/ci/event-reader/package.json
+            resource_type: CI_EVENT_READER_APP
+            <<: *common-ya-package-params
+          requirements:
+            <<: *build-requirements
+          needs:
+            - start-build
+
+        build-docs:
+          title: Build docs
+          task: common/docs/deploy
+          input:
+            targets: ci/internal/docs
+          needs: start-build
+
+        # ~ TESTING ~
+        start-deploy-testing:
+          title: Deploy to testing
+          task: dummy
+          stage: testing
+          needs:
+            - build-api
+            - build-tms
+            - build-event-reader
+            - build-docs
+
+        testing-api-deploy:
+          title: Testing API deploy
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-api-testing
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_API_APP
+                    static:
+                      deploy_unit_id: api
+                      layer_ref: api-app
+          needs:
+            - start-deploy-testing
+
+        testing-tms-deploy:
+          title: Testing TMS deploy
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-tms-testing
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_TMS_APP
+                    static:
+                      deploy_unit_id: tms
+                      layer_ref: tms-app
+          needs:
+            - start-deploy-testing
+
+        testing-event-reader-deploy:
+          title: Testing EventReader deploy
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-event-reader-testing
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_EVENT_READER_APP
+                    static:
+                      deploy_unit_id: event-reader
+                      layer_ref: event-reader-app
+          needs:
+            - start-deploy-testing
+
+        testing-docs:
+          title: Docs deploy testing
+          task: common/docs/release
+          stage: testing
+          input:
+            projects: ${tasks.build-docs.output_params.projects}
+            environments: testing
+          needs: start-deploy-testing
+
+        run-tests:
+          <<: *run-tests
+          needs:
+            - start-deploy-testing
+
+        testing-deploy-finished:
+          title: Testing deploy (finished)
+          task: dummy
+          needs:
+            - testing-api-deploy
+            - testing-tms-deploy
+            - testing-event-reader-deploy
+            - testing-docs
+
+        testing-monitoring:
+          title: CI Testing monitorings
+          task: common/monitoring/juggler_watch
+          version: prestable
+          input:
+            config:
+              delay_minutes: 5
+              duration_minutes: 15
+              filters:
+                - namespace: devtools.ci
+                  host: ci-testing
+                - namespace: awacs.ci-tms-testing-in-yandex-team-ru
+          needs: testing-deploy-finished
+
+        skip-testing-monitoring:
+          title: Skip Testing monitorings
+          task: dummy
+          manual:
+            enabled: true
+            prompt: "Skip Testing monitoring?"
+          needs: testing-deploy-finished
+
+        testing-stage-finished:
+          title: Testing stage (finished)
+          task: dummy
+          needs-type: any
+          needs:
+            - testing-monitoring
+            - skip-testing-monitoring
+
+        skip-testing-stage:
+          title: Skip Testing stage
+          task: dummy
+          manual:
+            enabled: true
+            prompt: "Skip Testing stage?"
+          needs: start-deploy-testing
+
+        test-stage-join:
+          title: Testing stage (join with project tests)
+          task: dummy
+          needs:
+            - testing-stage-finished
+            - run-tests
+
+        # ~ READY FOR STABLE ~
+        ready-for-stable-deploy:
+          title: Ready for stable
+          task: dummy
+          stage: ready-for-stable-deploy
+          needs-type: any
+          needs:
+            - test-stage-join
+            - skip-testing-stage
+
+        # ~ STABLE ~
+        start-deploy-stable:
+          title: Deploy to stable
+          task: dummy
+          stage: stable
+          manual:
+            enabled: true
+            prompt: "Do release to stable?"
+          needs:
+            - ready-for-stable-deploy
+
+        create-infra: &ci-create-infra
+          title: Create Infra event
+          task: common/monitoring/infra_create
+          stage: stable
+          input:
+            config:
+              textual:
+                title: "Release ${context.title}"
+                description: "${context.ci_url}"
+              status:
+                severity: MINOR
+                type: MAINTENANCE
+              placement:
+                serviceId: 51
+                environmentId: 3131
+          needs: start-deploy-stable
+
+        stable-api-deploy: &ci-stable-api-deploy
+          title: Stable API deploy
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-api-stable
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_API_APP
+                    static:
+                      deploy_unit_id: api
+                      layer_ref: api-app
+          needs:
+            - create-infra
+
+        stable-tms-deploy: &ci-stable-tms-deploy
+          title: Stable TMS deploy
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-tms-stable
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_TMS_APP
+                    static:
+                      deploy_unit_id: tms
+                      layer_ref: tms-app
+          needs:
+            - create-infra
+
+        stable-event-reader-deploy: &ci-stable-event-reader-deploy
+          title: Stable EventReader deploy
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-event-reader-stable
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_EVENT_READER_APP
+                    static:
+                      deploy_unit_id: event-reader
+                      layer_ref: event-reader-app
+          needs:
+            - create-infra
+
+        stable-docs:
+          title: Docs deploy
+          task: common/docs/release
+          needs: create-infra
+          input:
+            projects: ${tasks.build-docs.output_params.projects}
+            environments: production
+
+        deploy-stable-finished:
+          title: Stable deploy (finished)
+          task: dummy
+          needs:
+            - stable-api-deploy
+            - stable-tms-deploy
+            - stable-event-reader-deploy
+            - stable-docs
+
+        stable-monitoring:
+          title: CI Stable monitorings
+          task: common/monitoring/juggler_watch
+          version: prestable
+          input:
+            config:
+              delay_minutes: 5
+              duration_minutes: 15
+              filters:
+                - namespace: devtools.ci
+                  host: ci-stable
+                - namespace: awacs.ci-tms-in-yandex-team-ru
+          needs: deploy-stable-finished
+
+        skip-stable-monitoring:
+          title: Skip Stable monitorings
+          task: dummy
+          manual:
+            enabled: true
+            prompt: "Skip Stable monitoring?"
+          needs: deploy-stable-finished
+
+        stable-monitoring-success:
+          title: Stable monitorings (finished)
+          task: dummy
+          needs-type: any
+          needs:
+            - stable-monitoring
+            - skip-stable-monitoring
+
+        close-infra: &ci-close-infra
+          title: Close Infra event
+          task: common/monitoring/infra_close
+          input:
+            config: { }
+          needs: deploy-stable-finished
+
+        finish-release:
+          title: Finish release
+          task: dummy
+          needs:
+            - close-infra
+            - stable-monitoring-success
+
+    hotfix-ci:
+      title: CI Hotfix
+      jobs:
+
+        # ~ BUILD ~
+        start-build:
+          <<: *ci-start-build
+
+        build-api:
+          <<: *ci-build-api
+
+        build-tms:
+          <<: *ci-build-tms
+
+        build-event-reader:
+          <<: *ci-build-even-reader
+
+        run-tests:
+          <<: *run-tests
+
+        # ~ STABLE ~
+        start-deploy-stable:
+          title: Deploy to stable
+          task: dummy
+          stage: stable
+          needs:
+            - build-api
+            - build-tms
+            - build-event-reader
+            - run-tests
+
+        create-infra:
+          <<: *ci-create-infra
+          input:
+            config:
+              textual:
+                title: "CI Hotfix #${context.version_info.full}"
+                description: "${context.ci_url}"
+              status:
+                severity: MINOR
+                type: MAINTENANCE
+              placement:
+                serviceId: 51
+                environmentId: 3131
+
+        stable-api-deploy:
+          <<: *ci-stable-api-deploy
+
+        stable-tms-deploy:
+          <<: *ci-stable-tms-deploy
+
+        stable-event-reader-deploy:
+          <<: *ci-stable-event-reader-deploy
+
+        deploy-stable-finished:
+          title: Stable deploy (finished)
+          task: dummy
+          needs:
+            - stable-api-deploy
+            - stable-tms-deploy
+            - stable-event-reader-deploy
+
+        close-infra:
+          <<: *ci-close-infra
+
+        finish-hotfix:
+          title: Finish Hotfix
+          task: dummy
+          needs:
+            - close-infra
+
+    release-ci-storage:
+      title: CI Storage
+      jobs:
+
+        start-build:
+          title: Build applications
+          task: dummy
+          stage: build
+
+        build-storage-reader:
+          title: Build storage-reader
+          task: common/arcadia/ya_package_2
+          input:
+            packages: ci/internal/storage/reader/package.json
+            resource_type: CI_STORAGE_READER_APP
+            <<: *common-ya-package-params
+          requirements:
+            <<: *build-requirements
+          needs:
+            - start-build
+
+        build-storage-shard:
+          title: Build storage-shard
+          task: common/arcadia/ya_package_2
+          input:
+            packages: ci/internal/storage/shard/package.json
+            resource_type: CI_STORAGE_SHARD_APP
+            <<: *common-ya-package-params
+          requirements:
+            <<: *build-requirements
+          needs:
+            - start-build
+
+        build-storage-tms:
+          title: Build storage-tms
+          task: common/arcadia/ya_package_2
+          input:
+            packages: ci/internal/storage/tms/package.json
+            resource_type: CI_STORAGE_TMS_APP
+            <<: *common-ya-package-params
+          requirements:
+            <<: *build-requirements
+          needs:
+            - start-build
+
+        build-storage-api:
+          title: Build storage-api
+          task: common/arcadia/ya_package_2
+          input:
+            packages: ci/internal/storage/api/package.json
+            resource_type: CI_STORAGE_API_APP
+            <<: *common-ya-package-params
+          requirements:
+            <<: *build-requirements
+          needs:
+            - start-build
+
+        build-storage-post-processor:
+          title: Build storage-post-processor
+          task: common/arcadia/ya_package_2
+          input:
+            packages: ci/internal/storage/post-processor/package.json
+            resource_type: CI_STORAGE_POST_PROCESSOR_APP
+            <<: *common-ya-package-params
+          requirements:
+            <<: *build-requirements
+          needs:
+            - start-build
+
+        build-storage-exporter:
+          title: Build storage-exporter
+          task: common/arcadia/ya_package_2
+          input:
+            packages: ci/internal/storage/exporter/package.json
+            resource_type: CI_STORAGE_EXPORTER_APP
+            <<: *common-ya-package-params
+          requirements:
+            <<: *build-requirements
+          needs:
+            - start-build
+
+        #Testing
+        start-deploy-testing:
+          title: Testing start
+          task: dummy
+          stage: testing
+          needs:
+            - build-storage-reader
+            - build-storage-shard
+            - build-storage-tms
+            - build-storage-api
+            - build-storage-post-processor
+            - build-storage-exporter
+
+        testing-storage-reader-deploy:
+          title: Deploy storage-reader to testing
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-storage-reader-testing
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_STORAGE_READER_APP
+                    static:
+                      deploy_unit_id: StorageReaderUnit
+                      layer_ref: storage-reader-app
+          needs:
+            - start-deploy-testing
+
+        testing-storage-shard-deploy:
+          title: Deploy storage-shard to testing
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-storage-shard-testing
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_STORAGE_SHARD_APP
+                    static:
+                      deploy_unit_id: StorageShard
+                      layer_ref: storage-shard-app
+          needs:
+            - start-deploy-testing
+
+        testing-storage-tms-deploy:
+          title: Deploy storage-tms to testing
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-storage-tms-testing
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_STORAGE_TMS_APP
+                    static:
+                      deploy_unit_id: storage-tms
+                      layer_ref: storage-tms-app
+          needs:
+            - start-deploy-testing
+
+        testing-storage-api-deploy:
+          title: Deploy storage-api to testing
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-storage-api-testing
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_STORAGE_API_APP
+                    static:
+                      deploy_unit_id: storage-api
+                      layer_ref: storage-api-app
+          needs:
+            - start-deploy-testing
+
+        testing-storage-post-processor-deploy:
+          title: Deploy storage-post_processor to testing
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-storage-post-processor-testing
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_STORAGE_POST_PROCESSOR_APP
+                    static:
+                      deploy_unit_id: PostProcessorUnit
+                      layer_ref: storage-post-processor-app
+          needs:
+            - start-deploy-testing
+
+        testing-storage-exporter-deploy:
+          title: Deploy storage-exporter to testing
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-storage-exporter-testing
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_STORAGE_EXPORTER_APP
+                    static:
+                      deploy_unit_id: storage-exporter
+                      layer_ref: storage-exporter-app
+          needs:
+            - start-deploy-testing
+
+        run-tests:
+          <<: *run-tests
+          needs:
+            - start-deploy-testing
+
+        skip-deploy-testing:
+          title: Bypass Testing
+          task: dummy
+          manual:
+            enabled: true
+            prompt: "Skip Testing Stage?"
+          needs:
+            - start-deploy-testing
+
+        deploy-testing-finished:
+          title: Storage Testing monitorings
+          task: common/monitoring/juggler_watch
+          version: prestable
+          input:
+            config:
+              delay_minutes: 1
+              duration_minutes: 10
+              filters:
+                - namespace: devtools.ci
+                  host: ci-storage-testing
+                - namespace: awacs.ci-storage-tms-testing-in-yandex-team-ru
+          needs:
+            - testing-storage-reader-deploy
+            - testing-storage-shard-deploy
+            - testing-storage-tms-deploy
+            - testing-storage-api-deploy
+            - testing-storage-post-processor-deploy
+            - testing-storage-exporter-deploy
+            - run-tests
+
+        #Prestable
+        start-deploy-prestable:
+          title: Prestable start
+          task: dummy
+          stage: prestable
+          needs-type: any
+          needs:
+            - deploy-testing-finished
+            - skip-deploy-testing
+
+        prestable-storage-reader-deploy:
+          title: Deploy storage-reader to prestable
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-storage-reader-prestable
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_STORAGE_READER_APP
+                    static:
+                      deploy_unit_id: storage-reader
+                      layer_ref: storage-reader-app
+          needs:
+            - start-deploy-prestable
+
+        prestable-storage-shard-deploy:
+          title: Deploy storage-shard to prestable
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-storage-shard-prestable
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_STORAGE_SHARD_APP
+                    static:
+                      deploy_unit_id: storage-shard
+                      layer_ref: storage-shard-app
+          needs:
+            - start-deploy-prestable
+
+        prestable-storage-tms-deploy:
+          title: Deploy storage-tms to prestable
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-storage-tms-prestable
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_STORAGE_TMS_APP
+                    static:
+                      deploy_unit_id: storage-tms
+                      layer_ref: storage-tms-app
+          needs:
+            - start-deploy-prestable
+
+        prestable-storage-api-deploy:
+          title: Deploy storage-api to prestable
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-storage-api-prestable
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_STORAGE_API_APP
+                    static:
+                      deploy_unit_id: storage-api
+                      layer_ref: storage-api-app
+          needs:
+            - start-deploy-prestable
+
+        prestable-storage-post-processor-deploy:
+          title: Deploy storage-post_processor to prestable
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-storage-post-processor-prestable
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_STORAGE_POST_PROCESSOR_APP
+                    static:
+                      deploy_unit_id: PostProcessorUnit
+                      layer_ref: storage-post-processor-app
+          needs:
+            - start-deploy-prestable
+
+        skip-deploy-prestable:
+          title: Bypass Prestable
+          task: dummy
+          manual:
+            enabled: true
+            prompt: "Skip Prestable Stage?"
+          needs:
+            - start-deploy-prestable
+
+        deploy-prestable-finished:
+          title: Storage Prestable monitorings
+          task: common/monitoring/juggler_watch
+          version: prestable
+          input:
+            config:
+              delay_minutes: 1
+              duration_minutes: 10
+              filters:
+                - namespace: devtools.ci
+                  host: ci-storage-prestable
+          needs:
+            - prestable-storage-reader-deploy
+            - prestable-storage-shard-deploy
+            - prestable-storage-tms-deploy
+            - prestable-storage-api-deploy
+            - prestable-storage-post-processor-deploy
+
+        #Stable
+        start-deploy-stable:
+          title: Stable start
+          task: dummy
+          stage: stable
+          needs-type: any
+          manual:
+            enabled: true
+            #            approvers: CI
+            prompt: "Do release to stable?"
+          needs:
+            - deploy-prestable-finished
+            - skip-deploy-prestable
+
+        create-infra:
+          title: Create Infra event
+          task: common/monitoring/infra_create
+          stage: stable
+          input:
+            config:
+              textual:
+                title: "Release ${context.title}"
+                description: "${context.ci_url}"
+              status:
+                severity: MINOR
+                type: MAINTENANCE
+              placement:
+                serviceId: 51
+                environmentId: 812
+          needs: start-deploy-stable
+
+        stable-storage-reader-deploy:
+          title: Deploy storage-reader to stable
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-storage-reader-stable
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_STORAGE_READER_APP
+                    static:
+                      deploy_unit_id: StorageReader
+                      layer_ref: storage-reader-app
+          needs:
+            - create-infra
+
+        stable-storage-shard-deploy:
+          title: Deploy storage-shard to stable
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-storage-shard-stable
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_STORAGE_SHARD_APP
+                    static:
+                      deploy_unit_id: StorageShard
+                      layer_ref: storage-shard-app
+          needs:
+            - create-infra
+
+        stable-storage-post-processor-deploy:
+          title: Deploy storage-post_processor to prestable
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-storage-post-processor-stable
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_STORAGE_POST_PROCESSOR_APP
+                    static:
+                      deploy_unit_id: PostProcessorUnit
+                      layer_ref: storage-post-processor-app
+          needs:
+            - create-infra
+
+        stable-storage-tms-deploy:
+          title: Deploy storage-tms to stable
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-storage-tms-stable
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_STORAGE_TMS_APP
+                    static:
+                      deploy_unit_id: storage-tms
+                      layer_ref: storage-tms-app
+          needs:
+            - create-infra
+
+        stable-storage-api-deploy:
+          title: Deploy storage-api to stable
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-storage-api-stable
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_STORAGE_API_APP
+                    static:
+                      deploy_unit_id: storage-api
+                      layer_ref: storage-api-app
+          needs:
+            - create-infra
+
+        close-infra:
+          title: Close Infra event
+          task: common/monitoring/infra_close
+          input:
+            config: { }
+          needs:
+            - stable-storage-reader-deploy
+            - stable-storage-shard-deploy
+            - stable-storage-tms-deploy
+            - stable-storage-api-deploy
+            - stable-storage-post-processor-deploy
+
+        deploy-stable-finished:
+          title: Storage Stable monitorings
+          task: common/monitoring/juggler_watch
+          version: prestable
+          input:
+            config:
+              delay_minutes: 1
+              duration_minutes: 10
+              filters:
+                - namespace: devtools.ci
+                  host: ci-storage-stable
+                - namespace: awacs.ci-storage-tms-in-yandex-team-ru
+          needs:
+            - close-infra
+
+    release-ci-ayamler:
+      title: CI AYamler
+      jobs:
+
+        # ~ BUILD ~
+        start-build:
+          title: Build applications
+          task: dummy
+          stage: build
+
+        build-ayamler-api:
+          title: Build ayamler-api
+          task: common/arcadia/ya_package_2
+          input:
+            packages: ci/internal/ayamler/api/package.json
+            resource_type: CI_AYAMLER_API_APP
+            <<: *common-ya-package-params
+          requirements:
+            <<: *build-requirements
+          needs:
+            - start-build
+
+        # ~ TESTING ~
+        start-deploy-testing:
+          title: Start Testing deploy
+          task: dummy
+          stage: testing
+          needs:
+            - build-ayamler-api
+
+        deploy-testing-ayamler-api:
+          title: Deploy ayamler-api to Testing
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-ayamler-api-testing
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_AYAMLER_API_APP
+                    static:
+                      deploy_unit_id: ayamler-api
+                      layer_ref: ayamler-api-app
+          needs:
+            - start-deploy-testing
+
+        run-tests-ayamler-api:
+          <<: *run-tests
+          needs:
+            - start-deploy-testing
+
+        finish-testing-deploy:
+          title: Finish Testing deploy
+          task: dummy
+          needs:
+            - deploy-testing-ayamler-api
+
+        testing-monitoring:
+          title: AYAmler Testing monitorings
+          task: common/monitoring/juggler_watch
+          input:
+            config:
+              delay_minutes: 5
+              duration_minutes: 15
+              filters:
+                - namespace: devtools.ci
+                  host: ci-storage-testing
+                  tags: [ "ayamler" ]
+                - namespace: devtools.ci
+                  host: ci-ayamler-testing
+          needs: finish-testing-deploy
+
+        skip-testing-monitoring:
+          title: Skip Testing monitorings
+          task: dummy
+          manual:
+            enabled: true
+            prompt: "Skip Testing monitoring?"
+          needs: finish-testing-deploy
+
+        finish-testing-stage:
+          title: Testing stage (finished)
+          task: dummy
+          needs-type: any
+          needs:
+            - testing-monitoring
+            - skip-testing-monitoring
+
+        test-stage-join:
+          title: Testing stage (join with project tests)
+          task: dummy
+          needs:
+            - finish-testing-stage
+            - run-tests-ayamler-api
+
+        skip-testing-stage:
+          title: Skip Testing stage
+          task: dummy
+          manual:
+            enabled: true
+            prompt: "Skip Testing stage?"
+          needs: start-deploy-testing
+
+        # ~ READY FOR STABLE ~
+        ready-for-stable-deploy:
+          title: Ready for stable
+          task: dummy
+          stage: ready-for-stable-deploy
+          needs-type: any
+          needs:
+            - test-stage-join
+            - skip-testing-stage
+
+        # ~ STABLE ~
+        start-deploy-stable:
+          title: Start Stable deploy
+          task: dummy
+          stage: stable
+          needs:
+            - ready-for-stable-deploy
+
+        deploy-stable-ayamler-api:
+          title: Deploy ayamler-api to Stable
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-ayamler-api-stable
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_AYAMLER_API_APP
+                    static:
+                      deploy_unit_id: ayamler-api
+                      layer_ref: ayamler-api-app
+          needs:
+            - start-deploy-stable
+
+        finish-deploy-stable:
+          title: Finish Stable deploy
+          task: dummy
+          needs:
+            - deploy-stable-ayamler-api
+
+        stable-monitoring:
+          title: AYamler Prestable & Stable monitorings
+          task: common/monitoring/juggler_watch
+          input:
+            config:
+              delay_minutes: 5
+              duration_minutes: 15
+              filters:
+                - namespace: devtools.ci
+                  host: ci-storage-prestable
+                  tags: [ "ayamler" ]
+                - namespace: devtools.ci
+                  host: ci-storage-stable
+                  tags: [ "ayamler" ]
+                - namespace: devtools.ci
+                  host: ci-ayamler-stable
+          needs: finish-deploy-stable
+
+        skip-stable-monitoring:
+          title: Skip Stable monitorings
+          task: dummy
+          manual:
+            enabled: true
+            prompt: "Skip Stable monitoring?"
+          needs: finish-deploy-stable
+
+        stable-monitoring-success:
+          title: Stable monitorings (finished)
+          task: dummy
+          needs-type: any
+          needs:
+            - stable-monitoring
+            - skip-stable-monitoring
+
+        finish-release:
+          title: Finish release
+          task: dummy
+          needs:
+            - stable-monitoring-success
+
+    release-ci-observer:
+      title: CI Observer
+      jobs:
+        build-stage-started:
+          title: Build stage started
+          task: dummy
+          stage: build
+
+        build-observer-reader:
+          title: Build observer-reader
+          task: common/arcadia/ya_package_2
+          input:
+            packages: ci/internal/observer/reader/package.json
+            resource_type: CI_OBSERVER_READER_APP
+            <<: *common-ya-package-params
+          requirements:
+            <<: *build-requirements
+          needs:
+            - build-stage-started
+
+        build-observer-api:
+          title: Build observer-api
+          task: common/arcadia/ya_package_2
+          input:
+            packages: ci/internal/observer/api/package.json
+            resource_type: CI_OBSERVER_API_APP
+            <<: *common-ya-package-params
+          requirements:
+            <<: *build-requirements
+          needs:
+            - build-stage-started
+
+        #Testing
+        testing-stage-started:
+          title: Testing stage started
+          task: dummy
+          stage: testing
+          needs:
+            - build-observer-reader
+            - build-observer-api
+
+        testing-deploy-observer-reader:
+          title: Deploy observer-reader to testing
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-observer-reader-testing
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_OBSERVER_READER_APP
+                    static:
+                      deploy_unit_id: ObserverReader
+                      layer_ref: observer-reader-app
+          needs:
+            - testing-stage-started
+
+        testing-deploy-observer-api:
+          title: Deploy observer-api to testing
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-observer-api-testing
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_OBSERVER_API_APP
+                    static:
+                      deploy_unit_id: ObserverApi
+                      layer_ref: observer-api-app
+          needs:
+            - testing-stage-started
+
+        run-tests:
+          <<: *run-tests
+          needs:
+            - testing-stage-started
+
+        testing-deploy-finished:
+          title: Testing deploy finished
+          task: dummy
+          needs:
+            - testing-deploy-observer-reader
+            - testing-deploy-observer-api
+
+        testing-monitoring:
+          title: Observer Testing monitorings
+          task: common/monitoring/juggler_watch
+          version: prestable
+          input:
+            config:
+              delay_minutes: 5
+              duration_minutes: 15
+              filters:
+                - namespace: devtools.ci
+                  host: ci-observer-testing
+                - namespace: awacs.ci-observer-api-testing-yandex-net
+          needs: testing-deploy-finished
+
+        testing-monitoring-skip:
+          title: Skip Testing monitorings
+          task: dummy
+          manual:
+            enabled: true
+            prompt: "Skip Testing monitoring?"
+          needs: testing-deploy-finished
+
+        testing-stage-finished:
+          title: Testing stage finished
+          task: dummy
+          needs-type: any
+          needs:
+            - testing-monitoring
+            - testing-monitoring-skip
+
+        testing-stage-skip:
+          title: Skip Testing stage
+          task: dummy
+          manual:
+            enabled: true
+            prompt: "Skip Testing stage?"
+          needs: testing-stage-started
+
+        testing-stage-join:
+          title: Testing stage (join with project tests)
+          task: dummy
+          needs:
+            - testing-stage-finished
+            - run-tests
+
+        #Stable
+        stable-stage-started:
+          title: Stable stage started
+          task: dummy
+          stage: stable
+          manual: true
+          needs-type: any
+          needs:
+            - testing-stage-join
+            - testing-stage-skip
+
+        stable-deploy-observer-reader:
+          title: Deploy observer-reader to stable
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-observer-reader-stable
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_OBSERVER_READER_APP
+                    static:
+                      deploy_unit_id: ObserverReader
+                      layer_ref: observer-reader-app
+          needs:
+            - stable-stage-started
+
+        stable-deploy-observer-api:
+          title: Deploy observer-api to stable
+          task: common/deploy/create_release
+          input:
+            config:
+              stage_id: ci-observer-api-stable
+              patches:
+                - sandbox:
+                    sandbox_resource_type: CI_OBSERVER_API_APP
+                    static:
+                      deploy_unit_id: ObserverApi
+                      layer_ref: observer-api-app
+          needs:
+            - stable-stage-started
+
+        stable-deploy-finished:
+          title: Stable deploy finished
+          task: dummy
+          needs:
+            - stable-deploy-observer-reader
+            - stable-deploy-observer-api
+
+        stable-monitoring:
+          title: Observer Stable monitorings
+          task: common/monitoring/juggler_watch
+          version: prestable
+          input:
+            config:
+              delay_minutes: 5
+              duration_minutes: 15
+              filters:
+                - namespace: devtools.ci
+                  host: ci-observer-stable
+                - namespace: awacs.ci-observer-api-yandex-net
+          needs: stable-deploy-finished
+
+        stable-monitoring-skip:
+          title: Skip Stable monitorings
+          task: dummy
+          manual:
+            enabled: true
+            prompt: "Skip Stable monitoring?"
+          needs: stable-deploy-finished
+
+        stable-stage-finished:
+          title: Stable stage finished
+          task: dummy
+          needs-type: any
+          needs:
+            - stable-monitoring
+            - stable-monitoring-skip

@@ -1,0 +1,343 @@
+service: vi-technologies
+title: ASR Server
+
+shared:
+  # To be used in flow-vars
+  common-consts: &common-consts
+    hamster_uniproxy_url: "wss://beta.uniproxy.alice.yandex.net/alice-uniproxy-hamster/uni.ws"
+
+  trunk-consts: &trunk-consts
+    is_release: false
+
+  release-consts: &release-consts
+    is_release: true
+
+  # Acceptance configs. To be used in flow-vars
+  # Requires ${flow-vars.host_address} to be defined (may differ in trunk and release
+  dialog-config: &dialog-config
+    name: "dialog"
+    package: "voicetech/asr/packages/dialog.json"
+    package_type: ASR_SERVER_DIALOG_GENERAL_PACKAGE
+    srcrwr_title: ASR_RU_DIALOG_GENERAL_GPU
+    func_tests_topic: "asr_dialog_general_gpu"
+    stress_test_preset: "dialog"
+    metrics_config_path: "voicetech/asr/tools/regular_metrics_run/configs/ru_dialog_general_e2e-accept.json"
+    robin_config_name: "dialog"
+    lingware: "ru_dialog_general_e2e"
+    ue2e_app_type: "general"
+
+  tv-config: &tv-config
+    name: "tv"
+    package: "voicetech/asr/packages/tv.json"
+    package_type: ASR_SERVER_TV_GENERAL_PACKAGE
+    srcrwr_title: ASR_RU_TV_GENERAL_GPU
+    func_tests_topic: "asr_tv_general_gpu"
+    stress_test_preset: "tv"
+    metrics_config_path: "voicetech/asr/tools/regular_metrics_run/configs/ru_tv_general_e2e-accept.json"
+    robin_config_name: "tv"
+    lingware: "ru_tv_general_e2e"
+    ue2e_app_type: "tv"
+
+  test-config: &test-config
+    name: "test"
+    package: "voicetech/asr/packages/test.json"
+    package_type: ASR_SERVER_TEST_PACKAGE
+    srcrwr_title: ASR_RU_TV_GENERAL_GPU
+    func_tests_topic: "asr_tv_general_gpu"
+    stress_test_preset: "tv"
+    metrics_config_path: "voicetech/asr/tools/regular_metrics_run/configs/ru_tv_general_e2e-accept.json"
+    robin_config_name: "tv"
+    lingware: "ru_tv_general_e2e"
+    ue2e_app_type: "tv"
+
+  prepare-flow-jobs: &prepare-flow-jobs
+    start:
+      title: Start
+      task: dummy
+
+    create-ticket:
+      title: Create release ticket
+      task: projects/asr/GetOrCreateStTicket
+      needs: start
+      if: ${flow-vars.is_release}
+      input:
+        config:
+          st_queue: "VOICETEST"
+          component_name: "asr_server_${flow-vars.name}"
+          major_version: ${context.version_info.major}
+          follower_logins: ["thefacetak"]
+          assignee: ${context.flow_triggered_by}
+          summary: "Asr Server ${flow-vars.name} Release ${context.version_info.major}"
+          description: |
+            CI url is here: ${context.ci_url}
+            Release process started or smth, idk.
+
+    # usage: ${tasks.maybe-get-ticket.output.output.ticket}
+    maybe-get-ticket:
+      title: Maybe Get Ticket
+      task: projects/asr/Echo
+      needs:
+        - start
+        - create-ticket
+      input:
+        input:
+          input:
+            ticket: ${flow-vars.is_release && tasks.create-ticket.result.ticket || ''}
+
+    # usage: ${tasks.get-uniproxy-url.output.output.uniproxy_url}
+    get-uniproxy-url:
+      title: Get Uniproxy Url
+      task: projects/asr/Echo
+      needs: start
+      input:
+        input:
+          input:
+            # todo: multiplication/join? when nessesary
+            uniproxy_url: "${flow-vars.hamster_uniproxy_url}?srcrwr=${flow-vars.srcrwr_title}:${flow-vars.host_address}"
+
+    finish-prepare:
+      title: Finish prepare
+      task: dummy
+      needs:
+        - get-uniproxy-url
+        - maybe-get-ticket
+
+  # common jobs for trunk and release flows
+  base-flow-jobs: &base-flow-jobs
+    start-build:
+      title: Start build
+      task: dummy
+      needs:
+        - finish-prepare
+
+    #build:
+    #  title: Build
+    #  needs: start-build
+    #  task: common/arcadia/ya_package_2
+    #  input:
+    #    packages: ${flow-vars.package}
+    #    raw_package: True
+    #    resource_type: ${flow-vars.package_type}
+
+    start-test:
+      title: Start test
+      task: dummy
+      needs:
+        - start-build
+
+    generate_beta:
+      title: Create Yappy beta
+      task: projects/asr/UpdateYappyBeta
+      needs: start-test
+      input:
+        config:
+          parent_external_id: asr-dialog-general-gpu-yp-vla
+          # should be smth like ?type == flow-vars.package_type, but I can't make it work for now.
+          asr_package_sandbox_resource_id: "2500264857"
+          #"${to_string((tasks.build.resources[?starts_with(type, 'ASR_SERVER') && ends_with(type, 'PACKAGE')])[0].id)}"
+
+    run-func-tests-uniproxy:
+      title: Run func tests Uniproxy
+      task: projects/alice/FuncTestVoiceServer
+      needs: generate_beta
+      input:
+        uniproxy_websocket_url: ${tasks.get-uniproxy-url.output.output.uniproxy_url}
+        tests_group: uniproxy
+        component_name: asr_server
+        fail_on_test_error: false
+        release_ticket: ${tasks.maybe-get-ticket.output.output.ticket}
+
+    run-func-tests-topic:
+      title: Run func tests for topic
+      task: projects/alice/FuncTestVoiceServer
+      needs: generate_beta
+      input:
+        uniproxy_websocket_url: ${tasks.get-uniproxy-url.output.output.uniproxy_url}
+        tests_group: ${flow-vars.func_tests_topic}
+        component_name: asr_server
+        fail_on_test_error: false
+        release_ticket: ${tasks.maybe-get-ticket.output.output.ticket}
+
+    # run-stress-test:
+    #   title: Stress test
+    #   task: projects/asr/RunStressTest
+    #   needs:
+    #     - run-func-tests-topic
+    #     - run-func-tests-uniproxy
+    #   input:
+    #     host: ${flow-vars.host_address}
+    #     preset: ${flow-vars.stress_test_preset}
+    #     release_ticket: ${tasks.maybe-get-ticket.output.output.ticket}
+    #     # TODO: remove. options to speed up stress test while testing CI.
+    #     add_degradation_run: false
+    #     additional_options: "--rps-schedule 10 20"
+
+    base-test-finish:
+      title: Finish base tests
+      task: dummy
+      needs:
+        - run-func-tests-topic
+        - run-func-tests-uniproxy
+
+ci:
+  release-title-source: flow
+  secret: sec-01f26t6x8d8t4069fbkf8m7hqs
+  runtime:
+    sandbox-owner: VOICESERV_RELEASERS
+
+  releases:
+    asr-trunk-tv:
+      auto: false
+      title: TV
+      flow: asr-trunk-flow
+      flow-vars:
+        <<: *common-consts
+        <<: *trunk-consts
+        host_address: "asr-ci-gpu.beta-backends.alice.yandex.net"
+        <<: *tv-config
+
+    asr-trunk-dialog:
+      auto: false
+      title: Dialog
+      flow: asr-trunk-flow
+      flow-vars:
+        <<: *common-consts
+        <<: *trunk-consts
+        host_address: "asr-ci-gpu.beta-backends.alice.yandex.net"
+        <<: *dialog-config
+
+    asr-release-tv:
+      auto: false
+      title: TV Release
+      branches:
+        pattern: releases/asr_server/tv-general-${version}
+        forbid-trunk-releases: true
+        # todo: maybe think about start version
+        # start-version: <smth>
+      flow: asr-release-flow
+      flow-vars:
+        <<: *common-consts
+        <<: *release-consts
+        # TODO: should be smth like asr-rm.beta-backends.alice.yandex.net,
+        # but while we are testing new CI, asr-ci-gpu.beta-backends.alice.yandex.net will do
+        host_address: "asr-ci-gpu.beta-backends.alice.yandex.net"
+        <<: *tv-config
+
+    #asr-release-test:
+    #  auto: false
+    #  title: Test Release
+    #  branches:
+    #    pattern: releases/asr_server/test-general-${version}
+    #    forbid-trunk-releases: true
+    #  flow: asr-release-flow
+    #  flow-vars:
+    #    <<: *common-consts
+    #    <<: *release-consts
+    #    host_address: "asr-ci-gpu.beta-backends.alice.yandex.net"
+    #    <<: *test-config
+
+    #test-trunk:
+    #  auto: false
+    #  title: Test trunk
+    #  flow: test-flow
+    #  flow-vars:
+    #    <<: *common-consts
+    #    <<: *trunk-consts
+    #    host_address: "asr-ci-gpu.beta-backends.alice.yandex.net"
+    #    <<: *tv-config
+    #    name: "test"
+
+    #test-release:
+    #  auto: false
+    #  title: Test release
+    #  branches:
+    #    pattern: releases/asr_server/test-${version}
+    #    forbid-trunk-releases: true
+    #  flow: test-flow
+    #  flow-vars:
+    #    <<: *common-consts
+    #    <<: *release-consts
+    #    host_address: "asr-ci-gpu.beta-backends.alice.yandex.net"
+    #    <<: *tv-config
+    #    name: "test"
+
+  flows:
+    asr-trunk-flow:
+      title: ASR Trunk Flow
+      jobs:
+        <<: *prepare-flow-jobs
+        <<: *base-flow-jobs
+
+        run-metrics:
+          title: Metrics
+          task: projects/asr/RunMetrics
+          needs: base-test-finish
+          input:
+            config_path: ${flow-vars.metrics_config_path}
+            robin_config_name: ${flow-vars.robin_config_name}
+            uniproxy_url: ${tasks.get-uniproxy-url.output.output.uniproxy_url}
+
+        # finalize:
+        #   title: Finalize
+        #   needs: run-stress-test
+        #   task: projects/asr/Finalize
+        #   input:
+        #     config:
+        #       model: ${flow-vars.stress_test_preset}
+        #     sb_resources:
+        #       - ${(tasks.run-stress-test.resources[?type == 'VOICETECH_ASR_STRESS_TEST_RESULT'])[0]}
+
+    asr-release-flow:
+      title: ASR Release Flow
+      jobs:
+        <<: *prepare-flow-jobs
+        <<: *base-flow-jobs
+
+        # run-metrics-diff:
+        #   title: Run Metrics Diff
+        #   task: projects/asr/RunMetricsDiff
+        #   needs: base-test-finish
+        #   if: ${flow-vars.is_release}
+        #   input:
+        #     config_path: ${flow-vars.metrics_config_path}
+        #     robin_config_name: ${flow-vars.robin_config_name}
+        #     second_uniproxy_url: ${tasks.get-uniproxy-url.output.output.uniproxy_url}
+        #     release_ticket: ${tasks.maybe-get-ticket.output.output.ticket}
+
+
+        # calc-wer:
+        #   title: Calculate Wer
+        #   task: projects/asr/CalcWer
+        #   needs: run-metrics-diff
+        #   input:
+        #     lingware: ${flow-vars.lingware}
+        #     yappy_beta_url: ${tasks.get-uniproxy-url.output.output.uniproxy_url}
+        #     release_ticket: ${tasks.maybe-get-ticket.output.output.ticket}
+
+        # todo: multiplication when necessary
+        run-ue2e:
+          title: Run Ue2e
+          task: projects/asr/RunUe2e
+          needs: base-test-finish
+          input:
+            uniproxy_url: ${tasks.get-uniproxy-url.output.output.uniproxy_url}
+            app_type: ${flow-vars.ue2e_app_type}
+            branch_num: "${flow-vars.name}-${context.version_info.major}"
+            tag_num: ${not_null(context.version_info.minor, `0`)}
+            release_ticket: ${tasks.maybe-get-ticket.output.output.ticket}
+            fast_run: ${!flow-vars.is_release}
+
+    test-flow:
+      title: Test flow
+      jobs:
+        <<: *prepare-flow-jobs
+
+        run-func-tests-uniproxy:
+          title: Run func tests Uniproxy
+          task: projects/alice/FuncTestVoiceServer
+          needs: finish-prepare
+          input:
+            uniproxy_websocket_url: ${tasks.get-uniproxy-url.output.output.uniproxy_url}
+            tests_group: uniproxy
+            component_name: asr_server
+            release_ticket: ${tasks.maybe-get-ticket.output.output.ticket}

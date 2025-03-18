@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+option java_package = "ru.yandex.ci.api.storage";
+
+import "ci/proto/frontend_on_commit_flow_launch_api.proto";
+import "ci/proto/common.proto";
+
+service StorageFlowService {
+    rpc StartFlow (ExtendedStartFlowRequest) returns (frontend.flow.oncommit.StartFlowResponse);
+    rpc GetLastValidConfig (GetLastValidConfigRequest) returns (GetLastValidConfigResponse);
+    rpc GetLastValidPrefixedConfig (GetLastValidPrefixedConfigRequest) returns (GetLastValidPrefixedConfigResponse);
+    rpc CancelFlow (CancelFlowRequest) returns (CancelFlowResponse);
+    rpc MarkDiscoveredCommit (MarkDiscoveredCommitRequest) returns (MarkDiscoveredCommitResponse);
+}
+
+message CancelFlowRequest {
+    ci.common.FlowProcessId flow_process_id = 1;
+    int32 number = 2;
+}
+
+message CancelFlowResponse {
+}
+
+message ExtendedStartFlowRequest {
+    // Стандартные параметры для запуска flow
+    frontend.flow.oncommit.StartFlowRequest request = 1;
+
+    string flow_vars = 2; // flow-vars в виде JSON параметров (будут записаны поверх базовых flow-vars)
+    string flow_title = 3; // Опциональное название flow (будет записано поверх стандартного)
+
+    // Делегированная конфигурация, откуда нужно брать секреты для запуска в Sandbox
+    DelegatedConfig delegated_config = 4;
+    // Требуется ли запуск Flow в отложенном режиме
+    bool postponed = 5;
+}
+
+message DelegatedConfig {
+    string path = 1; // path to a.yaml
+    ci.common.OrderedArcRevision revision = 2;
+}
+
+message GetLastValidConfigRequest {
+    string dir = 1; // Dir where a.yaml is located
+    string branch = 2; // Branch to lookup config
+}
+
+message GetLastValidConfigResponse {
+    ci.common.OrderedArcRevision config_revision = 1;
+}
+
+message GetLastValidPrefixedConfigRequest {
+    repeated string prefix_dir = 1; // Dir to match a.yaml - traverse from this dir to root, matching first valid config
+    int64 revision = 2; // Revision to start looking from, only trunk is supported
+    bool ignore_security_problems = 3; // Should we exclude configurations with security problems?
+}
+
+message GetLastValidPrefixedConfigResponse {
+    repeated MatchedResponse responses = 1;
+
+    message MatchedResponse {
+        string prefix_dir = 1; // Matched dir from request
+
+        string path = 2; // Path to a.yaml
+        ci.common.OrderedArcRevision config_revision = 3; // matched config revision (less or equals to request revision)
+    }
+}
+
+
+message MarkDiscoveredCommitRequest {
+    ci.common.CommitId revision = 1;
+}
+
+message MarkDiscoveredCommitResponse {
+}

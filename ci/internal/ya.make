@@ -1,0 +1,12 @@
+RECURSE(
+    autocheck
+    ayamler
+    ci
+    common
+    docs
+    infra
+    integration-tests
+    observer
+    storage
+    tools
+)

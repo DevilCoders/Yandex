@@ -1,0 +1,258 @@
+syntax = "proto3";
+
+package ci.proto.storage;
+
+option java_package = "ru.yandex.ci.storage.api";
+
+import "google/protobuf/timestamp.proto";
+import "ci/proto/common.proto";
+import "ci/proto/storage/common.proto";
+import "ci/proto/storage/check.proto";
+import "ci/proto/storage/check_iteration.proto";
+import "ci/proto/storage/check_task.proto";
+import "ci/proto/storage/main_stream_messages.proto";
+
+service StorageApiService {
+    rpc FindChecksByRevisions (FindCheckByRevisionsRequest) returns (FindCheckByRevisionsResponse);
+
+    rpc RegisterCheck (RegisterCheckRequest) returns (RegisterCheckResponse);
+    rpc RegisterCheckIteration (RegisterCheckIterationRequest) returns (Iteration);
+    rpc RegisterTask (RegisterTaskRequest) returns (CheckTask);
+
+    rpc SetTestenvId(SetTestenvIdRequest) returns (SetTestenvIdResponse);
+
+    rpc CancelCheck (CancelCheckRequest) returns (Check);
+    rpc CancelIteration (CancelIterationRequest) returns (Iteration);
+
+    rpc GetCheck (GetCheckRequest) returns (GetCheckResponse);
+    rpc GetIteration (IterationId) returns (Iteration);
+
+    rpc GetSuiteRestarts(GetSuiteRestartsRequest) returns (GetSuiteRestartsResponse);
+
+    rpc AllowTestenvFinish(AllowTestenvFinishRequest) returns (AllowTestenvFinishResponse);
+
+    rpc GetLargeTask(GetLargeTaskRequest) returns (GetLargeTaskResponse);
+    rpc CompareLargeTasks(CompareLargeTasksRequest) returns (CompareLargeTasksResponse);
+    rpc SendMessages (SendMessagesRequest) returns (SendMessagesResponse);
+}
+
+message CompareLargeTasksRequest {
+    LargeTaskId left = 1;
+    LargeTaskId right = 2;
+    repeated TestDiffType filter_diff_types = 3; // List of types to include to response (empty list to include all)
+}
+
+message CompareLargeTasksResponse {
+    bool compare_ready = 1; // true if both iterations are fully processed
+    bool canceled_left = 3;
+    bool canceled_right = 4;
+    repeated TestDiff diffs = 2;
+}
+
+message AllowTestenvFinishRequest {
+    IterationId iteration_id = 1;
+}
+
+message AllowTestenvFinishResponse {
+    Iteration iteration = 1;
+}
+
+service StorageMaintenanceService {
+    rpc TerminateOldTasks (TerminateOldTasksRequest) returns (TerminateOldTasksResponse);
+}
+
+message SetTestenvIdRequest {
+    string check_id = 1;
+    string testenvId = 2;
+}
+
+message SetTestenvIdResponse {
+
+}
+
+message GetSuiteRestartsRequest {
+    IterationId iteration_id = 1;
+}
+
+message GetSuiteRestartsResponse{
+    repeated SuiteRestart suites = 1;
+}
+
+message SuiteRestart {
+    uint64 suite_id = 1;
+    string toolchain = 2;
+    int32 partition = 3;
+    bool is_right = 4;
+    string path = 5;
+    string job_name = 6;
+}
+
+message GetCheckRequest {
+    uint64 id = 1;
+}
+
+message GetCheckResponse{
+    Check check = 1;
+}
+
+message FindCheckByRevisionsRequest {
+    string left_revision = 1;
+    string right_revision = 2;
+    repeated string tags = 3;
+}
+
+message FindCheckByRevisionsResponse {
+    repeated Check checks = 1;
+}
+
+message RegisterCheckRequest {
+    int64 diff_set_id = 1;
+    string owner = 2;
+    google.protobuf.Timestamp timestamp = 3 [deprecated = true];
+    repeated string tags = 4;
+
+    OrderedRevision left_revision = 5; // only branch and revision are used
+    OrderedRevision right_revision = 6; // only branch and revision are used
+
+    CheckInfo info = 7;
+
+    bool report_status_to_arcanum = 8;
+
+    string autocheck_config_revision = 9 [deprecated = true];
+
+    bool test_restarts_allowed = 10;
+    bool stress_test = 22;
+    bool notifications_disabled = 23;
+
+    DistbuildPriority distbuild_priority = 11;
+    Zipatch zipatch = 12;
+
+    google.protobuf.Timestamp diff_set_event_created = 13;
+
+    ci.common.CommitId autocheck_config_left_revision = 20;
+    ci.common.CommitId autocheck_config_right_revision = 21;
+}
+
+message RegisterCheckResponse {
+    Check check = 1;
+}
+
+message RegisterCheckIterationRequest {
+    string check_id = 1;
+    IterationType check_type = 2;
+    int32 number = 3;
+    IterationInfo info = 4;
+    repeated ExpectedTask expected_tasks = 5;
+    bool autorun = 6;
+    CheckTaskType tasks_type = 7;
+}
+
+message RegisterTaskRequest {
+    IterationId iteration_id = 1;
+    string task_id = 2;
+    uint32 number_of_partitions = 3;
+    bool is_right_task = 4;
+    string job_name = 5;
+    CheckTaskType type = 6;
+}
+
+message TerminateOldTasksRequest {
+    int32 minLastWriteHours = 1;
+}
+
+message TerminateOldTasksResponse{
+    int32 numberOfTerminatedTasks = 1;
+}
+
+message CancelCheckRequest {
+    string id = 1;
+}
+
+message CancelIterationRequest {
+    IterationId id = 1;
+}
+
+message GetLargeTaskRequest {
+    IterationId iteration_id = 1 [deprecated = true];
+    CheckTaskType check_task_type = 2 [deprecated = true];
+    int32 index = 3 [deprecated = true];
+
+    LargeTaskId id = 4;
+}
+
+message GetLargeTaskResponse {
+    repeated LargeTestJob jobs = 1;
+}
+
+message LargeTaskId {
+    IterationId iteration_id = 1;
+    CheckTaskType check_task_type = 2;
+    int32 index = 3;
+}
+
+message LargeTestJob {
+    ci.proto.storage.FullTaskId id = 1;
+    ci.proto.storage.CheckType check_type = 2;
+    string title = 3;
+    bool right = 4;
+    bool precommit = 5; // Calculated from check_type
+    string target = 6;
+
+    // Optional (provided only if this is a native-build via Large test)
+    string native_target = 7;
+
+    // JSON structure with parameters we should use to start Large tests, rendered 'test_info_source'
+    string test_info = 8;
+    // Source for test_info
+    TestInfo test_info_source = 15;
+
+    // Username if started by user
+    string started_by = 9;
+
+    CheckTaskType check_task_type = 10;
+
+    // We cannot simply use arc hash here
+    // Some Large tests requires SVN, we have to provide SVN-compatible reference
+    string arcadia_url = 11;
+    string arcadia_base = 12;
+    string arcadia_patch = 13;
+
+    ci.proto.storage.DistbuildPriority distbuild_priority = 14;
+
+    string native_specification = 16;
+
+    message TestInfo { // Only required for CI
+        string toolchain = 2;
+        repeated string tags = 3;
+        string suite_name = 4;
+        string suite_id = 5;
+        uint64 suite_hid = 6;
+    }
+}
+
+message TestDiff {
+    TestId testId = 1;
+    ResultType result_type = 2;
+    string path = 3;
+
+    ResultType type = 4;
+    TestDiffType diff_type = 5;
+
+    string name = 6;
+    string subtestName = 7;
+    repeated string tags = 8;
+
+    TestStatus left = 9;
+    TestStatus right = 10;
+
+    bool isMuted = 11;
+    bool isStrongMode = 12;
+}
+
+message SendMessagesRequest {
+    CheckType check_type = 1;
+    repeated MainStreamMessage messages = 3;
+}
+
+message SendMessagesResponse {
+}

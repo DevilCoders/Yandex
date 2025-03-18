@@ -1,0 +1,496 @@
+syntax = "proto3";
+
+package frontend;
+
+option java_package = "ru.yandex.ci.api.internal.frontend.flow";
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "ci/proto/common.proto";
+import "ci/proto/common/info_panel.proto";
+
+service FlowService {
+    // /api/pipe/launch/{launchId}/poll/{revision}
+    rpc PollLaunchState (PollLaunchStateRequest) returns (PollLaunchStateResponse);
+
+    // /api/pipe/launch/{pipeLaunchId}/job/{jobId}/launch
+    rpc LaunchJob (LaunchJobRequest) returns (LaunchJobResponse);
+
+    // /api/projects/*/releases/*/launches/{pipeLaunchId}/jobs/{jobId}/interrupt
+    rpc InterruptJob (InterruptJobRequest) returns (InterruptJobResponse);
+
+    // /api/projects/*/releases/*/launches/{pipeLaunchId}/jobs/{jobId}/kill
+    rpc KillJob (KillJobRequest) returns (KillJobResponse);
+
+    rpc EnableJobManualTrigger (EnableJobManualTriggerRequest) returns (EnableJobManualTriggerResponse);
+
+    rpc DisableJobManualTrigger (DisableJobManualTriggerRequest) returns (DisableJobManualTriggerResponse);
+
+    // /api/pipe/launch/{pipeLaunchId}/job/{jobId}/toggleSchedulerConstraint
+    rpc ToggleJobSchedulerConstraint (ToggleJobSchedulerConstraintRequest) returns (ToggleJobSchedulerConstraintResponse);
+
+    // /api/pipe/launch/{pipeLaunchId}/job/{jobId}/forceSuccess
+    rpc ForceSuccess (ForceSuccessRequest) returns (ForceSuccessResponse);
+
+    // /api/pipe/launch/{pipeLaunchId}/job/{jobId}/launch/{jobLaunchNumber}
+    rpc FetchJobLaunchDetails (FetchJobLaunchDetailsRequest) returns (FetchJobLaunchDetailsResponse);
+
+    // /api/pipe/{pipeId}/preview
+    rpc LoadFlowPreview (LoadFlowPreviewRequest) returns (google.protobuf.Empty);
+
+    // /api/pipe/launch/{pipeLaunchId}
+    rpc LoadLaunchDetails (LoadLaunchDetailsRequest) returns (LoadLaunchDetailsResponse);
+
+    // /api/bazingaLog
+    rpc BazingaLog (BazingaLogRequest) returns (BazingaLogResponse);
+
+    rpc TemporalLog (TemporalLogRequest) returns (TemporalLogResponse);
+
+    rpc ToLaunchId (ToLaunchIdRequest) returns (ToLaunchIdResponse);
+
+}
+
+message ToLaunchIdRequest {
+    ci.common.FlowLaunchId flow_launch_id = 1;
+}
+
+message ToLaunchIdResponse {
+    ci.common.LaunchId launch_id = 1;
+    string project_id = 2;
+}
+
+message JobLaunchPageModel {
+    string flow_launch_id = 1;
+    bool is_flow_launch_disabled = 2;
+    bool is_flow_launch_disabling_gracefully = 3;
+    bool is_should_ignore_uninterruptable_stages = 4;
+
+    string job_id = 5;
+    string job_title = 6;
+    string job_description = 7;
+    ClassViewModel job_class = 8;
+    string job_source_code_id = 9;
+    int32 number = 11;
+    StatusChangeInfo.StatusChangeType status = 12;
+    ci.common.StatusChangeWrapper.StatusChangeType status_2 = 33;
+    string triggered_by = 13;
+    string interrupted_by = 14;
+    string force_success_triggered_by = 15;
+    google.protobuf.Timestamp launch_date = 16;
+    string execution_exception_stack_trace = 17;
+    string subscriber_exception_stack_trace = 18;
+    repeated SupportType support_info = 19;
+    string owner = 20;
+    repeated StatusChangeInfo status_history = 21;
+    string bazinga_full_job_id = 22;
+    repeated string worker_hosts = 23;
+    TemporalWorkflowInfo temporal_workflow_info = 34;
+
+    repeated JobLaunchListItem launch_list = 24;
+    repeated TaskState task_states = 25;
+    bool is_produces_resources = 26;
+    bool is_ready_to_run = 27;
+    repeated string roles = 28 [deprecated = true];
+
+    repeated JobLaunchResourceViewModel consumed_resources = 29;
+    repeated JobLaunchResourceViewModel produced_resources = 30;
+
+    string status_text = 31;
+    bool is_force_success = 32;
+
+    ci.proto.common.info.InfoPanel info_panel = 35;
+
+    enum SupportType {
+        UNKNOWN = 0;
+        NONE = 1;
+        TSUM = 2;
+        NANNY = 3;
+        CONDUCTOR = 4;
+        SANDBOX = 5;
+        MARKET_CSADMIN = 6;
+        ARCADIA = 7;
+        PUNCHER = 8;
+        JUGGLER = 9;
+        MDB = 10;
+        YA_VAULT = 11;
+        QLOUD = 12;
+        YANDEX_DEPLOY = 13;
+        MARKET_FRONT = 14;
+        TEAMCITY = 15;
+    }
+}
+
+message TemporalWorkflowInfo {
+    string workflow_id = 1;
+    string workflow_url = 2;
+}
+
+message ClassViewModel {
+    string package_name = 1;
+    string name = 2;
+    string simple_name = 3;
+}
+
+message JobLaunchListItem {
+    int32 number = 1;
+    StatusChangeInfo.StatusChangeType status = 2;
+    ci.common.StatusChangeWrapper.StatusChangeType status_2 = 4;
+    google.protobuf.Timestamp launch_date = 3;
+}
+
+message JobLaunchResourceViewModel {
+    string id = 1;
+    string class_name = 2;
+    string source_code_id = 3;
+    string object = 4;
+}
+
+message StatusChangeInfo {
+    StatusChangeType type = 1;
+    ci.common.StatusChangeWrapper.StatusChangeType type_2 = 3;
+    google.protobuf.Timestamp date = 2;
+
+    // TODO: remove after complete migration to "_2" enums
+    enum StatusChangeType {
+        NO_STATUS = 0;
+        WAITING_FOR_STAGE = 1;
+        WAITING_FOR_SCHEDULE = 2;
+        QUEUED = 3;
+        RUNNING = 4;
+        INTERRUPTING = 5;
+        KILLED = 6;
+
+        EXECUTOR_SUCCEEDED = 7;
+        EXECUTOR_INTERRUPTED = 8;
+        EXECUTOR_KILLED = 9;
+        FORCED_EXECUTOR_SUCCEEDED = 10;
+        EXECUTOR_FAILED = 11;
+
+        EXECUTOR_EXPECTED_FAILED = 12;
+
+        SUBSCRIBERS_SUCCEEDED = 13;
+        SUBSCRIBERS_FAILED = 14;
+
+        SUCCESSFUL = 15;
+        EXPECTED_FAILED = 16;
+        FAILED = 17;
+        INTERRUPTED = 18;
+    }
+}
+
+
+// TODO: LaunchState should be defined in "common" package, cause frontend_release_api.proto needs it
+message LaunchState {
+    string id = 1; // flowLaunchId
+    string flow_id = 2;
+    string title = 16;
+    ci.common.FlowDescription flow_description = 18; // Описание самого Flow
+    repeated JobState jobs = 3;
+    int32 state_version = 4;
+    bool is_disabled = 5;
+    bool is_disabling_gracefully = 6;
+    reserved 7;
+    bool is_staged = 8;
+    string stage_group_id = 9;
+    reserved 10; //int32 flow_version = 10; use config_revision
+    string project_id = 11;
+    bool is_should_ignore_uninterruptable_stages = 12;
+    string config_revision = 13;
+    string config_path = 14;
+    ci.common.StagesState stages_state = 15;
+    bool cancelable = 17;
+
+    ci.common.ProcessId process_id = 19;
+
+    ci.proto.common.info.InfoPanel info_panel = 20;
+
+}
+
+message JobState {
+    string id = 1;
+    string title = 2;
+    string description = 3;
+    repeated JobUpstream upstreams = 4;
+    repeated JobDownstream downstreams = 40;
+    StatusChangeInfo.StatusChangeType status = 5;
+    ci.common.StatusChangeWrapper.StatusChangeType status_2 = 38;
+    bool is_adapter = 6;
+    bool is_outdated = 7;
+    bool is_ready_to_run = 8;
+    bool is_manual_trigger = 9;
+    bool is_can_interrupt = 10;
+    CanRunWhen can_run_when = 11;
+    bool is_visible = 12;
+    bool is_disabled = 13;
+    int32 launch_number = 14;
+    google.protobuf.Timestamp start_date = 15;
+    google.protobuf.Timestamp end_date = 16;
+    google.protobuf.Timestamp schedule_date = 39;
+    JobStage stage = 17;
+    Point position = 18;
+    double total_progress = 19;
+    string status_text = 20;
+    repeated TaskState task_states = 21;
+    repeated NotificationEvent custom_notification_events = 22;
+    bool is_force_success = 23;
+    bool is_enable_waiting_for_scheduler = 24;
+    bool is_produces_resources = 25;
+    string triggered_by = 26;
+    string interrupted_by = 27;
+    string force_success_triggered_by = 28;
+    Prompt manual_trigger_prompt = 29;
+    ModificationLogEntry manual_trigger_modifications = 30;
+    SchedulerConstraints scheduler_constraints = 31;
+    ModificationLogEntry scheduler_constraints_modifications = 32;
+    string conditional_run_expression = 33;
+
+    // True - this job was skipped by conditional_run_expression
+    bool conditional_skip = 34;
+
+    // Reference to parent job id, job created by this parameterized job
+    string template_id = 35;
+
+    // When provided, this is a parameterized job, parent for other jobs (other jobs references it by template_id)
+    string multiply_by_expression = 36;
+
+    // When provided, specify the job type
+    // When not provided this is a DEFAULT job
+    JobType job_type = 37;
+
+    // enum values collision pain
+    // https://github.com/protocolbuffers/protobuf/issues/6912
+    enum CanRunWhen {
+        UNKNOWN = 0;
+        ALL_COMPLETED = 1;
+        ANY_COMPLETED = 2;
+        ANY_FAILED = 3;
+    }
+
+    enum JobType {
+        DEFAULT = 0; // Default job
+        CLEANUP = 1; // Cleanup job (runs on flow completion)
+    }
+}
+
+message SchedulerConstraints {
+    repeated DayOfWeekInterval work = 1;
+    repeated DayOfWeekInterval pre_holiday = 2;
+    repeated DayOfWeekInterval holiday = 3;
+
+    message DayOfWeekInterval {
+        DayOfWeek type = 1;
+        DayInterval allowed = 2;
+    }
+
+    message DayInterval {
+        int32 minutes_from = 1;
+        int32 minutes_to = 2;
+    }
+
+}
+
+message Prompt {
+    string question = 1;
+}
+
+message ModificationLogEntry {
+    string modified_by = 1;
+    google.protobuf.Timestamp timestamp = 2;
+}
+
+message JobUpstream {
+    string jobId = 1;
+    Type type = 2;
+    Style style = 3;
+
+    enum Type {
+        UNKNOWN_TYPE = 0;
+        ALL_RESOURCES = 1;
+        NO_RESOURCES = 2;
+    }
+
+    enum Style {
+        UNKNOWN_STYLE = 0;
+        MODERN = 1;
+        SPLINE = 2;
+    }
+}
+
+message NotificationEvent {
+    string id = 1;
+    string title = 2;
+    NotificationMessage default_messages = 3;
+    string description = 4;
+    repeated EventArgument arguments = 5;
+    Level level = 6;
+
+    enum Level {
+        UNKNOWN = 0;
+        INFO = 1;
+        DEBUG = 2;
+        NEED_ATTENTION = 3;
+    }
+}
+
+message NotificationMessage {
+    string common_default = 1;
+    string telegram_default = 2;
+    string email_default = 3;
+    string startrek_default = 4;
+}
+
+message EventArgument {
+    string argument_name = 1;
+    string argument_description = 2;
+}
+
+message TaskState {
+    string url = 2;
+    Status status = 3;
+    double progress = 4;
+    string module_name = 5;
+    string text = 6;
+
+    // true означает, что эта первичная задача
+    // (т.е. sandbox-задача, в рамках которой были сформированы и все остальные состояния)
+    // Запись с primary = true не обязательно будет идти первой
+    bool primary = 7;
+
+    enum Status {
+        UNKNOWN_STATUS = 0;
+        SUCCESSFUL = 1;
+        RUNNING = 2;
+        FAILED = 3;
+    }
+}
+
+message JobStage {
+    string id = 1;
+}
+
+message Point {
+    int32 x = 1;
+    int32 y = 2;
+}
+
+message PollLaunchStateRequest {
+    ci.common.FlowLaunchId flow_launch_id = 1;
+    int32 state_version = 2;
+}
+
+message PollLaunchStateResponse {
+    LaunchState launch_state = 1; //Only if updated = true
+    bool updated = 2;
+}
+
+message LaunchJobResponse {
+    LaunchState launch_state = 1;
+}
+
+message LaunchJobRequest {
+    ci.common.FlowLaunchJobId flow_launch_job_id = 1;
+}
+
+message InterruptJobRequest {
+    ci.common.FlowLaunchJobId flow_launch_job_id = 1;
+}
+
+message InterruptJobResponse {
+    LaunchState launch_state = 1;
+}
+
+message KillJobRequest {
+    ci.common.FlowLaunchJobId flow_launch_job_id = 1;
+}
+
+message KillJobResponse {
+    LaunchState launch_state = 1;
+}
+
+message EnableJobManualTriggerRequest {
+    ci.common.FlowLaunchJobId flow_launch_job_id = 1;
+}
+
+message EnableJobManualTriggerResponse {
+    LaunchState launch_state = 1;
+}
+
+message DisableJobManualTriggerRequest {
+    ci.common.FlowLaunchJobId flow_launch_job_id = 1;
+}
+
+message DisableJobManualTriggerResponse {
+    LaunchState launch_state = 1;
+}
+
+message ToggleJobSchedulerConstraintRequest {
+    ci.common.FlowLaunchJobId flow_launch_job_id = 1;
+}
+
+message ToggleJobSchedulerConstraintResponse {
+    LaunchState launch_state = 1;
+}
+
+message ForceSuccessRequest {
+    ci.common.FlowLaunchJobId flow_launch_job_id = 1;
+}
+
+message ForceSuccessResponse {
+    LaunchState launch_state = 1;
+    string error_message = 2;
+}
+
+message FetchJobLaunchDetailsRequest {
+    ci.common.JobLaunchId job_launch_id = 1;
+}
+
+message FetchJobLaunchDetailsResponse {
+    JobLaunchPageModel job_launch_page_model = 1;
+}
+
+message LoadFlowPreviewRequest {
+    ci.common.FlowFullId flow_full_id = 1;
+}
+
+message LoadLaunchDetailsRequest {
+    ci.common.FlowLaunchId flow_launch_id = 1;
+
+    // Альтернативный способ загрузки параметров, если не передан flow_launch_id
+    ci.common.FlowProcessId flow_process_id = 2;
+    int32 number = 3;
+}
+
+message LoadLaunchDetailsResponse {
+    LaunchState launch_state = 1;
+}
+
+message BazingaLogRequest {
+    string bazinga_host = 1;
+    string full_job_id = 2;
+}
+
+message BazingaLogResponse {
+    string log = 1;
+}
+
+message TemporalLogRequest {
+    string workflow_id = 1;
+}
+
+message TemporalLogResponse {
+    string log = 1;
+}
+
+message JobDownstream {
+    string jobId = 1;
+}
+
+enum DayOfWeek {
+    MONDAY = 0;
+    TUESDAY = 1;
+    WEDNESDAY = 2;
+    THURSDAY = 3;
+    FRIDAY = 4;
+    SATURDAY = 5;
+    SUNDAY = 6;
+}

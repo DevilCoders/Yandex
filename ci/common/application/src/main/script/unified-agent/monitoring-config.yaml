@@ -1,0 +1,46 @@
+status:
+  port: 16301
+
+storages:
+  - name: ci_metrics
+    plugin: fs
+    config:
+      directory: /logs/agent-metrics
+      max_partition_size: 1gb
+
+routes:
+  - input:
+      plugin: metrics_pull
+      config:
+        url: http://localhost:8080/actuator/prometheus
+        headers:
+          Accept: "*/*;q=0.8"
+        format:
+          prometheus: {}
+        project: ci
+        service: pull_metrics
+        poll_period: 15s
+        metric_name_label: sensor
+    channel:
+      channel_ref:
+        name: monitoring
+
+  - input:
+      plugin: linux_metrics
+      config:
+        project: ci
+        service: pull_metrics
+    channel:
+      channel_ref:
+        name: monitoring
+
+channels:
+  - name: monitoring
+    channel:
+      pipe:
+        - storage_ref:
+            name: ci_metrics
+      output:
+        plugin: metrics_pull
+        config:
+          port: 9667

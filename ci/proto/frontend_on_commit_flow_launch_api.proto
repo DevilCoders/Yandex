@@ -1,0 +1,257 @@
+syntax = "proto3";
+
+package frontend.flow.oncommit;
+
+option java_package = "ru.yandex.ci.api.internal.frontend.flow.oncommit";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "ci/proto/common.proto";
+import "ci/proto/common/info_panel.proto";
+
+service OnCommitFlowService {
+    rpc GetFlowLaunches (GetFlowLaunchesRequest) returns (GetFlowLaunchesResponse);
+    rpc GetFlowLaunch (GetFlowLaunchRequest) returns (GetFlowLaunchResponse);
+
+    rpc SuggestTags (SuggestTagsRequest) returns (SuggestTagsResponse);
+    rpc SetTags (SetTagsRequest) returns (SetTagsResponse);
+    rpc PinFlowLaunch (PinFlowLaunchRequest) returns (PinFlowLaunchResponse);
+    rpc GetCommits (GetCommitsRequest) returns (GetCommitsResponse);
+    rpc SuggestBranches (SuggestBranchesRequest) returns (SuggestBranchesResponse);
+
+    rpc SuggestBranchesForFlowStart (SuggestBranchesForFlowStartRequest) returns (SuggestBranchesForFlowStartResponse);
+    rpc GetCommitsForFlowStart (GetCommitsForFlowStartRequest) returns (GetCommitsForFlowStartResponse);
+    rpc GetMetaForRunAction (GetMetaForRunActionRequest) returns (GetMetaForRunActionResponse);
+
+    rpc StartFlow (StartFlowRequest) returns (StartFlowResponse);
+    rpc CancelFlow (CancelFlowRequest) returns (CancelFlowResponse);
+}
+
+message CancelFlowRequest {
+    ci.common.FlowProcessId flow_process_id = 1;
+    int32 number = 2;
+}
+
+message CancelFlowResponse {
+    FlowLaunch launch = 1;
+}
+
+message FlowLaunch {
+    ci.common.FlowProcessId flow_process_id = 1;
+    int32 number = 2;
+    string title = 3;
+    ci.common.FlowDescription flow_description = 31; // Описание самого Flow
+    string triggered_by = 4;
+
+    reserved 5; // ci.common.OrderedArcRevision revision = 5 [deprecated = true];
+    string revision_hash = 17;
+    frontend.flow.oncommit.Branch branch = 18;
+
+    google.protobuf.Timestamp created = 6;
+    google.protobuf.Timestamp started = 7;
+    google.protobuf.Timestamp finished = 8;
+
+    ci.common.LaunchStatus status = 9;
+    FlowLaunchStatus launch_status = 19;
+    string status_text = 10;
+
+    bool cancelable = 11;
+    string cancelled_by = 12;
+    string cancelled_reason = 13;
+
+    bool pinned = 14;
+    repeated string tags = 15;
+    // this field is for getting graph details
+    // TODO: make flow api be able to get pair (ci.common.FlowProcessId, number) instead of ci.common.FlowLaunchId and remove this field
+    ci.common.FlowLaunchId flow_launch_id = 16;
+
+    ci.proto.common.info.InfoPanel info_panel = 35;
+}
+
+message GetFlowLaunchesRequest {
+    ci.common.FlowProcessId flow_process_id = 1;
+    int32 offset_number = 2;
+    int32 limit = 3;
+    google.protobuf.BoolValue pinned = 4;
+    google.protobuf.StringValue branch = 5;
+    repeated string tags = 6;
+    repeated ci.common.LaunchStatus statuses = 7; // deprecated
+    repeated FlowLaunchStatus flow_statuses = 8;
+
+    reserved 11; // include_last_commit
+
+    // Default: sort by NUMBER DESC
+    OrderBy sort_by = 9;
+    OrderByDirection sort_direction = 10;
+
+    // List of supported fields to sort
+    enum OrderBy {
+        NUMBER = 0;
+    }
+}
+
+message GetFlowLaunchesResponse {
+    repeated FlowLaunch launches = 1;
+    // Array of same size as launches, in same order, contains last commit for launch
+    repeated ci.common.Commit commits = 3;
+    ci.common.Offset offset = 2;
+}
+
+message GetFlowLaunchRequest {
+    ci.common.FlowProcessId flow_process_id = 1;
+    int32 number = 2;
+
+    reserved 11; // include_last_commit
+}
+
+message GetFlowLaunchResponse {
+    FlowLaunch launch = 1;
+    ci.common.Commit commit = 2;
+}
+
+message SuggestTagsRequest {
+    ci.common.FlowProcessId flow_process_id = 1;
+    string tag = 2;
+    int32 offset_number = 3;
+    int32 limit = 4;
+}
+
+message SuggestTagsResponse {
+    repeated string tags = 1;
+    ci.common.Offset offset = 2;
+}
+
+message SetTagsRequest {
+    ci.common.FlowProcessId flow_process_id = 1;
+    int32 number = 2;
+    repeated string tags = 3;
+}
+
+message SetTagsResponse {
+    repeated string tags = 1;
+}
+
+message PinFlowLaunchRequest {
+    ci.common.FlowProcessId flow_process_id = 1;
+    int32 number = 2;
+    bool pin = 3;
+}
+
+message PinFlowLaunchResponse {
+}
+
+message GetCommitsRequest {
+    ci.common.FlowProcessId flow_process_id = 1;
+    int32 number = 2;
+    google.protobuf.StringValue before_commit_hash = 3; // included
+    int32 limit = 4;
+}
+
+message GetCommitsResponse {
+    repeated ci.common.Commit commits = 1;
+    ci.common.Offset offset = 2;
+}
+
+message SuggestBranchesRequest {
+    ci.common.FlowProcessId flow_process_id = 1;
+    string branch = 2;
+    int32 offset = 3;
+    int32 limit = 4;
+}
+
+message SuggestBranchesResponse {
+    repeated string branches = 1;
+    ci.common.Offset offset = 2;
+}
+
+message SuggestBranchesForFlowStartRequest {
+    string branch = 1;
+    int32 offset = 2;
+    int32 limit = 3;
+}
+
+message SuggestBranchesForFlowStartResponse {
+    repeated string branches = 1;
+    ci.common.Offset offset = 2;
+}
+
+message GetCommitsForFlowStartRequest {
+    oneof start_revision {
+        // when we want to get all commits from branch
+        string branch = 1;
+        // commit_hash_id_pair is analogue of "hasMore"
+        CommitHashIdPair commit_hash_id_pair = 2;
+        // when we want to get commit by full arc revision
+        ci.common.CommitId commit = 4;
+    }
+    int32 limit = 3;
+}
+
+message GetCommitsForFlowStartResponse {
+    repeated ci.common.ArcCommit commits = 1; // deprecated
+    // is null when there are no more commits
+    CommitHashIdPair next_commit_id_pair = 2;
+    repeated ci.common.Commit commits_with_number = 3;
+}
+
+message GetMetaForRunActionRequest {
+    ci.common.FlowProcessId flow_process_id = 1;
+    ci.common.OrderedArcRevision config_revision = 2;
+}
+
+message GetMetaForRunActionResponse {
+    ci.common.FlowDescription flow = 1;
+}
+
+message CommitHashIdPair {
+    string start_at = 1;
+    google.protobuf.StringValue stop_at = 2;
+}
+
+message StartFlowRequest {
+    ci.common.FlowProcessId flow_process_id = 1;
+    string branch = 2;
+    ci.common.CommitId revision = 3;
+    ci.common.OrderedArcRevision config_revision = 4;
+    bool notify_pull_request = 5;
+    ci.common.FlowVars flow_vars = 6;
+}
+
+message StartFlowResponse {
+    FlowLaunch launch = 1;
+}
+
+message Branch {
+    string name = 1;
+    PullRequest pull_request = 2;
+}
+
+message PullRequest {
+    int64 pull_request_id = 1;
+    ci.common.PullRequestVcsInfo vcs_info = 2;
+    string summary = 3; // Title
+    string description = 4; // Description
+}
+
+enum FlowLaunchStatus {
+    UNKNOWN = 0;
+    DELAYED = 1;
+    POSTPONE = 15;
+    STARTING = 2;
+    RUNNING = 3;
+    RUNNING_WITH_ERRORS = 4;
+    FAILURE = 5;
+    WAITING_FOR_MANUAL_TRIGGER = 6;
+    WAITING_FOR_SCHEDULE = 7;
+    SUCCESS = 8;
+    CANCELED = 9;
+    CANCELLING = 10;
+    WAITING_FOR_CLEANUP = 13;
+    CLEANING = 12;
+    IDLE = 11;
+}
+
+enum OrderByDirection {
+    DESC = 0;
+    ASC = 1;
+}

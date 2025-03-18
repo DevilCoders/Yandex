@@ -1,0 +1,204 @@
+service: ci
+title: CI performance tests
+
+
+shared:
+  sleep-job: &sleep-job
+    task: common/misc/sleep
+    multiply:
+      by: '${range(`0`, `5`)[].{i: @}}'
+      title: 'Sleep job #${by.i}'
+    input:
+      config:
+        sleep_time: 600s
+        jitter_time: 120s
+
+ci:
+  secret: sec-01e8agdtdcs61v6emr05h5q1ek
+  runtime:
+    sandbox-owner: ci
+
+  actions:
+    performance-main:
+      title: '🔥 Performance test (on testing)'
+      description: Запускает N (по умолчанию 10) run-sleep-actions Action'ов, что суммарно даёт нагрузку в N * 1k задач.
+      flow: performance-main
+      flow-vars-ui:
+        schema:
+          type: object
+          properties:
+            actions-count:
+              type: integer
+              title: Количество нагрузочных Action'ов. (Каждый создаёт 1k задач).
+              minimum: 1
+              maximum: 50
+              default: 10
+
+    performance-child1:
+      title: 'Performance child 1'
+      description: Первый слой наргузочного тестирования. Стартует параллельно десять 'child 2'. Дает нагрузку до 1000 паралельныйх задач.
+      flow: performance-child1
+
+    performance-child2:
+      title: 'Performance child 2'
+      description: Второй слой наргузочного тестирования. Стартует параллельно пять 'child 3' 4 раза радряд. Дает нагрузку до 100 паралельныйх задач.
+      flow: performance-child2
+
+    #Splitted into 5 separate actions to better distribute the load across the DB
+    performance-child3-1:
+      title: 'Performance child 3-1'
+      description: Третий (финальный) слой наргузочного тестирования. Стартует 20 sleep кубиков в паралель
+      flow: performance-child3
+
+    performance-child3-2:
+      title: 'Performance child 3-2'
+      description: Третий (финальный) слой наргузочного тестирования. Стартует 20 sleep кубиков в паралель
+      flow: performance-child3
+
+    performance-child3-3:
+      title: 'Performance child 3-3'
+      description: Третий (финальный) слой наргузочного тестирования. Стартует 20 sleep кубиков в паралель
+      flow: performance-child3
+
+    performance-child3-4:
+      title: 'Performance child 3-4'
+      description: Третий (финальный) слой наргузочного тестирования. Стартует 20 sleep кубиков в паралель
+      flow: performance-child3
+
+    performance-child3-5:
+      title: 'Performance child 3-5'
+      description: Третий (финальный) слой наргузочного тестирования. Стартует 20 sleep кубиков в паралель
+      flow: performance-child3
+
+  flows:
+    performance-main:
+      jobs:
+        run-actions:
+          title: Run performance child-1
+          task: common/ci/run_ci_action
+          multiply:
+            by: '${range(`0`, flow-vars.actions-count)[].{i: @}}'
+            title: 'Run child action #${by.i}'
+            max-jobs: 50
+          input:
+            config:
+              action_path: ci/internal/ci/performance-test
+              action_id: performance-child1
+              environment: TESTING
+
+    performance-child1:
+      jobs:
+        jitter:
+          title: Ожидание с jitter'ом для размазывания нагрузки старта
+          task: common/misc/sleep
+          input:
+            config:
+              sleep_time: 15s
+              jitter_time: 10s
+
+        run-actions:
+          title: Run performance child-2
+          task: common/ci/run_ci_action
+          needs: jitter
+          multiply:
+            by: '${range(`0`, `10`)[].{i: @}}'
+            title: 'Run child action #${by.i}'
+          input:
+            config:
+              action_path: ci/internal/ci/performance-test
+              action_id: performance-child2
+
+    performance-child2:
+      jobs:
+        jitter:
+          title: Ожидание с jitter'ом для размазывания нагрузки старта
+          task: common/misc/sleep
+          input:
+            config:
+              sleep_time: 90s
+              jitter_time: 60s
+
+        run-action-1:
+          needs: jitter
+          task: common/ci/run_ci_action
+          input:
+            config:
+              action_path: ci/internal/ci/performance-test
+              action_id: performance-child3-1
+
+        run-action-2:
+          needs: jitter
+          task: common/ci/run_ci_action
+          input:
+            config:
+              action_path: ci/internal/ci/performance-test
+              action_id: performance-child3-2
+
+        run-action-3:
+          needs: jitter
+          task: common/ci/run_ci_action
+          input:
+            config:
+              action_path: ci/internal/ci/performance-test
+              action_id: performance-child3-3
+
+        run-action-4:
+          needs: jitter
+          task: common/ci/run_ci_action
+          input:
+            config:
+              action_path: ci/internal/ci/performance-test
+              action_id: performance-child3-4
+
+        run-action-5:
+          needs: jitter
+          task: common/ci/run_ci_action
+          input:
+            config:
+              action_path: ci/internal/ci/performance-test
+              action_id: performance-child3-5
+
+
+
+    performance-child3:
+      jobs:
+        jitter:
+          title: Ожидание с jitter'ом для размазывания нагрузки старта
+          task: common/misc/sleep
+          input:
+            config:
+              sleep_time: 450s
+              jitter_time: 450s
+
+        dummy1:
+         task: dummy
+         needs: jitter
+
+        dummy2:
+          task: dummy
+          needs: dummy1
+
+        dummy3:
+          task: dummy
+          needs: dummy2
+
+        dummy4:
+          task: dummy
+          needs: dummy3
+
+        sleep1:
+          needs: jitter
+          <<: *sleep-job
+
+        sleep2:
+          needs: dummy1
+          <<: *sleep-job
+
+        sleep3:
+          needs: dummy2
+          <<: *sleep-job
+
+        sleep4:
+          needs: dummy3
+          <<: *sleep-job
+

@@ -1,0 +1,386 @@
+# comment
+service: cidemo
+title: Yandex CI Internal Demo
+
+ci:
+  secret: sec-01e8agdtdcs61v6emr05h5q1ek
+  runtime:
+    sandbox-owner: CI
+
+  autocheck:
+    large-autostart:
+      - ci/demo-project/large-tests
+      - ci/demo-project/large-tests2
+    native-builds:
+      default-win-x86_64-debug:
+        - arc/local
+        - solomon/sysmon
+
+  releases:
+    demo-sawmill-release:
+      title: Demo sawmill release
+      flow: release-sawmill
+      stages:
+        - id: prepare-wood
+          title: Готовим материалы
+        - id: build-furniture
+          title: Выпускаем мебель
+      auto: true
+      filters:
+        - abs-paths: [ 'ci/**' ]
+      tags: [ demo, sawmill ]
+
+    demo-sawmill-release-manual:
+      # лесопилка без автозапуска
+      title: Demo sawmill release (manual)
+      flow: release-sawmill
+      hotfix-flows:
+        - release-sawmill-hotfix1
+        - release-sawmill-hotfix2
+      stages:
+        - id: prepare-wood
+          title: Готовим материалы
+        - id: build-furniture
+          title: Выпускаем мебель
+          rollback: true
+      filters:
+        - abs-paths: [ 'ci/**' ]
+      tags: [ demo, sawmill ]
+
+    demo-sawmill-release-auto-graph-discovery:
+      # лесопилка с discovery: graph
+      title: Demo sawmill release (auto, graph discovery)
+      flow: release-sawmill
+      stages:
+        - id: prepare-wood
+          title: Готовим материалы
+        - id: build-furniture
+          title: Выпускаем мебель
+      auto: true
+      filters:
+        - discovery: graph
+          abs-paths: [ 'ci/tms/**', 'ci/engine/**', 'ci/core/**' ]
+      tags: [ demo, sawmill ]
+
+    demo-sawmill-release-conditional:
+      # лесопилка с условиями
+      title: Demo sawmill release (auto, conditional)
+      flow: release-sawmill
+      stages:
+        - id: prepare-wood
+          title: Готовим материалы
+        - id: build-furniture
+          title: Выпускаем мебель
+      auto:
+        conditions:
+          - min-commits: 3
+            schedule:
+              days: MON, TUE, THU-FRI
+              time: 14:00 - 20:00 MSK
+            since-last-release: 30m
+      filters:
+        - abs-paths: [ 'ci/**' ]
+      tags: [ demo, sawmill ]
+
+    demo-sawmill-release-branches:
+      # лесопилка с автозапуском в бранчах
+      title: Demo sawmill release (branches)
+      flow: release-sawmill
+      auto: false
+      stages:
+        - id: prepare-wood
+          title: Готовим материалы
+        - id: build-furniture
+          title: Выпускаем мебель
+          rollback: true
+      branches:
+        pattern: releases/ci/demo/sawmill/sawmill-${version}
+        auto:
+          enabled: true
+      filters:
+        - abs-paths: [ 'ci/**' ]
+      tags: [ demo, sawmill ]
+
+  actions:
+    sawmill:
+      description: Демо flow, который мы запускаем на каждый коммит в каталог `ci`
+      flow: sawmill
+      triggers:
+        - on: pr
+        - on: commit
+      tags: [ demo, sawmill ]
+
+    sawmill-v2:
+      description: Демо flow для Tasklet V2, который мы запускаем на каждый коммит в каталог `ci`
+      flow: sawmill-v2
+      triggers:
+        - on: pr
+        - on: commit
+          filters:
+            - abs-paths: [ 'ci/**' ]
+      tags: [ demo, sawmill ]
+
+    create-infra-action:
+      description: Демо flow для Tasklet V2, создаёт событие в инфре https://infra.yandex-team.ru/services/3346/events
+      flow: create-infra
+      tags: [ demo, create_infra ]
+
+  flows:
+    release-sawmill:
+      title: Release Woodcutter
+      jobs:
+        woodcutter:
+          title: Дровосек
+          description: Рубит деревья на бревна
+          task: demo/woodflow/woodcutter
+          stage: prepare-wood
+
+        sawmill-1:
+          title: Лесопилка производительная
+          description: Пилит бревна на доски
+          task: demo/woodflow/sawmill
+          needs: woodcutter
+          input:
+            document:
+              title: Лесопилка производительная
+              boardsPerTimber: 4
+
+        sawmill-2:
+          title: Лесопилка обычная
+          description: Пилит бревна на доски
+          task: demo/woodflow/sawmill
+          needs: woodcutter
+          input:
+            document:
+              title: Лесопилка обычная
+              boardsPerTimber: 3
+
+        sawmill-2-skip:
+          title: Пропуск обычной лесопилки
+          task: dummy
+          needs: woodcutter
+          manual: true
+
+        sawmill-2-complete:
+          title: Завершение обычной лесопилки
+          task: dummy
+          needs-type: any
+          needs:
+            - sawmill-2
+            - sawmill-2-skip
+
+        start-furniture:
+          title: Запуск сборки
+          task: dummy
+          stage: build-furniture
+          needs:
+            - sawmill-1
+            - sawmill-2-complete
+
+        infra-create:
+          title: Публикация Infra события
+          task: common/monitoring/infra_create
+          needs:
+            - start-furniture
+          input:
+            config:
+              textual:
+                title: "Sawmill Demo Flow: ${context.title}"
+                description: "${context.ci_url}"
+              status:
+                severity: MINOR
+                type: MAINTENANCE
+              placement:
+                serviceId: 3346
+                environmentId: 5189
+
+        furniture-factory:
+          title: Мебельная фабрика
+          description: Из досок собирает мебель
+          task: demo/woodflow/furniture-factory
+          needs:
+            - start-furniture
+
+        factory-fail:
+          title: Выполнение в случае ошибки
+          task: dummy
+          needs: furniture-factory
+          needs-type: fail
+
+        factory-complete:
+          title: Завершение сборки
+          task: dummy
+          needs-type: any
+          needs: [furniture-factory, factory-fail]
+
+        infra-close:
+          title: Закрытие Infra события
+          task: common/monitoring/infra_close
+          needs: infra-create
+          input:
+            config: {}
+
+    release-sawmill-hotfix1:
+      title: Release Woodcutter Hotfix 1
+      jobs:
+        woodcutter:
+          title: Дровосек
+          description: Рубит деревья на бревна, hotfix1
+          task: demo/woodflow/woodcutter
+          stage: prepare-wood
+
+        sawmill-1:
+          title: Лесопилка производительная, быстрофикс 1
+          description: Пилит бревна на доски
+          task: demo/woodflow/sawmill
+          input:
+            document:
+              title: Лесопилка производительная 1
+              boardsPerTimber: 4
+          needs: woodcutter
+
+        start-furniture:
+          title: Запуск сборки
+          task: dummy
+          stage: build-furniture
+          needs:
+            - sawmill-1
+
+        furniture-factory:
+          title: Мебельная фабрика
+          description: Из досок собирает мебель
+          task: demo/woodflow/furniture-factory
+          needs:
+            - start-furniture
+
+
+    release-sawmill-hotfix2:
+      title: Release Woodcutter Hotfix 2
+      jobs:
+        woodcutter:
+          title: Дровосек
+          description: Рубит деревья на бревна, hotfix2
+          task: demo/woodflow/woodcutter
+          stage: prepare-wood
+
+        sawmill-1:
+          title: Лесопилка производительная, быстрофикс 2
+          description: Пилит бревна на доски
+          task: demo/woodflow/sawmill
+          input:
+            document:
+              title: Лесопилка производительная 2
+              boardsPerTimber: 4
+          needs: woodcutter
+
+        start-furniture:
+          title: Запуск сборки
+          task: dummy
+          stage: build-furniture
+          needs:
+            - sawmill-1
+
+        furniture-factory:
+          title: Мебельная фабрика
+          description: Из досок собирает мебель
+          task: demo/woodflow/furniture-factory
+          needs:
+            - start-furniture
+
+    sawmill:
+      title: Simple Woodcutter
+      jobs:
+        woodcutter1:
+          title: Лесоруб1
+          task: demo/woodflow/woodcutter
+        woodcutter2:
+          title: Лесоруб2
+          task: demo/woodflow/woodcutter
+
+        sawmill-call:
+          title: Звонок в лесопилку
+          task: dummy
+          needs: [ woodcutter1, woodcutter2 ]
+
+        sawmill:
+          title: Лесопилка
+          task: demo/woodflow/sawmill
+          needs: sawmill-call
+          input:
+            document:
+              title: Лесопилка обычная
+              boardsPerTimber: 3
+
+        furniture-factory:
+          title: Мебельная фабрика
+          task: demo/woodflow/furniture-factory
+          needs:
+            - sawmill
+
+        sawmill-fail:
+          title: Выполнение в случае ошибки
+          task: dummy
+          needs: sawmill
+          needs-type: fail
+
+        complete:
+          title: Завершение сборки
+          task: dummy
+          needs-type: any
+          needs: [furniture-factory, sawmill-fail]
+
+    sawmill-v2:
+      title: Simple Woodcutter V2
+      jobs:
+        woodcutter1:
+          title: Лесоруб1
+          task: demo/woodflow/woodcutter-v2
+        woodcutter2:
+          title: Лесоруб2
+          task: demo/woodflow/woodcutter-v2
+
+        sawmill-call:
+          title: Звонок в лесопилку
+          task: dummy
+          needs: [ woodcutter1, woodcutter2 ]
+
+        sawmill:
+          title: Лесопилка
+          task: demo/woodflow/sawmill-v2
+          needs: sawmill-call
+          input:
+            document:
+              title: Лесопилка обычная
+              boardsPerTimber: 3
+
+        furniture-factory:
+          title: Мебельная фабрика
+          task: demo/woodflow/furniture-factory-v2
+          needs:
+            - sawmill
+
+        sawmill-fail:
+          title: Выполнение в случае ошибки
+          task: dummy
+          needs: sawmill
+          needs-type: fail
+
+        complete:
+          title: Завершение сборки
+          task: dummy
+          needs-type: any
+          needs: [furniture-factory, sawmill-fail]
+
+    create-infra:
+      title: Create infra
+      jobs:
+        do-the-job:
+          title: Создаём событие в инфре
+          task: junk/albazh/taskletv2/infra_create
+          input:
+            config:
+              title: "Test event CiDemoInfraCreateTasklet: ${context.title}"
+              severity: MINOR
+              type: MAINTENANCE
+              serviceId: 3346
+              environmentId: 5189
