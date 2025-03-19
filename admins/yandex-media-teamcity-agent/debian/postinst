@@ -1,0 +1,23 @@
+#!/bin/sh
+
+# add teamcity user to docker group
+# @see http://unix.stackexchange.com/questions/252684/why-am-i-getting-cannot-connect-to-the-docker-daemon-when-the-daemon-is-runnin
+usermod -a -G docker teamcity
+
+host=$(hostname -f)
+
+if [ ! -d "/usr/local/teamcity-agents/$host" ]; then
+    /etc/init.d/teamcity-agent install "$host" https://teamcity.yandex-team.ru
+fi
+/etc/init.d/teamcity-agent start "$host" || true
+
+# @see https://docs.docker.com/engine/installation/linux/ubuntulinux/#configure-a-dns-server-for-use-by-docker
+sed -i 's/#DOCKER_OPTS=".*"/DOCKER_OPTS="--dns 2a02:6b8:0:3400::5005 --ipv6 --fixed-cidr-v6=2001:db8:1::\/64 -s overlay2"/' /etc/default/docker
+service docker restart
+
+curl -s -L "https://github.com/docker/compose/releases/download/1.24.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+
+chmod +x /usr/local/bin/docker-compose
+
+ip6tables-restore < /etc/iptables/rules.v6
+sysctl -p

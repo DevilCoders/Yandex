@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# This is media-ipip6 plugin for selfdns-client.
+# Works only on virtual machines and only if host have ipip6 conductor tag
+# It checks rackables map64 export and if our hostname present there, takes mapped ipv4
+# If problems with racktables - check ip6tun0 addr in global scope
+# And posts it as A address for current host (PTR will added on api call)
+# We need this plugin for ipip6 work since conductor checks A record for host
+# We can disable this plugin when https://st.yandex-team.ru/CONDUCTOR-1058#1498120475000 would be realized
+
+# Load variables and helper functions
+. /usr/lib/yandex-media-common-selfdns-plugin/helpers
+
+# common sanity checks
+check_virtual
+
+# ipip6 tag
+check_conductor_tag "ipip6"
+
+# Get mapped ipv4
+EXPORT=$(http "https://ro.racktables.yandex.net/export/map64.txt")
+EXPORT_STATUS=$?
+
+# If problems with http:// request - use ipv4 from already enabled tun if present
+if [ $EXPORT_STATUS -ne 0 ]; then
+    IP_ADDRESS=$(ip -o addr show ip6tun0 scope global 2>/dev/null| sed -r 's|.*inet6?\s+(.*)/[0-9]{2}\s+.*|\1|g')
+else
+    IP_ADDRESS=$(echo "${EXPORT}" | grep "${LOCAL_HOSTNAME}" | awk '{print $1}')
+fi
+
+# Fire answer!
+answer "${IP_ADDRESS}"

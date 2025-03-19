@@ -1,0 +1,338 @@
+diff --git salt/auth/__init__.py salt/auth/__init__.py
+index 6a8050fa9d..3f4ea837e1 100644
+--- salt/auth/__init__.py
++++ salt/auth/__init__.py
+@@ -29,7 +29,7 @@ import salt.utils.files
+ import salt.utils.minions
+ import salt.utils.user
+ import salt.utils.versions
+-import salt.utils.zeromq
++import salt.utils.network
+ 
+ log = logging.getLogger(__name__)
+ 
+@@ -508,7 +508,7 @@ class Resolver:
+ 
+     def _send_token_request(self, load):
+         master_uri = "tcp://{}:{}".format(
+-            salt.utils.zeromq.ip_bracket(self.opts["interface"]),
++            salt.utils.network.ip_bracket(self.opts["interface"]),
+             str(self.opts["ret_port"]),
+         )
+         with salt.transport.client.ReqChannel.factory(
+diff --git salt/cli/daemons.py salt/cli/daemons.py
+index f967b0d1f1..36b56cd91c 100644
+--- salt/cli/daemons.py
++++ salt/cli/daemons.py
+@@ -49,7 +49,7 @@ warnings.filterwarnings(
+ try:
+     import salt.utils.parsers
+     from salt.utils.verify import check_user, verify_env, verify_socket
+-    from salt.utils.zeromq import ip_bracket
++    from salt.utils.network import ip_bracket
+ except ImportError as exc:
+     if exc.args[0] != "No module named _msgpack":
+         raise
+diff --git salt/client/__init__.py salt/client/__init__.py
+index c0e39382c9..a5b50c233a 100644
+--- salt/client/__init__.py
++++ salt/client/__init__.py
+@@ -42,7 +42,7 @@ import salt.utils.platform
+ import salt.utils.stringutils
+ import salt.utils.user
+ import salt.utils.verify
+-import salt.utils.zeromq
++import salt.utils.network
+ from salt.exceptions import (
+     AuthenticationError,
+     AuthorizationError,
+@@ -1887,7 +1887,7 @@ class LocalClient:
+         )
+ 
+         master_uri = "tcp://{}:{}".format(
+-            salt.utils.zeromq.ip_bracket(self.opts["interface"]),
++            salt.utils.network.ip_bracket(self.opts["interface"]),
+             str(self.opts["ret_port"]),
+         )
+ 
+@@ -1990,7 +1990,7 @@ class LocalClient:
+ 
+         master_uri = (
+             "tcp://"
+-            + salt.utils.zeromq.ip_bracket(self.opts["interface"])
++            + salt.utils.network.ip_bracket(self.opts["interface"])
+             + ":"
+             + str(self.opts["ret_port"])
+         )
+diff --git salt/config/__init__.py salt/config/__init__.py
+index 97a7fce2f0..3f1cbc9045 100644
+--- salt/config/__init__.py
++++ salt/config/__init__.py
+@@ -27,7 +27,6 @@ import salt.utils.user
+ import salt.utils.validate.path
+ import salt.utils.xdg
+ import salt.utils.yaml
+-import salt.utils.zeromq
+ 
+ try:
+     import psutil
+@@ -4035,11 +4034,13 @@ def client_config(path, env_var="SALT_CLIENT_CONFIG", defaults=None):
+     # On some platforms, like OpenBSD, 0.0.0.0 won't catch a master running on localhost
+     if opts["interface"] == "0.0.0.0":
+         opts["interface"] = "127.0.0.1"
++    elif opts["interface"] == "::":
++        opts["interface"] = "::1"
+ 
+     # Make sure the master_uri is set
+     if "master_uri" not in opts:
+         opts["master_uri"] = "tcp://{ip}:{port}".format(
+-            ip=salt.utils.zeromq.ip_bracket(opts["interface"]), port=opts["ret_port"]
++            ip=salt.utils.network.ip_bracket(opts["interface"]), port=opts["ret_port"]
+         )
+ 
+     # Return the client options
+diff --git salt/modules/event.py salt/modules/event.py
+index 03dad5e614..e0a0eea225 100644
+--- salt/modules/event.py
++++ salt/modules/event.py
+@@ -14,7 +14,7 @@ import salt.crypt
+ import salt.payload
+ import salt.transport.client
+ import salt.utils.event
+-import salt.utils.zeromq
++import salt.utils.network
+ 
+ __proxyenabled__ = ["*"]
+ log = logging.getLogger(__name__)
+@@ -49,7 +49,7 @@ def fire_master(data, tag, preload=None):
+         # slower because it has to independently authenticate)
+         if "master_uri" not in __opts__:
+             __opts__["master_uri"] = "tcp://{ip}:{port}".format(
+-                ip=salt.utils.zeromq.ip_bracket(__opts__["interface"]),
++                ip=salt.utils.network.ip_bracket(__opts__["interface"]),
+                 port=__opts__.get("ret_port", "4506"),  # TODO, no fallback
+             )
+         masters = list()
+diff --git salt/transport/tcp.py salt/transport/tcp.py
+index f00b3c40eb..94a7f35f72 100644
+--- salt/transport/tcp.py
++++ salt/transport/tcp.py
+@@ -38,6 +38,7 @@ import salt.utils.platform
+ import salt.utils.process
+ import salt.utils.verify
+ import salt.utils.versions
++from salt.utils.network import ip_bracket
+ from salt.exceptions import SaltClientError, SaltReqTimeoutError
+ from salt.transport import iter_transport_opts
+ 
+@@ -58,7 +59,6 @@ else:
+     USE_LOAD_BALANCER = False
+ 
+ if USE_LOAD_BALANCER:
+-    import threading
+     import multiprocessing
+     import salt.ext.tornado.util
+     from salt.utils.process import SignalHandlingProcess
+@@ -66,6 +66,20 @@ if USE_LOAD_BALANCER:
+ log = logging.getLogger(__name__)
+ 
+ 
++def _get_socket(opts):
++    family = socket.AF_INET
++    if opts.get("ipv6", False):
++        family = socket.AF_INET6
++    return socket.socket(family, socket.SOCK_STREAM)
++
++
++def _get_bind_addr(opts, port_type):
++    return (
++        ip_bracket(opts["interface"], strip=True),
++        int(opts[port_type]),
++    )
++
++
+ def _set_tcp_keepalive(sock, opts):
+     """
+     Ensure that TCP keepalives are set for the socket.
+@@ -165,11 +179,11 @@ if USE_LOAD_BALANCER:
+             """
+             Start the load balancer
+             """
+-            self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
++            self._socket = _get_socket(self.opts)
+             self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+             _set_tcp_keepalive(self._socket, self.opts)
+             self._socket.setblocking(1)
+-            self._socket.bind((self.opts["interface"], int(self.opts["ret_port"])))
++            self._socket.bind(_get_bind_addr(self.opts, "ret_port"))
+             self._socket.listen(self.backlog)
+ 
+             while True:
+@@ -638,11 +652,11 @@ class TCPReqServerChannel(
+                 LoadBalancerServer, args=(self.opts, self.socket_queue)
+             )
+         elif not salt.utils.platform.is_windows():
+-            self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
++            self._socket = _get_socket(self.opts)
+             self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+             _set_tcp_keepalive(self._socket, self.opts)
+             self._socket.setblocking(0)
+-            self._socket.bind((self.opts["interface"], int(self.opts["ret_port"])))
++            self._socket.bind(_get_bind_addr(self.opts, "ret_port"))
+ 
+     def post_fork(self, payload_handler, io_loop):
+         """
+@@ -669,13 +683,11 @@ class TCPReqServerChannel(
+                 )
+             else:
+                 if salt.utils.platform.is_windows():
+-                    self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
++                    self._socket = _get_socket(self.opts)
+                     self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                     _set_tcp_keepalive(self._socket, self.opts)
+                     self._socket.setblocking(0)
+-                    self._socket.bind(
+-                        (self.opts["interface"], int(self.opts["ret_port"]))
+-                    )
++                    self._socket.bind(_get_bind_addr(self.opts, "ret_port"))
+                 self.req_server = SaltMessageServer(
+                     self.handle_message,
+                     ssl_options=self.opts.get("ssl"),
+@@ -950,7 +962,7 @@ class TCPClientKeepAlive(salt.ext.tornado.tcpclient.TCPClient):
+         """
+         # Always connect in plaintext; we'll convert to ssl if necessary
+         # after one connection has completed.
+-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
++        sock = _get_socket(self.opts)
+         _set_tcp_keepalive(sock, self.opts)
+         stream = salt.ext.tornado.iostream.IOStream(
+             sock, max_buffer_size=max_buffer_size
+@@ -1160,7 +1172,10 @@ class SaltMessageClient:
+                         )
+                 with salt.utils.asynchronous.current_ioloop(self.io_loop):
+                     self._stream = yield self._tcp_client.connect(
+-                        self.host, self.port, ssl_options=self.opts.get("ssl"), **kwargs
++                        ip_bracket(self.host, strip=True),
++                        self.port,
++                        ssl_options=self.opts.get("ssl"),
++                        **kwargs
+                     )
+                 self._connecting_future.set_result(True)
+                 break
+@@ -1640,11 +1655,11 @@ class TCPPubServerChannel(salt.transport.server.PubServerChannel):
+         pub_server = PubServer(
+             self.opts, io_loop=self.io_loop, pack_publish=self.pack_publish
+         )
+-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
++        sock = _get_socket(self.opts)
+         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+         _set_tcp_keepalive(sock, self.opts)
+         sock.setblocking(0)
+-        sock.bind((self.opts["interface"], int(self.opts["publish_port"])))
++        sock.bind(_get_bind_addr(self.opts, "publish_port"))
+         sock.listen(self.backlog)
+         # pub_server will take ownership of the socket
+         pub_server.add_socket(sock)
+diff --git salt/transport/zeromq.py salt/transport/zeromq.py
+index 9e61b23255..345fd5443f 100644
+--- salt/transport/zeromq.py
++++ salt/transport/zeromq.py
+@@ -69,7 +69,7 @@ def _get_master_uri(master_ip, master_port, source_ip=None, source_port=None):
+     Source: http://api.zeromq.org/4-1:zmq-tcp
+     """
+ 
+-    from salt.utils.zeromq import ip_bracket
++    from salt.utils.network import ip_bracket
+ 
+     master_uri = "tcp://{master_ip}:{master_port}".format(
+         master_ip=ip_bracket(master_ip), master_port=master_port
+diff --git salt/utils/network.py salt/utils/network.py
+index 356d1e5ae7..4b6e68139c 100644
+--- salt/utils/network.py
++++ salt/utils/network.py
+@@ -22,7 +22,6 @@ import salt.utils.files
+ import salt.utils.path
+ import salt.utils.platform
+ import salt.utils.stringutils
+-import salt.utils.zeromq
+ from salt._compat import ipaddress
+ from salt.exceptions import SaltClientError, SaltSystemExit
+ from salt.utils.decorators.jinja import jinja_filter
+@@ -2186,7 +2185,7 @@ def dns_check(addr, port, safe=False, ipv6=None):
+             raise SaltClientError()
+         raise SaltSystemExit(code=42, msg=err)
+ 
+-    return salt.utils.zeromq.ip_bracket(ip_addrs[0])
++    return ip_bracket(ip_addrs[0])
+ 
+ 
+ def _test_addrs(addrinfo, port):
+@@ -2302,3 +2301,15 @@ def filter_by_networks(values, networks):
+             raise ValueError("Do not know how to filter a {}".format(type(values)))
+     else:
+         return values
++
++
++def ip_bracket(addr, strip=False):
++    """
++    Ensure IP addresses are URI-compatible - specifically, add brackets
++    around IPv6 literals if they are not already present.
++    """
++    addr = str(addr)
++    addr = addr.lstrip("[")
++    addr = addr.rstrip("]")
++    addr = ipaddress.ip_address(addr)
++    return ("[{}]" if addr.version == 6 and not strip else "{}").format(addr)
+diff --git salt/utils/zeromq.py salt/utils/zeromq.py
+index 76814427d1..5e4fc14db9 100644
+--- salt/utils/zeromq.py
++++ salt/utils/zeromq.py
+@@ -4,7 +4,6 @@ ZMQ-specific functions
+ 
+ import logging
+ 
+-from salt._compat import ipaddress
+ from salt.exceptions import SaltSystemExit
+ 
+ log = logging.getLogger(__name__)
+@@ -43,15 +42,3 @@ def check_ipc_path_max_len(uri):
+             "path or switch to TCP; in the configuration file, "
+             'set "ipc_mode: tcp".'.format(uri, ipc_path_max_len)
+         )
+-
+-
+-def ip_bracket(addr):
+-    """
+-    Ensure IP addresses are URI-compatible - specifically, add brackets
+-    around IPv6 literals if they are not already present.
+-    """
+-    addr = str(addr)
+-    addr = addr.lstrip("[")
+-    addr = addr.rstrip("]")
+-    addr = ipaddress.ip_address(addr)
+-    return ("[{}]" if addr.version == 6 else "{}").format(addr)
+diff --git salt/wheel/__init__.py salt/wheel/__init__.py
+index 057fefd574..f22a02e356 100644
+--- salt/wheel/__init__.py
++++ salt/wheel/__init__.py
+@@ -9,7 +9,7 @@ import salt.config
+ import salt.loader
+ import salt.transport.client
+ import salt.utils.error
+-import salt.utils.zeromq
++import salt.utils.network
+ 
+ 
+ class WheelClient(
+@@ -67,8 +67,10 @@ class WheelClient(
+         interface = self.opts["interface"]
+         if interface == "0.0.0.0":
+             interface = "127.0.0.1"
++        if interface == "::":
++            interface = "::1"
+         master_uri = "tcp://{}:{}".format(
+-            salt.utils.zeromq.ip_bracket(interface),
++            salt.utils.network.ip_bracket(interface),
+             str(self.opts["ret_port"]),
+         )
+         with salt.transport.client.ReqChannel.factory(

@@ -1,0 +1,48 @@
+upstream agave2_upstream {
+	server agaveroot01g.agave.yandex.net max_fails=1 fail_timeout=10s;
+	server agaveroot01d.agave.yandex.net backup;
+}
+
+upstream agave2_api_upstream {
+	server agaveroot01g.agave.yandex.net max_fails=1 fail_timeout=10s;
+	server agaveroot01d.agave.yandex.net max_fails=1 fail_timeout=10s;
+}
+
+server {
+        include listen;
+        include listen_ssl;
+
+	server_name agave2;
+	access_log /var/log/nginx/agave2.access.log main;
+
+	location / {
+		rewrite ^(.*) $scheme://agave2.yandex-team.ru$1 permanent;
+	}
+}
+
+
+server {
+        include listen;
+        include listen_ssl;
+
+	server_name agave2.yandex-team.ru agave2.*;
+	access_log /var/log/nginx/agave2.access.log main;
+
+	proxy_connect_timeout 5s;
+	proxy_next_upstream error timeout invalid_header;
+
+	if ($scheme = https) {
+		set $SSL  on;
+	}
+	proxy_set_header Host      $host;
+	proxy_set_header X-Real-IP $remote_addr;
+	proxy_set_header X-HTTPS   $SSL;
+
+	location / {
+		proxy_pass http://agave2_upstream;
+	}
+
+	location /api {
+		proxy_pass http://agave2_api_upstream;
+	}
+}

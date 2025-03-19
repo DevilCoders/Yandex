@@ -1,0 +1,152 @@
+#! /usr/bin/python
+# coding: utf8
+"""
+Mysql slow query marker
+"""
+import logging
+import argparse
+import sys
+import subprocess
+import socket
+import json
+import re
+import requests
+import kazoo.exceptions
+from mysql_configurator import load_config, ZK, MySQL
+
+
+class CLI: #  pylint: disable=old-style-class
+    """
+    CLI main class
+    """
+    def __init__(self):
+        parser = argparse.ArgumentParser(description='Work with slow queries')
+        parser.add_argument('action', help='the action to be taken',
+                            choices=['add', 'remove', 'list', 'tickets'])
+        parser.add_argument('query_id', help='the query id as shown in the monitoring', nargs='?')
+        parser.add_argument('ticket_id', help='the startrek ticket for the fix', nargs='?')
+        self.args = parser.parse_args()
+
+        self.conf = load_config()
+        self.log = logging.getLogger(self.__class__.__name__)
+
+        # Connect to zookeeper
+        self.zook_url = self.conf.monitoring.slowlog.ignored_key.format(
+            group=self.conf.group_name
+        )
+        self.zook = ZK(self.conf.zookeeper)
+        self.zook.ensure_path(self.zook_url)
+
+        # Process arguments
+        if self.args.action == 'list':
+            self.act_list()
+        elif self.args.action == 'add':
+            if not self.args.query_id or not self.args.ticket_id:
+                raise RuntimeError('Need a query id and a ticket id to add')
+            self.act_add(self.args.query_id, self.args.ticket_id)
+            self.act_list()
+        elif self.args.action == 'remove':
+            self.act_remove()
+            self.act_list()
+        elif self.args.action == 'tickets':
+            self.act_tickets()
+        else:
+            raise RuntimeError('Unknown action: {}'.format(self.args.action))
+
+    def _process_slow(self, query_id, digest):
+        ''' Generates a new ticket and a downtime for the slow query '''
+        self.log.debug('Generating a ticket for query %s', query_id)
+        data = {
+            'queue': self.conf.monitoring.slowlog.queue,
+            'summary': 'Медленный запрос {}'.format(query_id),
+            'description':
+                'На сервере {} появился новый медленный запрос.\n\n%%\n{}\n%%\n'.format(
+                    socket.gethostname(),
+                    digest
+                )
+        }
+        headers = {
+            'Content-type': 'application/json',
+            'Authorization': 'OAuth ' + self.conf.monitoring.slowlog.token
+        }
+        res = requests.post('https://st-api.yandex-team.ru/v2/issues',
+                            data=json.dumps(data),
+                            headers=headers)
+        if res.status_code != 201:
+            self.log.fatal('Got error %s while creating a ticket: %s', res.status_code, res.text)
+            sys.exit(-1)
+
+        ticket_id = res.json()['key']
+        self.log.debug('Created ticket %s, adding the muter', ticket_id)
+        self.act_add(query_id, str(ticket_id))
+
+
+    def act_tickets(self):
+        ''' Run on tickets create '''
+
+        # find slow queries
+        res = requests.get('http://localhost:4417/mon/slow_queries')
+        if res.status_code != 200:
+            raise RuntimeError('Bad status code: {}'.format(res.status_code))
+        status, queries = res.text.split(';')
+        if status != '2':
+            self.log.info('No new slow queries found in monitoring')
+            return
+        self.log.info('Found new slow queries: %s', queries)
+
+        # get slow log file
+        conn = MySQL()
+        if not conn.connect():
+            self.log.fatal('Cannot connect to MySQL')
+            sys.exit(-1)
+        log_file = conn.query('SHOW GLOBAL VARIABLES', True)['slow_query_log_file']
+        self.log.debug('Slow query log file: %s', log_file)
+
+        # convert the digest to dict
+        digest_out = subprocess.check_output(['pt-query-digest', '--limit', '0', log_file])
+        query_id = ''
+        query = ''
+        digest = {}
+        for line in digest_out.split('\n'):
+            matches = re.match(r'^# Query \d+:.*ID (\S+)', line)
+            if matches:
+                digest[query_id] = query
+                query = ''
+                query_id = matches.group(1)
+            query += line + '\n'
+        digest[query_id] = query
+
+        # generate tickets
+        for query in queries.split(', '):
+            self._process_slow(query, digest[query])
+
+        self.log.info('Done')
+
+    def act_add(self, query_id, ticket_id):
+        ''' Run on mark add '''
+        qid = self.zook_url + '/' + query_id
+        self.zook.ensure_path(qid)
+        self.zook.set(qid, ticket_id)
+        self.log.info('You will almost certainly want to restart the monitoring daemon')
+
+    def act_remove(self):
+        ''' Run on mark remove '''
+        if not self.args.query_id:
+            raise RuntimeError('Need a query id to remove')
+        try:
+            self.zook.delete(self.zook_url + '/' + self.args.query_id)
+        except kazoo.exceptions.NoNodeError:
+            pass
+
+    def act_list(self):
+        ''' Run on mark list / add / remove '''
+        items = self.zook.get_children(self.zook_url)
+        self.log.info('Dumping the marked slow query list for %s:', self.conf.group_name)
+        for item in items:
+            child = self.zook.get(self.zook_url + '/' + item)
+            self.log.info('    %s: %s', item, child[0])
+        self.log.info('Done')
+
+
+if __name__ == '__main__':
+    CLI()

@@ -1,0 +1,112 @@
+credentials: !include ../credentials.yml
+variable: !include variables.yaml
+
+series:
+  snmp_poller.optical: &optical
+    min_interval: 60
+  comocutor_poller.netconf_transceiver: *optical
+  snmp_poller.transceiver: *optical
+  comocutor_poller.optical: *optical
+
+variables:
+  transceivers_fn: &transceivers_fn
+    temp: [ [ "resampler_linear", { "period": "{sample_period}", "max_delta": 1200 } ] ]
+    tx_power: [ [ "resampler_repeat", { "period": "{sample_period}", "max_delta": 1200 } ] ]
+    rx_power: [ [ "resampler_repeat", { "period": "{sample_period}", "max_delta": 1200 } ] ]
+    rx_power_threshold_low: [ [ "resampler_repeat", { "period": "{sample_period}", "max_delta": 1200 } ] ]
+    rx_power_threshold_high: [ [ "resampler_repeat", { "period": "{sample_period}", "max_delta": 1200 } ] ]
+    oper_status: [ [ "resampler_repeat", { "period": "{sample_period}", "max_delta": 1200 } ] ]
+    admin_status: [ [ "resampler_repeat", { "period": "{sample_period}", "max_delta": 1200 } ] ]
+  common_netconf_transceiver_params: &common_netconf_transceiver_params
+    poller: comocutor
+    interval: 600
+    instance_group: main netconf instance
+    series: comocutor_poller.netconf_transceiver
+    scattering_percent: 100
+  common_cli_transceiver_params: &common_cli_transceiver_params
+    poller: comocutor
+    interval: 600
+    instance_group: main comocutor instance
+    series: comocutor_poller.optical
+    scattering_percent: 100
+    logging: WARNING
+
+pollers:
+  comocutor transceiver huawei:
+    <<: *common_netconf_transceiver_params
+    poller params:
+      getter: get_vrp_transceivers
+      device: VrpDevice
+      <<: *comocutor_credentials
+      fn: *transceivers_fn
+    instance_group: main comocutor instance
+    filter: >-
+      {Huawei} and [опрос comocutor] and not (
+          ([опрос comocutor cloud] or {Huawei NE} or {interconnect} or {Huawei 2300}) or
+          ({$attr_10000_50216} and {Huawei 5300})
+      )
+    # на 5300 VRP V100R006C00SPC500 + V100R006SPH003 и Huawei 2300 под monitor нельзя выполнить dis transceiver verbose
+
+  comocutor netconf huawei transceiver:
+    <<: *common_netconf_transceiver_params
+    poller params:
+      getter: get_huawei_devm_transceiver
+      device: NetconfDevice
+      <<: *comocutor_credentials
+      fn: *transceivers_fn
+    instance_group: main netconf instance
+    filter: "rt%{Huawei NE} and [опрос comocutor netconf]"  # NOCDEV-3469
+
+  SNMP cisco transceiver:  # NOCDEV-5138
+    poller: snmp
+    poller version: 2
+    poller params:
+      skip_key_expr: {'phys_name': '^(?!.+(Module Temperature|Transmit Power|Receive Power) Sensor)',
+                      'phys_descr': '^(?!.+\sTransceiver\s.+)',
+                      'ifname': '(VLAN|SPAN|CPP|Nu).+'}
+      counters:
+        - {oid: cisco-entity.entPhysicalName, options: ["use_snmpbulkget"]}
+        - {oid: cisco-entity.entSensorValue, options: ["use_snmpget"]}
+        - {oid: cisco-entity.entSensorScale, options: ["use_snmpget"]}
+        - {oid: cisco-entity.entSensorType, options: ["use_snmpget"]}
+        - {oid: cisco-entity.entSensorPrecision, options: ["use_snmpget"]}
+        # для получения статус интерфейса
+        - {oid: ifmib.ifName, options: ["use_snmpbulkget"]}
+        - {oid: ifmib.ifAdminStatus, options: ["use_snmpget"]}
+        - {oid: ifmib.ifOperStatus, options: ["use_snmpget"]}
+        # для получения типа трансивера
+        - {oid: cisco-entity2.entPhysicalDescr, options: ["use_snmpbulkget"]}
+      post_fn: [recalc_cisco_transceiver]
+    filter: ["rt%({Cisco Catalyst} and not ({свитч для IPMI} or {агрегатор IPMI})) and [опрос SNMP]"]
+    series: snmp_poller.transceiver
+    interval: 300
+
+  cisco_optical:
+    <<: *common_cli_transceiver_params
+    poller params:
+      getter: get_cisco_optical
+      device: IosDevice
+      <<: *comocutor_credentials
+      fn: *transceivers_fn
+    filter: "({Nexus 5000} or {Nexus 6000} or {Nexus 9000} or {Nexus 7000}) and [опрос SNMP] and not {interconnect}"
+    interval: 300  # NOCDEV-5747
+
+  comocutor transceiver arista:
+    <<: *common_cli_transceiver_params
+    poller: comocutor
+    poller params:
+      getter: get_arista_transceivers
+      device: IosDevice
+      <<: *comocutor_credentials
+      fn: *transceivers_fn
+    filter: "{Arista} and [опрос SNMP] and not {$cn_s2197}"
+
+  comocutor transceiver linux: # NOCDEV-1508
+    <<: *common_cli_transceiver_params
+    poller: comocutor
+    poller params:
+      getter: get_linux_transceiver
+      device: PCDevice
+      <<: *comocutor_credentials_nocauth
+      fn: *transceivers_fn
+    filter: "rt%([Cumulus] or [Switchdev]) and [опрос comocutor]"

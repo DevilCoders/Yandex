@@ -1,0 +1,301 @@
+credentials: !include ../credentials.yml
+
+# NOCDEV-1091
+series:
+  snmp_poller.qos_total:
+    min_interval: 30
+
+  snmp_poller.qos_per_queue:
+    min_interval: 300
+
+  snmp_poller.qos_per_queue_arista:
+    min_interval: 30
+
+  snmp_poller.qos_per_queue_nokia:
+    min_interval: 30
+
+  snmp_poller.qos_per_queue_juniper:
+    min_interval: 30
+
+  snmp_poller.qos_per_queue_switchdev:
+    min_interval: 30
+
+pollers:
+  SNMP huawei total qos:
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters:
+        - {oid: hwXQoSBufferUsageSlotStatTable.hwXQosBufferUsageSlotStatTotalLength, options: ["use_snmpget"]}
+        - {oid: hwXQoSBufferUsageSlotStatTable.hwXQosBufferUsageSlotStatUsedLength, options: ["use_snmpbulkget"]}
+      post_fn: rearrange_partial_data
+      timeout: 10
+    filter: "{Huawei CE} and [опрос SNMP]"
+    series: qos_total
+    interval: 30
+
+  SNMP huawei per_queue:  # NOCDEV-1225
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters:
+        - {oid: ifmib.ifDescr, options: ["use_snmpbulkget"]}
+        - {oid: hwXQoSIfQueue.hwXQoSIfQueueIfIndex, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: hwXQoSIfQueue.hwXQoSIfQueuePassedPackets, options: ["use_snmpbulkget"]}
+        - {oid: hwXQoSIfQueue.hwXQoSIfQueuePassededBytes, options: ["use_snmpbulkget"]}
+        - {oid: hwXQoSIfQueue.hwXQoSIfQueueDiscardedPackets, options: ["use_snmpbulkget"]}
+        - {oid: hwXQoSIfQueue.hwXQoSIfQueueDiscardedBytes, options: ["use_snmpbulkget"]}
+      post_fn: recalc_tags_qos_per_queue
+      timeout: 15
+      max_interp: 1200
+    filter: "({Huawei CE} and not {Huawei 12800} and [опрос SNMP]) and not [qos через netconf]"
+    series: qos_per_queue
+    interval: 600
+    instances: 12
+    scattering_percent: 90
+
+  comocutor netconf huawei per_queue:  # NOCDEV-7866
+    poller: comocutor
+    poller params:
+      getter: get_huawei_qos
+      device: NetconfDevice
+      <<: *comocutor_credentials
+      fn:
+        "/queue_(passed|discarded)_packets/": [ [ speed, { resample: 300, max_time_delta: 1800 } ] ]
+        "/queue_(passed|discarded)_bytes/": [ [ speed, { factor: 8, resample: 300, max_time_delta: 1800 } ] ]
+    series: comocutor_poller.netconf_qos_per_queue
+    interval: 300
+    instance_group: main netconf instance
+    filter: "rt%[опрос comocutor netconf] and {Huawei} and [qos через netconf]"
+    scattering_percent: 90
+
+  SNMP huawei buffer usage:  # NOCDEV-1225
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters:
+        - {oid: ifmib.ifDescr, options: ["use_snmpbulkget"]}
+        - {oid: hwXQoSBufferUsageQueueStatTable.hwXQosBufferUsageQueueStatUsedLength, options: ["use_snmpbulkget"]}
+      post_fn: recalc_tags_qos_per_queue
+      timeout: 15
+      max_interp: 1200
+    filter: "{Huawei CE} and not {Huawei 12800} and [опрос SNMP]"
+    series: qos_per_queue
+    interval: 300
+    instances: 6
+    scattering_percent: 90
+
+  SNMP huawei per_queue_ce12800:      # NOCDEV-1225
+    # модульные свитчи очень долго отдают счетчики загрузки буфера. Потому для них его собирать не будем.
+    poller: snmp
+    poller version: 3
+    job_types: ["indexer", "data"]
+    poller params:
+      max_job_parallel: 40
+      indexer:
+        interval: 3600
+        timeout: 600
+      fn:
+        "/queue_(passed|discarded)_packets/": [ [ speed, { resample: 300, max_time_delta: 1800 } ] ]
+        "/queue_(passed|discarded)_bytes/": [ [ speed, { factor: 8, resample: 300, max_time_delta: 1800 } ] ]
+      counters:
+        - {oid: ifmib.ifDescr, options: ["use_snmpbulkget"]}
+        - {oid: hwXQoSIfQueue.hwXQoSIfQueueIfIndex, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: hwXQoSIfQueue.hwXQoSIfQueuePassedPackets, options: ["use_snmpget"]}
+        - {oid: hwXQoSIfQueue.hwXQoSIfQueuePassededBytes, options: ["use_snmpget"]}
+        - {oid: hwXQoSIfQueue.hwXQoSIfQueueDiscardedPackets, options: ["use_snmpget"]}
+        - {oid: hwXQoSIfQueue.hwXQoSIfQueueDiscardedBytes, options: ["use_snmpget"]}
+      post_fn: recalc_tags_qos_per_queue
+      timeout: 35
+      max_interp: 1800
+      deadline: 900
+    filter: "{Huawei CE} and {Huawei 12800} and [опрос SNMP] and not [qos через netconf]"
+    series: qos_per_queue
+    interval: 300
+    instances: 5
+
+  SNMP huawei per_queue_ne40e:  # NOCDEV-2017 NE40e cannot work with snmpbulk, show 0-counters
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters:
+        - {oid: ifmib.ifDescr, options: ["use_snmpbulkget"]}
+        - {oid: hwXQoSIfQueue.hwXQoSIfQueueIfIndex, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: hwXQoSIfQueue.hwXQoSIfQueuePassedPackets, options: ["use_snmpget"]}
+        - {oid: hwXQoSIfQueue.hwXQoSIfQueuePassededBytes, options: ["use_snmpget"]}
+        - {oid: hwXQoSIfQueue.hwXQoSIfQueueDiscardedPackets, options: ["use_snmpget"]}
+        - {oid: hwXQoSIfQueue.hwXQoSIfQueueDiscardedBytes, options: ["use_snmpget"]}
+      post_fn: recalc_tags_qos_per_queue
+      timeout: 15
+      max_interp: 1200
+    filter: "{Huawei NE40E} and [опрос SNMP] and not [qos через netconf]"
+    series: qos_per_queue
+    interval: 300
+    instances: 12
+    scattering_percent: 90
+
+  SNMP arista per_queue:
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters:
+        - {oid: ifmib.ifDescr, options: ["use_snmpbulkget"]}
+        - {oid: arista-queue.aristaEgressQueuePkts, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: arista-queue.aristaEgressQueueBytes, options: ["use_snmpbulkget"]}
+        - {oid: arista-queue.aristaEgressQueuePktsDropped, options: ["use_snmpbulkget"]}
+        - {oid: arista-queue.aristaEgressQueuePktsDroppedQFull, options: ["use_snmpbulkget"]}
+        - {oid: arista-queue.aristaEgressQueuePktsDroppedNoBuffer, options: ["use_snmpbulkget"]}
+        - {oid: arista-queue.aristaEgressQueueBytesDropped, options: ["use_snmpbulkget"]}
+      post_fn: [recalc_arista_queue, arista_to_common_qos_per_queue]
+      timeout: 15
+      max_interp: 1200
+    filter: "{Arista} and [опрос SNMP]"
+    series: snmp_poller.qos_per_queue_arista
+    interval: 60
+    instances: 2
+    scattering_percent: 50
+
+  SNMP Nokia queue netport: # NOCDEV-3956
+    poller: snmp
+    poller params:
+      counters:
+        - {oid: ifmib.ifName, options: ["use_snmpbulkget"]}
+        - {oid: TIMETRA-PORT-MIB-LAG.tmnxPortLagId, options: ["use_snmpbulkget"]}
+        - {oid: TIMETRA-PORT-MIB.tmnxPortNetEgressFwdInProfPkts, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-PORT-MIB.tmnxPortNetEgressFwdOutProfPkts, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-PORT-MIB.tmnxPortNetEgressFwdInProfOcts, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-PORT-MIB.tmnxPortNetEgressFwdOutProfOcts, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-PORT-MIB.tmnxPortNetEgressDroInProfPkts, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-PORT-MIB.tmnxPortNetEgressDroOutProfPkts, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-PORT-MIB.tmnxPortNetEgressDroInProfOcts, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-PORT-MIB.tmnxPortNetEgressDroOutProfOcts, options: ["use_snmpbulkget", "index_as_value"]}
+      post_fn: [recalc_nokia_queue, sum_nokia_in_out, nokia_to_common_qos_per_queue]
+    scattering_percent: 100
+    series: snmp_poller.qos_per_queue_nokia
+    filter: "{Nokia} and [опрос SNMP]"
+    interval: 30
+
+  SNMP Nokia queue sap: # NOCDEV-3956
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters:
+        - {oid: ifmib.ifName, options: ["use_snmpbulkget"]}
+        - {oid: TIMETRA-PORT-MIB-LAG.tmnxPortLagId, options: ["use_snmpbulkget"]}
+        - {oid: TIMETRA-SAP-MIB.sapEgrQosQueueStatsForwardedInProfPackets, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-SAP-MIB.sapEgrQosQueueStatsForwardedOutProfPackets, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-SAP-MIB.sapEgrQosQueueStatsDroppedInProfPackets, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-SAP-MIB.sapEgrQosQueueStatsDroppedOutProfPackets, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-SAP-MIB.sapEgrQosQueueStatsForwardedInProfOctets, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-SAP-MIB.sapEgrQosQueueStatsForwardedOutProfOctets, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-SAP-MIB.sapEgrQosQueueStatsDroppedInProfOctets, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-SAP-MIB.sapEgrQosQueueStatsDroppedOutProfOctets, options: ["use_snmpbulkget", "index_as_value"]}
+      post_fn: [recalc_nokia_queue_sap, sum_nokia_in_out, nokia_to_common_qos_per_queue]
+    scattering_percent: 100
+    series: snmp_poller.qos_per_queue_nokia
+    filter: "{Nokia} and [опрос SNMP]"
+    interval: 30
+
+  SNMP Nokia queue netport WRED: # NOCDEV-4486
+    poller: snmp
+    poller version: 2
+    poller params:
+      dups_ok: true
+      counters:
+        - {oid: ifmib.ifName, options: ["use_snmpbulkget"]}
+        - {oid: TIMETRA-PORT-MIB-LAG.tmnxPortLagId, options: ["use_snmpbulkget"]}
+        - {oid: TIMETRA-PORT-MIB.tmnxPortNetEgrQFwdInProfPkts, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-PORT-MIB.tmnxPortNetEgrQFwdOutProfPkts, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-PORT-MIB.tmnxPortNetEgrQFwdInProfOcts, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-PORT-MIB.tmnxPortNetEgrQFwdOutProfOcts, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-PORT-MIB.tmnxPortNetEgrQDroInProfPkts, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-PORT-MIB.tmnxPortNetEgrQDroOutProfPkts, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-PORT-MIB.tmnxPortNetEgrQDroInProfOcts, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-PORT-MIB.tmnxPortNetEgrQDroOutProfOcts, options: ["use_snmpbulkget", "index_as_value"]}
+      post_fn: [[nokia_special_filter, {"act": "include3"}], sum_nokia_in_out, nokia_to_common_qos_per_queue]
+    scattering_percent: 100
+    series: snmp_poller.qos_per_queue_nokia
+    filter: "{Nokia} and [опрос SNMP]"
+    interval: 30
+
+  SNMP Nokia queue sap WRED: # NOCDEV-4486
+    poller: snmp
+    poller version: 2
+    poller params:
+      dups_ok: true
+      counters:
+        - {oid: ifmib.ifName, options: ["use_snmpbulkget"]}
+        - {oid: TIMETRA-PORT-MIB-LAG.tmnxPortLagId, options: ["use_snmpbulkget"]}
+        - {oid: TIMETRA-PORT-MIB.tmnxPortEgrQosQStatFwdInProfPkts, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-PORT-MIB.tmnxPortEgrQosQStatFwdOutProfPkts, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-PORT-MIB.tmnxPortEgrQosQStatDpdInProfPkts, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-PORT-MIB.tmnxPortEgrQosQStatDpdOutProfPkts, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-PORT-MIB.tmnxPortEgrQosQStatFwdInProfOcts, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-PORT-MIB.tmnxPortEgrQosQStatFwdOutProfOcts, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-PORT-MIB.tmnxPortEgrQosQStatDpdInProfOcts, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: TIMETRA-PORT-MIB.tmnxPortEgrQosQStatDpdOutProfOcts, options: ["use_snmpbulkget", "index_as_value"]}
+      post_fn: [[nokia_special_filter, {"act": "include3"}], sum_nokia_in_out, nokia_to_common_qos_per_queue]
+    scattering_percent: 100
+    series: snmp_poller.qos_per_queue_nokia
+    filter: "{Nokia} and [опрос SNMP]"
+    interval: 30
+
+  SNMP juniper per_queue: # NOCDEV-3984
+    poller: snmp
+    poller params:
+      counters:
+        - {oid: ifmib.ifDescr, options: ["use_snmpbulkget"]}
+        - {oid: JUNIPER-COS-MIB.jnxCosQstatTxedPkts, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: JUNIPER-COS-MIB.jnxCosQstatTxedBytes, options: ["use_snmpget"]}
+        - {oid: JUNIPER-COS-MIB.jnxCosQstatTotalDropPkts, options: ["use_snmpget"]}
+        - {oid: JUNIPER-COS-MIB.jnxCosQstatTotalDropBytes, options: ["use_snmpget"]}
+        - {oid: JUNIPER-COS-MIB.jnxCosQstatDepthCurrent, options: ["use_snmpget"]}  # NOCDEV-4301
+      post_fn: [recalc_queue_simple, juniper_to_common_qos_per_queue]
+      timeout: 15
+      max_interp: 1200
+    filter: "({Juniper} and not {Juniper PTX}) and [опрос SNMP]"
+    series: snmp_poller.qos_per_queue_juniper
+    interval: 60
+    instances: 3
+    scattering_percent: 100
+
+  SNMP juniper PTX per_queue: # NOCDEV-7477
+    poller: snmp
+    poller version: 3
+    poller params:
+      max_job_parallel: 10
+      counters:
+        - {oid: ifmib.ifDescr, options: ["use_snmpbulkget"]}
+        - {oid: JUNIPER-COS-MIB.jnxCosQstatTxedPkts, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: JUNIPER-COS-MIB.jnxCosQstatTxedBytes, options: ["use_snmpget"]}
+        - {oid: JUNIPER-COS-MIB.jnxCosQstatTailDropPkts, options: ["use_snmpget"]}
+        - {oid: JUNIPER-COS-MIB.jnxCosQstatTotalRedDropPkts, options: ["use_snmpget"]}
+        - {oid: JUNIPER-COS-MIB.jnxCosQstatTotalRedDropBytes, options: ["use_snmpget"]}
+      fn:
+        "/.*_packets/": [ [ speed, { resample: 30, max_time_delta: 900 } ] ]
+        "/.*_bytes/": [ [ speed, { factor: 8, resample: 30, max_time_delta: 900 } ] ]
+      post_fn:
+        - [ filter_data_value_keys, { values_filter: [ red_drop_packets, discarded_bytes, tail_drop_packets, passed_bytes, passed_packets ] } ]
+        - recalc_queue_simple
+        - [ sum_values, { target: discarded_packets, sources: [ red_drop_packets, tail_drop_packets ] } ]
+        - juniper_to_common_qos_per_queue
+    filter: "{Juniper PTX} and [опрос SNMP]"
+    series: snmp_poller.qos_per_queue_juniper
+    interval: 60
+    instances: 2
+    scattering_percent: 100
+
+  SNMP switchdev per_queue: # NOCDEV-5250
+    poller: snmp
+    poller params:
+      counters:
+        - {oid: ifmib.ifDescr, options: ["use_snmpbulkget"]}
+        - {oid: EthtoolSNMPD.EthtoolTcNoBufferDiscardUcTc, options: ["use_snmpbulkget", "index_as_value"]}
+        - {oid: EthtoolSNMPD.EthtoolTcTransmitQueueTc, options: ["use_snmpbulkget", "index_as_value"]}
+      post_fn: [recalc_queue_simple, switchdev_to_common_qos_per_queue]
+      timeout: 5
+    filter: "rt%{конюшня NOC} and [опрос SNMP] and [Switchdev]"
+    series: snmp_poller.qos_per_queue_switchdev
+    interval: 60
+    instances: 3
+    scattering_percent: 100

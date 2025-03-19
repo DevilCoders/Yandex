@@ -1,0 +1,2 @@
+transmission-cli:
+  pkg.installed

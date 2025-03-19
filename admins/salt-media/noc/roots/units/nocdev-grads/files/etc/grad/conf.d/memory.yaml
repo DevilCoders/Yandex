@@ -1,0 +1,78 @@
+credentials: !include ../credentials.yml
+variable: !include variables.yaml
+
+series:
+  snmp_poller.memory: &memory
+    min_interval: 300
+  comocutor_poller.memory: *memory
+
+pollers:
+  SNMP aruba memory:
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters:
+        - {oid: aruba-ap.aiAPName, options: ["use_snmpbulkget"]}
+        - {oid: aruba-ap.aiAPMemoryFree, options: ["use_snmpbulkget"]}
+        - {oid: aruba-ap.aiAPTotalMemory, options: ["use_snmpbulkget"]}
+      post_fn: [[rearrange_partial_data, {values_filter: [total, free]}],
+                [calc_fraction, {dividend_sensor: free, divider_sensor: total, new_sensor: free_percent, percent: true}],
+                [drop_data, {drop_keys: [ap_name]}]]
+      index_to_seq: True
+      skip_key_expr: {ap_name: '^(?!{var_host}$)'}
+    filter: "{Aruba} and [опрос SNMP]"
+    series: memory
+    interval: 300
+
+  SNMP aruba wlc memory:
+    poller: snmp
+    poller version: 3
+    poller params:
+      counters:
+        - { oid: WLSX-SYSTEMEXT-MIB.sysExtMemorySize, options: ["use_snmpbulkget"] }
+#        - { oid: WLSX-SYSTEMEXT-MIB.sysExtMemoryFree, options: ["use_snmpbulkget"] }
+        - { oid: WLSX-SYSTEMEXT-MIB.sysExtMemoryUsed, options: ["use_snmpbulkget"] }
+      post_fn: [ [ rearrange_partial_data, { values_filter: [ total, used ] } ],
+        [ calc_fraction, { dividend_sensor: used, divider_sensor: total, new_sensor: free_percent, percent: true, percent_invert: true } ],
+        [ drop_data, { drop_values: [ used ] } ]
+      ]
+    filter: "rt%{Aruba WiFi controller} and [работает SNMP]"
+    series: memory
+    interval: 300
+
+  SNMP Nokia mem:
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters:
+        - {oid: TIMETRA-SYSTEM-MIB.sgiKbMemoryUsed, options: ["use_snmpbulkget", "add_index"]}
+        - {oid: TIMETRA-SYSTEM-MIB.sgiKbMemoryAvailable, options: ["use_snmpbulkget", "add_index"]}
+      post_fn: [ [ rearrange_partial_data, { values_filter: [ total, used ] } ],
+                 [ calc_fraction, { dividend_sensor: used, divider_sensor: total, new_sensor: free_percent, percent: true, percent_invert: true } ],
+                 [ drop_data, { drop_values: [ used ] } ],
+      ]
+    filter: "{Nokia} and [опрос SNMP]"
+    series: memory
+    interval: 30
+
+  comocutor netconf juniper mem:  # NOCDEV-2821
+    poller: comocutor
+    poller params:
+      getter: get_netconf_juniper_ram_noc
+      device: NetconfDevice
+      <<: *comocutor_credentials
+    series: comocutor_poller.memory
+    interval: 30
+    instance_group: main netconf instance
+    filter: *netconf_juniper_filter
+
+  comocutor cisco xr mem:
+    poller: comocutor
+    poller params:
+      getter: get_xr_mem
+      device: NetconfDevice
+      <<: *comocutor_credentials
+    series: comocutor_poller.memory
+    interval: 30
+    instance_group: main netconf instance
+    filter: "rt%{Cisco XRv} and [опрос comocutor]"

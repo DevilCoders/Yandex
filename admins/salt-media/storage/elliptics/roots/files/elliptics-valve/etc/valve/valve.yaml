@@ -1,0 +1,62 @@
+{% set zk_flock_hosts = salt['conductor']['groups2hosts']('ape-zk-discovery')  | map('regex_replace', '$', ':2181') %}
+logging:
+  level: info
+  sinks:
+    - "logrotate:///var/log/valve/valve.log"
+
+zk: &zk
+  prefix: /valve/run
+  hosts: {{ zk_flock_hosts | list }}
+
+discovery:
+  zk: *zk
+  weight: {{salt['cmd.shell']('cat /proc/cpuinfo | grep cores | head -n 1 | grep -o "[0-9]*" | awk \'{print $1*5}\'')}}
+
+election:
+  zk: *zk
+
+tls: &tls
+  key_path: /etc/nginx/ssl/key.valve.yandex.net.pem
+  cert_path: /etc/nginx/ssl/cert.valve.yandex.net.pem
+
+server:
+  grpc:
+    addr: ":7735"
+    tls: *tls
+  http:
+    addr: ":7736"
+
+worker:
+  mode: default
+  hbf_url: "http://validator.hbf.yandex.net"
+  hbf_max_retries: 3
+  hbf_timeout: 33s
+  job_batch_size: 300
+  concurrency: {{salt['cmd.shell']('cat /proc/cpuinfo | grep cores | head -n 1 | grep -o "[0-9]*" | awk \'{print $1*3}\'')}}
+  rack_tables:
+    url: https://firewall.yandex-team.ru
+    oauth: {{ pillar['valve_secrets']['oauth'] }}
+  topka:
+    url: https://firewall.yandex-team.ru
+    oauth: {{ pillar['valve_secrets']['oauth'] }}
+  filter:
+    type: any
+    filters:
+      - type: regex
+        expr: ^.*storage.*$
+  fw_types: ["hbf"]
+
+storage:
+  pg_conn_string: "
+  host=c-mdbl13ive2okbaqcjkpd.rw.db.yandex.net port=6432
+  dbname=valve
+  user=valve
+  password={{ pillar['valve_secrets']['pg_password'] }}
+  sslmode=verify-full
+"
+monitoring:
+  port: 14080
+  authorization:
+    type: basic
+    passwords:
+      {{ pillar['valve_secrets']['mon_password'] }}

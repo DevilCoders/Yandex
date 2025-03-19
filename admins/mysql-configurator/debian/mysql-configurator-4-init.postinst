@@ -1,0 +1,55 @@
+#!/bin/bash
+
+set -e
+
+# colors
+NC='\033[0m'
+CYAN='\033[0;36m'
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+
+mkdir -p /etc/init  # hardy crutch
+# check if it's not galera and do nothing
+/usr/sbin/mysqld -V 2>/dev/null | grep -qPi "(wsrep|xtradb|galera)" && exit 0
+
+# check for old mysql-configurator divert
+#dpkg-divert --test --quiet --package mysql-configurator-4-init --add --rename --divert /etc/init.d/mysql.original /etc/init.d/mysql 2>&1 1>/dev/null || true
+DIVBYPKG=`dpkg-divert --list /etc/init.d/mysql | awk '{print $NF}'`
+if [[ "$DIVBYPKG" != "" && "$DIVBYPKG" != "mysql-configurator-4-init" ]]
+then
+    # remove old mysql-configurator divert (got from mysql-configurator.postrm)
+    echo -e "$CYANReplacing old mysql-configurator divert...$NC"
+    mv /etc/init.d/mysql /etc/init.d/mysql.mysql-configurator
+    test -e /etc/init/mysql.conf && mv /etc/init/mysql.conf /etc/init/mysql.conf.mysql-configurator || true
+    dpkg-divert --quiet --package mysql-configurator --rename --divert /etc/init.d/mysql.original --remove /etc/init.d/mysql
+    dpkg-divert --quiet --package mysql-configurator --rename --divert /etc/init/mysql.conf.disabled --remove /etc/init/mysql.conf
+    echo -e "$CYANOld divert replaced to /etc/init.d/mysql.mysql-configurator$NC"
+fi
+
+echo "Divert original mysql init..."
+dpkg-divert --quiet --package mysql-configurator-4-init --add --rename --divert /etc/init.d/mysql.original /etc/init.d/mysql
+dpkg-divert --quiet --package mysql-configurator-4-init --add --rename --divert /etc/init/mysql.conf.disabled /etc/init/mysql.conf
+echo "Done."
+
+echo -e "${RED}ACHTUNG! Mysql configured with mysqld_safe as a watchdog! Please check it and restart manually!${NC}"
+
+# create symlink for ubic init(original mysql init diverted by preinst)
+echo "Creating init symlink..."
+ln -sf /usr/share/mysql-configurator-4-init/mysql /etc/init.d/mysql
+echo "Init symlink was created."
+
+# check mysqld_safe pid: next steps should be executed only if it is first time configure
+MYSQLD_SAFE_PID=`pgrep -f mysqld_safe || true`
+
+echo "Run update-rc.d..."
+update-rc.d mysql defaults || true
+
+if [[ $MYSQLD_SAFE_PID != "" ]]
+then
+    echo "Configured mysqld with mysqld_safe found. This mysql server has already been configured, restart skipped."
+    exit 0
+else
+    echo "${RED}ACHTUNG! Configured mysql with another watchdog then mysqld_safe. Init script replaced, please restart MySQL manually.${NC}"
+fi
+
+exit 0

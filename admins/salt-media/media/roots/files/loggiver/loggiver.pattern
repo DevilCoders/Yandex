@@ -1,0 +1,52 @@
+###### resizer-front
+####################################
+################### nginx/access.log 
+####################################
+resizer_emptygif=awk '{ if ($(NF-4) !~ /200/ && $(NF-15) ~ /empty.gif/) x++;}END{print "resizer_emptygif " x}'
+resizer_400_emptygif=awk '{ if ($(NF-4) ~ /400/ && $(NF-15) ~ /empty.gif/) x++;}END{print "resizer_400_emptygif " x}'
+resizer_403_emptygif=awk '{ if ($(NF-4) ~ /403/ && $(NF-15) ~ /empty.gif/) x++;}END{print "resizer_403_emptygif " x}'
+resizer_404_emptygif=awk '{ if ($(NF-4) ~ /404/ && $(NF-15) ~ /empty.gif/) x++;}END{print "resizer_404_emptygif " x}'
+resizer_503_emptygif=awk '{ if ($(NF-4) ~ /503/ && $(NF-15) ~ /empty.gif/) x++;}END{print "resizer_503_emptygif " x}'
+resizer_504_emptygif=awk '{ if ($(NF-4) ~ /504/ && $(NF-15) ~ /empty.gif/) x++;}END{print "resizer_504_emptygif " x}'
+resizer_disk_status=awk '{ if ($3 ~ /resize/ && $6 ~ /storage.mail.yandex.net/) x[$8]++;}END{for(i in x)print x[i],"http_"i}' |awk '{print $2,$1}'
+resizer_disk_timings=awk '{ if ($3 ~ /resize/ && $6 ~ /storage.mail.yandex.net/ && $8<400) print}'| cut -d '"' -f 16 | grep -v '-' |xargs |sed 's/^/resizer_disk_timings /g'
+
+
+###### resizer-front
+####################################
+################### fastcgi2/fastcgi-resizer.log
+####################################
+resizer_disk_cache_status=fgrep "storage.mail.yandex.net" | grep "from cache" |awk '{print $6,$10}' | grep -v 'thumbnail description="MISS"' | sed 's/ description="//g;s/";//g;s/thumbnail//g;s/origMISS/MISS/g;s/origFAILED/FAILED/g' | awk '{x[$0]++;}END{for(i in x)print x[i],i}'
+resizer_fastcgi2_py=/usr/local/bin/fastcgi2-avatars-mds.py --resizer
+
+
+###### resizer-front
+####################################
+################### nginx/tskv.log
+####################################
+resizer_nginx_status=/usr/local/bin/mds_nginx_tskv.py  --resizer --output grng --check_https
+
+
+###### resizer-intra-front
+####################################
+################### nginx/access.log 
+####################################
+resizer_status=awk '{ if ($3 ~ /resize.yandex.net/ && $6 !~ /^\/ping/) x[$8]++;}END{for(i in x)print x[i],i}'
+resizer_timings=awk '{ if ($3 ~ /resize.yandex.net/ && $6 !~ /^\/ping/ && $8<400) print}'| cut -d '"' -f 16 | grep -v '-'
+resizer_intra_ssl=awk '{ if ($3 ~ /resize.yandex-team.ru/ && $6 !~ /^\/ping/) print $0}' | cut -d\" -f13 |awk '{x[$2]++;}END{for(i in x)print x[i],i,"resizer"}'
+
+
+###### resizer-intra-front
+####################################
+################### fastcgi2/fastcgi-resizer.log 
+####################################
+resizer_cache_status=fgrep "from cache" |awk '{print $6,$10}' | grep -v 'thumbnail description="MISS"' | sed 's/ description="//g;s/";//g;s/thumbnail//g;s/origMISS/MISS/g;s/origFAILED/FAILED/g' | awk '{x[$0]++;}END{for(i in x)print x[i],i}'
+
+
+###### resizer-front, resizer-intra-front
+####################################
+################### fastcgi2/fastcgi-resizer.log
+####################################
+resizer_stage_time=awk --exec /etc/yandex/loggiver/pattern.d/resizer_parse.awk
+resizer_sodomy=grep "run old-resize" | wc -l | sed 's/$/ 200/g'
+

@@ -1,0 +1,113 @@
+---
+{% set is_prod = salt['grains.get']('yandex-environment') in ['production', 'prestable'] %}
+{% if not stat.get("proto", {}) in ['pq'] %}
+ident: {{ stat.get("ident", salt["grains.get"]("conductor:project")) }}
+{% endif %}
+{%- if 'check' in stat %}
+{{ {'check': stat.check} | yaml(False) }}
+{%- endif %}
+network:
+  {%- if "proto" in stat %}
+  proto: {{ stat.proto }}
+  {%- else %} {# default proto now rt, but push server lite uses tx, overwrite default #}
+  proto: http
+  {%- endif %}
+  {%- if "hosts" in stat %}
+  stat-port: {{ stat.get("stat-port", 7666) }}
+  data-port: {{ stat.get("data-port", 7665) }}
+  hosts:
+    {%- for host in stat.hosts %}
+    - {{ host }}{% endfor %}
+  {%- else %}
+  master-addr: {{ stat.fqdn }}
+  {%- if "port" in stat and stat.port != "default" %}
+  master-port: {{ stat.port }}{% endif %}
+  {%- if "data-port" in stat %}
+  data-port: {{ stat.get("data-port") }}{% endif %}
+  {%- endif %}
+  {%- if "timeout" in stat %}
+  timeout: {{ stat.timeout }}{% endif %}
+  {%- if stat.get("ssl") %}
+  ssl:
+    enabled: {% if stat.ssl is mapping %}{{ stat.ssl.get("enabled", 1) }}{% else %}1{% endif %}
+    ca-file: /etc/yandex/statbox-push-client/allCAs.pem{% endif %}
+  {%- if "transport" in stat %}
+  transport: {{ stat.transport }}{% endif %}
+  {%- if "streams" in stat %}
+  streams: {{ stat.streams }}{% endif %}
+  {% if is_prod %}
+  {%- if "tvm_client_id_production" in stat %}
+  tvm-client-id: {{ stat.tvm_client_id_production }}{% endif %}
+  {% else %}
+  {%- if "tvm_client_id_testing" in stat %}
+  tvm-client-id: {{ stat.tvm_client_id_testing }}{% endif %}
+  {% endif %}
+  {%- if "tvm_server_id" in stat %}
+  tvm-server-id: {{ stat.tvm_server_id }}{% endif %}
+  {%- if "tvm_secret_file" in stat %}
+  tvm-secret-file: /etc/yandex/statbox-push-client/{{ stat.tvm_secret_file }}{% endif %}
+
+{% if not stat.get("proto", {}) in ['pq'] %}
+{%- if stat.get("sszb", True) %}
+sszb:
+  {%- if stat.get("sszb", True) is mapping %}
+  {%- for key,value in stat.sszb.items() %}
+  {{ key }}: {{ value }}{% endfor %}
+  {%- else %}
+  yes_i_know_what_i_am_doing: 1
+  force_reset_offset_on_truncate: 1
+  {%- endif %}
+{%- endif %}
+{% endif %}
+
+files:
+{%- for log in logs %}
+  - name: {% if "name" in log %}{{ log.name }}{% else %}/var/log/{{ log.file }}{% endif %}
+  {%- set fakename = log.get("fakename", stat.get("server_lite", True)) %}
+  {%- if fakename %}{% if fakename is string %}
+    fakename: {{ fakename }}
+  {%- else %}
+    fakename: /{{ group }}/{{ host }}/{{ log.file }}
+  {%- endif %}{% endif %}
+  {%- if "regexp" in log %}
+    regexp: {{ log.regexp|replace("r'", "'", 1) }}{% endif %}
+  {%- if "pipe" in log %}
+    pipe: {{ log.pipe|replace("r'", "'", 1) }}{% endif %}
+  {%- set _mxchs=log.get("max_chunk_size", stat.get("max_chunk_size")) %}{% if _mxchs %}
+    max-chunk-size: {{ _mxchs }}{% endif %}
+  {%- set _snddly=log.get("send_delay", stat.get("send_delay")) %}{% if _snddly %}
+    send-delay: {{ _snddly }}{% endif %}
+  {%- if "sid" in log %}
+    sid: {{ log.sid }}{% endif %}
+  {%- if "migrate" in log %}
+    migrate: {{ log.migrate }}{% endif %}
+  {%- if "log_type" in log %}
+    log-type: {{ log.log_type }}{% endif %}
+  {%- if "compression-in" in log %}
+    compression-in: {{ log['compression-in'] }}{% endif %}
+  {%- if "topic" in log %}
+    topic: {{ log.topic }}{% endif %}
+  {%- if "int_dir" in log %}
+    int_dir: {{ log.int_dir }}{% endif %}
+  {%- if "max_jobs" in log %}
+    max_jobs: {{ log.max_jobs }}{% endif %}
+  {%- if "compress" in log %}
+    compress: {{ log['compress'] }}{% endif %}
+
+{%- endfor %}
+
+logger:
+  {%- if "mode" in stat.get("logger", {}) %}
+  mode: {{ stat.logger["mode"] }}{% endif %}
+  file: /var/log/statbox/{{ stat.name }}.log
+  {%- if "timeformat" in stat.get("logger", {}) %}
+  timeformat: {{ stat.logger.timeformat }}{% endif %}
+  {%- if "level" in stat.get("logger", {}) %}
+  level: {{ stat.logger.level }}{% endif %}
+  {%- if "remote" in stat.get("logger", {}) %}
+  remote: {{ stat.logger.remote }}{% endif %}
+  {%- if "telemetry_interval" in stat.get("logger", {}) %}
+  telemetry-interval: {{ stat.logger.telemetry_interval }}{% endif %}
+
+watcher:
+  state: /var/lib/{{ stat.name }}

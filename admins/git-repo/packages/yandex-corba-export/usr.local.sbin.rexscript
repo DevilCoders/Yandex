@@ -1,0 +1,50 @@
+#! /bin/sh
+
+xscriptname=$1
+
+if [ "x$xscriptname" = 'xrestart' ]; then
+  xscriptname='all'
+fi
+
+if [ "x$xscriptname" = 'x' ]; then
+  xscriptname='all'
+fi
+
+#/usr/sbin/iptruler 80 down
+#/usr/sbin/iptruler 443 down
+echo "Cloacking from all balancers now:"
+/sbin/iptables -I INPUT -s 10.0.0.0/8 -d 10.0.0.0/8 -p tcp -m tcp -j REJECT --reject-with icmp-port-unreachable && echo "done" || echo "failed"
+
+#echo -n "Sleeping: "
+#for i in {30..1}; do echo -n "${i}... "; sleep 1; done; echo 0
+
+echo -n "Waiting until balancer will go away:"
+myip=$(host -t A $(hostname -f) | awk '{print $NF}')
+for i in {60..1}; do 
+    sleep 0.900
+    nginx_rps=$(timetail -n 3 /var/log/nginx/access.log | egrep -v "(127.0.0.1|::1|$myip)" | wc -l)
+    lighttpd_rps=$(timetail -n 3 /var/log/lighttpd-x5/access.log | egrep -v "(127.0.0.1|::1|$myip)" | wc -l)
+    echo "$i - nginx: ${nginx_rps}; lighttpd: ${lighttpd_rps}"
+    if [[ ${nginx_rps} == "0" ]] && [[ ${lighttpd_rps} == "0" ]]; then
+	break
+    fi
+done
+
+/etc/init.d/xscript-multiple restart $xscriptname
+ERR=$?
+
+if [[ ${xscriptname} == "all" ]]; then
+/etc/init.d/lighttpd-x5 restart;
+sleep 1;
+/etc/init.d/nginx restart;
+sleep 2;
+fi
+
+sleep 2
+
+#/usr/sbin/iptruler 80 up
+#/usr/sbin/iptruler 443 up
+echo -n "Uncloacking to all balancers:"
+/sbin/iptables -D INPUT -s 10.0.0.0/8 -d 10.0.0.0/8 -p tcp -m tcp -j REJECT --reject-with icmp-port-unreachable && echo "done" || echo "failed"
+
+exit $ERR

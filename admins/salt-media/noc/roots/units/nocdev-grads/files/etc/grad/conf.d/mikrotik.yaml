@@ -1,0 +1,106 @@
+variable: !include variables.yaml
+variables:
+  network key ifname: &network_key_ifname
+    - ifmib.ifName
+    - ifmib.ifAlias
+    - {oid: ifmib.ifHighSpeed, options: ["use_snmpget"]}
+    - {oid: ifmib.ifHCInOctets, options: ["use_snmpget"]}
+    - {oid: ifmib.ifHCOutOctets, options: ["use_snmpget"]}
+    - {oid: ifmib.ifHCInUcastPkts, options: ["use_snmpget"]}
+    - {oid: ifmib.ifHCOutUcastPkts, options: ["use_snmpget"]}
+    - {oid: ifmib.ifInNUcastPkts, options: ["use_snmpget"]}
+    - {oid: ifmib.ifOutNUcastPkts, options: ["use_snmpget"]}
+    - {oid: ifmib.ifInDiscards, options: ["use_snmpget"]}
+    - {oid: ifmib.ifOutDiscards, options: ["use_snmpget"]}
+    - {oid: ifmib.ifInErrors, options: ["use_snmpget"]}
+    - {oid: ifmib.ifOutErrors, options: ["use_snmpget"]}
+    - {oid: ifmib.ifOperStatus, options: ["use_snmpget"]}
+    - {oid: ifmib.ifAdminStatus, options: ["use_snmpget"]}
+    - {oid: ifmib.ifLastChange, options: ["use_snmpget"]}
+    - {oid: ifmib.ifInMulticastPkts, options: ["use_snmpget"]}
+    - {oid: ifmib.ifOutMulticastPkts, options: ["use_snmpget"]}
+    - {oid: ifmib.ifInBroadcastPkts, options: ["use_snmpget"]}
+    - {oid: ifmib.ifOutBroadcastPkts, options: ["use_snmpget"]}
+
+series:
+  snmp_poller.mtxrWl:
+    min_interval: 60
+
+  snmp_poller.mtxrHealth:
+    min_interval: 60
+
+pollers:
+  SNMP mikrotik uptime:
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters:
+        - {oid: system.sysUpTime, options: ["use_snmpbulkget"]}
+      post_fn: [[drop_data, {drop_keys: [index]}]]
+    filter: [ "rt_taxi_mon%{taxi_lavka_base}" ]
+    series: mtxrWl
+    interval: 60
+
+  SNMP mikrotik capman:
+    poller: snmp
+    poller version: 2
+    poller params:
+      # ifName собираем как индекс так как в mtxrWl нет нормального индекса
+      skip_key_expr: {'ifname': '^(?!.*(cap|wlan)\d+.*)'}
+      counters:
+        - {oid: mtxrWl.ifName, options: ["use_snmpbulkget"]}
+        - {oid: mtxrWl.State, options: ["use_snmpbulkget"]}
+        - {oid: mtxrWl.Channel, options: ["use_snmpbulkget"]}
+        - {oid: mtxrWl.RegClientCount, options: ["use_snmpget"]}
+        - {oid: mtxrWl.AuthClientCount, options: ["use_snmpget"]}
+    filter: [ "rt_taxi_mon%{lavka_router} or {taxi_ap}" ]
+    series: mtxrWl
+    interval: 60
+
+  SNMP mikrotik capman entry count:  # NOCDEV-2803
+    poller: snmp
+    poller version: 2
+    poller params:
+      max_bytes: 400
+      counters:
+        - {oid: mtxrWl.mtxrWlCMRtabEntryCount, options: ["use_snmpbulkget"]}
+      post_fn: [[drop_data, {drop_keys: [index]}]]
+    filter: [ "rt_taxi_mon%{lavka_router} or {taxi_ap}" ]
+    series: mtxrWl
+    interval: 60
+
+  SNMP mikrotik health:
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters:
+        - {oid: mtxrHealth.CoreVoltage, options: ["use_snmpbulkget", "optional"]}
+        - {oid: mtxrHealth.ThreeDotThreeVoltage, options: ["use_snmpbulkget", "optional"]}
+        - {oid: mtxrHealth.FiveVoltage, options: ["use_snmpbulkget", "optional"]}
+        - {oid: mtxrHealth.TwelveVoltage, options: ["use_snmpbulkget", "optional"]}
+        - {oid: mtxrHealth.SensorTemperature, options: ["use_snmpbulkget", "optional"]}
+        - {oid: mtxrHealth.CpuTemperature, options: ["use_snmpbulkget", "optional"]}
+        - {oid: mtxrHealth.BoardTemperature, options: ["use_snmpbulkget", "optional"]}
+        - {oid: mtxrHealth.Voltage, options: ["use_snmpbulkget", "optional"]}
+        - {oid: mtxrHealth.Temperature, options: ["use_snmpbulkget", "optional"]}
+        - {oid: mtxrHealth.ProcessorTemperature, options: ["use_snmpbulkget", "optional"]}
+        - {oid: mtxrHealth.Power, options: ["use_snmpbulkget", "optional"]}
+        - {oid: mtxrHealth.Current, options: ["use_snmpbulkget", "optional"]}
+        - {oid: mtxrHealth.ProcessorFrequency, options: ["use_snmpbulkget", "optional"]}
+        - {oid: mtxrHealth.FanSpeed1, options: ["use_snmpbulkget", "optional"]}
+        - {oid: mtxrHealth.FanSpeed2, options: ["use_snmpbulkget", "optional"]}
+    filter: [ "rt_taxi_mon%{taxi_lavka_base}", *exVezet_mikrotik_filter ]
+    series: mtxrHealth
+    interval: 60
+
+  SNMP Mikrotik:
+    poller: snmp
+    poller version: 2
+    poller params:
+      timeout: 7
+      counters: *network_key_ifname
+      post_fn: [rearrange_partial_data, sum_ifmib_counters_new]
+      consistency_check: true
+    filter:  [ "rt_taxi_mon%{taxi_lavka_base}", *exVezet_mikrotik_filter ]
+    series: network_fast
+    interval: 30

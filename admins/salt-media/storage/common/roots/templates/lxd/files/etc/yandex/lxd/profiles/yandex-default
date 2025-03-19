@@ -1,0 +1,62 @@
+# vim: ft=yaml
+name: yandex-default
+config:
+  security.idmap.size: "524288"
+  user.network_mode: link-local
+  user.vendor-data: |
+    #cloud-config
+    cloud_init_modules:
+      - migrator
+      - ubuntu-init-switch
+      - seed_random
+      - bootcmd
+      - write-files
+      - resolv_conf
+      - set_hostname
+      - update_hostname
+      - update_etc_hosts
+      - ca-certs
+      - rsyslog
+      - users-groups
+      - ssh
+    system_info:
+      apt_get_command:
+        - 'apt-get'
+        - '-y'
+        - '--force-yes'
+        - '--quiet'
+    timezone: Europe/Moscow
+    manage_resolv_conf: true
+    resolv_conf:
+      nameservers: ['2a02:6b8:0:3400::5005', '2a02:6b8:0:3400::1023']
+      searchdomains:
+        - yandex.net
+        - yandex.ru
+      options:
+        timeout: 1
+        attempts: 1
+    apt_sources:
+      - source: deb http://mirror.yandex.ru/ubuntu $RELEASE main restricted universe multiverse
+      - source: deb http://mirror.yandex.ru/ubuntu $RELEASE-security main restricted universe multiverse
+      - source: deb http://mirror.yandex.ru/ubuntu $RELEASE-updates main restricted universe multiverse
+      - source: deb http://system.dist.yandex.ru/system configs/all/
+      - source: deb http://common.dist.yandex.ru/common stable/all/
+      - source: deb http://common.dist.yandex.ru/common stable/amd64/
+      - source: deb http://${RELEASE}.dist.yandex.ru/yandex-${RELEASE}/ stable/all/
+      - source: deb http://${RELEASE}.dist.yandex.ru/yandex-${RELEASE}/ stable/amd64/
+    packages:
+      - config-apt-allowunauth
+      - yandex-archive-keyring
+    write_files:
+      - path: /var/lib/cloud/instance/scripts/vendor/bootstrap.sh
+        permissions: '0755'
+        content: |
+          #!/bin/bash
+          # Disable resolvconf
+          cp --remove-destination $(readlink /etc/resolv.conf) /etc/resolv.conf || true
+          # Set correct hostname based on container name
+          hostname $(hostname | sed -r 's/--/./g;s/\.yandex\.net$//;s/(.*)/\1.yandex.net/')
+          hostname > /etc/hostname
+          service cron restart || true
+description: base yandex profile (from salt template example)
+devices: {}

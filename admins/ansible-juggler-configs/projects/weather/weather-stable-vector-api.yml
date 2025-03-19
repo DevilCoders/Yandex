@@ -1,0 +1,57 @@
+- hosts: localhost
+  gather_facts: False
+  vars:
+    host: weather-stable-vector-api
+    type: production
+    host_tags:
+      - stable
+
+  pre_tasks:
+    - juggler_facts: jserver_api={{ jserver_search_api }}
+    - include_vars: "vars"
+  post_tasks:
+    - juggler_cleanup: #jcheck_mark={{ host }} # commented for clean up all checks made with playbook
+
+  tasks:
+    - include: tasks/unreachable.yml
+    - include: tasks/common-check.yml
+    - include: tasks/specific-check.yml
+      vars:
+        checks:
+          - iptables_reject
+          - push-client-status
+          - cert_expires
+          - vector-api-warden
+    - include: tasks/specific-check.yml
+      vars:
+        checks:
+          - nginx-50x
+        night_percent: "0%"
+        notifications:
+          - template: golem
+          - template: on_status_change
+            golem_responsible: yes
+    - include: tasks/specific-check.yml
+      vars:
+        checks:
+          - vector-api.weather.yandex.net-https
+          - vector-api.weather.yandex.net-timings
+        night_percent: "0%"
+    - include: tasks/specific-check.yml
+      vars:
+        checks:
+          - vector-api-lag-check
+        night_percent: "0%"
+        notifications:
+          - template: golem
+          - template: on_status_change
+            golem_responsible: no
+            method: [telegram]
+            login: [weather_snafu]
+            status: "{{ statuses_warning }}"
+          - template: on_status_change
+            golem_responsible: no
+            method: [telegram]
+            login: [weather_fubar]
+            status: "{{ statuses_critical }}"
+

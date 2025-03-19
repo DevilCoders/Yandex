@@ -1,0 +1,55 @@
+#!/bin/bash
+
+vmname=$1
+state=$2
+
+autostart_forvz_enable () {
+    vzid=$(vzlist -a | grep " $vmname" | awk '{print $1}')
+    vzctl set ${vzid} --onboot yes --save
+}
+
+autostart_forvz_disable () {
+    vzid=$(vzlist -a | grep " $vmname" | awk '{print $1}')
+    vzctl set ${vzid} --onboot no --save
+}
+
+autostart_forlxc_enable () {
+    sed -i 's/autostart: .*/autostart: 1/' /etc/lxctl/${vmname}.yaml
+    echo "check it:"
+    cat /etc/lxctl/${vmname}.yaml | grep autostart
+}
+
+autostart_forlxc_disable () {
+    sed -i 's/autostart: .*/autostart: 0/' /etc/lxctl/${vmname}.yaml
+    echo "check it:"
+    cat /etc/lxctl/${vmname}.yaml | grep autostart
+}
+
+check_args () {
+    if [[ $vmname == "" || $state == "" ]]; then
+	echo "Use me like this: $0 vmname state"; 
+	echo "where state can be: e, d, enable, disable"; 
+	return 1;
+    fi
+}
+
+choose_action () {
+    if [[ $state == "e" || $state == "enable" ]]; then 
+	echo -n enable; 
+    elif [[ $state == "d" || $state == "disable" ]]; then
+	echo -n disable; 
+    else echo unknown state; return 1; 
+    fi
+}
+
+choose_hypervisor () {
+    if [[ -e /usr/bin/lxctl ]]; then
+	echo -n lxc; 
+    elif [[ -e /usr/sbin/vzctl ]]; then
+	echo -n vz; 
+    else echo "I can't find vzctl or lxctl binary here. Probably it is not dom0 host?"; return 1
+    fi
+}
+
+check_args && hypervisor=$(choose_hypervisor) && action=$(choose_action) && autostart_for${hypervisor}_${action} || echo -e "I can't choose action or hypervisor\n hypervisor: $hypervisor\n action: $action"
+

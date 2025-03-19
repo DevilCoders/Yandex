@@ -1,0 +1,59 @@
+# vim: ft=sls
+{%- set services = [ "import_external", "function_duration", "scheduler_status_value", "scheduler_status",
+    "poller_snmp_sent", "scheduler_jobs", "scheduler_queues", "scheduler" ] %}
+{%- set dc = grains["conductor"]["root_datacenter"] %}
+
+{%- if grains['yandex-environment'] == 'testing' %}
+  {% set project = "grad_testing" %}
+{%- else %}
+  {% set project = "grad" %}
+{%- endif %}
+
+storages:
+  - name: metrics_storage
+    plugin: fs
+    config:
+      directory: /var/lib/yandex/unified_agent/storage/metrics
+      max_partition_size: 500mb
+
+routes:
+  - input:
+      flow_control:
+        new_sessions_rate_limit: 100
+      plugin: metrics
+      config:
+        port: 22132
+
+        endpoints:
+{%- for service in services %}
+          - path: /write_{{ service }}
+            project: {{ project }}
+            cluster: {{ dc }}
+            service: {{ service }}
+            metric_name_label: sensor
+            format:
+              solomon_json: { }
+{%- endfor %}
+    channel:
+      channel_ref:
+        name: solomon_output
+
+channels:
+  - name: solomon_output
+    channel:
+      pipe:
+        - storage_ref:
+            name: metrics_storage
+        - filter:
+            plugin: accumulate_metrics
+            config:
+              period: 10s
+              function: batch
+      output:
+        plugin: metrics
+        config:
+          format: spack
+          url: https://solomon.yandex.net/api/v2/push
+          oauth:
+            secret:
+              file: /etc/yandex/unified_agent/secrets/solomon-oauth-token

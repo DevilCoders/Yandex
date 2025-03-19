@@ -1,0 +1,36 @@
+{% if grains['os_family'] == "Debian" %}
+{% set packages = ['salt-minion', 'python-gnupg', 'salt-common', 'salt-yandex-components'] %}
+{% else %}
+{% set packages = ['salt-minion', 'salt-yandex-components'] %} {# salt-common not exists in 3003.1, TODO: add python-gnupg #}
+{% endif %}
+
+{% set salt_minion = salt['grains.filter_by']({
+  'default': {
+    'senv': salt['grains.get']('yandex-environment', 'base'),
+    'project': salt['grains.get']('conductor:project').encode('utf8'),
+    'packages': packages,
+    'service': 'salt-minion',
+    'config': 'salt://templates/salt-minion/files/etc/salt/minion.tmpl',
+    'miniond': False,
+    'params': {'log_level': 'info', 'ipv6': True, 'recon_default': 50, 'recon_max': 1000, 'recon_randomize': True, 'acceptance_wait_time': 10, 'random_reauth_delay': 60, 'auth_timeout': 10, 'auth_tries': 2},
+    'masterless': False,
+    'masterless_config': 'salt://templates/salt-minion/files/etc/salt/minion_masterless.tmpl',
+    'masterless_params': {'file_client': 'local', 'fileserver_backend': ['roots'], 'file_roots': {'base': ['/srv/salt/roots']}, 'pillar_roots': {'base': ['/srv/salt/pillar']}, 'ipv6': 'True', 'log_level': 'info'},
+  },
+  'production': {
+    'senv': 'stable',
+  },
+  'stress': {
+    'senv': 'load',
+  },
+  'testing': {
+    'senv': 'test',
+  },
+  'rc': {
+    'comment': 'if here yandex-environment-rc installed by default substitude stable environment',
+    'senv': 'stable',
+  },
+  'development': {
+    'senv': 'dev',
+  },
+}, grain='yandex-environment', merge=salt['pillar.get']('salt_minion:lookup'), default='default', base='default') %}

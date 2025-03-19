@@ -1,0 +1,205 @@
+# vim: ft=sls
+{% set is_master = salt['cmd.run']('sudo -u postgres psql -tAc "SELECT pg_is_in_recovery();"').strip() == 'f' %}
+
+irrd:
+  database_url: 'postgresql://irrd:{{ pillar['sec']['pg_irrd_password'] }}@localhost:5432/irrd'
+  {%- if not is_master %} 
+  database_readonly: true
+  {%- endif %}
+  redis_url: 'redis://localhost'
+  piddir: '/var/run/irrd/'
+  user: irrd
+  group: irrd
+
+  access_lists:
+    http_database_status:
+      - '::/0'
+
+  server:
+    http:
+      status_access_list: http_database_status
+      interface: '::0'
+      port: 8080
+      workers: 8
+    whois:
+      max_connections: 32
+
+  email:
+    from: irrd@{{ grains["fqdn"] }}
+    smtp: localhost
+    recipient_override: nocdev-root@yandex-team.ru
+
+  auth:
+    gnupg_keyring: /home/irrd/gnupg-keyring/
+
+  log:
+    logging_config_path: /etc/irrd-log-config.py
+
+  rpki:
+    roa_source: http://mar-rpki.yndx.net:8080/output.json
+
+  sources_default:
+    - RIPE
+    - AFRINIC
+    - ARIN
+    - APNIC
+    - RIPE-NONAUTH
+    - ARIN-NONAUTH
+    - RADB
+    - JPIRR
+    - ALTDB
+    - LEVEL3
+    - NTTCOM
+    - BBOI
+    - BELL
+    - CANARIE
+    - HOST
+    - NESTEGG
+    - OPENFACE
+    - PANIX
+    - REACH
+    - RGNET
+    - TC
+
+  sources:
+  {%- if is_master %}
+    RIPE:
+      import_serial_source: 'https://ftp.ripe.net/ripe/dbase/RIPE.CURRENTSERIAL'
+      import_source: 'https://ftp.ripe.net/ripe/dbase/ripe.db.gz'
+      nrtm_host: 'whois.ripe.net'
+      nrtm_port: '4444'
+
+    RIPE-NONAUTH:
+      import_serial_source: 'https://ftp.ripe.net/ripe/dbase/RIPE-NONAUTH.CURRENTSERIAL'
+      import_source: 'https://ftp.ripe.net/ripe/dbase/ripe-nonauth.db.gz'
+      nrtm_host: 'whois.ripe.net'
+      nrtm_port: '4444'
+
+    AFRINIC:
+      import_serial_source: 'ftp://ftp.afrinic.net/pub/dbase/AFRINIC.CURRENTSERIAL'
+      import_source: 'ftp://ftp.afrinic.net/pub/dbase/afrinic.db.gz'
+
+    ARIN:
+      import_serial_source: 'ftp://ftp.arin.net/pub/rr/ARIN.CURRENTSERIAL'
+      import_source: 'ftp://ftp.arin.net/pub/rr/arin.db.gz'
+      nrtm_host: 'rr.arin.net'
+      nrtm_port: 43
+
+    ARIN-NONAUTH:
+      import_serial_source: 'ftp://ftp.arin.net/pub/rr/ARIN-NONAUTH.CURRENTSERIAL'
+      import_source: 'ftp://ftp.arin.net/pub/rr/arin-nonauth.db.gz'
+      #nrtm_host: 'rr.arin.net'
+      #nrtm_port: 43
+
+    APNIC:
+      import_serial_source: 'ftp://ftp.apnic.net/pub/apnic/whois/APNIC.CURRENTSERIAL'
+      import_source:
+        - ftp://ftp.apnic.net/pub/apnic/whois/apnic.db.as-block.gz
+        - ftp://ftp.apnic.net/pub/apnic/whois/apnic.db.as-set.gz
+        - ftp://ftp.apnic.net/pub/apnic/whois/apnic.db.aut-num.gz
+        - ftp://ftp.apnic.net/pub/apnic/whois/apnic.db.domain.gz
+        - ftp://ftp.apnic.net/pub/apnic/whois/apnic.db.filter-set.gz
+        - ftp://ftp.apnic.net/pub/apnic/whois/apnic.db.inet-rtr.gz
+        - ftp://ftp.apnic.net/pub/apnic/whois/apnic.db.inet6num.gz
+        - ftp://ftp.apnic.net/pub/apnic/whois/apnic.db.inetnum.gz
+        - ftp://ftp.apnic.net/pub/apnic/whois/apnic.db.irt.gz
+        - ftp://ftp.apnic.net/pub/apnic/whois/apnic.db.key-cert.gz
+        - ftp://ftp.apnic.net/pub/apnic/whois/apnic.db.limerick.gz
+        - ftp://ftp.apnic.net/pub/apnic/whois/apnic.db.mntner.gz
+        - ftp://ftp.apnic.net/pub/apnic/whois/apnic.db.organisation.gz
+        - ftp://ftp.apnic.net/pub/apnic/whois/apnic.db.peering-set.gz
+        - ftp://ftp.apnic.net/pub/apnic/whois/apnic.db.role.gz
+        - ftp://ftp.apnic.net/pub/apnic/whois/apnic.db.route-set.gz
+        - ftp://ftp.apnic.net/pub/apnic/whois/apnic.db.route.gz
+        - ftp://ftp.apnic.net/pub/apnic/whois/apnic.db.route6.gz
+        - ftp://ftp.apnic.net/pub/apnic/whois/apnic.db.rtr-set.gz
+      #nrtm_host: 'whois.apnic.net'
+
+    RADB:
+      import_serial_source: 'ftp://ftp.radb.net/radb/dbase/RADB.CURRENTSERIAL'
+      import_source: 'ftp://ftp.radb.net/radb/dbase/radb.db.gz'
+      nrtm_host: 'whois.radb.net'
+
+    # RADB provides mirroring data, which should be synced independently to achieve behavior similar to whois.radb.net
+    BBOI:
+      import_serial_source: 'ftp://ftp.radb.net/radb/dbase/BBOI.CURRENTSERIAL'
+      import_source: 'ftp://ftp.radb.net/radb/dbase/bboi.db.gz'
+
+    BELL:
+      import_serial_source: 'ftp://ftp.radb.net/radb/dbase/BELL.CURRENTSERIAL'
+      import_source: 'ftp://ftp.radb.net/radb/dbase/bell.db.gz'
+
+    CANARIE:
+      import_serial_source: 'ftp://ftp.radb.net/radb/dbase/CANARIE.CURRENTSERIAL'
+      import_source: 'ftp://ftp.radb.net/radb/dbase/canarie.db.gz'
+
+    HOST:
+      import_serial_source: 'ftp://ftp.radb.net/radb/dbase/HOST.CURRENTSERIAL'
+      import_source: 'ftp://ftp.radb.net/radb/dbase/host.db.gz'
+
+    JPIRR:
+      import_serial_source: 'ftp://ftp.radb.net/radb/dbase/JPIRR.CURRENTSERIAL'
+      import_source: 'ftp://ftp.radb.net/radb/dbase/jpirr.db.gz'
+
+    NESTEGG:
+      import_serial_source: 'ftp://ftp.radb.net/radb/dbase/NESTEGG.CURRENTSERIAL'
+      import_source: 'ftp://ftp.radb.net/radb/dbase/nestegg.db.gz'
+
+    OPENFACE:
+      import_serial_source: 'ftp://ftp.radb.net/radb/dbase/OPENFACE.CURRENTSERIAL'
+      import_source: 'ftp://ftp.radb.net/radb/dbase/openface.db.gz'
+
+    PANIX:
+      import_serial_source: 'ftp://ftp.radb.net/radb/dbase/PANIX.CURRENTSERIAL'
+      import_source: 'ftp://ftp.radb.net/radb/dbase/panix.db.gz'
+
+    REACH:
+      import_serial_source: 'ftp://ftp.radb.net/radb/dbase/REACH.CURRENTSERIAL'
+      import_source: 'ftp://ftp.radb.net/radb/dbase/reach.db.gz'
+
+    RGNET:
+      import_serial_source: 'ftp://ftp.radb.net/radb/dbase/RGNET.CURRENTSERIAL'
+      import_source: 'ftp://ftp.radb.net/radb/dbase/rgnet.db.gz'
+
+    TC:
+      import_serial_source: 'ftp://ftp.radb.net/radb/dbase/TC.CURRENTSERIAL'
+      import_source: 'ftp://ftp.radb.net/radb/dbase/tc.db.gz'
+
+    # Fully/Partially synced from source
+    ALTDB:
+      import_serial_source: 'ftp://ftp.altdb.net/pub/altdb/ALTDB.CURRENTSERIAL'
+      import_source: 'ftp://ftp.altdb.net/pub/altdb/altdb.db.gz'
+      nrtm_host: 'whois.altdb.net'
+
+    LEVEL3:
+      import_serial_source: 'ftp://ftp.radb.net/radb/dbase/LEVEL3.CURRENTSERIAL'
+      import_source: 'ftp://ftp.radb.net/radb/dbase/level3.db.gz'
+      nrtm_host: 'rr.level3.net'
+
+    NTTCOM:
+      import_serial_source: 'ftp://rr1.ntt.net/nttcomRR/NTTCOM.CURRENTSERIAL'
+      import_source: 'ftp://rr1.ntt.net/nttcomRR/nttcom.db.gz'
+      nrtm_host: 'rr.ntt.net'
+  {%- else %}
+    RIPE: {}
+    AFRINIC: {}
+    ARIN: {}
+    APNIC: {}
+    RIPE-NONAUTH: {}
+    ARIN-NONAUTH: {}
+    RADB: {}
+    JPIRR: {}
+    ALTDB: {}
+    LEVEL3: {}
+    NTTCOM: {}
+    BBOI: {}
+    BELL: {}
+    CANARIE: {}
+    HOST: {}
+    NESTEGG: {}
+    OPENFACE: {}
+    PANIX: {}
+    REACH: {}
+    RGNET: {}
+    TC: {}
+  {%- endif %}

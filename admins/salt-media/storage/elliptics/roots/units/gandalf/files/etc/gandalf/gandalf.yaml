@@ -1,0 +1,131 @@
+{% set env = grains['yandex-environment'] %}
+log:
+  level: debug
+  encoding: tskv
+  sinks:
+    - logrotate:///var/log/gandalf/gandalf.log
+
+grpc_port: 7819
+secure_grpc: true
+init_timeout: 30s
+
+# Section defines TLS config for GRPC server
+tls:
+  cert_path: "/etc/elliptics/ssl/storage.crt"
+  key_path: "/etc/elliptics/ssl/storage.key"
+  ca_paths: ["/etc/elliptics/ssl/RootStorageCA.crt"]
+  verify: false
+
+node_stat:
+  info_endpoint: "[::]:10026"
+  init_timeout: 10s
+  update_period: 5s
+  request_timeout: 5s
+  # total timeout for one update loop accounting request retrying
+  # NOTE: should be greater than request_timeout
+  update_timeout: 30s
+  staled_age: 10m
+
+fs_check:
+  enable: true
+  update_period: 15s
+
+group_meta:
+  request_timeout: 5s
+  endpoint: "{{ grains['fqdn'] }}:1025"
+  node:
+    # Logger defines config for logger which will be used by elliptics node
+    # Field "level" defines minimum verbosity of the logger. If map contains "path",
+    # the value will be used to configure simple logging as path to log file,
+    # otherwise "core" and "access" sections will be used as blackhole configs
+    logger:
+      # Path where logger should write its logs (default: logging disabled)
+      # path: /var/log/gandalf/elliptics.log
+      # Level defines level of logger verbosity, one of the "debug", "notice", "info", "warning", "error" (default=error)
+      level: error
+      access:
+        [{
+          "sinks": [{
+            "type": "asynchronous",
+            "sink": {
+              "type": "file",
+              "path": "/var/log/gandalf/elliptics.log",
+              "flush": 100
+            },
+            "factor": 16,
+            "overflow": "wait"
+          }],
+          "formatter": {
+            "mutate" : {
+              "timestamp" : {
+                "gmtime" : false,
+                "strftime" : "%Y-%m-%dT%H:%M:%S.%f"
+              }
+            },
+            "type": "tskv",
+            "remove": [
+                "severity",
+                "message"
+            ]
+          }
+        }]
+      core:
+        [{
+          "formatter": {
+            "type": "string",
+            "sevmap": ["DEBUG", "INFO", "WARN", "ERROR"],
+            "pattern": "{timestamp:l} {trace_id:{0:default}0>16} {thread:d}/{process:d} {severity}: {message}, attrs: [{...}]"
+          },
+          "sinks": [
+            {
+              "type": "asynchronous",
+              "factor": 16,
+              "overflow": "wait",
+              "sink": {
+                "type": "file",
+                "path": "/var/log/gandalf/node-1.log",
+                "flush": 100
+              }
+            }
+          ]
+        }]
+    # TLS defines config for TLS
+    tls:
+      # Support defines level of TLS support: "disabled", "allowed", "required" (default=disabled)
+      support: allowed
+      # CertificatePath defines path to certificate
+      cert_path: "/etc/elliptics/ssl/storage.crt"
+      # PrivateKeyPath defines path to private key
+      key_path: "/etc/elliptics/ssl/storage.key"
+      # CAPath defines path ot ca directory
+      ca_path: "/etc/elliptics/ssl/"
+      # VerifyCertificates defines whether certificates should be verified (default=true)
+      verify: true
+
+    # IOThreads defines number of IO threads in elliptics node (default=1)
+    io_thread_num: 4
+    # NonBlockingIOThreads defines number of nonblocking IO threads in elliptics node (default=1)
+    nonblocking_io_thread_num: 6
+    # NetThreads defines number of net threads in elliptics node (default=1)
+    net_thread_num: 4
+    # WaitTimeout defines default timeout in seconds for further operations (default=5)
+    wait_timeout: 20
+    # CheckTimeout defines timeout in seconds with with check thread should be waked up (default=60)
+    check_timeout: 60
+    # Flags defines elliptics config flags
+    flags: 0
+    # StallCount defines number of timed-out operations in a row after which
+    # connection to problem node will be checked (default=3)
+    stall_count: 3
+    # EllipticsFeatures defines which experimental features should be enabled
+    features:
+      # Forcing to enable the feature_a
+      independent_protocol: true
+
+metrics:
+  port: 7323
+  shutdown_timeout: 1s
+  solomon:
+    tags:
+      ctype: "{{ grains['yandex-environment'] }}"
+      federation: {{ pillar['mds_federation'] }}

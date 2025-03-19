@@ -1,0 +1,102 @@
+{% set env = grains['yandex-environment'] %}
+
+{% if env == 'testing' %}
+{% set default_ident = 'testing' %}
+{% set pg_rw_pwd = pillar['yav']['s3maintain-password-testing'] %}
+{% set schedule_objects_workers = 1 %}
+{% set process_objects_workers = 1 %}
+{% else %}
+{% set  default_ident = 'prod_inner' %}
+{% set pg_rw_pwd = pillar['yav']['s3maintain-password'] %}
+{% set schedule_objects_workers = 1 %}
+{% set process_objects_workers = 1 %}
+{% endif %}
+
+
+{
+  "default": "{{ default_ident }}",
+  "application": {
+    "upstream": {
+      "enabled": false
+     }
+  },
+  "system_app": {
+    "monitor_addr": ":3377",
+    "max_header_bytes": 8388608,
+    "read_header_timeout": 1,
+    "health_check_timeout_msec": 1000
+  },
+  "cron": {
+    "tasks": [
+      {
+        "event_name": "ScheduleBucketsMaintenance",
+        "run_every": "10m",
+        "run_immediate": true,
+        "parallel_count": 1,
+        "task_types": [2,3]
+      },
+      {
+        "event_name": "ScheduleChunksMaintenance",
+        "run_every": "10m",
+        "run_immediate": true,
+        "parallel_count": 1,
+        "task_types": [2,3]
+      },
+      {
+        "event_name": "ScheduleObjectsMaintenance",
+        "run_every": "10m",
+        "run_immediate": true,
+        "parallel_count": {{ schedule_objects_workers }},
+        "task_types": [2,3]
+      },
+      {
+        "event_name": "ProcessObjectsMaintenance",
+        "run_every": "10m",
+        "run_immediate": true,
+        "parallel_count": {{ process_objects_workers }},
+        "task_types": [1,2,3]
+      }
+    ]
+  },
+  "maintenance": {
+    "batch_size": 20,
+    "workers_count": 1,
+    "couples_path": "/etc/s3-goose/maintain.couple.lst.tmp"
+  },
+  "postgres": {
+    "rw_pool": {
+        "user": "s3maintain",
+        "password": "{{ pg_rw_pwd }}",
+        "max_open_conns": 10
+    },
+    "list_pool": {
+        "user": "s3maintain",
+        "password": "{{ pg_rw_pwd }}",
+        "max_open_conns": 10
+    },
+    "pgmeta": {
+      "chunk_cache_whitelist": {},
+      "force_replica_read": true
+    }
+  },
+  "logging": {
+    "default": {
+      "level": "info",
+      "file_path": "logrotate+asyncskip:///var/log/s3/goose-maintain/main.log"
+    },
+    "log_queue_size": 10000,
+    "log_buf_size_kb": 0,
+    "filtered": [
+      {
+        "level": "info",
+        "name": "*.check_report",
+        "file_path": "logrotate+asyncskip:///var/log/s3/goose-maintain/check_report.log"
+      },
+      {
+        "level": "error",
+        "name": "*.check_report",
+        "file_path": "logrotate+asyncskip:///var/log/s3/goose-maintain/check_report_alert.log"
+      }
+    ]
+  }
+}

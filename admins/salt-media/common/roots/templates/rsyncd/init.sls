@@ -1,0 +1,4 @@
+include:
+  - .configs
+  - .services
+  - .check

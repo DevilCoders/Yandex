@@ -1,0 +1,51 @@
+{% import_yaml slspath + "/defaults.yaml" as nginx %}
+
+
+# remove defaults if listens in pillars is a list
+{% if salt["pillar.get"]("nginx:lookup:listens", {}) is not mapping %}
+ {% do nginx.pop("listens") %}
+{% endif %}
+
+
+# enable ipv6only global resolver option only if machine hasnt ipv4 address
+{% if not salt['grains.get']('fqdn_ip4') %}
+ {% do nginx["main_params"].update({"ipv6only": "on"}) %}
+{% endif %}
+
+
+# Merge defaults with pillar, override defaults by pillar
+{% set nginx = salt["pillar.get"]("nginx:lookup", nginx, merge=True) %}
+
+
+{% if not salt.pillar.get("nginx:lookup:log_params") %}
+# this if need only for migration from old style tskv log configuration
+# dinamicaly update tskv name
+{% do nginx["confd_params"].update(
+  { "tskv_log": '/var/log/nginx/access.tskv.log access-log-{0}'.format(
+        salt["grains.get"]("conductor:project")) }
+  ) %}
+{% endif %}
+
+{% if not nginx.accesslog_config %}
+  {% if not salt.pillar.get("nginx:lookup:confd_params:access_log", False) %}
+    {% if "access_log" in nginx.confd_params %}
+      {% do nginx.confd_params.pop("access_log") %}
+    {% endif %}
+  {% endif %}
+  {% if not salt.pillar.get("nginx:lookup:confd_params:tskv_log", False) %}
+    {% if "tskv_log" in nginx.confd_params %}
+      {% do nginx.confd_params.pop("tskv_log") %}
+    {% endif %}
+  {% endif %}
+{% endif %}
+
+# convert old listens to a dict
+{% if nginx.listens is not mapping %}
+ {% set listens = {} %}
+ {% for listen in nginx.listens %}
+  {% for name, params in listen.items() %}
+   {% do listens.update({name: params}) %}
+  {% endfor %}
+ {% endfor %}
+ {% do nginx.update({'listens': listens}) %}
+{% endif %}

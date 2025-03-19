@@ -1,0 +1,46 @@
+# NOCDEV-4268
+credentials: !include ../credentials.yml
+variables: !include variables.yaml
+# status: PSU_STATUS_UP = 1, PSU_STATUS_DOWN = 0
+# power: watt
+series:
+  comocutor_poller.netconf_psu: &psu
+    min_interval: 30
+  snmp_poller.psu: *psu
+
+pollers:
+  comocutor netconf huawei psu:
+    poller: comocutor
+    poller params:
+      getter: get_huawei_devm_psu
+      device: NetconfDevice
+      <<: *comocutor_credentials
+    series: comocutor_poller.netconf_psu
+    interval: 30
+    instance_group: main netconf instance
+    filter: *netconf_huawei_filter
+
+  comocutor netconf juniper psu:
+    poller: comocutor
+    poller params:
+      getter: get_jnx_environment_pem_psu
+      device: NetconfDevice
+      <<: *comocutor_credentials
+    series: comocutor_poller.netconf_psu
+    interval: 30
+    instance_group: main netconf instance
+    filter: *netconf_juniper_filter
+
+  SNMP Nokia psu status:
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters:
+        - {oid: TIMETRA-CHASSIS-MIB.tmnxHwName, options: [ "use_snmpbulkget" ]}
+        - {oid: TIMETRA-CHASSIS-MIB.tmnxHwClass, options: [ "use_snmpbulkget" ]}
+        - {oid: TIMETRA-CHASSIS-MIB.tmnxPhysChassisPMOutputStatus, options: [ "use_snmpbulkget" ]}
+      skip_key_expr: {class: '^(?!5$)'}
+      post_fn: [nokia_psu, [drop_data, {drop_keys: [class]}]]
+    filter: "{Nokia} and [опрос SNMP]"
+    series: psu
+    interval: 30

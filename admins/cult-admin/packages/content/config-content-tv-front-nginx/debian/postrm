@@ -1,0 +1,28 @@
+#!/bin/bash
+
+pkg=config-content-tv-front-nginx
+diversion_added_version=1.1
+this_version=1.1
+
+losing_diversion=n
+
+if test "$1" = failed-upgrade
+then
+        dpkg --compare-versions "$2" le-nl "$this_version" ||
+        # An upgrade from a newer version failed.
+        # There is no way for us to know enough to take over from here,
+        # so abort the upgrade.
+        exit 1
+elif dpkg --compare-versions "$2" lt-nl "$diversion_added_version"
+then
+        losing_diversion=y
+fi
+
+case "$1,$losing_diversion" in
+remove,*|abort-install,*|disappear,*|*,y)
+        rm -f /etc/nginx/conf.d/01-accesslog.conf || true
+        dpkg-divert --package "$pkg" --remove --rename \
+                --divert "/usr/share/yandex-configs/$pkg/01-accesslog.conf" /etc/nginx/conf.d/01-accesslog.conf
+        ;;
+esac
+

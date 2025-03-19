@@ -1,0 +1,218 @@
+credentials: !include ../credentials.yml
+
+series:
+  # dwdm series actually stores only Ekinops data; historically called 'dwdm' cause it was the first one
+  snmp_poller.dwdm:
+    min_interval: 300
+
+  snmp_poller.coriant_g30:
+    min_interval: 300
+
+  comocutor_poller.hit_pms:
+    min_interval: 300
+
+  snmp_poller.adva_f7:
+    min_interval: 300
+
+  asynk_poller.adva_f8_rest:
+    min_interval: 300
+
+
+pollers:
+  SNMP ekinops:
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters:
+        - Ekinops_RM100_line.line
+        - oid: Ekinops_RM100_line.tx_level
+          options: ["use_snmpget"]
+        - oid: Ekinops_RM100_line.rx_level
+          options: ["use_snmpget"]
+        - oid: Ekinops_RM100_line.fec
+          options: ["use_snmpget"]
+        - oid: Ekinops_RM100_line.sdfec
+          options: ["use_snmpget"]
+        - oid: Ekinops_RM100_line.osnr
+          options: ["use_snmpget"]
+
+      timeout: 20
+    # HW type:  ekinops RM10010 or ekinops RM10001
+    filter: "({$attr_2_55684} or {$attr_2_56480}) and [опрос SNMP]"
+    series: dwdm
+    interval: 300
+
+  comocutor ekinops:
+    poller: comocutor
+    poller params:
+      getter: get_ekinops_measurements
+      device: EkinopsDevice
+      <<: *ekinops_credentials
+      fn: {rx_level: ["resampler_linear_{sample_period}"],
+           tx_level: ["resampler_linear_{sample_period}"],
+           fec: ["resampler_linear_{sample_period}"],
+           fec_uncorr: ["resampler_linear_{sample_period}"],
+      }
+    filter: "{Ekinops} and not (({$attr_2_55684} or {$attr_2_56480}) and [опрос SNMP])"
+    series: snmp_poller.dwdm
+    interval: 600
+    instance_group: main comocutor instance
+
+  SNMP coriant_pms:  # NOCDEV-1155
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters:
+        - oid: coriant-groove-port.tx_level
+          options: ["use_snmpbulkget"]
+        - oid: coriant-groove-port.rx_level
+          options: ["use_snmpbulkget"]
+        - oid: coriant-groove-port.fec
+          options: ["use_snmpbulkget"]
+        - oid: coriant-groove-port.fec_uncorr
+          options: ["use_snmpbulkget"]
+        - oid: coriant-groove-port.osnr
+          options: ["use_snmpbulkget"]
+        - oid: coriant-groove-port_0.es
+          options: ["use_snmpbulkget"]
+        - oid: coriant-groove-port_0.ses
+          options: ["use_snmpbulkget"]
+        - oid: coriant-groove-port_0.bbe
+          options: ["use_snmpbulkget"]
+      post_fn: [recalc_coriant_index, rename_coriant_ifname]
+
+      timeout: 20
+    # HW type:  ekinops RM10010 or ekinops RM10001
+    filter: "{Coriant G30}"
+    series: coriant_g30
+    interval: 300
+
+  comocutor hit_pms:  # NOC-17887
+    poller: comocutor
+    poller params:
+      getter: get_hit_pms
+      device: PCDevice
+      port: 2221
+      <<: *hit_credentials
+      fn: {rx_level: [["resampler_linear", {"period": 300, "max_delta": 1800}]],
+           tx_level: [["resampler_linear", {"period": 300, "max_delta": 1800}]],
+           rx_level_min: [["resampler_linear", {"period": 300, "max_delta": 1800}]],
+           tx_level_min: [["resampler_linear", {"period": 300, "max_delta": 1800}]],
+      }
+    filter: "{Coriant hiT7300}"
+    series: hit_pms
+    interval: 300
+    instance_group: main comocutor instance
+
+
+  SNMP adva_f7:  # NOCDEV-598
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters:
+        - oid: adva_f7.portName
+          options: ["use_snmpbulkget"]
+        - oid: adva_f7.tx_level
+          options: ["use_snmpget"]
+        - oid: adva_f7.rx_level
+          options: ["use_snmpget"]
+        - oid: adva_f7.fec
+          options: ["use_snmpget"]
+        - oid: adva_f7.fec_uncorr
+          options: ["use_snmpget"]
+      timeout: 20
+    filter: "{ADVA F7}"
+    series: adva_f7
+    interval: 300
+
+  SNMP adva_f7_om:
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters:
+        - oid: adva_f7_om.portName
+          options: ["use_snmpbulkget"]
+        - oid: adva_f7_om.tx_level
+          options: ["use_snmpget"]
+        - oid: adva_f7_om.rx_level
+          options: ["use_snmpget"]
+      timeout: 20
+    filter: "{ADVA F7}"
+    series: adva_f7
+    interval: 300
+
+  SNMP adva_f7_dcn:
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters:
+        - oid: adva_f7_dcn.portName
+          options: ["use_snmpbulkget"]
+        - oid: adva_f7_dcn.tx_level
+          options: ["use_snmpget"]
+        - oid: adva_f7_dcn.rx_level
+          options: ["use_snmpget"]
+      timeout: 20
+    filter: "{ADVA F7}"
+    series: adva_f7
+    interval: 300
+
+  SNMP adva_f7_om_pm:  # NOC-17907 есть вероятность, что снимается не последний м15 интервал, а предыдущий
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters:
+        - oid: adva_f7_om_pm.portName
+          options: ["use_snmpbulkget"]
+        - oid: adva_f7_om_pm.rx_level_min
+          options: ["use_snmpget"]
+        - oid: adva_f7_om_pm.tx_level_min
+          options: ["use_snmpget"]
+      timeout: 20
+    filter: "{ADVA F7}"
+    series: adva_f7
+    interval: 300
+
+  adva_f8_rest:  # NOCDEV-1709
+    poller: asynk
+    poller params:
+      getter: get_adva_pms
+      timeout: 250
+      <<: *comocutor_credentials
+      fn: {rx_level: ["resampler_linear_{sample_period}"],
+           rx_level_min: ["resampler_linear_{sample_period}"],
+           rx_level_max: ["resampler_linear_{sample_period}"],
+           tx_level: ["resampler_linear_{sample_period}"],
+           tx_level_min: ["resampler_linear_{sample_period}"],
+           tx_level_max: ["resampler_linear_{sample_period}"],
+           osnr: ["resampler_linear_{sample_period}"],
+           osnr_min: ["resampler_linear_{sample_period}"],
+           osnr_max: ["resampler_linear_{sample_period}"],
+           "/((rx|tx)_level_osc|rx_level_osc_min|rx_level_osc_max)/": ["resampler_linear_{sample_period}"],
+           qfactor: ["resampler_linear_{sample_period}"],
+           qfactor_min: ["resampler_linear_{sample_period}"],
+           qfactor_max: ["resampler_linear_{sample_period}"],
+           fec: ["resampler_linear_{sample_period}"],
+           fec_uncorr: ["resampler_linear_{sample_period}", "delta"],
+           dgd_level: ["resampler_linear_{sample_period}"],
+           bbe: ["resampler_linear_{sample_period}", "delta"],
+           es: ["resampler_linear_{sample_period}", "delta"],
+           ses: ["resampler_linear_{sample_period}", "delta"],
+           uas: ["resampler_linear_{sample_period}", "delta"],
+           laser_temp: ["resampler_linear_{sample_period}"],
+           gain: ["resampler_linear_{sample_period}"],
+           ase: ["resampler_linear_{sample_period}"],
+           rx_util: ["resampler_linear_{sample_period}"],
+           rx_packets: ["resampler_linear_{sample_period}", "delta"],
+           rxcrcerr: ["resampler_linear_{sample_period}", "delta"],
+           rxerrbip: ["resampler_linear_{sample_period}", "delta"],
+           rxerrblk: ["resampler_linear_{sample_period}", "delta"],
+           rxes: ["resampler_linear_{sample_period}", "delta"],
+           txcrcerr: ["resampler_linear_{sample_period}", "delta"],
+           txerrbip: ["resampler_linear_{sample_period}", "delta"],
+           txerrblk: ["resampler_linear_{sample_period}", "delta"],
+           txes: ["resampler_linear_{sample_period}", "delta"],
+      }
+    filter: "{ADVA F8} or {Adva TF}"
+    series: adva_f8_rest
+    interval: 300

@@ -1,0 +1,62 @@
+---
+name: video-zk
+parsing:
+  groups: [video-zk]
+  metahost: video-zk
+  DataFetcher:
+    type: http
+    port: 3132
+    uri: "/exec_pattern?pattern=zookeeper_stats"
+aggregate:
+  data:
+    zk:
+      type: "custom"
+      class: "Multimetrics"
+      rps: "no"
+      perHost: YES
+  senders:
+    graphite:
+      cluster: "media.video"
+      type: graphite
+
+    juggler_zk_outstanding_requests: &juggler-conf
+      type: juggler
+      namespace: video
+      Host: "video-zk"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 300
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - bpsavelev
+                - ignition
+      Aggregator: timed_more_than_limit_is_problem
+      checkname: zk_outstanding_requests
+      description: zk_outstanding_requests
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 2,time_end: 1,day_end: 7,day_start: 1}]
+      flaps: { stable_time: 120, critical_time: 300 }
+      CRIT: [" ${zk}['zk_outstanding_requests'] > 100 "]
+      tags:
+        - production
+
+    juggler_zk_num_alive_connections:
+      << : *juggler-conf
+      checkname: zk_num_alive_connections
+      description: zk_num_alive_connections
+      config:
+          type: datacenter
+      CRIT: [" ${zk}['zk_num_alive_connections'] < 1 "]
+
+    juggler_zk_avg_latency:
+      << : *juggler-conf
+      checkname: zk_avg_latency
+      description: zk_avg_latency
+      CRIT: [" ${zk}['zk_avg_latency'] > 100 "]

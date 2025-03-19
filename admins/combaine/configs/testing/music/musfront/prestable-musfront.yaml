@@ -1,0 +1,649 @@
+---
+name: music-prestable-musfront_status
+parsing:
+  groups: [music_prestable_musfront]
+  DataFetcher:
+    timetail_url: "/timetail?pattern=xfront-status&type=tskv&log_ts="
+  HostFetcher:
+    type: "rtc"
+    geo: ["sas", "man", "vla"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+aggregate:
+  data:
+    musfront.nginx:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+      perHost: YES
+      timings_is: _time
+  senders:
+    solomon:
+      type: solomon
+      cluster: prestable
+      project: music
+      service: musfront.nginx
+    http_codes: &http-code-sender
+      type: juggler
+      namespace: music.frontend
+      plugin: picker
+      Host: "prestable.music.yandex.ru"
+      notifications:
+          - template_name: phone_escalation
+            template_kwargs:
+                delay: 900 # seconds
+                logins:
+                  - '@svc_muzfrontend:mfront'
+                  - svarog
+                  - morgunv
+                  - oleksii
+                  - msermakov
+                  - iv-morozovv
+                  - denis-grekov
+                  - fat32elena
+          - template_name: on_status_change
+            template_kwargs:
+                delay: 300 # seconds
+                status:
+                  - {from: OK, to: CRIT}
+                  - {from: WARN, to: CRIT}
+                method:
+                    - telegram
+                login:  [ya-musfront-monitoring]
+      Aggregator: timed_more_than_limit_is_problem
+      checkname: music_front_http_codes
+      description: music_front_http_codes
+      ttl: 90
+      tags: ['music-prod-musfront']
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 2,time_end: 1,day_end: 7,day_start: 1}]
+      config:
+        history: 5
+        type: metahost
+        prefix: "musfront_"
+        query: "^(([4][0-9x][0-9x]))$"
+        limits:
+          # если имя проверки не соотвестует описанию (смотри описание query)
+          # то описание лимитов будет таким {limits: {"serviceName":{"desc": <limit>}}}
+          # где limit - это число. (это старый формат описания лимитов, и он не очень удобен)
+          # новый формат делает описание лимитов более плоским.
+          # limits: {<serviceName or desc>: <limit>}
+          # где <limit> может быть
+          # - простым числом (N)
+          # - списком из [<N or variable>, <description>]
+          # - диктом из {limit: <N or variable>, explain: <description>}
+          #
+          # !!!XXX!!! КОДЫ ТУТ НУЖНО ПЕРЕДАВАТЬ СТРОКАМИ,
+          # потому-что lua ищет в мапе строку с кодом
+          "4xx": {limit: {WARN: 10, CRIT: 12}, explain: "4xx http errors"}
+          "400": {limit: {WARN: 0.5, CRIT: 1}, explain: "(400) Bad Request"}
+          "401": {limit: {WARN: 0.05, CRIT: 0.1}, explain: "(401) Unauthorized"}
+          "403": {limit: {WARN: 2, CRIT: 3}, explain: "(403) Forbidden"}
+          "404": {limit: {WARN: 1, CRIT: 2}, explain: "(404) Not Found"}
+          "405": {limit: {WARN: 0.5, CRIT: 1}, explain: "(405) Method Not Allowed"}
+          "408": [0.1, "(408) Request Timeout CADMIN-5431"]
+          "412": [0.5, "(412) Precondition Failed  https://wiki.yandex-team.ru/muz/admin/httpstatus/#412"]
+          "413": [0.1, "(413) Payload Too Large"]
+          "414": {limit: {WARN: 0.2, CRIT: 1}, explain: "(414) URI Too Long MUSIC-22112"}
+          "416": [0.01, "(416) Range Not Satisfiable"]
+          "429": {limit: {WARN: 1, CRIT: 5}, explain: "(429) CBB Blocked - Too Many Requests"}
+          "451": {limit: {WARN: 1, CRIT: 2}, explain: "(451) Unavailable For Legal Reasons"}
+          "499": {limit: {WARN: 1, CRIT: 3}, explain: "(499) Client Closed Request"}
+          "default": 1
+    http_code_5xx:
+      <<: *http-code-sender
+      checkname: http_code_5xx
+      description: http_code_5xx
+      config:
+        history: 5
+        type: metahost
+        prefix: "musfront_"
+        query: "^((5xx))$"
+        limits:
+          "5xx": {limit: {WARN: 1, CRIT: 3}, explain: "5xx http errors"}
+          "default": 1
+    http_code_500:
+      << : *http-code-sender
+      checkname: http_code_500
+      description: http_code_500
+      aggregator_kwargs:
+        unreach_checks: ["music-prod-back:api_500"]
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 2,time_end: 1,day_end: 7,day_start: 1}]
+      config:
+        history: 5
+        type: metahost
+        prefix: "musfront_"
+        query: "^((500))$"
+        limits:
+          "500": [1, "(500) Internal Server Error"]
+          "default": 1
+    http_code_502:
+      << : *http-code-sender
+      checkname: http_code_502
+      description: http_code_502
+      flaps:
+        stable_time: 120
+        critical_time: 180
+      aggregator_kwargs:
+        unreach_checks: ["music-prod-back:api_502"]
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 2,time_end: 1,day_end: 7,day_start: 1}]
+      config:
+        history: 5
+        type: metahost
+        prefix: "musfront_"
+        query: "^((502))$"
+        limits:
+          "502": [0.05, "(502) Bad Gateway"]
+          "default": 1
+    http_code_503:
+      << : *http-code-sender
+      checkname: http_code_503
+      description: http_code_503
+      flaps:
+        stable_time: 120
+        critical_time: 180
+      aggregator_kwargs:
+        unreach_checks: ["music-prod-back:api_503"]
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 2,time_end: 1,day_end: 7,day_start: 1}]
+      config:
+        history: 5
+        type: metahost
+        prefix: "musfront_"
+        query: "^((503))$"
+        limits:
+          "503": [1, "(503) Service Unavailable. short"]
+          "default": 1
+    http_code_504:
+      << : *http-code-sender
+      checkname: http_code_504
+      description: http_code_504
+      aggregator_kwargs:
+        unreach_checks: ["music-prod-back:api_504"]
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 2,time_end: 1,day_end: 7,day_start: 1}]
+      config:
+        history: 5
+        type: metahost
+        prefix: "musfront_"
+        query: "^((504))$"
+        limits:
+          "504": [0.1, "(504) Gateway Timeout"]
+          "default": 1
+    http_code_520:
+      <<: *http-code-sender
+      checkname: http_code_520
+      description: http_code_520
+      flaps:
+        stable_time: 120
+        critical_time: 180
+      config:
+        history: 5
+        type: metahost
+        prefix: "musfront_"
+        query: "^((520))$"
+        limits:
+          "520": [1, "(520) Unknown Error. MUSIC-14939 MUSIC-20144"]
+          "default": 1
+    http_code_522:
+      <<: *http-code-sender
+      checkname: http_code_522
+      description: http_code_522
+      flaps:
+        stable_time: 120
+        critical_time: 180
+      config:
+        history: 5
+        type: metahost
+        prefix: "musfront_"
+        query: "^((522))$"
+        limits:
+          "522": [2, "(522) Connection Timed Out"]
+          "default": 1
+    http_code_524:
+      <<: *http-code-sender
+      checkname: http_code_524
+      description: http_code_524
+      config:
+        history: 5
+        type: metahost
+        prefix: "musfront_"
+        query: "^((524))$"
+        limits:
+          "524": [5, "(524) Nodejs Client Timeout"]
+          "default": 1
+    timings:
+      type: juggler
+      namespace: music.frontend
+      config:
+        history: 5
+        type: metahost
+      Host: "prestable.music.yandex.ru"
+      notifications:
+          - template_name: phone_escalation
+            template_kwargs:
+                delay: 900 # seconds
+                logins:
+                  - '@svc_muzfrontend:mfront'
+                  - svarog
+                  - morgunv
+                  - oleksii
+                  - msermakov
+                  - iv-morozovv
+                  - denis-grekov
+                  - fat32elena
+          - template_name: on_status_change
+            template_kwargs:
+                delay: 300 # seconds
+                status:
+                  - {from: OK, to: CRIT}
+                  - {from: WARN, to: CRIT}
+                method:
+                    - telegram
+                login:  [ya-musfront-monitoring]
+      Aggregator: timed_more_than_limit_is_problem
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 2,time_end: 1,day_end: 7,day_start: 1}]
+      checkname: nginx_timings
+      description: nginx_timings
+      flaps: { stable_time: 120, critical_time: 180 }
+      variables:
+        trigger_n800_d600: "iftimeofday(1, 4, 800, 600)"
+      CRIT: ["${musfront.nginx}['total_upstream_timings'][4] > trigger_n800_d600"]
+---
+name: music-prestable-musfront-status-499
+parsing:
+  groups: [music_prestable_musfront]
+  metahost: music_prestable_musfront
+  DataFetcher:
+      timetail_url: "/timetail?pattern=499_more_500ms&type=tskv&log_ts="
+  HostFetcher:
+    type: "rtc"
+    geo: ["sas", "man", "vla"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+aggregate:
+  data:
+    musfront.nginx499:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+      perHost: YES
+  senders:
+    solomon:
+      type: solomon
+      cluster: prestable
+      project: music
+      service: musfront.nginx499
+    music_slow_499:
+      type: juggler
+      namespace: music.frontend
+      plugin: picker
+      Host: "prestable.music.yandex.ru"
+      notifications:
+          - template_name: phone_escalation
+            template_kwargs:
+                delay: 900 # seconds
+                logins:
+                  - '@svc_muzfrontend:mfront'
+                  - svarog
+                  - morgunv
+                  - oleksii
+                  - msermakov
+                  - iv-morozovv
+                  - denis-grekov
+                  - fat32elena
+          - template_name: on_status_change
+            template_kwargs:
+                delay: 300 # seconds
+                status:
+                  - {from: OK, to: CRIT}
+                  - {from: WARN, to: CRIT}
+                method:
+                    - telegram
+                login:  [ya-musfront-monitoring]
+      Aggregator: timed_more_than_limit_is_problem
+      checkname: music_slow_499
+      description: music_slow_499
+      ttl: 90
+      tags: ['xfront']
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 2,time_end: 1,day_end: 7,day_start: 1}]
+      config:
+        history: 5
+        type: metahost
+        # NOTE: тут lua pattern а не регексп, - это ленивый метасимвол (не жадный)
+        query: "^((music.-yandex.-))_499_more_than_500ms$"
+        limits:
+          "music_yandex_ru":     {limit: {WARN: 1.0, CRIT: 3}, explain: "Slow 499"}
+          "music_yandex_kz":     {limit: {WARN: 0.5, CRIT: 1}, explain: "Slow 499"}
+          "music_yandex_by":     {limit: {WARN: 0.5, CRIT: 1}, explain: "Slow 499"}
+          "music_yandex_ua":     {limit: {WARN: 0.5, CRIT: 1}, explain: "Slow 499"}
+          "music_int_yandex_ru": {limit: {WARN: 0.5, CRIT: 1}, explain: "Slow 499"}
+          "music_int_yandex_by": {limit: {WARN: 0.5, CRIT: 1}, explain: "Slow 499"}
+          "music_int_yandex_kz": {limit: {WARN: 0.5, CRIT: 1}, explain: "Slow 499"}
+          "music_int_yandex_ua": {limit: {WARN: 0.5, CRIT: 1}, explain: "Slow 499"}
+          "default": {limit: {WARN: 0.1, CRIT: 0.2}, explain: "Slow 499"}
+---
+name: music-prestable-musfront_ads_requests
+parsing:
+  groups: [music_prestable_musfront]
+  DataFetcher:
+    timetail_url: "/timetail?pattern=music_ads_requests&type=tskv&log_ts="
+  HostFetcher:
+    type: "rtc"
+    geo: ["sas", "man", "vla"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+aggregate:
+  data:
+    musfront.requests:
+      type: custom
+      class: Multimetrics
+      perHost: YES
+  senders:
+    solomon:
+      type: solomon
+      cluster: prestable
+      project: music
+      service: musfront.requests
+---
+name: music-prestable-musfront-non-msie-status
+parsing:
+  groups: [music_prestable_musfront]
+  DataFetcher:
+    timetail_url: "/timetail?pattern=xfront-non-msie-status&type=tskv&log_ts="
+  HostFetcher:
+    type: "rtc"
+    geo: ["sas", "man", "vla"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+aggregate:
+  data:
+    musfront.non_msie:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+  senders:
+    solomon:
+      type: solomon
+      cluster: prestable
+      project: music
+      service: musfront.non_msie
+    4xx:
+      type: juggler
+      namespace: music.frontend
+      Host: "prestable.music.yandex.ru"
+      config:
+          type: metahost
+      notifications:
+          - template_name: phone_escalation
+            template_kwargs:
+                delay: 900 # seconds
+                logins:
+                  - '@svc_muzfrontend:mfront'
+                  - svarog
+                  - morgunv
+                  - oleksii
+                  - msermakov
+                  - iv-morozovv
+                  - denis-grekov
+                  - fat32elena
+          - template_name: on_status_change
+            template_kwargs:
+                delay: 300 # seconds
+                status:
+                  - {from: OK, to: CRIT}
+                  - {from: WARN, to: CRIT}
+                method:
+                    - telegram
+                login:  [ya-musfront-monitoring]
+      Aggregator: timed_more_than_limit_is_problem
+      checkname: Non-MSIE-4xx
+      description: Non-MSIE-4xx
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 8,time_end: 19,day_end: 7,day_start: 1}]
+        limits: [{crit: 101%,time_start: 20,time_end: 7,day_end: 7,day_start: 1}]
+      WARN: ["${musfront.non_msie}['4xx']>3"]
+      CRIT: ["${musfront.non_msie}['4xx']>6"]
+---
+name: music-prestable-musfront_nodejs_status
+parsing:
+  groups: [music_prestable_musfront]
+  DataFetcher:
+    logname: "nodejs/server.log /var/log/nodejs/server.log.1"
+    timetail_url: "/timetail?pattern=nodejs_status&type=mulcagate&log_ts="
+  HostFetcher:
+    type: "rtc"
+    geo: ["sas", "man", "vla"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+aggregate:
+  data:
+    musfront.nodejs.status.backend:
+      type: custom
+      class: Multimetrics
+      perHost: YES
+  senders:
+    solomon:
+      type: solomon
+      cluster: prestable
+      project: music
+      service: musfront.status_backend
+---
+name: music-prestable-musfront-resources
+parsing:
+  groups: [music_prestable_musfront]
+  metahost: music_prestable_musfront
+  DataFetcher:
+    timetail_url: "/timetail?pattern=resources&type=tskv&log_ts="
+  HostFetcher:
+    type: "rtc"
+    geo: ["sas", "man", "vla"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+aggregate:
+  data:
+    musfront.resources:
+      type: custom
+      class: Multimetrics
+      rps: "no"
+      factor: 1000
+      perHost: YES
+      timings_is: 'duration'
+  senders:
+    solomon:
+      type: solomon
+      cluster: prestable
+      project: music
+      service: musfront.resources
+---
+name: music-prestable-musfront-nginx
+parsing:
+  groups: [music_prestable_musfront]
+  metahost: music_prestable_musfront
+  DataFetcher:
+    timetail_url: "/timetail?pattern=musfront-nginx&type=tskv&log_ts="
+  HostFetcher:
+    type: "rtc"
+    geo: ["sas", "man", "vla"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+aggregate:
+  data:
+    musfront.nginx_status:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+      perHost: YES
+      timings_is: 'duration'
+  senders:
+    solomon:
+      type: solomon
+      cluster: prestable
+      project: music
+      service: musfront.nginx_status
+---
+name: music-prestable-musfront-stats
+parsing:
+  groups: [music_prestable_musfront]
+  metahost: music_prestable_musfront
+  DataFetcher:
+    logname: "nodejs/server.log /var/log/nodejs/server.log.1"
+    timetail_url: "/timetail?pattern=musfront-nodejs&type=tskv&log_ts="
+  HostFetcher:
+    type: "rtc"
+    geo: ["sas", "man", "vla"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+aggregate:
+  data:
+    musfront.stats:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+      perHost: YES
+      timings_is: 'duration'
+  senders:
+    solomon:
+      type: solomon
+      cluster: prestable
+      project: music
+      service: musfront.stats
+---
+name: prestable_music_musfront_nodejs_svcs
+parsing:
+  groups: [music_prestable_musfront]
+  metahost: music_prestable_musfront
+  DataFetcher:
+    logname: "nodejs/server.log"
+    timetail_url: "/timetail?pattern=music-nodejs&type=tskv&log_ts="
+  HostFetcher:
+    type: "rtc"
+    geo: ["sas", "man", "vla"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+aggregate:
+  data:
+    musfront.nodejs_svcs:
+      type: custom
+      class: Multimetrics
+      perHost: YES
+      factor: 1000
+  senders:
+    solomon:
+      type: solomon
+      cluster: prestable
+      project: music
+      service: musfront.nodejs_svcs
+    nodejs_timings: &cfg
+      type: juggler
+      namespace: music.frontend
+      config:
+        history: 5
+        type: metahost
+      Host: "prestable.music.yandex.ru"
+      notifications:
+          - template_name: phone_escalation
+            template_kwargs:
+                delay: 900 # seconds
+                logins:
+                  - '@svc_muzfrontend:mfront'
+                  - svarog
+                  - morgunv
+                  - oleksii
+                  - msermakov
+                  - iv-morozovv
+                  - denis-grekov
+                  - fat32elena
+          - template_name: on_status_change
+            template_kwargs:
+                delay: 300 # seconds
+                status:
+                  - {from: OK, to: CRIT}
+                  - {from: WARN, to: CRIT}
+                method:
+                    - telegram
+                login:  [ya-musfront-monitoring]
+      Aggregator: timed_more_than_limit_is_problem
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 2,time_end: 1,day_end: 7,day_start: 1}]
+      checkname: nodejs_timings
+      description: nodejs_timings
+      CRIT: ["${musfront.nodejs_svcs}['nodejs_timings'][4]>600"]
+    langdetect_4xx:
+      << : *cfg
+      checkname: langdetect_4xx
+      description: langdetect 4xx
+      # MUSIC-22672 - day only monitoring
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits:
+            - {crit: 0,time_start: 10,time_end: 19,day_end: 7,day_start: 1}
+            - {crit: 101%,time_start: 20,time_end: 9,day_end: 7,day_start: 1}
+      CRIT: ["${musfront.nodejs_svcs}['langdetect.4xx']>3"]
+    langdetect_5xx:
+      << : *cfg
+      checkname: langdetect_5xx
+      description: langdetect 5xx
+      # MUSIC-22672 - day only monitoring
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits:
+            - {crit: 0,time_start: 10,time_end: 19,day_end: 7,day_start: 1}
+            - {crit: 101%,time_start: 20,time_end: 9,day_end: 7,day_start: 1}
+      CRIT: ["${musfront.nodejs}['langdetect.5xx'] - ${nodejs}['langdetect.522'] > 1"]
+    langdetect_timings:
+      << : *cfg
+      checkname: langdetect_timings
+      description: langdetect timings
+      # MUSIC-22672 - monitor timeout (250ms)
+      flaps: { stable_time: 120, critical_time: 180 }
+      CRIT: ["${musfront.nodejs_svcs}['langdetect_timings'][4]>450"]
+    geobase_4xx:
+      << : *cfg
+      checkname: geobase_4xx
+      description: geobase 4xx
+      # MUSIC-22672 - day only monitoring
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits:
+            - {crit: 0,time_start: 10,time_end: 19,day_end: 7,day_start: 1}
+            - {crit: 101%,time_start: 20,time_end: 9,day_end: 7,day_start: 1}
+      CRIT: ["${musfront.nodejs_svcs}['geobase.4xx']>3"]
+    geobase_5xx:
+      << : *cfg
+      checkname: geobase_5xx
+      description: geobase 5xx
+      # MUSIC-22672 - day only monitoring
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits:
+            - {crit: 0,time_start: 10,time_end: 19,day_end: 7,day_start: 1}
+            - {crit: 101%,time_start: 20,time_end: 9,day_end: 7,day_start: 1}
+      CRIT: ["${musfront.nodejs}['geobase.5xx'] - ${nodejs}['geobase.522'] > 1"]
+    geobase_timings:
+      << : *cfg
+      checkname: geobase_timings
+      description: geobase timings
+      # MUSIC-22672 - monitor timeout (250ms)
+      CRIT: ["${musfront.nodejs_svcs}['geobase_timings'][4]>450"]
+    blackbox_err:
+      << : *cfg
+      checkname: nodejs_blackbox_err
+      description: nodejs_blackbox_err
+      CRIT: ["${musfront.nodejs_svcs}['blackbox.error']>2"]
+    blackbox_4xx:
+      << : *cfg
+      checkname: blackbox_4xx
+      description: blackbox 4xx
+      CRIT: ["${musfront.nodejs_svcs}['blackbox.4xx']>1"]
+    blackbox_5xx:
+      << : *cfg
+      checkname: blackbox_5xx
+      description: blackbox 5xx
+      CRIT: ["${musfront.nodejs_svcs}['blackbox.5xx']>1"]
+    blackbox_timings:
+      << : *cfg
+      checkname: blackbox_timings
+      description: blackbox timings
+      flaps: { stable_time: 120, critical_time: 180 }
+      CRIT: ["${musfront.nodejs_svcs}['blackbox_timings'][4]>50"]

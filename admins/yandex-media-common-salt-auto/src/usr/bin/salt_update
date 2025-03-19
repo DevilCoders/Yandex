@@ -1,0 +1,143 @@
+#!/bin/bash
+
+log(){
+   local ts="$(date '+%F %T')" lineno=`caller 0`
+   printf -- "$ts:[$$] %s#%s: $@\n" ${lineno% *}
+}; export -f log;
+
+HOSTNAME=$(hostname -f)
+GITROOT="/srv/salt-masterless"
+SVNROOT="/srv/salt-masterless-arc"
+CONFIG_DIR="/etc/yandex/salt"
+
+if [ -f /etc/default/salt-auto ]; then
+  . /etc/default/salt-auto
+fi
+
+# parse args
+for i in "$@"; do case $i in
+  -u|--update) __update=1;: "           Update/clone repo and apply changes";;
+  -s|--ssh)    __ssh=1;: "              Update/clone repo via ssh (see ssh-add -l)";;
+  -ht|--https) __https=1;: "            Update/clone git repo via https";;
+  -n|--name)   __name=1;: " <user name> Login to by specified user name";;
+  -l|--less)   __less=1;: "             MasterLess minion";;
+  -p|--project)__project=1;: "<project> Applay states from specified project";;
+  -r|--repo)   __repo=1;: "      <repo> Clone configs from specified repository ('git' / 'arc')";;
+  *)
+     if ! [[ "$i" =~ ^- ]]; then
+        if ((__project));   then __project=0 PROJECT="$i" ;continue;fi
+        if ((__repo));      then __repo=0 REPO="$i" ;continue;fi
+        if ((__name));      then __name=0 LC_USER="$i"    ;continue;fi
+     fi
+     short_help="apply changes from media_salt_master repo"
+     echo "Usage: `basename $0` [-u] [-r <repo>] [-s [-n <name>]] [-ht] [-l] [-p <project>] - $short_help"
+     sed -nr 's/^(\s+-..?\|[^)]+)[^:]+: "(.*)";;/\1  \2/p' "$0"
+     exit 0
+     ;;
+esac;done;
+
+if [ ! $REPO ] && [ -f "${GITROOT}/.nosync" ]; then
+  REPO="none"
+  echo -e "\e[1;32m Setting REPO to none, because we have ${GITROOT}/.nosync\e[0m"
+fi
+
+if [ ! $REPO ]; then
+    until all_tags=${all_tags:-$(curl -sf http://c.yandex-team.ru/api/get_host_tags/$HOSTNAME/)};do
+      if ((_r+=1, _r > ${MAX_CURL_RETRIES:=3})); then
+        log "Failed to curl conductor #${MAX_CURL_RETRIES} times, exit!" >&2
+        exit 1
+      fi
+    done
+    [[ $all_tags =~ "salt-master-from-arcadia" ]] && REPO="arc" || REPO="git"
+    echo -e "\e[1;32m Setting source repo to '$REPO' looking at conductor tags of $HOSTNAME\e[0m"
+fi
+
+until PROJECT=${PROJECT:-$(curl -sf http://c.yandex-team.ru/api-cached/hosts2projects/$HOSTNAME/)};do
+  if ((_r+=1, _r > ${MAX_CURL_RETRIES:=3})); then
+    log "Failed to curl conductor #${MAX_CURL_RETRIES} times, exit!" >&2
+    exit 1
+  fi
+done
+
+if ((__ssh));then
+  if ssh-add -l|grep 'Could not'; then
+    log "Can not continue, exiting!"
+    exit 1
+  fi
+  # Wont work under root, cause git/svn not expect this user via ssh://
+  if [ "$USER" ] && [ "$USER" != "root" ]; then
+    GITUSERNAME="$USER"
+    SVNUSERNAME="$USER"
+  elif [ "$LC_USER" ]; then
+    GITUSERNAME="$LC_USER"
+    SVNUSERNAME="$LC_USER"
+  else
+    log "USER=$USER, LC_USER is empty. Please specify user via -n <username>"
+    exit 1
+  fi
+  if [ "$REPO" == "arc" ]; then
+      SVN="svn+ssh://$SVNUSERNAME@arcadia-ro.yandex.ru/arc/trunk/arcadia/admins/salt-master-configs/media_salt_master"
+  else
+      GIT="ssh://$GITUSERNAME@git.yandex.ru/media_salt_master.git"
+  fi
+elif ((__https));then
+  if [[ "$REPO" == "arc" ]]; then
+      echo -e "\e[1;31m Arcadia repo can be accesed via ssh (-s, --ssh param).\e[0m"
+      exit 1
+  fi
+  GIT="https://git.yandex.ru/media_salt_master.git"
+else
+  if [[ "$REPO" == "arc" ]]; then
+      echo -e "\e[1;31m Arcadia repo can be accesed via ssh (-s, --ssh param).\e[0m"
+      exit 1
+  fi
+  GIT="git://git.yandex.ru/media_salt_master.git"
+fi
+
+if ((__less)); then
+  sed "/__PROJECT__/d" $CONFIG_DIR/minion.tpl > /etc/salt/minion.d/minion.conf
+  mkdir -p $GITROOT/common/roots $GITROOT/common/pillar
+  mkdir -p $SVNROOT/common/roots $SVNROOT/common/pillar
+  exit 0
+fi
+
+if ((__update));then
+  if [ "$REPO" == "arc" ]; then
+    echo -e "Use states for \e[1;32m'$PROJECT'\e[0m from $SVN"
+  elif [ "$GIT" ]; then
+    echo -e "\e[1;31m Arcadia repo can be accesed via ssh.\e[0m"
+    echo -e "\e[1;32m Using git.\e[0m"
+  fi
+  echo "Updating sources"
+  if [[ -d "$GITROOT"/.git && $REPO == "git" ]]; then
+    # git pull $GIT master need if we using ssh (http://stackoverflow.com/questions/24305178/git-pull-command-from-different-user by skacheev@)
+    cd $GITROOT && git pull $GIT master || exit 1
+  elif [[ -d "$SVNROOT"/.svn && $REPO == "arc" ]]; then
+    cd $SVNROOT && svn relocate $SVN &&  svn up || exit 1
+  else
+    if [[ -d "$GITROOT" && $REPO == "git" ]]; then
+      if (($(stat -c '%h' $GITROOT) > 2)); then
+         mv $GITROOT ${GITROOT}_backup_$(date '+%F_%T')
+      fi
+    elif [[ -d "$SVNROOT" && $REPO == "arc" ]]; then
+      if (($(stat -c '%h' $SVNROOT) > 2)); then
+         mv $SVNROOT ${SVNROOT}_backup_$(date '+%F_%T')
+      fi
+    fi
+    if [[ "$GIT" && "$REPO" == "git" ]]; then git clone --depth 1 $GIT $GITROOT || exit 1; fi
+    if [[ "$SVN" && "$REPO" == "arc" ]]; then svn checkout --non-interactive $SVN $SVNROOT || exit 1; fi
+  fi
+fi
+
+sed "s/__PROJECT__/$PROJECT/" $CONFIG_DIR/minion.tpl > $CONFIG_DIR/minion
+if [ $REPO == "arc" ]; then
+    sed "s/__REPO__/-$REPO/" $CONFIG_DIR/minion > $CONFIG_DIR/minion.b
+else
+    sed "s/__REPO__//" $CONFIG_DIR/minion > $CONFIG_DIR/minion.b
+fi
+mv $CONFIG_DIR/minion.b $CONFIG_DIR/minion
+salt-call -l error state.highstate --retcode-passthrough -c $CONFIG_DIR
+
+
+# EOF
+

@@ -1,0 +1,68 @@
+storages:
+  - name: syslog_storage
+    plugin: fs
+    config:
+      directory: /var/lib/yandex/unified_agent/syslog_storage
+      max_partition_size: 1gb
+      data_retention:
+        by_size: max
+routes:
+  - input:
+      plugin: syslog
+      id: snmptrap_syslog_input
+      config:
+        address: "[::1]:1514"
+        max_message_size: 4096
+        batch_size: 300
+
+        # Формат входящих сообщений, одно из значений raw|rfc3164|rfc3164_without_hostname|permissive.
+        # raw — не парсить syslog, передать сообщение as-is, удобно при отладке
+        # rfc3164 — формат RFC3164 с полем hostname
+        # rfc3163_without_hostname — формат RFC3164 без поля hostname (например, утилита logger не добавляет поле hostname при отправке через сокет)
+        # permissive — позволяет отступления от RFC, с помощью ряда эвристик старается восстановить структуру сообщения.
+        #   Используются следующие эвристики:
+        #     * При отсутствии поля с временной меткой она устанавливается по моменту обработки
+        #     * Допускается отсутствие поля host: когда на его месте подстрока вида "app:", она интерпретируется как тег "app" и не указанный хостнейм
+        #     * В теге допускается пунктуация из "-_." и длина больше 32 символов
+        #     * Допускается тег вида "application[pid]": отдельно записываются метаданные _app и _pid
+        #     * Опция strip_tag_delimiter удаляет последовательность пробелов/табуляций после разделителя
+        #     * Если в конце сообщения передаётся нулевой байт, он удаляется
+        format: rfc3164
+        strip_tag_delimiter: false
+    channel:
+      pipe:
+        #- filter:
+        #    plugin: batch
+        #    config:
+        #      delimiter: ""
+        #      flush_period: 600ms
+        #      preserve_meta: timestamps
+        #      limit:
+        #        bytes: 500kb
+        - filter:
+            plugin: compress
+            config:
+              codec: zstd
+              compression_quality: 3 # default 3
+        - storage_ref:
+            name: syslog_storage
+        - filter:
+            plugin: split_session
+            config:
+              # Число выходных сессий, между которыми нужно распределять данные.
+              sessions_count: 16  # обязательный
+      output:
+        plugin: dev_null
+#        plugin: logbroker
+#        config:
+#          endpoint: logbroker.yandex.net
+#          port: 2135
+#          topic:  /noc/nocdev/snmptrap
+#          codec: zstd
+#          compression_quality: 3
+#          tvm:
+#            client_id: 2034827        # snmptrapper
+#            destination_id: 2001059   # logbroker
+#            secret:
+#              file: /etc/yandex/unified_agent/secrets/tvm
+

@@ -1,0 +1,1700 @@
+{%- set config = vars -%}
+{
+    "app_name": "mastermind2.26",
+
+    "dc_disable": ["man"],
+
+    "grpc": {
+        "port": 9010,
+        "thread_pool_size": 10,
+        "maximum_concurrent_rpcs": 20
+    },
+
+    "inventory_grpc": {
+        "port": 50051,
+        "threads_num": 10
+    },
+
+    "monolith_worker": {
+        "workers": 2,
+        "provide_external_api": true,
+        "load_cache": {
+            "enable": {{ config.monolith.enable_load_cache_update|lower }}
+        }
+    },
+
+    "storage_state_source": {
+        "app": "mastermind-collector",
+        "addresses": "{{ config.collector.addresses }}",
+        "timeout": {{ config.collector.timeout }},
+        "ignore_empty_snapshot": {{ config.collector.ignore_empty_snapshot|lower }},
+        "verify": true,
+        "use_flatbuffers": true
+    },
+
+    "resizer": {
+        "address": "{{ config.collector.resizer_addresses|lower }}",
+        "timeout": 90
+    },
+
+    "smart_storage": {
+        "load_reserve": {{ config.resizer.topology_changer.load_reserve }},
+        "disk_avg_util_read_estimate": {{ config.resizer.topology_changer.disk_avg_util_read_estimate }},
+        "disk_avg_util_write_estimate": {{ config.resizer.topology_changer.disk_avg_util_write_estimate }}
+    },
+
+    "forbidden_dht_groups": true,
+    "forbidden_dc_sharing_among_groups": true,
+    "forbidden_ns_without_settings": true,
+    "forbidden_unmatched_group_total_space": true,
+
+    "disown_timeout": 120,
+    "heartbeat_timeout": 120,
+
+    "inventory": "yandex_mastermind.inventory",
+    "inventory_config": {
+        "federation_conductor_groups": {{ config.inventory.federation_conductor_groups | tojson() }},
+        "project": "elliptics",
+        "project_cache": 43200,
+        "groups_cache": 21600
+    },
+
+    "elliptics": {
+        "nodes": [
+            {%- for host in config.elliptics.nodes %}
+            ["{{ host }}", 1025, 10]{{ "," if not loop.last else "" }}
+            {%- endfor %}
+        ],
+        "wait_timeout": {{ config.elliptics.wait_timeout }},
+        "dnet_log": "/var/log/mastermind/mastermind.log",
+        "dnet_log_mask": 3,
+        "net_thread_num": 3,
+        "io_thread_num": 3,
+        "nonblocking_io_thread_num": 3,
+        "config_path_tpl": "/etc/elliptics/parsed/elliptics-node-{node_id}.parsed",
+        "tls_support": 1,
+        "cert_path": "/etc/elliptics/ssl/storage.crt",
+        "key_path": "/etc/elliptics/ssl/storage.key",
+        "ca_path": "/etc/elliptics/ssl"
+    },
+
+    "monitor": {
+        "pool_size": 10,
+        "connect_timeout": 5,
+        "request_timeout": 5,
+        "max_http_clients": 30
+    },
+
+    "unistat": {
+        "port_start": 6000,
+        "port_range": 10
+    },
+
+    "couple_build": {
+        "default_group_total_space": "916G"
+    },
+
+    "all_federations_metadata": {
+        "url": "{{ config.mongo.all_federations_mdb_url_template.format(user=config.mongo.mdb_user, password=config.mongo.mdb_password) }}",
+        "options": {
+            "max_pool_size": 100,
+            "socketTimeoutMS": 15000,
+            "connectTimeoutMS": 15000,
+            "w": 2,
+            "wtimeout": 15000
+        },
+        "groups": {
+            "db": "{{ config.mongo.global_metadata_db_prefix }}_groups"
+        },
+        "external_storage": {
+            "db": "{{ config.mongo.global_metadata_db_prefix }}_external_storage"
+        }
+    },
+
+    "metadata": {
+        "url": "{{ config.mongo.mdb_url_template.format(user=config.mongo.mdb_user, password=config.mongo.mdb_password) }}",
+        "options": {
+            "max_pool_size": 100,
+            "socketTimeoutMS": 15000,
+            "connectTimeoutMS": 15000,
+            "w": 2,
+            "wtimeout": 15000
+        },
+        "couples": {
+            "db": "{{ config.mongo.metadata_db_prefix }}_couples"
+        },
+        "jobs": {
+            "db": "{{ config.mongo.metadata_db_prefix }}_jobs"
+        },
+        "planner": {
+            "db": "{{ config.mongo.metadata_db_prefix }}_planner"
+        },
+        "cache": {
+            "db": "{{ config.mongo.metadata_db_prefix }}_cache"
+        },
+        "statistics": {
+            "db": "{{ config.mongo.metadata_db_prefix }}_statistics"
+        },
+        "history": {
+            "db": "{{ config.mongo.metadata_db_prefix }}_history"
+        },
+        "future_backends": {
+            "db": "{{ config.mongo.metadata_db_prefix }}_future_backends"
+        },
+        "resources": {
+            "db": "{{ config.mongo.metadata_db_prefix }}_resources"
+        },
+        "downtimes": {
+            "db": "{{ config.mongo.metadata_db_prefix }}_downtimes"
+        },
+        "scheduler": {
+            "db": "{{ config.mongo.metadata_db_prefix }}_scheduler"
+        },
+        "minions": {
+            "db": "{{ config.mongo.metadata_db_prefix }}_minions"
+        }
+    },
+    "scheduler": {
+        "enabled": true,
+        "bunches_of_starters": {
+            "main": {
+                "run_period": 300
+            }
+        },
+        "queue": {
+            "resources": {
+                "fs": 1.3,
+                "cpu": 1.5
+            }
+        },
+        "couple_defrag": {
+            "enabled": true,
+            "autoapprove": true,
+            "bunch_of_starters": "main",
+            "postpone_job_creation_check": true,
+            "allow_per_group": true,
+            "allow_for_lrc_groupsets": false,
+            "run_period": 450,
+            "couple_defrag_period": 450,
+            "max_executing_jobs": 40,
+            "unsafe_namespace_life": 432000,
+            "safe_namespace_life": 864000,
+            "efficiency_coefficient": 1.0,
+            "ns_end_ts_coefficient": 0.05,
+            "ns_removed_percentage": 0.2,
+            "new_jobs_minimal_amount": 1,
+            "jobs_allowed_to_fail_count": 10,
+            "efficiency_correction": {
+                "min": 0.25,
+                "max": 4,
+                "default_accounting": 1.0,
+                "namespaces_accounting": {
+                }
+            }
+        },
+
+        "pair_recover_dc": {
+            "enabled": true,
+            "autoapprove": true,
+            "postpone_job_creation_check": true,
+            "bunch_of_starters": "main",
+            "run_period": 450,
+            "max_executing_jobs": 10,
+            "keys_cf": 86400,
+            "timestamp_cf": 1,
+            "min_average_keys_diff": 7,
+            "max_average_keys_diff": 1000,
+            "frequent_recovery_namespaces": [
+                ["s3-yc-cold|s3-yc-cold-preprod", 3]
+            ],
+            "big_weight_loss": 100000
+        },
+        "multiple_recover_dc": {
+            "enabled": true,
+            "autoapprove": true,
+            "postpone_job_creation_check": true,
+            "bunch_of_starters": "main",
+            "run_period": 450,
+            "max_executing_jobs": 10,
+            "keys_cf": 43200,
+            "timestamp_cf": 1,
+            "min_average_keys_diff": 1000,
+            "max_average_keys_diff": 100000,
+            "frequent_recovery_namespaces": [
+                ["s3-yc-cold|s3-yc-cold-preprod", 3]
+            ],
+            "big_weight_loss": 100000,
+            "jobs_allowed_to_fail_count": 40,
+            "failed_jobs_percentage_limit": 0.3
+        },
+        "compare": {
+            "enabled": true,
+            "autoapprove": true,
+            "bunch_of_starters": "main",
+            "run_period": 450,
+            "max_executing_jobs": 10,
+            "namespace_modifiers": [],
+            "jobs_allowed_to_fail_count": 10,
+            "failed_jobs_percentage_limit": 0.3
+        },
+        "lrc_recovery": {
+            "enabled": true,
+            "autoapprove": true,
+            "bunch_of_starters": "main",
+            "run_period": 450,
+            "max_executing_jobs": 4,
+            "keys_cf": 86400,
+            "timestamp_cf": 1,
+            "big_weight_loss": 1000000,
+            "jobs_allowed_to_fail_count": 5,
+            "min_job_weight": 86400
+        },
+        "move": {
+            "enabled": true,
+            "bunch_of_starters": "main",
+            "autoapprove": true,
+            "run_period": 450,
+            "move_period": 450,
+            "max_executing_jobs": 10,
+            "max_dc_uncoupled_space": 0,
+            "min_dc_uncoupled_space": 0,
+            "uncoupled_diff_sensitive_percentage": 0.05,
+            "generated_jobs_distribute_load_percentage": 0.05,
+            "distribute_load_phase": {
+                "enable": {{ config.scheduler.move_starter.distribute_load_phase_enable|lower }},
+                "autoapprove": false,
+                "max_executing_jobs": 2,
+                "net_utilization_step": 0.01,
+                "fs_utilization_step": 0.01,
+                "min_fs_utilization_reserve": 0.05
+            },
+            "namespaces_forbidden_to_move": [
+                "karl-lrc"
+            ]
+        },
+        "move_group": {
+            "enabled": true,
+            "autoapprove": true,
+            "max_executing_jobs": 44,
+            "run_period": 15
+        },
+        "move_lrc_group": {
+            "enabled": true,
+            "autoapprove": true,
+            "max_executing_jobs": 44,
+            "run_period": 15
+        },
+        "lrc_defrag": {
+            "enabled": true,
+            "autoapprove": true,
+            "bunch_of_starters": "main",
+            "run_period": 450,
+            "max_executing_jobs": 10,
+            "min_job_weight": 3600,
+            "use_lrc_defrag_v2": true,
+            "use_lrc_check_defrag_share": 0.33,
+            "jobs_allowed_to_fail_count": 10,
+            "disabled_namespaces": [
+                "karl-lrc"
+            ]
+        },
+        "couple_archive_lrc": {
+            "enabled": false,
+            "autoapprove": false,
+            "bunch_of_starters": "main",
+            "run_period": 450,
+            "max_executing_jobs": 3,
+            "min_couple_ts": 0,
+            "couple_attributes": {
+                "scheme": "lrc-8-2-2-v2",
+                "part_size": 1048576
+            },
+            "lrc_groupset_selection_attempt": 5,
+            "namespace_min_couple_ts": {
+                "mail": 0
+            },
+            "default_min_couple_ts": 0
+        },
+        "couple_archive_lrc_mongo_queue": {
+            "enabled": false,
+            "autoapprove": false,
+            "bunch_of_starters": "main",
+            "run_period": 450,
+            "max_executing_jobs": 3,
+            "couple_attributes": {
+                "scheme": "lrc-8-2-2-v2",
+                "part_size": 1048576
+            }
+        },
+        "couple_archive_discard_replicas": {
+            "enabled": true,
+            "autoapprove": true,
+            "bunch_of_starters": "main",
+            "run_period": 450,
+            "max_executing_jobs": 3
+        },
+        "karl_nkvd_check": {
+            "enabled": true,
+            "run_period": 86400,
+            "max_executing_jobs": 3,
+            "autoapprove": true
+        },
+        "karl_synchronization": {
+            "enabled": true,
+            "run_period": 120,
+            "max_executing_jobs": 5,
+            "jobs_allowed_to_fail_count": 10,
+            "autoapprove": true
+        },
+        "karl_recovery": {
+            "enabled": true,
+            "run_period": 120,
+            "max_executing_jobs": 5,
+            "autoapprove": true,
+            "jobs_allowed_to_fail_count": 10,
+            "db_meta_checksum_percentage": 0.05
+        },
+        "restore_group": {
+            "enabled": true,
+            "run_period": 120,
+            "max_executing_jobs": 5,
+            "autoapprove": true,
+            "jobs_allowed_to_fail_count": 5
+        },
+        "ttl_cleanup": {
+            "enabled": true,
+            "bunch_of_starters": "main",
+            "run_period": 900,
+            "max_executing_jobs": 10,
+            "autoapprove": true,
+            "jobs_allowed_to_fail_count": 15,
+            "failed_jobs_percentage_limit": 0.35,
+            "default_ns_settings": {
+                "min_used_space": 0,
+                "use_karl_rm_job": true,
+                "delay": 7
+            }
+        },
+        "karl_rm": {
+            "enabled": true,
+            "bunch_of_starters": "main",
+            "run_period": 900,
+            "max_executing_jobs": 10,
+            "autoapprove": true,
+            "jobs_allowed_to_fail_count": 15,
+            "failed_jobs_percentage_limit": 0.35,
+            "default_ns_settings": {
+                "min_used_space": 0,
+                "use_karl_rm_job": true,
+                "delay": 7
+            }
+        }
+    },
+    "jobs": {
+        "enabled": true,
+        "types_to_skip": [],
+        "shards": {
+            "total": 8,
+            "update_period": 10,
+            "processing_timeout": 600
+        },
+        "processing": {
+            "starter": {
+                "classical_starter_enabled": false,
+
+                "batch_size": 50,
+                "pool_size": 10,
+
+                "distributor": {
+                    "enabled": true,
+                    "period_sec": 10,
+                    "lock_name": "starter_jobs_distributor_testing"
+                },
+
+                "worker": {
+                    "enabled": true
+                }
+            },
+            "executor": {
+                "pool_size": 5,
+                "period": 20,
+                "optimize": true,
+                "notification_port": 9010,
+                "fallback_pool_size": 1,
+                "fallback_period": 600
+            },
+            "resource_queue": {
+                "run_period": 180,
+                "drop_timeout": 1800
+            }
+        },
+        "log_orm_requests": true,
+        "minions": {
+            "max_run_history": 50,
+            "base_delay_proceed": 300,
+            "max_delay_proceed": 14400,
+            "exp_delay_proceed": 1.12,
+            "execute_attempts": 50
+        },
+        "update_period": 50,
+        "execute_period": 60,
+        "recover_dc_job": {
+            "max_executing_jobs": 50,
+            "handle_artifacts_errors": {
+                "recover_dc_group_task": {
+                    "defrag": true,
+                    "total_defrag": true,
+                    "force_restore": true,
+                    "eblob_kit": true
+                },
+                "karl_recovery_db": {
+                    "defrag": true,
+                    "total_defrag": true
+                },
+                "karl_recovery_db_meta": {
+                    "defrag": true,
+                    "total_defrag": true
+                },
+                "karl_recovery_db_meta_checksum": {
+                    "defrag": true,
+                    "total_defrag": true
+                },
+                "dnet_client_compare" : {
+                    "eblob_kit": true,
+                    "recover": true,
+                    "force_restore": true,
+                    "recover_corrupted": true
+                }
+            },
+            "error_handling_attempts": 1,
+            "enable_karl_recovery": false,
+            "karl_recovery_mode": "DB_META",
+            "ttl_after_completion_sec": 7776000
+        },
+        "move_job": {
+            "max_executing_jobs": 25,
+            "handle_artifacts_errors": {
+                "move_group": {
+                    "defrag": true,
+                    "total_defrag": true,
+                    "eblob_kit": true
+                }
+            },
+            "error_handling_attempts": 1,
+            "iteration_by_position": {
+                "enable_for_all_namespaces": true
+            }
+        },
+        "ttl_cleanup_job": {
+            "allow_orm": true,
+            "allow_orm_tasks": true,
+            "iteration_by_position": {
+                "enable_for_all_namespaces": true
+            },
+            "resources_percent_consumptions": {
+                "cpu": 0.25,
+                "fs": 1.0
+            }
+        },
+        "move_lrc_groupset_job": {
+            "max_executing_jobs": 50,
+            "resources_percent_consumptions": {
+                "fs": 0.5,
+                "host_in": 0.04,
+                "host_out": 0.125
+            }
+        },
+        "couple_defrag_job": {
+            "orm_jobs_percentage": 1.0,
+            "allow_orm": true,
+            "allow_orm_tasks": true,
+            "forbidden_namespaces": [],
+            "max_executing_jobs": 100,
+            "reserved_space_coefficient": 1.0,
+            "ttl_after_completion_sec": 7776000
+        },
+        "restore_group_job": {
+            "enable_restore_without_dc": true,
+            "max_executing_jobs": 25,
+            "handle_artifacts_errors": {
+                "recover_dc_group_task": {
+                    "defrag": true,
+                    "total_defrag": true,
+                    "eblob_kit": true
+                },
+                "recover_half_dead_group": {
+                    "eblob_kit": true,
+                    "total_defrag": true,
+                    "defrag": true
+                },
+                "recover_coupled_groups": {
+                    "defrag": true,
+                    "total_defrag": true
+                }
+            },
+            "error_handling_attempts": 1,
+            "use_send_keys_utility": true
+        },
+        "convert_to_lrc_groupset_job": {
+            "max_executing_jobs": 10
+        },
+        "restore_lrc_group_job": {
+            "max_executing_jobs": 100,
+            "resources_percent_consumptions": {
+                "fs": 0.25,
+                "host_in": 0.25
+            },
+            "handle_artifacts_errors": {
+                "recover_dc_group_task": {
+                    "defrag": true,
+                    "total_defrag": true,
+                    "eblob_kit": true
+                },
+                "lrc_recovery": {
+                    "restore": true,
+                    "force_restore": true,
+                    "eblob_kit": true
+                }
+            },
+            "error_handling_attempts": 1
+        },
+        "make_lrc_groups_job": {
+            "max_executing_jobs": 300
+        },
+        "add_groupset_to_couple_job": {
+            "max_executing_jobs": 270,
+            "use_garbage_collector": true,
+            "handle_artifacts_errors": {
+                "change_groupset_frozen_status": {
+                    "defrag": true,
+                    "total_defrag": true
+                },
+                "recover_dc_group_task": {
+                    "defrag": true,
+                    "total_defrag": true,
+                    "eblob_kit": true
+                },
+                "lrc_convert": {
+                    "restore": true,
+                    "force_restore": true,
+                    "eblob_kit": true
+                },
+                "lrc_validate": {
+                    "restore": true,
+                    "force_restore": true,
+                    "eblob_kit": true,
+                    "recover": true,
+                    "recover_corrupted": true,
+                    "recover_missing": true
+                },
+                "lrc_recovery": {
+                    "eblob_kit": true
+                }
+            },
+            "error_handling_attempts": 1
+        },
+        "recover_lrc_groupset_job": {
+            "check_consistency": true,
+            "max_executing_jobs": 300,
+            "handle_artifacts_errors": {
+                "recover_dc_group_task": {
+                    "defrag": true,
+                    "total_defrag": true,
+                    "eblob_kit": true
+                },
+                "lrc_tools": {
+                    "restore": true,
+                    "force_restore": true,
+                    "eblob_kit": true
+                }
+            },
+            "error_handling_attempts": 1
+        },
+        "defrag_lrc_groupset_job": {
+            "max_executing_jobs": 150,
+            "iteration_by_position": {
+                "enable_for_all_namespaces": true
+            }
+        },
+        "defrag_lrc_groupset_v2_job" : {
+            "max_executing_jobs": 50,
+            "resources_limits": {
+                "fs": 1
+            },
+            "resources_absolute_consumptions": {
+                "fs_reserved_space": 75161927680
+            },
+            "iteration_by_position": {
+                "enable_for_all_namespaces": true
+            },
+            "handle_artifacts_errors": {
+                "lrc_remove_records": {
+                    "eblob_kit": true
+                },
+                "lrc_list": {
+                    "restore": true,
+                    "force_restore": true,
+                    "eblob_kit": true
+                },
+                "lrc_read_records": {
+                    "restore": true,
+                    "force_restore": true,
+                    "eblob_kit": true
+                },
+                "lrc_recovery": {
+                    "eblob_kit": true
+                }
+            }
+        },
+        "discard_groupset_job": {
+            "max_executing_jobs": 10
+        },
+        "garbage_collector_job": {
+            "max_executing_jobs": 66
+        },
+        "fix_eblobs_job": {
+            "max_executing_jobs": 20,
+            "recover_replicas_groupsets": true,
+            "handle_artifacts_errors": {
+                "recover_dc_group_task": {
+                    "defrag": true,
+                    "total_defrag": true,
+                    "eblob_kit": true
+                }
+            },
+            "error_handling_attempts": 1
+        },
+        "cancelling_during_processing": {
+            "restore_group_job:recover_dc_group_task": {
+                "couple_defrag_job:new_node_backend_defrag_task": 0.2
+            },
+            "restore_group_job:karl_send_keys_task": {
+                "couple_defrag_job:new_node_backend_defrag_task": 0.2
+            },
+            "move_job:recover_dc_group_task": {
+                "couple_defrag_job:new_node_backend_defrag_task": 0.2
+            }
+        },
+        "couple_build_job": {
+            "max_executing_jobs": 200
+        },
+        "replicas_increase_job": {
+            "handle_artifacts_errors" : {
+                "recover_dc_group_task" : {
+                    "defrag": true,
+                    "total_defrag": true,
+                    "eblob_kit": true
+                }
+            }
+        },
+        "replicas_reduce_job": {
+            "handle_artifacts_errors" : {
+                "write_meta_key": {
+                    "defrag": true,
+                    "total_defrag": true
+                },
+                "recover_dc_group_task" : {
+                    "defrag": true,
+                    "total_defrag": true,
+                    "eblob_kit": true
+                }
+            }
+        },
+        "karl_synchronization_job": {
+            "handle_artifacts_errors": {
+                "karl_recovery_db": {
+                    "defrag": true,
+                    "total_defrag": true
+                }
+            }
+        },
+        "karl_recovery_job": {
+            "handle_artifacts_errors" : {
+                "karl_recovery_db": {
+                    "defrag": true,
+                    "total_defrag": true
+                },
+                "karl_recovery_db_meta": {
+                    "defrag": true,
+                    "total_defrag": true
+                },
+                "karl_recovery_db_meta_checksum": {
+                    "defrag": true,
+                    "total_defrag": true
+                }
+            }
+        },
+        "host_restart_elliptics_job": {
+            "state_update_wait_period": 300
+        },
+        "karl_common_mega_job": {
+            "allowed_created_job_types": ["karl_mds_14881_job", "karl_mds_15971_job"]
+        },
+        "mega_restart_elliptics_job": {
+            "max_executing_jobs": 1
+        },
+        "keys_listing_mega_job": {
+            "release_resources_on_suspend": true,
+            "default_batch_size": 30,
+            "default_batch_max_percentage": 0.1,
+            "default_max_duration_without_profit": 86400,
+            "yt": {
+                "path": "{{ config.keys_listing_mega_job.yt.endpoint }}",
+                "cluster": "hahn",
+                "token": "{{ config.token }}"
+            }
+        },
+        "karl_couple_migrate_job": {
+            "enable_async_mode": true
+        },
+        "check_fully_loaded_groupsets": {
+            "restore_group_job:recover_coupled_groups": false,
+            "restore_group_job:recover_half_dead_group": false,
+            "restore_group_job:karl_send_keys_task": false
+        },
+
+        "downtime_created_by_jobs_duration": 86400
+    },
+    "tasks": {
+        "upload_bad_keys": {
+            "s3": {
+                "endpoint": "https://s3.mds.yandex.net",
+                "bucket": "bad-keys-testing",
+                "region": "default"
+            },
+            "yt": {
+                "endpoint": "//home/mds/bad_keys/testing/bad_keys_meta",
+                "cluster": "hahn"
+            }
+        },
+        "new_node_backend_defrag_task": {
+            "resources_absolute_consumptions": {
+                "fs_reserved_space": 55834574848
+            },
+            "resources_percent_consumptions": {
+                "fs": 1.0,
+                "cpu": 0.1
+            }
+        },
+        "recover_dc_group_task": {
+            "resources_absolute_consumptions": {
+                "host_in": 65536000,
+                "host_out": 65536000
+            },
+            "resources_percent_consumptions": {
+                "fs": 1.0
+            }
+        },
+        "karl_send_keys_task": {
+            "resources_absolute_consumptions": {
+                "host_in": 65536000,
+                "host_out": 65536000
+            },
+            "resources_percent_consumptions": {
+                "fs": 1.0
+            }
+        },
+        "move_group": {
+            "resources_absolute_consumptions": {
+                "host_in": 65536000,
+                "host_out": 65536000
+            },
+            "resources_percent_consumptions": {
+                "fs": 0.6
+            }
+        },
+        "recover_half_dead_group": {
+            "resources_absolute_consumptions": {
+                "host_in": 65536000,
+                "host_out": 65536000
+            },
+            "resources_percent_consumptions": {
+                "fs": 1.0
+            }
+        },
+        "recover_coupled_groups": {
+            "resources_absolute_consumptions": {
+                "host_in": 65536000,
+                "host_out": 65536000
+            },
+            "resources_percent_consumptions": {
+                "fs": 1.0
+            }
+        },
+        "lrc_convert": {
+            "resources_absolute_consumptions": {
+                "host_out": 41943040,
+                "host_in": 5242880
+            }
+        },
+        "lrc_validate": {
+            "resources_absolute_consumptions": {
+                "host_in": 41943040,
+                "host_out": 3495253
+            }
+        },
+        "lrc_list": {
+            "resources_percent_consumptions": {
+                "fs": 1.0
+            }
+        },
+        "lrc_read_records": {
+            "resources_percent_consumptions": {
+                "fs": 1.0
+            }
+        },
+        "lrc_remove_records": {
+            "resources_percent_consumptions": {
+                "fs": 1.0
+            }
+        },
+        "lrc_defrag": {
+            "resources_percent_consumptions": {
+                "fs": 0.25
+            }
+        },
+        "lrc_check_defrag": {
+            "resources_percent_consumptions": {
+                "fs": 1.0
+            }
+        },
+        "lrc_recovery": {
+            "resources_percent_consumptions": {
+                "fs": 0.25
+            },
+            "resources_absolute_consumptions": {
+                "host_in": 26214400
+            }
+        },
+        "gc_tools": {
+            "resources_percent_consumptions": {
+                "fs": 1.0
+            }
+        },
+        "eblob_kit": {
+            "resources_percent_consumptions": {
+                "cpu": 0.066,
+                "fs": 1.0
+            }
+        },
+        "karl_recovery_db": {
+            "resources_absolute_consumptions": {
+                "host_in": 16384000,
+                "host_out": 16384000
+            },
+            "resources_percent_consumptions": {
+                "fs": 1.0
+            }
+        },
+        "karl_recovery_db_meta": {
+            "resources_absolute_consumptions": {
+                "host_in": 16384000,
+                "host_out": 16384000
+            },
+            "resources_percent_consumptions": {
+                "fs": 1.0
+            }
+        },
+        "karl_recovery_db_meta_checksum": {
+            "resources_absolute_consumptions": {
+                "host_in": 16384000,
+                "host_out": 16384000
+            },
+            "resources_percent_consumptions": {
+                "fs": 1.0
+            }
+        },
+        "karl_nkvd": {
+            "resources_percent_consumptions": {
+                "karl_shard": 0.25,
+                "fs": 1.0
+            }
+        },
+        "karl_keys_listing": {
+            "resources_percent_consumptions": {
+                "fs": 1.0
+            }
+        },
+        "karl_red_recovery": {
+            "resources_percent_consumptions": {
+                "karl_shard": 0.25,
+                "fs": 1.0
+            }
+        },
+        "karl_migrate_couple": {
+            "resources_percent_consumptions": {
+                "karl_shard": 1.0
+             }
+        },
+        "karl_migrate_couple_async": {
+            "resources_percent_consumptions": {
+                "karl_shard": 1.0
+             }
+        },
+        "karl_mds_14881": {
+            "resources_percent_consumptions": {
+                "karl_shard": 0.1
+            }
+        },
+        "karl_mds_15971": {
+            "resources_percent_consumptions": {
+                "karl_shard": 0.1
+            }
+        },
+        "karl_lrc_import": {
+            "resources_percent_consumptions": {
+                "karl_shard": 0.25,
+                "fs": 0.5
+            }
+        },
+        "ns_cleanup": {
+            "max_attempts_per_round": 30
+        },
+        "karl_big_migration": {
+            "max_active_jobs": 30
+        },
+        "karl_cleanup": {
+            "resources_percent_consumptions": {
+                "karl_shard": 0.1
+            }
+        },
+        "karl_rm": {
+            "resources_absolute_consumptions": {
+                "host_in": 1638400,
+                "host_out": 1638400
+            },
+            "resources_percent_consumptions": {
+                "fs": 0.5
+            }
+        },
+        "karl_dd": {
+            "resources_absolute_consumptions": {
+                "host_in": 1638400,
+                "host_out": 1638400
+            },
+            "resources_percent_consumptions": {
+                "fs": 1.0,
+                "karl_shard": 0.1
+            }
+        },
+        "karl_du": {
+            "resources_percent_consumptions": {
+                "karl_shard": 0.1
+            }
+        },
+        "karl_ttl_cleanup": {
+            "resources_percent_consumptions": {
+                "karl_shard": 0.1
+            }
+        },
+        "mega_restart_elliptics": {
+            "host_jobs_fail_limit": 3
+        }
+    },
+
+    "sync": {
+        "class": "sync.kazoo_impl.ZkSyncManager",
+        "host": "{{ config.zk.hosts }}",
+        "lock_path_prefix": "{{ config.zk.lock_path_prefix }}",
+        "timeout": {{ config.zk.timeout }}
+    },
+
+    "inventory_cache": {
+        "hostname": {
+            "cache_update_period": 600,
+            "key_valid_time": 604800,
+            "key_retry_time": 600,
+            "path": "/var/tmp/mastermind.hostname.cache"
+        },
+        "hosttree": {
+            "cache_update_period": 600,
+            "key_valid_time": 604800,
+            "key_retry_time": 600,
+            "path": "/var/tmp/mastermind.hosttree.cache"
+        },
+        "ip_addresses": {
+            "cache_update_period": 600,
+            "key_valid_time": 1200,
+            "key_retry_time": 600,
+            "path": "/var/tmp/mastermind.ip_addresses.cache"
+        }
+    },
+
+    "karl": {
+        "addresses": "{{ config.karl.url }}",
+        "jobs_port": 17898,
+        "shard_proportion_multiplier": 2.0,
+        "excluded_shard_ids": [],
+        "jobs_default_timeout": 60,
+        "control_default_timeout": 300,
+        "migration_timeout": 300,
+        "tls": {
+            "support" : true,
+            "cert_path": "/etc/karl/ssl/karl.crt",
+            "key_path": "/etc/karl/ssl/karl.key",
+            "ca_paths": ["/etc/karl/ssl/ca.crt"]
+        }
+    },
+    "resource_consumption_limits": {
+        "fs": {
+            "fully_loaded": 0.8,
+            "max": {
+                "restore_group_job": 2.0,
+                "restore_group_job:karl_send_keys_task": 2.0,
+                "restore_group_job:rsync_backend_task": 2.0,
+                "restore_group_job:recover_half_dead_group": 2.0,
+                "restore_group_job:recover_coupled_groups": 2.0,
+                "restore_group_job:recover_dc_group_task": 2.0,
+                "restore_lrc_group_job:recover_dc_group_task": 2.0,
+                "karl_red_recovery_job:karl_red_recovery": 2.0
+            }
+        },
+        "host_in": {
+            "max": {
+                "restore_group_job": 2.0,
+                "restore_group_job:karl_send_keys_task": 2.0,
+                "restore_group_job:rsync_backend_task": 2.0,
+                "restore_group_job:recover_half_dead_group": 2.0,
+                "restore_group_job:recover_coupled_groups": 2.0,
+                "restore_group_job:recover_dc_group_task": 2.0,
+                "restore_lrc_group_job:recover_dc_group_task": 2.0
+            }
+        },
+        "host_out": {
+            "max": {
+                "restore_group_job": 2.0,
+                "restore_group_job:karl_send_keys_task": 2.0,
+                "restore_group_job:rsync_backend_task": 2.0,
+                "restore_group_job:recover_half_dead_group": 2.0,
+                "restore_group_job:recover_coupled_groups": 2.0,
+                "restore_group_job:recover_dc_group_task": 2.0,
+                "restore_lrc_group_job:recover_dc_group_task": 2.0
+            }
+        },
+        "karl_shard": {
+            "max": {
+                "karl_migrate_couple_job:karl_migrate_couple": 1.5,
+                "karl_migrate_couple_job:karl_migrate_couple_async": 1.5,
+                "karl_red_recovery_job:karl_red_recovery": 1.5
+            }
+        }
+    },
+    "storage": {
+        "max_group_id_approximate_limit": 10000000
+    },
+    "rsync_recovery": {
+        "rsync_storage_module": "storage",
+        "rsync_karl_module": "karl_jobs",
+        "rsync_user": "recoveradmin"
+    },
+    "restore": {
+        "rsync_use_module": true,
+        "rsync_module": "storage",
+        "rsync_user": "recoveradmin",
+        "group_file": "kdb/group.id",
+        "group_file_marker": "kdb/group_id_migrate_to_{dst_host}_node{dst_backend_id}.lock",
+        "group_file_dir_move_src_rename": "migrate",
+        "group_file_dir_move_dst_rename": "migrate_dst",
+        "ids_file": "kdb/ids",
+        "merge_group_file_marker": "kdb/merged_with_group_{dst_group_id}_backend_{dst_backend_id}.lock",
+        "merge_group_file_dir_move_src_rename": "merged",
+        "move_additional_files": [["kdb/device.conf", "kdb/device.conf"]],
+        "restore_additional_files": [["kdb/device.conf", "kdb/device.conf"]],
+        "backend_down_marker": "/etc/elliptics/parsed/{backend_id}.lock",
+        "backend_stop_marker": "/etc/elliptics/parsed/{backend_id}.stop"
+    },
+    "backend_commands": {
+        "group_file": "kdb/group.id",
+        "backend_cleanup_group_file_dir_rename": "removed",
+        "discard_group_file_dir_rename": "removed"
+    },
+    "minions": {
+        "max_simultaneous_http_requests": 1000,
+        "authkey": "{{ config.minions.authkey }}",
+        "request_timeout": 15,
+        "port": 9000
+    },
+    "infrastructure": {
+        "recovery_dc": {
+            "tmp_dir": "{group_base_path}tmp/dnet_recovery_dc_{group_id}",
+            "attempts": 10,
+            "batch": 100,
+            "log": "dnet_recovery.log",
+            "chunk_write_timeout": 5000,
+            "log_level": "info",
+            "iteration_by_position": {
+                "enable_for_all_namespaces": true,
+                "namespaces": [
+                ],
+                "run_compare": false
+            }
+        },
+        "lrc_cache": {
+            "tmp_dir": "tmp/lrc_cache_{id}",
+            "filename": "iterated_keys"
+        },
+        "lrc_list": {
+            "tmp_dir": "/var/log/mastermind/jobs/lrc_list_{couple_id}",
+            "attempts": 3,
+            "wait_timeout" : 60,
+            "log": "lrc_list.log",
+            "log_level": "info"
+        },
+        "lrc_convert": {
+            "tmp_dir": "/var/log/mastermind/jobs/lrc_convert_{couple_id}",
+            "compression": {
+                "default": {
+                    "enabled": false,
+                    "threshold_mb": 10,
+                    "level": 3
+                },
+                "namespaces": {
+                    "mail": {
+                        "enabled": true,
+                        "threshold_mb": 10,
+                        "level": 3
+                    }
+                }
+            },
+            "lepton_compression": {
+                "default": {
+                    "enabled": false,
+                    "threshold_mb": 1,
+                    "errors_thresholds": "500:500"
+                },
+                "namespaces": {
+                    "disk": {
+                        "enabled": true,
+                        "threshold_mb": 2.0,
+                        "errors_thresholds": "500:500"
+                    },
+                    "test-lrc-convert-lepton": {
+                        "enabled": true,
+                        "threshold_mb": 1
+                    },
+                    "test-lrc-convert-lepton-external": {
+                        "enabled": true,
+                        "threshold_mb": 1
+                    }
+                }
+            },
+            "iteration_by_position": {
+                "enable_for_all_namespaces": true
+            },
+            "attempts": 3,
+            "wait_timeout" : 60,
+            "data_flow_rate" : 5,
+            "log": "lrc_convert.log",
+            "log_level": "info"
+        },
+        "lrc_validate": {
+            "tmp_dir": "/var/log/mastermind/jobs/lrc_validate_{couple_id}",
+            "attempts": 3,
+            "wait_timeout" : 60,
+            "data_flow_rate" : 5,
+            "log": "lrc_validate.log",
+            "log_level": "info"
+        },
+        "ttl_cleanup": {
+            "tmp_dir": "/var/log/mastermind/jobs/ttl_cleanup_{couple_id}",
+            "log": "ttl_cleanup.log",
+            "attempts": 3,
+            "wait_timeout" : 60,
+            "nproc": 10,
+            "batch_size": 100,
+            "lookup_timeout": 1000,
+            "remove_timeout": 1000
+        },
+        "recovery_dc_lrc": {
+            "tmp_dir": "/var/log/mastermind/jobs/lrc_recovery_{couple_id}/shard_index_recovery",
+            "attempts": 1,
+            "batch": 2000,
+            "log": "dnet_recovery.log",
+            "log_level": "info",
+            "user_flag": 1,
+            "user_flags": [1, 2, 3]
+        },
+        "lrc_recovery": {
+            "tmp_dir": "/var/log/mastermind/jobs/lrc_recovery_{couple_id}/lrc_recovery",
+            "attempts": 1,
+            "log": "lrc_recovery.log",
+            "log_level": "info",
+            "wait_timeout": 20
+        },
+        "lrc_remove": {
+            "tmp_dir": "/var/log/mastermind/jobs/lrc_remove_{couple_ids}",
+            "attempts": 3,
+            "log": "lrc_remove.log",
+            "log_level": "info",
+            "wait_timeout": 60
+        },
+        "lrc_read_records": {
+            "tmp_dir": "/var/log/mastermind/jobs/lrc_read_records_{groupset_id}",
+            "attempts": 3,
+            "log": "lrc_read_records.log",
+            "log_level": "info",
+            "wait_timeout": 60,
+            "batch_size": 100
+        },
+        "lrc_remove_records": {
+            "tmp_dir": "/var/log/mastermind/jobs/lrc_remove_records_{groupset_id}",
+            "attempts": 3,
+            "log": "lrc_remove_records.log",
+            "log_level": "info",
+            "wait_timeout": 60,
+            "batch_size": 100
+        },
+        "lrc_defrag_analyze": {
+            "tmp_dir": "/var/log/mastermind/jobs/lrc_defrag_analyze_{groupset_id}",
+            "attempts": 3,
+            "log": "lrc_defrag_analyze.log",
+            "log_level": "info",
+            "wait_timeout": 60
+        },
+        "lrc_defrag": {
+            "tmp_dir": "/var/log/mastermind/jobs/lrc_defrag_{lrc_groupset}",
+            "attempts": 3,
+            "log": "lrc_defrag.log",
+            "log_level": "info",
+            "wait_timeout": 60
+        },
+        "lrc_check_defrag": {
+            "tmp_dir": "/var/log/mastermind/jobs/lrc_check_defrag_{groupset_id}",
+            "attempts": 3,
+            "log": "lrc_check_defrag.log",
+            "log_level": "info",
+            "wait_timeout": 60
+        },
+        "eblob_kit": {
+            "tmp_dir": "/var/log/mastermind/jobs/eblob_kit_{group_id}_{trace_id}",
+            "artifacts": "exec_state"
+        },
+        "gc_collect": {
+            "tmp_dir": "/var/log/mastermind/jobs/gc_{couple_id}"
+        },
+        "gc_resolve": {
+            "output": "/var/log/gc/output.tskv",
+            "tmp_dir": "/var/log/mastermind/jobs/gc_{couple_id}"
+        },
+        "defrag": {
+            "use_compact_method": {
+                "white_list_namespaces": [],
+                "black_list_namespaces": []
+            },
+            "allow_karl_couples": true,
+            "use_compact_nosort_on_all": true,
+            "use_compact_nosort_namespaces": []
+        },
+        "dnet_client compare": {
+            "tmp_dir": "/var/log/mastermind/jobs/dnet_client_compare_{groupset_id}/{job_id}",
+            "log_file": "dnet_client_compare.log",
+            "elliptics_log_level": "error",
+            "log_level": "debug",
+            "wait_timeout": 1800,
+            "report_issues": true,
+            "yt_cluster": "hahn",
+            "yt_table": "//home/mds/compare/testing/diffs"
+        }
+    },
+
+    "statistics": {
+        "write_attempts": 3,
+        "namespace_statistics": {
+            "enabled": false,
+            "collect_period": 300,
+            "max_data_points": 500,
+            "record_ttl": 31536000
+        },
+        "namespace_spacestamp": {
+            "enabled": false,
+            "lock": "namespace_spacestamp",
+            "collect_period": 900,
+            "dump_period": 3600,
+            "record_ttl": 31536000
+        },
+        "namespace_removedspacestamp": {
+            "enabled": false,
+            "lock": "namespace_removedspacestamp",
+            "collect_period": 900,
+            "dump_period": 3600,
+            "record_ttl": 31536000
+        }
+    },
+
+    "prediction": {
+        "update_period": 10800
+    },
+
+    "provide_storage_state_snapshot": false,
+    "weight": {
+        "calculated": false
+    },
+
+    "artifacts": {
+        "retry_errors": {
+            "dnet_client": {
+                "-6": {
+                    "base_delay": 1800,
+                    "max_delay": 7200,
+                    "delay_exp": 2,
+                    "max_attempts": 10
+                },
+                "-2": {
+                    "base_delay": 1800,
+                    "max_delay": 7200,
+                    "delay_exp": 2,
+                    "max_attempts": 10
+                },
+                "-104": {
+                    "base_delay": 120,
+                    "max_delay": 300,
+                    "delay_exp": 2,
+                    "max_attempts": 10
+                },
+                "-110": {
+                    "base_delay": 120,
+                    "max_delay": 300,
+                    "delay_exp": 2,
+                    "max_attempts": 50
+                }
+            },
+            "dnet_recovery": {
+                "iterate,iterate_fatal,read,remove,server_send,write": {
+                    "-95,-6,-9,-4": {
+                        "base_delay": 120,
+                        "max_delay": 3600,
+                        "delay_exp": 2,
+                        "max_attempts": 10,
+                        "cancel_job_on_max_attempts": true
+                    },
+                    "-110,-111,-104,-71": {
+                        "base_delay": 120,
+                        "max_delay": 300,
+                        "delay_exp": 2,
+                        "max_attempts": 50,
+                        "cancel_job_on_max_attempts": true
+                    },
+                    "-30": {
+                        "base_delay": 10800,
+                        "max_delay": 10800,
+                        "delay_exp": 1,
+                        "max_attempts": 112
+                    }
+                },
+                "unavailable_groups": {
+                    "-6": {
+                        "base_delay": 1800,
+                        "max_delay": 7200,
+                        "delay_exp": 2,
+                        "max_attempts": 10,
+                        "cancel_job_on_max_attempts": true
+                    }
+                }
+            },
+            "dnet_recovery_half_dead_group": {
+                "unavailable_groups": {
+                    "-6": null
+                }
+            },
+            "dnet_compare": {
+                "report_error": {
+                    "base_delay": 1800,
+                    "max_delay": 7200,
+                    "delay_exp": 2,
+                    "max_attempts": 50
+                },
+                "-6": {
+                    "base_delay": 1800,
+                    "max_delay": 7200,
+                    "delay_exp": 2,
+                    "max_attempts": 10
+                },
+                "-110,-104,-71": {
+                    "base_delay": 120,
+                    "max_delay": 300,
+                    "delay_exp": 2,
+                    "max_attempts": 50
+                }
+            },
+            "dnet_compare_dont_ignore_missed_keys": {
+                "-6": {
+                    "base_delay": 1800,
+                    "max_delay": 7200,
+                    "delay_exp": 2,
+                    "max_attempts": 10
+                },
+                "-110,-104,-71": {
+                    "base_delay": 120,
+                    "max_delay": 300,
+                    "delay_exp": 2,
+                    "max_attempts": 50
+                }
+            },
+            "karl_task": {
+                "-110,-104,-71,-115": {
+                    "base_delay": 120,
+                    "max_delay": 300,
+                    "delay_exp": 2,
+                    "max_attempts": 50
+                },
+                "-95,-6": {
+                    "base_delay": 120,
+                    "max_delay": 3600,
+                    "delay_exp": 2,
+                    "max_attempts": 10
+                }
+            }
+        },
+        "ignore_errors": {
+            "dnet_recovery": {
+                "iterate,read,remove,server_send,write": {
+                    "-1,-2,-77": true
+                },
+                "server_send": {
+                    "-84": true
+                },
+                "iterate": {
+                    "-34": true
+                }
+            },
+            "dnet_recovery_half_dead_group": {
+                "iterate,iterate_fatal,server_send": {
+                    "-5": true
+                },
+                "unavailable_groups": {
+                    "-6": true
+                }
+            },
+            "dnet_recovery_coupled_groups": {
+                "iterate,read,remove,server_send,write": {
+                    "-22,-29": true
+                }
+            },
+            "dnet_compare": {
+                "-2,-84": true
+            },
+            "dnet_compare_dont_ignore_missed_keys": {
+                "-84": true
+            }
+        },
+        "action": {
+            "defrag_on_28": true,
+            "fix_eblob_on_22": true,
+            "fix_eblob_on_29": true,
+            "fix_eblob_on_34": false,
+            "restore_on_5": true,
+            "restore_on_6": true,
+            "restore_on_30": true,
+            "recover_corrupted_on_84": true,
+            "recover_missing_on_2": true
+        }
+    },
+
+    "lrc": {
+        "yt_stids_dump": "//home/mds/disk/testing/stids",
+        "yt_stids_path_prefix": "//home/mds/disk/testing/units",
+
+        "lrc-8-2-2-v1": {
+            "lrc_groups_per": {
+                "host": 4
+            },
+            "restore": {
+                "external_storage_validation": false
+            },
+            "group_total_space": "916G",
+            "uncoupled_groups_total_space": ["916G"]
+        },
+
+        "elliptics": {
+            "retry_errors": {
+                "-6": {
+                    "base_delay": 300,
+                    "max_delay": 1800,
+                    "delay_exp": 2,
+                    "max_attempts": 10
+                },
+                "-104": {
+                    "base_delay": 300,
+                    "max_delay": 1800,
+                    "delay_exp": 2,
+                    "max_attempts": 10
+                },
+                "-110": {
+                    "base_delay": 60,
+                    "max_delay": 120,
+                    "delay_exp": 2,
+                    "max_attempts": 20
+                },
+                "-30": {
+                    "base_delay": 10800,
+                    "max_delay": 10800,
+                    "delay_exp": 1,
+                    "max_attempts": 112
+                }
+            }
+        },
+
+        "mulca": {
+            "retry_errors": {
+                "list": {
+                    "base_delay": 3600,
+                    "max_delay": 86400,
+                    "delay_exp": 2,
+                    "max_attempts": 4
+                },
+                "socket": {
+                    "base_delay": 60,
+                    "max_delay": 120,
+                    "delay_exp": 2,
+                    "max_attempts": 20
+                }
+            }
+        }
+    },
+
+    "federation": {
+        "fallback_federation_id": {{ config.federation }},
+        "allowed_to_set_host_federations": {{ config.inventory.allowed_to_set_host_federations | tojson() }}
+    },
+
+    "nscfg_server": {
+        "use": true,
+        "url": "{{ config.nscfg.url }}"
+    },
+
+    "external_api": {
+        "port": 6785,
+        "convert_space": {
+            "hardcoded": {
+                "disk": 2.01,
+                "mail": 1.98
+            },
+            "default": {
+                "s3-api": 3,
+                "mds": 2,
+                "avatars": 4.2857142857
+            },
+            "hardcoded_dc_share": {
+                "disk": {
+                    "sas": 0.67,
+                    "vla": 0.67,
+                    "man": 0.67
+                },
+                "mail": {
+                    "sas": 0.66,
+                    "vla": 0.66,
+                    "man": 0.66
+                },
+                "s3-yc": {
+                    "sas": 1,
+                    "vla": 1,
+                    "myt": 1
+                }
+            },
+            "default_dc_share": {
+                "s3-api": {
+                    "sas": 1,
+                    "vla": 1,
+                    "man": 1
+                },
+                "mds": {
+                    "sas": 0.6666666667,
+                    "vla": 0.6666666667,
+                    "man": 0.6666666667
+                },
+                "avatars": {
+                    "sas": 1.4285714285,
+                    "vla": 1.4285714285,
+                    "man": 1.4285714285
+                }
+            }
+        }
+    },
+
+    "job_processor_worker": {
+        "workers": 3,
+        "grpc": {
+            "port": 9011,
+            "thread_pool_size": 5,
+            "maximum_concurrent_rpcs": 10
+        }
+    },
+    "scheduler_worker": {
+        "grpc": {
+            "port": 9012,
+            "thread_pool_size": 5,
+            "maximum_concurrent_rpcs": 10
+        },
+        "enable_load_cache_update": {{ config.scheduler.enable_load_cache_update|lower }},
+        "load_cache": {
+            "enable": {{ config.scheduler.enable_load_cache_update|lower }}
+        }
+    },
+
+    "stat-reporter": {
+        "listen_port": 8080,
+        "reporter_loop_period": 60,
+        "enable_snapshot_fullness_check": false,
+        "tvm_client_id": 2021043,
+        "tvm_secret": "{{ config.stat_reporter.tvm_secret }}",
+        "log_path": "/var/log/mastermind/stat-reporter.log",
+        "log_level": "INFO",
+        "nscfg_url": "http://nscfg.mdst.yandex.net:9532",
+        "s3_stats_url": "https://s3-idm.mdst.yandex.net/stats/services",
+        "s3_id_to_mds_ns": {
+            "895":    "s3-dev",
+            "36108":  "s3-dev-x3"
+        },
+        "default_ns_for_s3": "s3-dev",
+        "abc": {
+            "endpoint": "abc-back.yandex-team.ru",
+            "tvm_client_id": 2012190
+        },
+        "metadata": {
+            "url": "{{ config.mongo.mdb_url_template.format(user=config.mongo.mdb_user, password=config.mongo.mdb_password) }}",
+            "options": {
+                "connectTimeoutMS": 5000
+            },
+            "namespaces": {
+                "db": "mastermind_test_namespaces"
+            },
+            "couples": {
+                "db": "mastermind_test_couples"
+            },
+            "stat_reporter": {
+                "db": "mastermind_test_stat_reporter"
+            }
+        },
+        "exclude_namespaces": [
+            "avatars-htc_yac-2018",
+            "avatars-autoparts-feed",
+            "avatars-autoparts-admin",
+            "avatars-geoadv-creatives",
+            "avatars-visiondemostand"
+        ],
+        "dispenser": {
+            "enable": true,
+            "usage_reports_period": 300,
+            "quotas_reports_period": 21600,
+            "base_url": "dispenser-test.yandex-team.ru",
+            "oauth_token": "{{ config.stat_reporter.dispenser.oauth_token }}"
+        },
+        "billing": {
+            "enable": false,
+            "reports_period": 300,
+            "max_reports_interval": 86400,
+            "environment": "test",
+            "logbroker": {
+                "endpoint": "lbkx.logbroker.yandex.net",
+                "port": 2135,
+                "mds_topic": "yc/yandex/billing-mds-test",
+                "avatars_topic": "yc/yandex/billing-avatars-test",
+                "s3_topic": "yc/yandex/billing-object-storage-test",
+                "tvm_client_id": 2001059
+            },
+            "reports_dump_path": "{{ config.stat_reporter.billing.reports_dump_path }}"
+        }
+    },
+
+    "lepton_address": "{{ config.lepton.address }}"
+}

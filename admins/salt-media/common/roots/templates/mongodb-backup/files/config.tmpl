@@ -1,0 +1,56 @@
+{%- if 'rsync' in pillar['mongodb']['backup'] -%}
+{%- set r_realm = pillar['mongodb']['backup']['rsync']['realm'] -%}
+{%- set r_server = pillar['mongodb']['backup']['rsync']['server'] -%}
+{%- set r_user = pillar['mongodb']['backup']['rsync']['user'] -%}
+{%- set r_password = pillar['mongodb']['backup']['rsync']['password'] -%}
+{%- endif -%}
+{%- set zk_config = pillar['mongodb']['backup']['zk']['config'] -%}
+{%- set m_user = pillar['mongodb']['backup']['mongo_user'] -%}
+{%- set m_password = pillar['mongodb']['backup']['mongo_password'] -%}
+{%- set transport = pillar['mongodb']['backup']['transport'] -%}
+{%- set s3bucket = pillar['mongodb']['backup']['bucket'] -%}
+{%- set compressor = pillar['mongodb']['backup']['compressor'] -%}
+{%- set standalone = pillar['mongodb']['backup']['standalone'] -%}
+
+{%- set mongos_group = salt["pillar.get"]("mongodb:backup:mongos_group", False) -%}
+{%- set mongos_host = salt["pillar.get"]("mongodb:backup:mongos_host", False) -%}
+
+#!/bin/bash
+
+MONGO_BACKUP_ENABLED=1 # If backup is enabled on current machine
+
+STANDALONE={{ standalone|default(0) }} # There is only one machine, don't bother it is master.
+
+R_PASSWORD='{{ r_password|default('') }}' # Password for rsync
+R_REALM='{{ r_realm|default('') }}' # Rsync share name
+R_SERVER='{{ r_server|default('') }}' # Rsync server
+R_USER='{{ r_user|default('') }}' # Rsync username
+
+MONGO_DUMP_PORT=27018 # Port where mongodb lives
+MONGO_MONGOS_PORT=27017 # Port where mongos lives
+MONGO_DATA_DIR='/opt' # Dir where data mongo stored
+
+{% if mongos_group %}
+MONGOS_GROUP='{{ mongos_group }}'
+{% elif mongos_host %}
+MONGOS_HOST='{{ mongos_host }}'
+{% else %}
+MONGOS_HOST='localhost'
+{% endif %}
+
+ZK_FLOCK_CONFIG='/etc/distributed-flock-mongo-backup.json' # zk-flock config to use
+
+BACKUP_OPLOG=1 # If you want to backup oplog
+
+SHARD_NAME='' # Arbitrary name of current shard, if empty - use replica set name
+
+
+M_USER='{{ m_user|default('') }}' # User for authentication
+M_PASSWD='{{ m_password|default('') }}' # User's password
+
+TRANSPORT='{{transport|default('rsync')}}'
+COMPRESSION='{{compressor|default('pigz')}}'
+{% if transport == "s3cmd" -%}
+BUCKET='{{s3bucket|default('')}}'
+{%- endif -%}
+

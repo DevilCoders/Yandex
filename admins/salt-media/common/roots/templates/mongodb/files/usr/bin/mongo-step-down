@@ -1,0 +1,64 @@
+#!/bin/bash
+
+
+force=0
+timeout=''
+
+
+while getopts ":ft:" opt; do
+	case $opt in
+		f) force=1 ;;
+		t) timeout=$OPTARG ;;
+		\?) echo "Usage: $0 [-f] [-t TIMEOUT]" >&2; exit 1 ;;
+		:) echo "Argument required" >&2 ; exit 2 ;;
+	esac
+done
+
+
+errors=$(/usr/bin/mongo --ipv6 --port 27018 --quiet --eval "
+	rs.isMaster().hosts.forEach(
+		function(x) { 
+			r_db = new Mongo(x); 
+			if(typeof(r_db) === 'undefined') {
+				print(x+' failed\\\n'); return
+			}; 
+			r_adm = r_db.getDB('admin'); 
+			rs = r_adm.runCommand('replSetGetStatus'); 
+			rs.members.forEach(
+				function(x){ 
+					if([\"PRIMARY\", \"SECONDARY\", \"ARBITER\"].indexOf(x.stateStr) == -1) {
+						print(x.name + \" failed\\\n\")
+					} 
+				}
+			)
+		}
+	)")
+
+if [[ -z $errors || $force == 1 ]] ; then
+	if [[ ! -z $errors ]] ; then
+		echo "Errors found:"; echo -e $errors
+		echo "'-f' is specified, running rs.stepDown($timeout)"
+	else
+		echo "Looks like RS is ok, running rs.stepDown($timeout)"
+	fi
+	/usr/bin/mongo --ipv6 --port 27018 --eval "rs.stepDown($timeout)"
+else
+	echo "Do not changing master, errors found:"
+	echo -e $errors
+	exit 1
+fi
+
+sleep 2
+
+for i in `seq 10`; do
+    master=$(/usr/bin/mongo --ipv6 --port 27018 --quiet --eval 'printjson(rs.isMaster().primary)')
+	if [[ "$master" == "undefined" ]] ; then
+		echo "No primary node found in RS, waiting"
+		sleep 2
+	else
+		echo "RS elected $master as primary"
+		exit 0
+	fi		
+done
+echo "Looks like RS cannot elect a primary node, please check RS status!"
+

@@ -1,0 +1,69 @@
+# Remove all comments and <> before use!
+# All values here are by default. Write them into your pillar only if you want to rewrite them
+# file_roots, git_roots, ext_pillars by default turned off. Write it in pillar to enable
+# If salt_master:default is False you _NEED_ enable file_roots, git_roots, ext_pillars
+# If salt_master:default is True - template enable's default roots/pillars with salt_master:git, salt_master:senv, salt_master:project values
+# If ssh defined, salt-master template provides dirs and ssh key for salt-master user (salt_master:params:user) from secdist + enables ssh proto in default roots/pillars.
+## Format: ssh: {'ssh_key_path': '', 'ssh_key_name': ''}
+## key_path: abs path to folder on secdist.yandex.net where salt_master:params:user ssh key placed.
+## key_name: name of the key
+## Example: ssh: {'key_path': '/repo/projects/ugc/media/robot-media-salt/afisha', 'key_name': id_rsa.{{ grains['yandex-environment'] }}}
+
+salt_master:
+  lookup:
+    arcadia:
+      path: 'trunk/arcadia/admins/salt-media/jkp'
+      target: '/srv/git/jkp'
+      arc_token 'salt.yav.get...'
+    csync: True
+    git_local:
+        - common1:
+            git: git@github.yandex-team.ru:***.git
+            branch: stable
+        - common2:
+            git: git@github.yandex.ru:***.git
+            branch: master
+    senv: salt['grains.get']('yandex-environment', 'base')
+    project: salt['grains.get']('conductor:project').encode('utf8')
+    default: True
+    service: 'salt-master'
+    packages: ['salt-master', 'python-gnupg']
+    config: 'salt://templates/salt-master/files/etc/salt/master.tmpl'
+    masterd: False
+    ssh: False
+    params:
+      keep_jobs: 1
+      log_level: INFO
+      worker_threads: 24
+      fileserver_backend:
+        - git
+        - roots
+      log_level_logfile: INFO
+      auto_accept: True
+      ipv6: True
+      interface: '::'
+      user: robot-media-salt
+      renderer: "jinja | yaml | gpg"
+      reactor:
+        - 'salt/minion/*/start':
+          - 'salt://start.sls'
+    file_roots:
+      < your branch >:
+        - < your local path >
+        - < your local path 2 >
+      < your another branch >:
+        - < your local path 3 >
+    gitfs_remotes:
+      - < your git n1 >:
+        - root: < your path >
+        - base: < your branch >
+      - < your git n2 >:
+        - root: < your path 2 >
+      - < your git n3 >:
+        - base: < your branch n3 >
+    ext_pillar:
+      - git:
+        - < your branch > < your git >:
+          - name: < your uniq name >
+          - root: < your root >
+        - < your branch n2 > < your git n2 >

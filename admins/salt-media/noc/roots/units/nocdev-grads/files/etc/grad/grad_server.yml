@@ -1,0 +1,81 @@
+series: !include grad_series.yml
+credentials: !include credentials.yml
+
+logging:
+  root: {file: "/var/log/grad/server.log", severity: "INFO"}
+  aiortapi: { file: "/var/log/grad/server.log", severity: "INFO"}
+  aiohttp.access: { file: "/var/log/grad/server.log", severity: "WARNING"}
+  # pollers
+  aio_pika.channel: { file: "/var/log/grad/%(log_file_prefix)s.log", severity: "INFO" }
+  kikimr.public.sdk.python.persqueue: { file: "/var/log/grad/%(log_file_prefix)s.log", severity: "WARNING" }
+  kikimr.public: { file: "/var/log/grad/%(log_file_prefix)s.log", severity: "WARNING" }
+  ydb.resolver.DiscoveryEndpointsResolver: { file: "/var/log/grad/%(log_file_prefix)s.log", severity: "WARNING" }
+  ydb: { file: "/var/log/grad/%(log_file_prefix)s.log", severity: "WARNING" }
+  aio_pika.exchange: { file: "/var/log/grad/%(log_file_prefix)s.log", severity: "INFO" }
+  noc.grad: {file: "/var/log/grad/%(log_file_prefix)s.log", severity: "INFO"}
+  noc.grad.grad.pollers: {file: "/var/log/grad/%(log_file_prefix)s.log", severity: "INFO"}
+  noc.grad.grad.lib.scheduler: {file: "/var/log/grad/%(log_file_prefix)s.log", severity: "INFO"}
+  noc.grad.grad.pollers.snmp_poller: {file: "/var/log/grad/%(log_file_prefix)s.log", severity: "INFO"}
+  asyncssh: { file: "/var/log/grad/%(log_file_prefix)s.log", severity: "WARNING"}
+  comocutor: {file: "/var/log/grad/%(log_file_prefix)s.log", severity: "WARNING"}
+
+# пример counters
+#counters: &counters_anchor
+#  - juniper.jnxOperatingDescr  # в формате mib.oid
+#  - oid: juniper.jnxOperatingTemp
+#    options: ["use_snmpget", ["alias", "test"]]  # в options поддерживается use_snmpget, use_snmpgetnext, use_snmpbulkget(по умолчанию). тип опроса
+                                                  # alias - аналог alias из snmp_helper.py но более приоритетный
+# внимание, при использовании use_snmpbulkget и use_snmpget* для oid'ов c type=value могут быть спецэффекты из-за того что данные будут получены в разное время
+# что повлечет за собой неполные неполные(в рамках единицы результата, в конечном итоге данные будут полными) данные в результате
+
+# oid типа key всегда опрашиваются bulk'ом, а oid с данными могут bulk'ом, а могут get'ом. Если использовать bulk,
+# то данные с одним индексом могут иметь разное время
+
+server_upstream:
+  main rabbit:
+    type: rmq
+    server: rmq.grad.yandex.net
+    virtual_host: "/"
+    direct_write: true
+    <<: *grad_server_rmq_credentials
+  LB:
+    series_filter:
+      snmp_poller.network: "/grad/data/network"
+      snmp_poller.bgp_state: "/grad/data/pahom_bgp_state"
+      "*": "/grad/data/other"
+    type: LB
+    endpoint_host: logbroker.yandex.net
+    <<: *grad_server_lb_credentials
+    direct_write: true
+zookeeper:
+  # Comma-separated list of hosts to connect to (e.g. 127.0.0.1:2181,127.0.0.1:2182,[::1]:2183).
+  server: "iva-zk01.net.yandex.net,myt-zk01.net.yandex.net,vla-zk01.net.yandex.net,man-zk01.net.yandex.net,sas-zk01.net.yandex.net"
+
+redis:
+  server: "redis://localhost"
+
+default_afterburn: 4
+
+internal_metrics_url: "http://localhost:22132"
+internal_metrics_sensor: "sensor"
+
+# FIXME: disables because of memory leak NOCDEVDUTY-1088
+#error_booster:
+#  token: *oauth_error_booster_token
+#  topic: "/grad/error-booster"
+#  environment: "production"
+
+importers:
+  perhost:
+    - speed
+    - optical_threshold
+    - bgp_external_peers
+    - border_ifaces
+    - bot_data
+    - is_offline
+    - loopbacks
+    - tiny_mtu
+  dchost: get_rt_hosts_tags
+
+# http
+port: 12345

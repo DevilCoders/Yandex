@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import yaml
+
+from datetime import datetime
+
+LXC_BIN = '{{ lxc_binary }}'
+IGNORE_KEYS = {'used_by', 'name'}
+YAML_REPLACE = {
+        None: ["", 'null'],
+        True: ["true"],
+        False: ["false"]
+}
+BACKUP_PATH = '/var/lib/lxd/backup'
+
+
+def yaml_replace(v):
+    if isinstance(v, (dict, list, str)) and len(v) == 0:
+        return None
+
+    if not isinstance(v, str):
+        return v
+
+    if v.isdigit():
+        return int(v)
+
+    for r in YAML_REPLACE:
+        if v in YAML_REPLACE[r]:
+            return r
+    return v
+
+
+def get_diff(cur_config, new_config):
+    diff = {}
+    for k in set(cur_config).intersection(set(new_config)) - IGNORE_KEYS:
+        cur_config[k] = yaml_replace(cur_config[k])
+        new_config[k] = yaml_replace(new_config[k])
+
+        if cur_config[k] != new_config[k]:
+            if isinstance(new_config[k], dict) and isinstance(cur_config[k], dict):
+                subdiff = get_diff(cur_config[k], new_config[k])
+
+                if not subdiff:
+                    continue
+                else:
+                    if k not in diff:
+                        diff[k] = dict()
+                    diff[k].update(subdiff)
+            else:
+                diff.update({k: new_config[k]})
+
+    for k in set(new_config) - set(cur_config) - IGNORE_KEYS:
+        diff.update({'+{}'.format(k): new_config[k]})
+
+    for k in set(cur_config) - set(new_config) - IGNORE_KEYS:
+        diff.update({'-{}'.format(k): cur_config[k]})
+
+    return diff
+
+
+def is_profile_exists(profile):
+    output = subprocess.check_output('{} profile list'.format(LXC_BIN).split())
+    output = str(output).split('\\n')
+
+    for s in output:
+        s = s.split('|')
+        if len(s) >= 2 and s[1].strip() == profile:
+            return True
+
+    return False
+
+
+def update_profile(profile, config):
+    return subprocess.run('{} profile edit {}'.format(LXC_BIN, cmdargs.profile).split(), input=yaml.safe_dump(config),  encoding='ascii')
+
+
+def get_profile_config(profile):
+    return yaml.safe_load(subprocess.check_output('{} profile show {}'.format(LXC_BIN, profile).split()))
+
+
+def create_profile(profile):
+    return subprocess.check_call('{} profile create {}'.format(LXC_BIN, cmdargs.profile).split())
+
+
+argparser = argparse.ArgumentParser()
+argparser.add_argument(dest="profile")
+argparser.add_argument(dest="conffile")
+argparser.add_argument("--force", action="store_true")
+argparser.add_argument("--rename", action="store_true", help="Rename profile in case of it used in VMs")
+cmdargs = argparser.parse_args()
+
+if cmdargs.force and cmdargs.rename:
+    print('--force and --rename should not be used together')
+    sys.exit(1)
+
+try:
+    with open(cmdargs.conffile) as cf:
+        new_config = yaml.load(cf)
+except Exception as e:
+    print('Got problems with config file: {} Exit'.format(e))
+    sys.exit(1)
+
+if not is_profile_exists(cmdargs.profile):
+    create_profile(cmdargs.profile)
+    update_profile(cmdargs.profile, new_config)
+    sys.exit()
+
+cur_config = get_profile_config(cmdargs.profile)
+diff = get_diff(cur_config, new_config)
+
+if not diff:
+    print("Got same config, nothing to do")
+    sys.exit(0)
+else:
+    print("Got diff:\n", json.dumps(diff, indent=4))
+
+    if cur_config['used_by']:
+        if not cmdargs.force and not cmdargs.rename:
+            print("There are {} VMs based on this profile and no --force or --rename keys".format(len(cur_config['used_by'])))
+            sys.exit(1)
+        elif cmdargs.rename:
+            new_name = '{}-old-{}'.format(cmdargs.profile, datetime.now().strftime('%Y%m%d-%s'))
+            subprocess.check_call('{} profile rename {} {}'.format(LXC_BIN, cmdargs.profile, new_name).split())
+            create_profile(cmdargs.profile)
+            update_profile(cmdargs.profile, new_config)
+        elif cmdargs.force:
+            backup_file = os.path.join(BACKUP_PATH, "profile-{}-{}.yaml".format(cmdargs.profile, datetime.now().strftime('%Y%m%d-%s')))
+            print("Backuping old profile config to {}".format(backup_file))
+            try:
+                with open(backup_file, 'w') as bf:
+                    yaml.safe_dump(cur_config, bf)
+            except Exception as e:
+                print("Got problems with backup config: {}".format(e))
+                sys.exit(1)
+
+            for vm in cur_config['used_by']:
+                vm = vm.split('/')[-1]
+                backup_file = os.path.join(BACKUP_PATH, "vm-{}-{}.yaml".format(vm, datetime.now().strftime('%Y%m%d-%s')))
+                print("Backuping VM config {} to {}".format(vm, backup_file))
+                try:
+                    with open(backup_file, 'w') as bf:
+                        vm_config = subprocess.check_output('{} config show {}'.format(LXC_BIN, vm).split())
+                        bf.write(vm_config.decode())
+                except Exception as e:
+                    print("Got problems with backup config of VM {}: {}. Exit".format(vm, e))
+                    sys.exit(1)
+
+            print("Updating {} with {} ...".format(cmdargs.profile, cmdargs.conffile))
+            update_profile(cmdargs.profile, new_config)
+    else:
+        update_profile(cmdargs.profile, new_config)

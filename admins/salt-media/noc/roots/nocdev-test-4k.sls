@@ -1,0 +1,11 @@
+include:
+  - units.rsyslog
+  - units.rsyslog.imjournal
+  - units.nginx_conf
+  - templates.certificates
+  - units.netconfig_slb
+  - units.juggler-checks.common
+  - units.nocdev-4k
+  - units.unified-agent
+  - units.nocdev-4k.unified-agent-config
+  - units.unified-agent.monitoring

@@ -1,0 +1,19 @@
+#!/bin/bash
+
+ERRATA_MON="/usr/local/yandex/monitoring/errata_updates.py"
+
+if [ "x$1" == "x-n" ]; then
+    DRY_RUN="echo "
+fi
+
+if [ "$($ERRATA_MON)" != "PASSIVE-CHECK:errata_updates;0;OK" ]; then
+    # Skip grub and kernel as non-safe for auto update
+    PKG_LIST=$($ERRATA_MON -v | grep -v -e grub -e linux-image -e linux-headers | cut -d, -f1 | sort | uniq)
+    for i in $PKG_LIST; do
+        apt-mark showmanual | grep -q "$i"
+        pkg_manual=$?
+        ${DRY_RUN}apt-get -y --force-yes -o Dpkg::Options::="--force-confdef" install "$i"
+        [ $pkg_manual -eq 0 ] || ${DRY_RUN}apt-mark auto "$i"
+    done
+    monrun -r errata_updates
+fi

@@ -1,0 +1,169 @@
+#!/bin/bash
+
+LOG="/var/log/pkgver/pkgver-ng.log"
+
+function log {
+  echo $(date +"%F %T") $1 >> $LOG
+}
+
+if [ -f /etc/skippkgver ]; then
+    log "Autoconfigure prohibited by /etc/skippkgver lock"
+    exit 0
+fi
+
+log "Sleeeping 60 seconds"
+sleep 60
+
+function update_packages() {
+  log "Installing packages"
+  if [ ! -f /etc/skippkgversection ]; then
+    pkgver.pl -a -i -y --force >> $LOG 2>&1
+
+    if [ $? -ne 0 ]; then
+        log "Error while installing packages"
+        return 1
+    else
+        log "All packages successfully installed"
+    fi
+  else
+    log "Pkgver.pl for packages prohibited by /etc/skippkgversection lock"
+  fi
+  return 0
+}
+
+function bug_fix() {
+  if [ ! -L /dev/rtc -a "$dist_name" == "xenial" ]; then
+    log "Fixing rtc device (Ubuntu bug#???????). Xenial only"
+      cd /dev
+      ln -sf rtc0 rtc
+
+      if [ $? -ne 0 ]; then
+        log "Error while fixing rtc device"
+        return 1
+      fi
+  fi
+
+  # unmask unbound.service if yandex-unbound was installed
+  log "Unmask unbound.service"
+  systemctl unmask unbound.service >> $LOG 2>&1
+  return 0
+}
+
+function salt() {
+  if [ -e /usr/bin/salt_update ]; then
+    log "/usr/bin/salt_update is present, running it"
+    /usr/bin/salt_update -u -ht >> $LOG 2>&1
+
+    if [ $? -ne 0 ]; then
+      log "Error while doing salt_update"
+      return 1
+    fi
+  fi
+
+  if [ -f /etc/salt/minion ]; then
+    log "Clean up old salt keys"
+
+    for host in $(grep -Po 'salt[0-9]+.*.strm.yandex.net' /etc/salt/minion | uniq); do
+      curl -s "http://$host/clean-keys" >> $LOG 2>&1
+    done
+  fi
+
+  if [ -e /usr/bin/salt-call ]; then
+    if [ -f /etc/cdn-dom0.txt ]; then
+      log "Running salt-call for quick config"
+      /usr/bin/salt-call state.apply cdn-dom0-static queue=True --retcode-passthrough >> $LOG 2>&1
+    fi
+
+    log "Running salt-call state.apply"
+    /usr/bin/salt-call state.apply queue=True --retcode-passthrough >> $LOG 2>&1
+
+    if [ $? -ne 0 ]; then
+      log "Error while running salt-call"
+      return 1
+    fi
+  fi
+  return 0
+}
+
+function install_skynet() {
+  if [ ! -L /skynet/python/bin/python -a "$(hostname -f | grep '^trns')" ]; then
+      log "Force to install skynet"
+      /Berkanavt/skynet/bin/gosky >> $LOG 2>&1
+
+      if [ $? -ne 0 ]; then
+        log "Error installing skynet"
+        return 1
+      fi
+  fi
+  return 0
+}
+
+function service_restart() {
+  log "Restarting some services"
+  services="nginx.service juggler-client.service"
+
+  for serv in $services; do
+    log "Restarting $serv"
+    systemctl restart $serv >> $LOG 2>&1
+  done
+  return 0
+}
+
+function nvidia_install(){
+  if lspci | grep NVIDIA | grep V100 > /dev/null; then
+    log "NVIDIA V100 Cards found. Checkig for driver"
+    if dpkg -l | grep -E 'libcuda|libnvidia-compute' > /dev/null; then
+      log "Driver already installed"
+    else
+      if [ "$dist_name" == "xenial" ]; then
+        #nv_driver_version="$(apt-cache search libcuda1 | awk -F- 'END{ print $2|"sort -uV" }' | sed 's@ @@g')"
+        # SPS tests failed with latest nvidia driver
+        nv_driver_version="418"
+        log "Installing NVIDIA driver"
+        apt-get install -y --no-install-recommends \
+          libcuda1-${nv_driver_version} nvidia-${nv_driver_version}-dev cuda-cudart-10-0 \
+          cuda-cudart-10-1 >> $LOG 2>&1 && modprobe nvidia_${nv_driver_version} >> $LOG 2>&1
+
+        if [ $? -ne 0 ]; then
+          log "Error while installing NVIDIA driver"
+          return 1
+        fi
+      elif [ "$dist_name" == "bionic" ]; then
+        #nv_driver_version="$(apt-cache search libnvidia-compute | awk '{ print $1 }' | awk -F- 'END{ print $NF|"sort -uV" }')"
+        # SPS tests failed with latest nvidia driver
+        nv_driver_version="418"
+        log "Installing NVIDIA driver"
+        apt-get install -y --no-install-recommends \
+          libnvidia-compute-${nv_driver_version} nvidia-driver-${nv_driver_version} cuda-cudart-10-0 \
+          cuda-cudart-10-1 >> $LOG 2>&1 && modprobe nvidia_${nv_driver_version} >> $LOG 2>&1
+
+        if [ $? -ne 0 ]; then
+          log "Error while installing NVIDIA driver"
+          return 1
+        fi
+      fi
+    fi
+  fi
+  return 0
+}
+
+dist_name=$(cat /etc/lsb-release | grep DISTRIB_CODENAME= | awk -F= '{ print $NF }')
+
+for attempt in {0..99}; do
+  update_packages && \
+  bug_fix && \
+  install_skynet && \
+  salt && \
+  service_restart && \
+  nvidia_install
+
+  if [ $? -eq 0 ]; then
+    log "Host successfully configured. Mazel tov."
+    exit 0
+  else
+    log "Some errors. Try again in ten secconds."
+    sleep 10
+  fi
+done
+
+log "Fatal Error. Oy vay"

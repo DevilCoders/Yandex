@@ -1,0 +1,38 @@
+#! /bin/bash
+
+# Fixes the default and other routes
+#
+# When the NOC update their routers (i.e. due to the malfunction), the
+# IP addresses stay the same, but the MAC addresses change. There is a
+# kernel bug that keeps sending packets to the old MAC address. The script
+# detects the router unavailability and forces a neighbor table flush.
+
+LOG_FILE=/var/log/default-route-fixer.log
+sleep $((RANDOM/1000))      # up to 30s
+
+# we first ping common destinations not to kill noc's equipment
+for i in $(seq 5); do
+    ping6 -c 1 -W 1 ya.ru &>/dev/null && exit 0
+    sleep 1
+done
+echo "$(date) Could not ping ya.ru, performing router analysis" >> $LOG_FILE
+
+# destination unreachable, check the local routers
+ip -6 route | awk '($2 == "via") { print $3" "$5 }' | sort -u | \
+    while read IP DEV; do
+        SUCCESS=0
+        for i in $(seq 5); do
+            ping6 -c 1 -W 1 -I $DEV $IP &>/dev/null
+            if [ $? == 0 ]; then
+                SUCCESS=1
+                break
+            fi
+            sleep 0.5
+        done;
+        if [ $SUCCESS == 1 ]; then
+            echo "$(date) $IP is alive (via $DEV), attempt $i" >> $LOG_FILE
+        else
+            echo "$(date) $IP is NOT alive (via $DEV), flushing neighbours" >> $LOG_FILE
+            ip -6 neigh flush to $IP dev $DEV
+        fi
+    done

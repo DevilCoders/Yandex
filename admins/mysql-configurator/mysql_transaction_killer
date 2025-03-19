@@ -1,0 +1,35 @@
+#!/usr/bin/python
+"""
+Transaction killer daemon
+Check transaction execution time and kill if it above treshold
+"""
+
+import signal
+import eventlet
+from mysql_configurator import load_config
+from mysql_configurator.tkiller import TKiller
+
+
+def main():
+    """Main of transaction killer"""
+    cfg = load_config()
+    killer = TKiller(cfg)
+
+    ev_tkiller = eventlet.spawn(killer.run)
+
+    def on_sig(*_):
+        """Kill daemon"""
+        ev_tkiller.kill()
+
+    # kill worker on os kill signals
+    signal.signal(signal.SIGINT, on_sig)
+    signal.signal(signal.SIGTERM, on_sig)
+
+    # wait for the workers to finish
+    try:
+        ev_tkiller.wait()
+    except OSError:
+        pass
+
+if __name__ == '__main__':
+    main()

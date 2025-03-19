@@ -1,0 +1,56 @@
+{% set ns_video_list = [
+    {'name': 'video-nda', 'token': pillar['yav']['storage-auth_sign_token-video-nda']},
+    {'name': 'video-an', 'token': pillar['yav']['storage-auth_sign_token-video-an']},
+    {'name': 'video-kinopoisk-trailers', 'token': pillar['yav']['storage-auth_sign_token-video-kinopoisk-trailers']},
+    {'name': 'video-news', 'token': pillar['yav']['storage-auth_sign_token-video-news']},
+    {'name': 'video-ya-study-hr', 'token': pillar['yav']['storage-auth_sign_token-video-ya-study-hr']},
+    {'name': 'video-disk', 'token': pillar['yav']['storage-auth_sign_token-video-disk']},
+    {'name': 'video-migration-dev', 'token': pillar['yav']['storage-auth_sign_token-video-migration-dev']},
+    {'name': 'video-user-backup', 'token': pillar['yav']['storage-auth_sign_token-video-user-backup']},
+    {'name': 'video-edu-platform', 'token': pillar['yav']['storage-auth_sign_token-video-edu-platform']},
+    {'name': 'video-ya-holiday', 'token': pillar['yav']['storage-auth_sign_token-video-ya-holiday']},
+    {'name': 'video-ruscorpora', 'token': pillar['yav']['storage-auth_sign_token-video-ruscorpora']},
+    {'name': 'video-developers', 'token': pillar['yav']['storage-auth_sign_token-video-developers']},
+    {'name': 'video-autoru-office', 'token': pillar['yav']['storage-auth_sign_token-video-autoru-office']},
+    {'name': 'video-ya-expert', 'token': pillar['yav']['storage-auth_sign_token-video-ya-expert']},
+    {'name': 'video-ya-ukraine-official', 'token': pillar['yav']['storage-auth_sign_token-video-ya-ukraine-official']},
+    {'name': 'video-ya-events', 'token': pillar['yav']['storage-auth_sign_token-video-ya-events']},
+    {'name': 'video-afisha-trailers', 'token': pillar['yav']['storage-auth_sign_token-video-afisha-trailers']},
+    {'name': 'video-ya-maps', 'token': pillar['yav']['storage-auth_sign_token-video-ya-maps']},
+    {'name': 'video-ya-fishki', 'token': pillar['yav']['storage-auth_sign_token-video-ya-fishki']},
+    {'name': 'video-ya-cinema', 'token': pillar['yav']['storage-auth_sign_token-video-ya-cinema']},
+    {'name': 'video-platon', 'token': pillar['yav']['storage-auth_sign_token-video-platon']},
+    {'name': 'video-podskazky', 'token': pillar['yav']['storage-auth_sign_token-video-podskazky']},
+    {'name': 'video-direct', 'token': pillar['yav']['storage-auth_sign_token-video-direct']},
+    {'name': 'video-adv-blog', 'token': pillar['yav']['storage-auth_sign_token-video-adv-blog']},
+    {'name': 'video-shad-spb', 'token': pillar['yav']['storage-auth_sign_token-video-shad-spb']},
+    {'name': 'video-ya-taxi', 'token': pillar['yav']['storage-auth_sign_token-video-ya-taxi']},
+    {'name': 'video-ya-money', 'token': pillar['yav']['storage-auth_sign_token-video-ya-money']},
+    {'name': 'video-ya-zno', 'token': pillar['yav']['storage-auth_sign_token-video-ya-zno']},
+    {'name': 'video-market-review', 'token': pillar['yav']['storage-auth_sign_token-video-market-review']},
+    {'name': 'video-sales-edu', 'token': pillar['yav']['storage-auth_sign_token-video-sales-edu']},
+    {'name': 'video-ya-maps-help', 'token': pillar['yav']['storage-auth_sign_token-video-ya-maps-help']},
+    {'name': 'video-histrf', 'token': pillar['yav']['storage-auth_sign_token-video-histrf']},
+    {'name': 'video-ya-traffic', 'token': pillar['yav']['storage-auth_sign_token-video-ya-traffic']},
+    {'name': 'video-ya-adfox', 'token': pillar['yav']['storage-auth_sign_token-video-ya-adfox']},
+    {'name': 'video-ott', 'token': pillar['yav']['storage-auth_sign_token-video-ott']},
+    {'name': 'video-agencyevents', 'token': pillar['yav']['storage-auth_sign_token-video-agencyevents']},
+    {'name': 'video-hosting', 'token': pillar['yav']['storage-auth_sign_token-video-hosting']},
+    {'name': 'video-ya-launcher', 'token': pillar['yav']['storage-auth_sign_token-video-ya-launcher']},
+    {'name': 'video-ya-display', 'token': pillar['yav']['storage-auth_sign_token-video-ya-display']},
+    {'name': 'video-geo', 'token': pillar['yav']['storage-auth_sign_token-video-geo']},
+    {'name': 'video-videodirekt', 'token': pillar['yav']['storage-auth_sign_token-video-videodirekt']}
+] %}
+
+{% set ns_list_8181 = [
+    {'name': 'arcadia-review', 'token': pillar['yav']['storage-auth_sign_token-arcadia-review']},
+    {'name': 'modadvert', 'token': pillar['yav']['storage-auth_sign_token-modadvert']},
+    {'name': 'rtmr', 'token': pillar['yav']['storage-auth_sign_token-rtmr']}
+] %}
+
+{% set ns_list_80443 = [
+    {'name': 'wiki-wiki', 'token': pillar['yav']['storage-auth_sign_token-wiki-wiki'], 'cors': False},
+    {'name': 'wiki-connect', 'token': pillar['yav']['storage-auth_sign_token-wiki-connect'], 'cors': False},
+    {'name': 'yadoc', 'token': pillar['yav']['storage-auth_sign_token-yadoc'], 'cors': False},
+    {'name': 'yadoc-test', 'token': pillar['yav']['storage-auth_sign_token-yadoc-test'], 'cors': False},
+] %}

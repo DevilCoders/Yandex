@@ -1,0 +1,50 @@
+parsing:
+  groups: [disk_deploy_smartcache_worker_stable]
+  metahost: smartcache-worker.deploy.disk.yandex.net
+  DataFetcher:
+    type: http
+    port: 3132
+    uri: "/exec_pattern?pattern=index-callbacks-queue-stat&timeout=120"
+  Combainer:
+    MINIMUM_PERIOD: 55
+aggregate:
+  data:
+    index-callbacks-queue-stat:
+      type: "custom"
+      class: "Max"
+      rps: no
+      perHost: YES
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+
+    juggler_index_queue_size:
+      type: juggler
+      namespace: disk
+      Host: "smartcache-worker.deploy.disk.yandex.net"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - ignition
+      Aggregator: logic_or
+      checkname: smartcache_index_queue_size
+      description: smartcache index queue (search side) > 100k
+      flaps:
+        stable_time: 120
+        critical_time: 300
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      CRIT: [ "${index-callbacks-queue-stat}['count_queue_callback'] > 100000" ]
+      tags:
+        - production
+

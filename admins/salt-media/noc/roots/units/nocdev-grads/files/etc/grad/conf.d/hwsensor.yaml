@@ -1,0 +1,60 @@
+# NOCDEV-2100
+credentials: !include ../credentials.yml
+
+vars:
+  skip_key_expr: &skip_key_expr
+    phys_descr: '^(Ethernet.+dBm|Ethernet.+Transceiver Receive Power Sensor)'
+    phys_class: '^(?!8.*)'  # sensor(8)
+
+series:
+  snmp_poller.hwsensor:
+    min_interval: 60
+
+pollers:
+  SNMP hwsensor nexus:
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters:
+      - {oid: cisco-entity-threshold.entSensorThresholdEvaluation, options: [use_snmpbulkget, add_index]}
+      - {oid: cisco-entity-threshold.entSensorThresholdSeverity, options: [use_snmpbulkget, add_index]}
+      - {oid: cisco-entity.entPhysicalDescr, options: [add_index, use_snmpbulkget]}
+      - {oid: cisco-entity.entPhysicalClass, options: [add_index, use_snmpbulkget]}
+      - {oid: cisco-entity.entSensorType, options: [use_snmpget]}
+      - {oid: cisco-entity.entSensorValue, options: [use_snmpget]}
+      - {oid: cisco-entity.entSensorScale, options: [use_snmpget]}
+      - {oid: cisco-entity.entSensorStatus, options: [use_snmpget]}
+      ignore_error_5: true
+      skip_key_expr: *skip_key_expr
+      post_fn: [cisco_hw_sensors]
+      indexer:
+        interval: 900
+        timeout: 120
+    filter: "{Nexus} and not {Nexus 9000} and [опрос SNMP]"
+    series: hwsensor
+    interval: 60
+    job_types: ["indexer", "data"]
+
+  SNMP hwsensor nexus9k:
+    poller: snmp
+    poller version: 2
+    poller params:
+      dups_ok: true
+      counters:
+      - {oid: cisco-entity-threshold.entSensorThresholdEvaluation, options: [use_snmpbulkget, add_index]}
+      - {oid: cisco-entity-threshold.entSensorThresholdSeverity, options: [use_snmpbulkget, add_index]}
+      - {oid: cisco-entity.entPhysicalDescr, options: [add_index, use_snmpbulkget]}
+      - {oid: cisco-entity.entPhysicalClass, options: [add_index, use_snmpbulkget]}
+      - {oid: cisco-entity.entSensorType, options: [use_snmpgetnext]}
+      - {oid: cisco-entity.entSensorValue, options: [use_snmpgetnext]}
+      - {oid: cisco-entity.entSensorScale, options: [use_snmpgetnext]}
+      - {oid: cisco-entity.entSensorStatus, options: [use_snmpgetnext]}
+      skip_key_expr: *skip_key_expr
+      post_fn: [cisco_hw_sensors]
+      indexer:
+        interval: 900
+        timeout: 120
+    filter: "{Nexus 9000} and [опрос SNMP]"
+    series: hwsensor
+    interval: 60
+    job_types: ["indexer", "data"]

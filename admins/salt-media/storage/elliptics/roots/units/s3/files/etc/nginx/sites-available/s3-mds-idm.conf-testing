@@ -1,0 +1,92 @@
+proxy_cache_path /var/cache/nginx/cache/idm levels=1:2 keys_zone=idm:100m max_size=1G inactive=10m loader_files=50 loader_threshold=100 loader_sleep=300000;
+
+upstream s3-idm {
+     server 127.0.0.1:5555;
+}
+
+upstream s3-goose-idm {
+    server 127.0.0.1:3377;
+}
+
+upstream s3-goose-private {
+    server 127.0.0.1:3388;
+}
+
+upstream s3-goose-private-system {
+    server 127.0.0.1:3399;
+}
+
+server {
+    listen 127.0.0.1:443 ssl;
+    listen [::1]:443 ssl;
+
+    listen 5443 ssl;
+    listen [::]:5443 ssl;
+
+    listen [2a02:6b8:0:3400::44a]:443 ssl;
+
+    server_name s3-idm.mdst.yandex.net
+                s3-idm.mds.yandex.net;
+
+    tskv_log /var/log/nginx/s3-tskv.log s3-access-log;
+
+    ssl_certificate     /etc/yandex-certs/s3-idm.mdst.yandex.net.pem;
+    ssl_certificate_key /etc/yandex-certs/s3-idm.mdst.yandex.net.key;
+    ssl_prefer_server_ciphers on;
+    ssl_protocols TLSv1 TLSv1.1 TLSv1.2 TLSv1.3;
+    ssl_ciphers kEECDH+AESGCM+AES128:kEECDH+AES128:kRSA+AESGCM+AES128:kRSA+AES128:RC4-SHA:!aNULL:!eNULL:!MD5:!EXPORT:!LOW:!SEED:!CAMELLIA:!IDEA:!PSK:!SRP:!SSLv2;
+    ssl_session_cache    shared:S3_SSL_CACHE:128m;
+    ssl_session_timeout  28h;
+
+    ssl_stapling on;
+    ssl_stapling_verify on;
+    ssl_trusted_certificate /etc/nginx/ssl/certuml4.pem;
+
+    ssl_client_certificate /etc/yandex-certs/yandexCAs.pem;
+    ssl_verify_client optional;
+    ssl_verify_depth 3;
+
+    include s3/proxy_options.conf;
+
+    request_id_from_header on;
+    request_id_header_name X-Request-Id;
+
+    location ^~ /roles {
+        proxy_pass    http://s3-goose-idm;
+    }
+
+    location ^~ /credentials {
+        proxy_pass    http://s3-goose-private;
+    }
+
+    location ^~ /resources {
+        proxy_pass    http://s3-goose-private;
+    }
+
+    location ^~ /buckets/ {
+        proxy_pass    http://s3-goose-private;
+    }
+
+    location ^~ /quotaManagement/ {
+        proxy_pass    http://s3-goose-private;
+    }
+
+    location ^~ /stats {
+        proxy_buffering             on;
+        proxy_cache_valid           200 6m;
+        proxy_cache_key             "$request_method$uri$args";
+        proxy_cache                 idm;
+        proxy_cache_lock            on;
+        proxy_cache_lock_timeout    15s;
+
+        proxy_pass    http://s3-goose-private;
+    }
+
+    location ^~ /management/ {
+        proxy_pass    http://s3-goose-private;
+    }
+
+    location ^~ /ping {
+        proxy_pass    http://s3-goose-private-system;
+    }
+}

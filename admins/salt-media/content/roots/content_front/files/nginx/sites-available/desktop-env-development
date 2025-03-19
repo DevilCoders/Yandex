@@ -1,0 +1,43 @@
+upstream aab_upstream {
+    server localhost:80;
+}
+
+server {
+    include listen;
+
+    server_name ~^(?<user>\w+)\.dev[\d]+\.tv\.yandex\.(?<tld>ru|ua|by|kz|uz|com|com\.tr)$;
+
+    set $root /home/$user/www/tv-www/;
+    set $socket_name $user-tv-www;
+
+    set $export_host export.testing.tv.yandex.ru;
+    set $export_proxy_host tv-mobile01h.tst.content.yandex.net;
+
+    set $proxy_qloud_host new.testing.tv.yandex.$tld;
+
+    set $should_aab_proxy "";
+    set $loop_host "";
+
+    set $do_not_redirect "${is_ping}${is_ukraine}";
+
+    if ($do_not_redirect = "" ) {
+       return 301 https://$host$request_uri;
+    }
+
+    set_real_ip_from     2a02:6b8::/32;
+    set_real_ip_from     2620:10f:d000::/44;
+    real_ip_header       X-Forwarded-For-Y;
+
+    location ~* ^/[^/]+\.(png|ico)$ {
+        root $root/blocks-common/b-page/favicon/dev/;
+    }
+
+    # all static in dev loads from the same host
+    location ~* ^.+\.(html|svg|jpg|jpeg|gif|png|ico|zip|tgz|gz|rar|bz2|pdf|txt|tar|wav|bmp|rtf|flv|swf|css|js|eot|woff|woff2|ttf)$ {
+        root $root;
+    }
+
+    include sites-available/desktop-common;
+}
+
+include sites-available/desktop-redirect-www;

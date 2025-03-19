@@ -1,0 +1,188 @@
+#! /usr/bin/perl
+
+### BEGIN INIT INFO
+# Provides:          mysql
+# Required-Start:    $local_fs $remote_fs $network
+# Required-Stop:     $local_fs $remote_fs $network
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Starts MySQL
+# Description:       Starts and stops the MySQL daemon
+### END INIT INFO
+
+use strict;
+use warnings;
+use Getopt::Long;
+use YAML qw(LoadFile);
+
+my %commands = ();
+my %CONF = (
+    'pid-file'      => '/var/run/mysqld/mysqld.pid',
+    'stop-timeout'  => 1200,
+    'start-timeout' => 60,
+);
+my $force = '';
+my $oom_adj = 0;
+my $init_conf = '/etc/mysql-configurator/init.yaml';
+
+# read oom protection flag (default: False)
+if (! -e $init_conf) {
+    $init_conf = '/etc/mysql-configurator/init-default.yaml';
+}
+if (-e $init_conf) {
+    my $yml_conf = LoadFile($init_conf);
+    $oom_adj = $yml_conf->{oom_adj};
+    if(!$oom_adj) {
+        $oom_adj = 0;
+    }
+}
+
+# setup oom protection for mysqld
+sub oom_protect {
+    my $pid = $_[0];
+    if (!$pid) {
+        print "Can not find pid\n";
+        return -1;
+    }
+    if ($oom_adj == 0) {
+        return -1
+    }
+    print "set oom_adj=$oom_adj for mysqld pid ", $pid, "\n";
+    system ("echo $oom_adj > /proc/$pid/oom_adj");
+    return 0;
+}
+
+# display usage
+sub usage {
+    print "USAGE: $0 <command>\n\nCommands: " . join (', ', sort keys %commands) . "\n";
+    exit (-1);
+}
+
+# reads config
+sub read_config {
+    my $conf;
+    open ($conf, '/usr/bin/my_print_defaults mysqld init |');
+    while (<$conf>) {
+        /^--(.*?)(?:=(.*))?$/ or die ("Cannot parse $_\n");
+        $CONF{$1} = $2 || 1;
+    }
+    close ($conf);
+}
+
+# check if mysql is alive. returns the pid
+sub check_alive {
+    my $pidfile = $CONF{'pid-file'};
+    if (-f $pidfile) {
+        my $pid = int(`cat $pidfile`);
+
+        if ($pid && -d "/proc/$pid") {
+            return $pid;
+        }
+    }
+
+    no warnings;
+    my $pid = int(`ps ax | fgrep mysqld_safe | fgrep -v grep | awk '{print \$1}'`);
+    return $pid;
+}
+
+# start the server
+sub do_start {
+    print "Starting MySQL: ";
+    my $pid = check_alive();
+    if ($pid) {
+        print "already running\n";
+        return 0;
+    }
+
+    my $piddir = $CONF{'pid-file'};
+    $piddir =~ s~/[^/]*$~~;
+    system ("mkdir -p $piddir && chown mysql $piddir");
+    system ("/usr/bin/mysqld_safe >/dev/null 2>/dev/null </dev/null &");
+    sleep(1);
+    $pid = check_alive();
+    if (!$pid) {
+        print "failed. Can not find pid.\n";
+        return -1;
+    }
+
+    # at this point the server at least was started, but we need it to initialize
+
+    my $timeout = $CONF{'start-timeout'};
+    while ($timeout) {
+        $pid = check_alive();
+        if (!$pid) {
+            print "failed. pid not found.\n";
+            return -1;
+        }
+        system ("mysqladmin -s ping >/dev/null");
+        if (!$?) {
+            oom_protect($pid);
+            print "ok\n";
+            return 0;
+        }
+        $timeout--;
+        sleep(1);
+    }
+    print "timed out\n";
+    return -1;
+}
+
+# stop the server
+sub do_stop {
+    print "Stopping MySQL: ";
+    my $pid = check_alive();
+    if (!$pid) {
+        print "already stopped\n";
+        return 0;
+    }
+
+    kill (15, $pid);
+
+    my $timeout = $CONF{'stop-timeout'};
+    while ($timeout) {
+        if (!check_alive()) {
+            print "ok\n";
+            return 0;
+        }
+        sleep(1);
+        $timeout--;
+    }
+    print "timed out\n";
+    return -1;
+}
+
+# restart the server
+sub do_restart {
+    my $r;
+    $r = do_stop();
+    return $r if ($r);
+    $r = do_start();
+    return $r if ($r);
+}
+
+# server status
+sub do_status {
+    my $pid = check_alive();
+    if (!$pid) {
+        print "Mysql stopped.";
+        return 0;
+    }
+    print "Mysql started with pid $pid\n";
+    return 0;
+}
+
+# dispatch everything
+sub fetch_commands {
+    no strict 'refs';
+    foreach (keys %{"::"}) {
+        if (/^do_(\w+)/) {
+            $commands{$1} = *{"::do_$1"};
+        }
+    }
+}
+fetch_commands();
+GetOptions("force" => \$force); # ignore possible options for compatibility
+$force = '--force' if ($force);
+usage() if ((scalar @ARGV != 1) || (! $commands{$ARGV[0]}));
+read_config();
+exit($commands{$ARGV[0]}());

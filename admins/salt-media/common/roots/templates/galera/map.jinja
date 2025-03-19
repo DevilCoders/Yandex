@@ -1,0 +1,59 @@
+{% load_yaml as galera %}
+service: mysql
+packages:
+  - percona-xtradb-cluster-galera-3
+  - percona-xtradb-cluster-server
+  - yandex-sakila-virtual
+  - lzop
+  - pv
+  - pigz
+monrun: "/usr/sbin/regenerate-monrun-tasks"
+{% endload %}
+
+{% set galera = salt["pillar.get"]("galera", galera, merge=True) %}
+{% set nodes = [] %}
+{% set donors = [] %}
+{% set me = grains['fqdn'] %}
+
+{% for host in salt.conductor.groups2hosts(galera.cluster_group) %}
+{% set tags = salt.cmd.run('curl -sk http://c.yandex-team.ru/api-cached/hosts2tags/'+host) %}
+  {% if not 'garbd' in tags and host != me %}
+    {% do donors.append(host) %}
+  {% endif %}
+  {% do nodes.append(host) %}
+{% endfor %}
+{% do galera.update( { "cluster_nodes" : nodes } ) %}
+{% do galera.update ( { "sst_donors" : donors } ) %}
+
+{% if 'garbd' in grains['conductor']['tags'] %}
+{% do galera.update({ "packages" : ['percona-xtradb-cluster-garbd-3'] })%}
+{% do galera.update({ "service" : "garbd" })%}
+{% do galera.update({ "d_support" : "False" }) %}
+{% else %}
+  {% if galera.version is defined %}
+    {% if 'percona-xtradb-cluster-server' in galera.packages %}
+      {% do galera.packages.remove('percona-xtradb-cluster-server') %}
+      {% do galera.packages.append('percona-xtradb-cluster-server-'+galera.version) %}
+    {% endif %}
+  {% endif %}
+{% endif %}
+
+{% if galera.sst_port is not defined %}
+{% do galera.update({ "sst_port": 17601 }) %}
+{% endif %}
+
+{% if galera.ist_port is not defined %}
+{% do galera.update({ "ist_port": 17501 }) %}
+{% endif %}
+
+{% if galera.wsrep_port is not defined %}
+{% do galera.update({ "wsrep_port": 17401 }) %}
+{% endif %}
+
+{% if galera.d_support is defined and galera.d_support == 'False' %}
+  {% for pkg in ['yandex-sakila-virtual', 'lzop', 'pv'] %}
+    {% if pkg in galera.packages %}
+      {% do galera.packages.remove(pkg)%}
+    {% endif %}
+  {% endfor %}
+{% endif %}

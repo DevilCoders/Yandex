@@ -1,0 +1,98 @@
+#!/usr/bin/env python
+import imp
+import sys
+import os
+import argparse
+from subprocess import check_call, check_output
+
+container_interfaces_config = '/tmp/virtual_interfaces'
+
+def DetectProjectId():
+    project_id_file = '/etc/network/projectid'
+    if os.path.isfile(project_id_file):
+        project_id_data = open(project_id_file,'r')
+        project_id = project_id_data.read().rstrip('\n')
+        project_id_data.close()
+    else:
+        project_id = False
+
+    return project_id
+
+def FormatInterfaces(container_addr, ra_prefix):
+    config = "auto eth0\n \
+iface eth0 inet6 static\n \
+    address {addr}\n \
+    netmask 64\n \
+    network {prefix}\n \
+    dns-nameservers 2a02:6b8::1:1 2a02:6b8:0:3400::1\n \
+    dad-attempts 0\n \
+    ya-netconfig-fb-disable yes\n \
+    pre-up ethtool -K eth0 tso off; if lsmod | grep -qE \"e1000|igb\"; then ethtool -G eth0 rx 4096 tx 4096; fi; true\n \
+    up ifconfig eth0 up mtu 8950; true\n \
+    post-up /sbin/ip -6 route replace default via {prefix}1 mtu 1450 advmss 1390\
+".format(addr=container_addr, prefix=ra_prefix)
+    return config
+
+def GetDefaultIface():
+    ip_out = check_output(['ip', '-6', 'ro', 'list'])
+    for line in ip_out.split('\n'):
+        route = line.split()
+        if route[0] == "default" and len(route) >= 5:
+            return route[4].strip()
+    return False
+
+def do_command(command, test_mode, verbose):
+    if test_mode:
+        if verbose:
+            print "Please run:\n\t" + " ".join(command) + "\nto save network configuration in the container"
+    else:
+        code = check_call(command)
+        if code != 0:
+            raise RuntimeError("ERROR: Command {args} exit code {code}".format(args=command, code=code))
+
+def push_configs(container, test_mode=False):
+    try:
+        do_command(["/usr/bin/lxc", "file", "push", container_interfaces_config, container + "/etc/network/interfaces"], test_mode, True)
+        if os.path.isfile('/etc/apt/apt.conf.d/50allowunauth'):
+            do_command(["/usr/bin/lxc", "file", "push", '/etc/apt/apt.conf.d/50allowunauth', container + "/etc/apt/apt.conf.d/50allowunauth"], test_mode, False)
+        if not test_mode:
+            os.unlink(container_interfaces_config)
+        print "Ok, plz start your container"
+    except RuntimeError as e:
+        print e.str()
+
+def main():
+    parser = argparse.ArgumentParser(description="Generate IPv6 address for container and its interfaces file")
+    parser.add_argument('container', help="container name to generate address for")
+    parser.add_argument('--projectid', '-p', help="projectid to generate address (default: taken from /etc/network/projectid)")
+    parser.add_argument('--no-changes', '-n', action='store_true', help="don't push config into container")
+    args = parser.parse_args()
+
+    projectid = args.projectid if args.projectid is not None else DetectProjectId()
+    container = args.container
+    container_addr = check_output(['/usr/lib/yandex-netconfig/yandex-netconfig-tool','pregen_ip','-i','br0', '--project-id', projectid, '--method', container])
+    container_addr = container_addr.replace('INFO:root:','')
+
+
+    default_iface = GetDefaultIface()
+    if not default_iface:
+        print "Unable to detect active interface"
+        exit(1)
+    print "default iface = {iface}".format(iface=default_iface)
+    ra_prefix =  ':'.join(container_addr.split(':')[0:3]) + '::/64'
+    config = FormatInterfaces(container_addr.split('/')[0], ra_prefix.split('/')[0])
+
+
+    if os.path.isfile(container_interfaces_config):
+        os.unlink(container_interfaces_config)
+
+    if len(config) > 0:
+        print config
+        tmpfile = open(container_interfaces_config, "w+")
+        tmpfile.write(config)
+        tmpfile.close()
+
+    push_configs(container, args.no_changes)
+
+if __name__ == "__main__":
+    main()

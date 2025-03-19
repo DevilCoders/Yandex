@@ -1,0 +1,42 @@
+# Разбил init.sls на части (как в нормальной формуле).
+# Добавил чек - это пакет config-monrun-cert-check либо переданный в pillar
+# certificates.check_pkg. Чек ставится либо последнeй версии, 
+# либо тот который должен быть по кондуктору.
+# По-умолчанию мониторятся сервисы nginx. Формула пытается притянуть
+# кондукторные версии nginx, nginx-common, nginx-full, чтобы переопределить это
+# поведение достаточно передать пустой массив # в pillar certificates.packages
+# Этот темплейт поставляет сертификаты из файлов, расположенных в roots локально на мастере - словарь 'files'
+# Так же используется совместно с templates.pgp_secrets для ребута nginx и мониторингов (сами сертификаты поставляются pgp_secrets)
+
+certificates:
+  files     :                                          # need define
+    - 'moderator.video.yandex-team.ru.pem'
+  source    : 'certs'                                  # default
+  path      : "/etc/nginx/ssl"                         # default
+  packages  : ['nginx', 'nginx-full', 'nginx-common']  # default
+  check_pkg : 'config-monrun-cert-check'               # default
+  saltenv       : 'stable'                                 # default
+
+# Также, можно использовать сертификаты из секретницы, вместо файлов:
+
+certificates:
+  contents:
+    disk.yandex.ru.key: {{ salt.yav.get('sec-123[key]') | json }}
+    disk.yandex.ru.crt: {{ salt.yav.get('sec-123[pem]') | json }}
+  path      : "/etc/nginx/ssl"                         # default
+  packages  : ['nginx', 'nginx-full', 'nginx-common']  # default
+  check_pkg : 'config-monrun-cert-check'               # default
+
+# Также, можно использовать сертификаты из пиллара (более общий случай секретницы)
+# Идея:
+#   в секретнице лежит секрет с кучей разных ключей
+#   каким-то сторонним sls мы их выгружаем в пиллар под какой-то 1 ключ
+#   name: имя этого ключа
+#   files: массив ключей в секрете которые надо выгружать в файлы под /etc/nginx/ssl или что у вас определено в path
+
+certificates:
+  from_pillar:
+    name: cluster_yav_secrets
+    files:
+      - afisha_front.crt
+      - afisha_front.key

@@ -1,0 +1,97 @@
+parsing:
+  groups: [disk_deploy_smartcache_worker_stable]
+  metahost: smartcache-worker.deploy.disk.yandex.net
+  DataFetcher:
+    logname: "nginx/access-tskv.log"
+    timetail_url: "/timetail?pattern=smartcache_worker_nginx&type=tskv&log_ts="
+aggregate:
+  data:
+    smartcache_worker_nginx:
+      type: "custom"
+      class: "Multimetrics"
+      factor: 1000
+
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+    juggler_smartcache_worker_nginx_status_5xx: &juggler-conf
+      type: juggler
+      namespace: disk
+      host: "smartcache-worker.deploy.disk.yandex.net"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - ignition
+      Aggregator: logic_or
+      checkname: smartcache-worker_nginx_status_5xx
+      description: smartcache_worker_nginx_status_5xx
+      flaps: { stable_time: 120, critical_time: 400 }
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      CRIT: [" ${smartcache_worker_nginx}['5xx'] > 15 "]
+      tags:
+        - production
+
+    juggler_valid_traffic:
+      << : *juggler-conf
+      checkname: valid_traffic
+      description: valid_traffic
+      CRIT: [" ${smartcache_worker_nginx}['2xx'] <= 10 "]
+      config:
+          type: metahost
+
+    juggler_datacenter_valid_traffic:
+      << : *juggler-conf
+      checkname: datacenter_valid_traffic
+      description: datacenter_valid_traffic
+      config:
+          type: datacenter
+      CRIT: [" ${smartcache_worker_nginx}['2xx'] < 5 "]
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        unreach_checks: ["smartcache-worker.deploy.disk.yandex.net:valid_traffic"]
+
+    juggler_low_traffic:
+      <<: *juggler-conf
+      checkname: low_traffic
+      description: low_traffic
+      config:
+          type: metahost
+      variables:
+        trigger_n50_d200: "iftimeofday(22, 10, 50, 200)"
+      CRIT: [" ${smartcache_worker_nginx}['2xx'] < trigger_n50_d200 "]
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        unreach_checks: [":valid_traffic"]
+
+    juggler_datacenter_low_traffic:
+      << : *juggler-conf
+      checkname: datacenter_low_traffic
+      description: datacenter_low_traffic
+      config:
+          type: datacenter
+      variables:
+        trigger_n20_d50: "iftimeofday(22, 10, 20, 50)"
+      CRIT: [" ${smartcache_worker_nginx}['2xx'] < trigger_n20_d50 "]
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        unreach_checks: [":datacenter_valid_traffic"]
+
+    juggler_smartcache_worker_nginx_timings_75perc:
+      << : *juggler-conf
+      checkname: smartcache_worker_nginx_timings_75perc
+      description: smartcache_worker_nginx_timings_75perc
+      CRIT: [" ${smartcache_worker_nginx}['request_timings'][0] > 60000" ]
+
+
+

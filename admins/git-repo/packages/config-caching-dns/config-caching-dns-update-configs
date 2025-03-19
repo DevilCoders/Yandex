@@ -1,0 +1,156 @@
+#!/bin/bash
+
+if [ -f /etc/default/config-caching-dns ]; then
+    . /etc/default/config-caching-dns
+else
+    . /etc/default/config-caching-dns-default
+fi
+
+CONF_DIR="/usr/share/yandex-configs/caching-dns"
+UNBOUND_CONF_DIR="/etc/unbound/unbound.conf.d"
+
+OPT_SEARCH="search ${SEARCH:-yandex.net yandex.ru}"
+OPT_OPTIONS="options timeout:${TIMEOUT:-1} attempts:${ATTEMPTS:-1}"
+
+V4_RESOLV_CONF="# ipv4 only system
+nameserver 127.0.0.1
+nameserver 213.180.205.1
+nameserver 141.8.146.1"
+
+V6_RESOLV_CONF="# ipv6 only system
+nameserver ::1
+nameserver 2a02:6b8::1:1
+nameserver 2a02:6b8:0:3400::1"
+
+V6DNS64_RESOLV_CONF="# ipv6 only system with nat64
+nameserver ::1
+nameserver 2a02:6b8:0:3400::5005"
+
+V6DNS64_FORCE_RESOLV_CONF="# ipv6 system with forced nat64
+nameserver ::1
+nameserver 2a02:6b8:0:3400::5005"
+
+function RunHooks() {
+    local target="$1"
+    local hooks_dir='/etc/yandex/config-caching-dns/resolv-hooks.d'
+    find "${hooks_dir}" -maxdepth 1 -executable -type f -print0 2>/dev/null|\
+        sort -z | xargs -r0 -I '{}' sh -c "{} $target"
+}
+
+function RenameIfModified() {
+    local src="$1"  dst="$2"
+    local new_md5=$(md5sum "$src"|awk '{print $1}')
+    local orig_md5=$(md5sum "$dst"|awk '{print $1}')
+
+    if grep -q '^nameserver' "$src" && [ "x$orig_md5" != "x$new_md5" ]; then
+        mv -f "$src" "$dst"
+    else
+        rm -f "$src"
+    fi
+
+    # /etc/resolv.conf must be readable for all
+    [ "x$dst" == "x/etc/resolv.conf" ] && chmod 644 /etc/resolv.conf
+}
+
+function Conductor(){
+   # conductor <method> <conductor_entity(host,group i.e)> format
+   local api="http://c.yandex-team.ru/api-cached" _r=0
+   until curl -sf "$api/$1/$2${3:+?format=}$3"; do
+      if ((_r+=1, _r >= ${MAX_CURL_RETRIES:=3})); then
+         echo "Failed to curl conductor #${MAX_CURL_RETRIES} times, exit!" >&2
+         exit 1
+      fi
+   done
+}
+
+function CheckAndReplaceLink(){
+    local LINK="${1}"
+    local TARGET="${2}"
+
+    if [ $(diff ${TARGET} ${LINK} 2>/dev/null | wc -l) -ne 0 ] || [ ! -f ${LINK} ]; then
+        cp -v ${TARGET} ${LINK}
+        UNBOUND_RELOAD=1
+    fi
+}
+
+function CheckAndRemove(){
+    local FILE="${1}"
+    if [ -e ${FILE} ]; then
+        rm -f ${FILE}
+        UNBOUND_RELOAD=1
+    fi
+}
+
+###XXX if __name__ == '__main__'
+
+if host yandex.ru 213.180.193.1 &> /dev/null; then  # v4 resolver alive ?
+    CAN_v4=1
+fi
+if host yandex.ru 2a02:6b8::1 &>/dev/null; then  # v6 resolver alive ?
+    CAN_v6=1
+fi
+
+mkdir -p /var/lib/config-caching-dns
+
+MY_TAGS="$(Conductor get_host_tags $(hostname -f))" \
+ && echo "${MY_TAGS}" > /var/lib/config-caching-dns/conductor_tags \
+ || MY_TAGS=$(</var/lib/config-caching-dns/conductor_tags)
+MY_TAGS="$(echo $MY_TAGS)" # remove new lines
+NAT64_TAG=' nat64 ' # check excact tag name
+NAT64_FORCE_TAG=' nat64-force ' # force NAT64 for ipv4+ipv6 hosts
+LOCAL_DNS64_TAG=' local-dns64 '
+RESOLV_CONF_NO_SEARCH=' resolv-conf-no-search '
+
+if [[ -n "$CAN_v6" ]]; then
+    if [[ " $MY_TAGS " =~ $NAT64_FORCE_TAG ]] || [[ "$NAT64_FORCE" == "yes" ]]; then # nat64-force tag present?
+        RESOLV_CONF="$V6DNS64_FORCE_RESOLV_CONF"
+        CheckAndRemove ${UNBOUND_CONF_DIR}/00-dns64.conf
+        CheckAndReplaceLink ${UNBOUND_CONF_DIR}/00-module.conf ${CONF_DIR}/unbound/00-module-iterator.conf
+        CheckAndReplaceLink ${UNBOUND_CONF_DIR}/60-forward.conf ${CONF_DIR}/unbound/60-forward-ipv6-nat64.conf
+    elif [[ -n "$CAN_v4" ]]; then
+        RESOLV_CONF="$V6_RESOLV_CONF"
+        CheckAndRemove ${UNBOUND_CONF_DIR}/00-dns64.conf
+        CheckAndReplaceLink ${UNBOUND_CONF_DIR}/00-module.conf ${CONF_DIR}/unbound/00-module-validator-iterator.conf
+        CheckAndReplaceLink ${UNBOUND_CONF_DIR}/60-forward.conf ${CONF_DIR}/unbound/60-forward-ipv6.conf
+    elif [[ " $MY_TAGS " =~ $LOCAL_DNS64_TAG ]] || [[ "$LOCAL_DNS64" == "yes" ]]; then # local-dns64 tag present?
+        RESOLV_CONF="$V6_RESOLV_CONF"
+        CheckAndReplaceLink ${UNBOUND_CONF_DIR}/00-dns64.conf ${CONF_DIR}/unbound/00-dns64.conf
+        CheckAndReplaceLink ${UNBOUND_CONF_DIR}/00-module.conf ${CONF_DIR}/unbound/00-module-dns64-validator-iterator.conf
+        CheckAndReplaceLink ${UNBOUND_CONF_DIR}/60-forward.conf ${CONF_DIR}/unbound/60-forward-ipv6.conf
+    elif [[ " $MY_TAGS " =~ $NAT64_TAG ]] || [[ "$NAT64" == "yes" ]]; then # nat64 tag present?
+        RESOLV_CONF="$V6DNS64_RESOLV_CONF"
+        CheckAndRemove ${UNBOUND_CONF_DIR}/00-dns64.conf
+        CheckAndReplaceLink ${UNBOUND_CONF_DIR}/00-module.conf ${CONF_DIR}/unbound/00-module-iterator.conf
+        CheckAndReplaceLink ${UNBOUND_CONF_DIR}/60-forward.conf ${CONF_DIR}/unbound/60-forward-ipv6-nat64.conf
+    else
+        RESOLV_CONF="$V6_RESOLV_CONF"
+        CheckAndRemove ${UNBOUND_CONF_DIR}/00-dns64.conf
+        CheckAndReplaceLink ${UNBOUND_CONF_DIR}/00-module.conf ${CONF_DIR}/unbound/00-module-validator-iterator.conf
+        CheckAndReplaceLink ${UNBOUND_CONF_DIR}/60-forward.conf ${CONF_DIR}/unbound/60-forward-ipv6.conf
+    fi
+elif [[ -n "$CAN_v4" ]]; then
+    RESOLV_CONF="$V4_RESOLV_CONF"
+    CheckAndRemove ${UNBOUND_CONF_DIR}/00-dns64.conf
+    CheckAndReplaceLink ${UNBOUND_CONF_DIR}/00-module.conf ${CONF_DIR}/unbound/00-module-validator-iterator.conf
+    CheckAndReplaceLink ${UNBOUND_CONF_DIR}/60-forward.conf ${CONF_DIR}/unbound/60-forward-ipv4.conf
+fi
+
+CheckAndReplaceLink ${UNBOUND_CONF_DIR}/50-common.conf ${CONF_DIR}/unbound/50-common.conf
+
+if [[ -n "${UNBOUND_RELOAD}" ]]; then
+    echo "Reloading unbound..."
+    service unbound reload
+fi
+
+RESOLV_CONF_TMP=$(mktemp /tmp/resolv.conf.XXXXXX)
+
+echo "# Inserted by config-caching-dns" > ${RESOLV_CONF_TMP}  # overwrite destination file
+
+if [ -z "${SEARCH-unset}" ] || [[ " $MY_TAGS " =~ $RESOLV_CONF_NO_SEARCH ]]; then
+    printf "%s\n%s\n" "$RESOLV_CONF" "$OPT_OPTIONS" >> ${RESOLV_CONF_TMP}
+else
+    printf "%s\n%s\n%s\n" "$RESOLV_CONF" "$OPT_SEARCH" "$OPT_OPTIONS" >> ${RESOLV_CONF_TMP}
+fi
+
+RunHooks  ${RESOLV_CONF_TMP}
+RenameIfModified  ${RESOLV_CONF_TMP} /etc/resolv.conf

@@ -1,0 +1,138 @@
+#!/bin/sh
+#
+### BEGIN INIT INFO
+# Provides:          @package@
+# Required-Start:    $network $local_fs
+# Required-Stop:
+# Should-Start:
+# Should-Stop:
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: @desc@
+### END INIT INFO
+
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+DESC="yandex @dir@"
+NAME="@package@"
+DAEMON=/usr/lib/yandex/@dir@/bin/zkServer-yandex.sh
+CHECK=/usr/lib/yandex/@dir@/bin/zk_check.sh
+PIDFILE=/var/run/yandex/@dir@/zookeeper.pid
+FLAGFILE=/var/run/yandex/@dir@/zookeeper.flag
+
+test -x $DAEMON || exit 0
+
+. /etc/rc.d/init.d/functions
+
+# Default options, these can be overriden by the information
+# at /etc/default/$NAME
+DAEMON_OPTS=""          # Additional options given to the server
+
+DIETIME=5              # Time to wait for the server to die, in seconds
+                        # If this value is set too low you might not
+                        # let some servers to die gracefully and
+                        # 'restart' will not work
+DAEMONUSER=@user@
+
+PING_RETRIES=60
+PING_DELAY_SECONDS=5
+
+export JAVA_HOME JAVA_OPTS
+
+# XXX these two are not redhatish
+log_daemon_msg() {
+    EC=$?
+    echo "$@"
+    return $EC
+}
+
+log_end_msg() {
+    EC=$?
+    if [ $EC -eq 0 ]; then
+        echo "Success."
+    else
+        echo "Failure, exit code: $EC"
+    fi
+    return $EC
+}
+
+touch_quietly() {
+    EC=$?
+    touch "$1"
+    return $EC
+}
+
+rm_quietly() {
+    EC=$?
+    rm -f "$1"
+    return $EC
+}
+
+wait_for_ping() {
+    EXIT_CODE=$1
+    if [ $EXIT_CODE -ne 0 ]; then
+        log_end_msg $EXIT_CODE
+        return $?
+    fi
+
+    log_daemon_msg "Will try to ping recently started daemon..." "$NAME"
+    for n in `seq 1 $PING_RETRIES`; do
+        sleep $PING_DELAY_SECONDS
+
+        if ! $0 status; then
+            log_daemon_msg "The process seems to have died :-("
+            return 1
+        fi
+
+        if $CHECK ruok imok; then
+            log_daemon_msg "Ping succeeded!"
+            return 0
+        fi
+
+        log_daemon_msg "Ping failed (still initializing?), will retry in a few seconds."
+    done
+
+    log_daemon_msg "Failed to ping recently started daemon." "$NAME"
+    $0 stop
+
+    return 1
+}
+
+case "$1" in
+    start)
+        touch_quietly "$FLAGFILE"
+        log_daemon_msg "Starting $DESC " "$NAME"
+        daemon --pidfile $PIDFILE --user $DAEMONUSER $DAEMON --write-pid $PIDFILE $DAEMON_OPTS > /dev/null 2>&1 &
+        wait_for_ping $?
+        rm_quietly "$FLAGFILE"
+        exit $?
+        ;;
+    stop)
+        touch_quietly "$FLAGFILE"
+        log_daemon_msg "Stopping $DESC" "$NAME"
+        killproc -p $PIDFILE -d $DIETIME $DAEMON
+        log_end_msg $?
+        rm_quietly "$FLAGFILE"
+        exit $?
+        ;;
+    restart|force-reload)
+        log_daemon_msg "Restarting $DESC" "$NAME"
+        if [ -f "$FLAGFILE" ]; then
+            echo "Init script is running (according to $FLAGFILE), will not restart." >&2
+            exit 0
+        else
+            $0 stop
+            $0 start
+            exit $?
+        fi
+        ;;
+    status)
+        log_daemon_msg "Checking status of $DESC" "$NAME"
+        status -p $PIDFILE $DAEMON
+        exit $?
+        ;;
+    *)
+        echo "Usage: /sbin/service $NAME {start|stop|restart|reload|force-reload|status}" >&2
+        exit 1
+        ;;
+esac

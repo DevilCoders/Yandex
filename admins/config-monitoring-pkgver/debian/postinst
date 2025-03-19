@@ -1,0 +1,29 @@
+#!/bin/sh
+set -e
+
+if [ -x /bin/systemctl ]; then
+  rm -f /etc/init.d/pkgver
+
+  if [ -f /etc/dom0hostname ]; then
+
+    # Automatically added by dh_systemd_enable/11.1.6ubuntu2
+    if [ "$1" = "configure" ] || [ "$1" = "abort-upgrade" ] || [ "$1" = "abort-deconfigure" ] || [ "$1" = "abort-remove" ] ; then
+	# This will only remove masks created by d-s-h on package removal.
+	deb-systemd-helper unmask 'pkgver-systemd.service' >/dev/null || true
+
+	# was-enabled defaults to true, so new installations run enable.
+	if deb-systemd-helper --quiet was-enabled 'pkgver-systemd.service'; then
+		# Enables the unit on first installation, creates new
+		# symlinks on upgrades if the unit file has changed.
+		deb-systemd-helper enable 'pkgver-systemd.service' >/dev/null || true
+	else
+		# Update the statefile to add new symlinks (if any), which need to be
+		# cleaned up on purge. Also remove old symlinks.
+		deb-systemd-helper update-state 'pkgver-systemd.service' >/dev/null || true
+	fi
+    fi
+    # End automatically added section
+  else
+    /bin/systemctl disable pkgver-systemd.service || :
+  fi
+fi

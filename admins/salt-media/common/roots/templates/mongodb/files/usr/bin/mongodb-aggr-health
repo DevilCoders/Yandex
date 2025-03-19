@@ -1,0 +1,34 @@
+#!/bin/bash
+
+export MONRUN="monrun -f nagios -r"
+
+verbose=$1
+
+message="Failed"
+fail=0
+
+function get_code {
+	echo "$@" | cut -d ';' -f 2
+}
+
+function get_message {
+	echo "$@" | cut -d ';' -f 3
+}
+
+for check in "mongodb-alive" "mongodb-master-present" "mongodb-master-changed" "mongodb-connections-current"; do
+	result=$(${MONRUN} ${check})
+	[ ! -z $verbose ] && echo $result
+	status_code=$(get_code ${result})
+	if [ ${status_code} -ne 0 ]; then
+		message="$message ${check}:$(get_message ${result})"
+		if [ ${status_code} -gt $fail ]; then
+			fail=${status_code}
+		fi
+	fi
+done
+
+if [ $fail -ne 0 ]; then
+	echo "$fail;$message"
+else
+	echo "0;OK"
+fi

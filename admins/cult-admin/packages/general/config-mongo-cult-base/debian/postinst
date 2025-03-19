@@ -1,0 +1,106 @@
+#!/bin/bash
+## Variables
+PKGNAME="config-mongo-cult-base"
+WORKDIR="/usr/share/yandex-configs/$PKGNAME"
+
+# Get host information
+HOST=`hostname -f`
+GROUP=`curl -fs "http://c.yandex-team.ru/api/hosts/$HOST?format=yaml" | grep 'group' | awk '{print $NF}'`
+GROUP_TAGS=`curl -fs "http://c.yandex-team.ru/api/get_group_tags/$GROUP?format=yaml"`
+PROJECT=`curl -fs "http://c.yandex-team.ru/api/groups2projects/$GROUP?format=yaml" | grep 'name' | awk '{print $NF}'`
+CORE_DC_VLAN=`ip ro | grep default | awk '{print $3}'`
+
+## Helpers
+# Get environment type
+if [ -f "/etc/yandex/environment.type" ]; then
+        ENVIR=`cat /etc/yandex/environment.type`
+else
+        echo 'No /etc/yandex/environment.type, trying detect env by conductor group'
+        preenvir=`echo $GROUP | awk -F\- '{print $NF}'`
+
+        case "$preenvir" in
+            "testing")
+                ENVIR="testing"
+                ;;
+            "prestable")
+                ENVIR="prestable"
+                ;;
+            "dev")
+                ENVIR="development"
+                ;;
+            "load")
+                ENVIR="stress"
+                ;;
+            "prod")
+                ENVIR="production"
+                ;;
+        esac
+fi
+
+# Function to make symlinks
+function create_symlink {
+        src=$1
+        dst=$2
+        if [ ! -L $dst ]; then
+                if [ ! -f $dst ]; then
+                        ln -s $src $dst
+                else
+                        echo "File exists, removing $dst and making symlink on $src"
+                        rm -f $dst
+                        ln -s $src $dst
+                fi
+        else
+                echo "Symlink already exists. Rewriting"
+		ln -f -s $src $dst
+        fi
+}
+
+# Determine variables
+# Check - mcs server or not
+if [[ "`echo $GROUP | awk -F\- '{print $NF}'`" == "mcs" ]]; then
+	MCS="1"
+else
+	MCS="0"
+fi
+
+# Install mongodb and mongos only on mongo hosts, not MCS
+if [[ "$MCS" -eq "0" ]]; then
+# Check backup replica or not. Enable backup only on backup replica
+	if [[ "x`echo $(hostname) | grep backup`" != "x" ]]; then
+		BACKUP=1
+	else
+		BACKUP=0
+	fi
+
+# Check type of mongodb group by conductor tag (shards under mongos, replicaset, standalone)
+	if [[ "x`echo $GROUP_TAGS | grep mongos`" != "x" ]]; then
+		STANDALONE="0"
+	elif [[ "x`echo $GROUP_TAGS | grep replicaset`" != "x" ]]; then
+		STANDALONE="2"
+	else
+		STANDALONE="1"
+	fi
+
+# Get mcs hosts if mongos type of mongodb
+	if [[ "$STANDALONE" -eq "0" ]]; then
+		MCS_GROUP=`echo $GROUP | sed "s/-[0-9a-zA-Z]\+$/-mcs/g"`
+		MCS_HOSTS=`curl -fs "http://c.yandex-team.ru/api/groups2hosts/$MCS_GROUP?format=yaml" | grep 'fqdn' | awk '{print $NF}'`
+		MONGOCFG_HOSTS=`echo $MCS_HOSTS | tr ' ' ',' | sed "s/,$//g"`
+
+		sed -i "s/<FQDNS>/$MONGOCFG_HOSTS/g" $WORKDIR/mongos.conf
+		create_symlink $WORKDIR/mongos.conf /etc/mongos.conf
+	fi
+
+	sed -i "s/<PROJECT>/$PROJECT/g" $WORKDIR/mongo-backup.conf
+	sed -i "s/<N_BACKUP>/$BACKUP/g" $WORKDIR/mongo-backup.conf
+	sed -i "s/<N_STANDALONE>/$STANDALONE/g" $WORKDIR/mongo-backup.conf
+
+	create_symlink $WORKDIR/mongo-backup.conf /etc/mongo-backup.conf
+else
+	create_symlink $WORKDIR/mongodbcfg.conf /etc/mongodbcfg.conf
+fi
+
+# Choose mongo backup config
+create_symlink $WORKDIR/distributed-flock-mongo-backup-$ENVIR.json /etc/distributed-flock-mongo-backup.json
+
+echo -n "$HOST configured with $PKGNAME"

@@ -1,0 +1,64 @@
+parsing:
+  groups: [disk_mpfs]
+  metahost: mpfs.disk.yandex.net
+  DataFetcher:
+    logname: "nginx/mpfs/tskv.log"
+    timetail_url: "/timetail?pattern=mpfs_nginx_by_handle&type=tskv&log_ts="
+
+aggregate:
+  data:
+    mpfs_nginx_by_handle:
+      type: "custom"
+      class: "Multimetrics"
+      factor: 1000
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+    juggler_mpfs_nginx_by_handle_json_diff_5xx: &juggler-conf
+      type: juggler
+      namespace: disk-devops
+      Host: "mpfs.disk.yandex.net"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-java-mntr
+                - shirankov
+                - akinfold
+                - kis8ya
+                - sanya2013
+                - yak-dmitriy
+                - friendlyevil
+                - c4et4uk
+                - derovi
+      Aggregator: logic_or
+      checkname: nginx_by_handle_json_diff_5xx
+      description: nginx_by_handle_json_diff_5xx
+      config:
+          type: metahost
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      CRIT: [" ${mpfs_nginx_by_handle}['handles.json.diff.5xx'] > 300 "]
+
+    juggler_mpfs_nginx_by_handle_desktop_diff_5xx:
+      << : *juggler-conf
+      checkname: nginx_by_handle_desktop_diff_5xx
+      description: nginx_by_handle_desktop_diff_5xx
+      CRIT: [" ${mpfs_nginx_by_handle}['handles.desktop.diff.5xx'] > 150 "]
+
+    juggler_mpfs_nginx_by_handle_billing_process_receipt_5xx:
+      << : *juggler-conf
+      checkname: nginx_by_handle_billing_process_receipt_5xx
+      description: nginx_by_handle_billing_process_receipt_5xx
+      CRIT: [" ${mpfs_nginx_by_handle}['handles.billing.process_receipt.5xx'] > 0 "]
+
+    juggler_mpfs_nginx_by_handle_json_list_installers_4xx:
+      << : *juggler-conf
+      checkname: nginx_by_handle_json_list_installers_4xx
+      description: nginx_by_handle_json_list_installers_4xx
+      CRIT: [" ${mpfs_nginx_by_handle}['handles.json.list_installers.4xx'] > 0 "]

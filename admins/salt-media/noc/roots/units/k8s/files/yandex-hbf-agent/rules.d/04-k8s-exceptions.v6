@@ -1,0 +1,86 @@
+# Yandex-HBF-Agent: protected
+*raw
+:cali-OUTPUT -
+:cali-PREROUTING -
+:cali-from-host-endpoint -
+:cali-rpf-skip -
+:cali-to-host-endpoint -
+-A PREROUTING -j cali-PREROUTING
+-A OUTPUT -j cali-OUTPUT
+COMMIT
+
+# Yandex-HBF-Agent: protected
+*mangle
+:KUBE-IPTABLES-HINT -
+:KUBE-KUBELET-CANARY -
+:cali-POSTROUTING -
+:cali-PREROUTING -
+:cali-from-host-endpoint -
+:cali-to-host-endpoint -
+-A PREROUTING -j cali-PREROUTING
+-A POSTROUTING -j cali-POSTROUTING
+COMMIT
+
+# Yandex-HBF-Agent: protected
+*nat
+:KUBE-FIREWALL -
+:KUBE-KUBELET-CANARY -
+:KUBE-LOAD-BALANCER -
+:KUBE-MARK-DROP -
+:KUBE-MARK-MASQ -
+:KUBE-NODE-PORT -
+:KUBE-POSTROUTING -
+:KUBE-SERVICES -
+:cali-OUTPUT -
+:cali-POSTROUTING -
+:cali-PREROUTING -
+:cali-fip-dnat -
+:cali-fip-snat -
+:cali-nat-outgoing -
+-A PREROUTING -j cali-PREROUTING
+-A PREROUTING -j KUBE-SERVICES
+-A OUTPUT -j cali-OUTPUT
+-A OUTPUT -j KUBE-SERVICES
+-A POSTROUTING -j cali-POSTROUTING
+-A POSTROUTING -j KUBE-POSTROUTING
+COMMIT
+
+# Yandex-HBF-Agent: protected
+*filter
+:K8S_EXCEPTIONS -
+:KUBE-FIREWALL -
+:KUBE-FORWARD -
+:KUBE-KUBELET-CANARY -
+:KUBE-NODE-PORT -
+:cali-FORWARD -
+:cali-INPUT -
+:cali-OUTPUT -
+:cali-cidr-block -
+:cali-forward-check -
+:cali-forward-endpoint-mark -
+:cali-from-endpoint-mark -
+:cali-from-hep-forward -
+:cali-from-host-endpoint -
+:cali-from-wl-dispatch -
+:cali-set-endpoint-mark -
+:cali-to-hep-forward -
+:cali-to-host-endpoint -
+:cali-to-wl-dispatch -
+:cali-wl-to-host -
+-A INPUT -j cali-INPUT
+-A INPUT -j KUBE-NODE-PORT
+-A INPUT -j KUBE-FIREWALL
+-A FORWARD -j cali-FORWARD
+-A FORWARD -j KUBE-FORWARD
+-A FORWARD -m mark --mark 0x10000/0x10000 -j ACCEPT
+-A FORWARD -j MARK --set-xmark 0x10000/0x10000
+-A OUTPUT -j cali-OUTPUT
+-A OUTPUT -j KUBE-FIREWALL
+-I INPUT -j K8S_EXCEPTIONS
+-I OUTPUT -j K8S_EXCEPTIONS
+-I FORWARD -j K8S_EXCEPTIONS
+-I K8S_EXCEPTIONS -s 2001:db8:42:0::/56 -j ACCEPT
+-I K8S_EXCEPTIONS -s 2001:db8:42:1::/112 -j ACCEPT
+-I K8S_EXCEPTIONS -d 2001:db8:42:0::/56 -j ACCEPT
+-I K8S_EXCEPTIONS -d 2001:db8:42:1::/112 -j ACCEPT
+COMMIT

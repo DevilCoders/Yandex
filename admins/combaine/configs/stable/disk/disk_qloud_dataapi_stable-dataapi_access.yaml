@@ -1,0 +1,57 @@
+parsing:
+  groups: [disk_qloud_dataapi_stable]
+  metahost: sync-dataapi.qloud.disk.yandex.net
+  DataFetcher:
+    logname: "yandex/dataapi/dataapi-access-tskv.log"
+    timetail_url: "/timetail?pattern=dataapi_access_tskv&type=java&log_ts="
+aggregate:
+  data:
+    dataapi-access:
+      type: "custom"
+      class: "Multimetrics"
+      values: [75, 90, 93, 94, 95, 96, 97, 98, 99, 99.5, 99.8, 99.9]
+      factor: 1000
+
+    dataapi_access:
+      type: "custom"
+      class: "Multimetrics"
+      values: [75, 90, 93, 94, 95, 96, 97, 98, 99, 99.5, 99.8, 99.9]
+      factor: 1000
+
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+      Fields: ["75_prc", "90_prc", "93_prc", "94_prc", "95_prc", "96_prc", "97_prc", "98_prc", "99_prc", "99_5_prc", "99_8_prc", "99_9_prc"]
+
+    juggler_dataapi_status_5xx: &juggler-conf
+      type: juggler
+      namespace: disk
+      host: "sync-dataapi.qloud.disk.yandex.net"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - ignition
+      Aggregator: logic_or
+      checkname: dataapi_status_5xx
+      description: dataapi_status_5xx
+      flaps: { stable_time: 120, critical_time: 300 }
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      CRIT: [" ${dataapi-access}['5xx'] > 50 "]
+      tags:
+        - production
+
+    juggler_dataapi_timings_95perc:
+      << : *juggler-conf
+      checkname: dataapi_timings_95perc
+      description: dataapi_timings_95perc
+      CRIT: [" ${dataapi-access}['request_timings'][5] > 300" ]

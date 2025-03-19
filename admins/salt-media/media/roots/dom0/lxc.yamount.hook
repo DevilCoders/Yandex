@@ -1,0 +1,31 @@
+#!/bin/sh -e
+
+# We're dealing with mount entries, so expand any symlink
+LXC_ROOTFS_MOUNT=$(readlink -f ${LXC_ROOTFS_MOUNT})
+
+# /proc files
+if [ -d /var/lib/lxcfs/proc/ ]; then
+    for entry in /var/lib/lxcfs/proc/*; do
+        [ -e "${LXC_ROOTFS_MOUNT}/proc/$(basename $entry)" ] || continue
+        mount -n --bind $entry ${LXC_ROOTFS_MOUNT}/proc/$(basename $entry)
+    done
+fi
+
+
+# Allow nesting lxcfs
+if [ -d ${LXC_ROOTFS_MOUNT}/var/lib/lxcfs/ ]; then
+    mount -n --bind /var/lib/lxcfs ${LXC_ROOTFS_MOUNT}/var/lib/lxcfs/
+fi
+
+# no need for lxcfs cgroups if we have cgroup namespaces
+[ -n "$LXC_CGNS_AWARE" ] && [ -f /proc/self/ns/cgroup ] && exit 0
+
+# Don't mess with containers that don't have /sys/fs/cgroup configured
+# (lxc.mount.auto = cgroup:mixed)
+if touch ${LXC_ROOTFS_MOUNT}/sys/fs/cgroup/lxcfs; then
+    rm ${LXC_ROOTFS_MOUNT}/sys/fs/cgroup/lxcfs
+else
+    exit 0
+fi
+
+exit 0

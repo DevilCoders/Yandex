@@ -1,0 +1,81 @@
+---
+name: disk_djfs_worker-requests_postgres
+parsing:
+  groups: [disk_qloud_djfs_worker_stable]
+  metahost: djfs-worker.qloud.disk.yandex.net
+  DataFetcher:
+    logname: "yandex/disk/djfs-worker-requests-tskv.log"
+    timetail_url: "/timetail?pattern=mpfs_requests_postgres&type=java&timeout=120&log_ts="
+  Combainer:
+    MINIMUM_PERIOD: 60
+aggregate:
+  data:
+    requests_postgres:
+      type: "custom"
+      class: "Multimetrics"
+      factor: 1000
+      perHost: YES
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+    requests_postgres_timings_95perc:
+      type: juggler
+      namespace: disk-devops
+      Host: "djfs-worker.qloud.disk.yandex.net"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-java-mntr
+                - shirankov
+                - akinfold
+                - kis8ya
+                - sanya2013
+                - yak-dmitriy
+                - friendlyevil
+                - c4et4uk
+                - derovi
+        - template_name: on_status_change
+          description: СМС в полминуты
+          template_kwargs:
+              status:
+                  - to: CRIT
+                    from: OK
+                  - to: OK
+                    from: CRIT
+                  - to: WARN
+                    from: CRIT
+                  - to: CRIT
+                    from: WARN
+              min_interval: 30
+              login:
+                - robot-disk-java-mntr
+                - shirankov
+                - akinfold
+                - kis8ya
+                - sanya2013
+                - yak-dmitriy
+                - friendlyevil
+                - c4et4uk
+                - derovi
+              method:
+                  - sms
+      Aggregator: logic_or
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      flaps: { stable_time: 120, critical_time: 300 }
+      plugin: picker
+      config:
+        type: metahost
+        query: "^(query_timings)_([^_]+)_total.6$"
+        limits:
+          default: 3000
+      tags:
+        - disk_djfs_worker
+        - disk_admin_critical
+        - production

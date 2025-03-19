@@ -1,0 +1,145 @@
+# Перед использованием нужно удалить все комментарии
+# До раскатки стейта нужно навесить на группу нужные пакеты в деплой!
+# Если используются дефолтные значения, то из можно не прописывать
+# все дефолтные значения отмечены комментарием # default
+#
+# Если не указан push_client:stats:logs, будет использован общий push_client:logs.
+# Если общий так же не указан - ошибка
+# vim: sw=2 ts=2 expandtab ai
+
+# по-умолчанию конфиг складывается в /etc/yandex/statbox-push-client/<stat_name>.yaml
+
+push_client:                               # if not push_client pillar do nothing
+  clean_push_client_configs: True          # delete configs not managed by salt
+  service: "statbox-push-client"           # default
+  packages: ['yandex-push-client'] # по умолчанию, + если прото logmux, то ставится libstatbox-push-logmux
+  check: "salt://templates/push-client/files/usr/local/bin/push-client-check.sh"      # default
+  check_conf: "salt://templates/push-client/files/etc/monrun/conf.d/push-client.tmpl" # default
+  logrotate: "salt://templates/push-client/files/etc/logrotate.d/logrotate.tmpl"      # default
+  port: 8088                               # default 80, for all stats
+  domain: "music.yandex.net"               # default {{ project }}.yandex.net
+  stats:
+    - name: "stat01d"                                    # stat name
+      ident: {{ salt["grains.get"]("conductor:group") }} # default salt["grains.get"]("conductor:project")
+      timeout: 60
+      port: 8088                     # default {{ push_clietn.port or 80 }}
+      data-port: 9000                # default None
+      fqdn: stat.photo.yandex.net    # default  {{ stat.name}}.{{ domain }}
+      transport: "ipv6"                # default none (=auto, see https://wiki.yandex-team.ru/statbox/push-client?from=isearch#podderzhkaipv6)
+      logger:
+        timeformat: "[%d/%b/%Y:%T %z]" # default "[%d/%b/%Y:%T %z]"
+        level: 11                      # not set by default
+        remote: 0                      # send push-client logs to remote servers, default 1
+      logs:                            # If need custom logs. Options same as common logs
+        - file: corba/fotki/logdaemon.log
+          send_delay: 1
+        - file: nginx/access.log
+          migrate: push                # For sending log into statistics
+        - file: nginx/access-tskv.log
+          fakename: False              # skip autogeneration fakename parameter
+    - name: stat02
+      sszb: False                      # without sszb configs - default True
+    - name: stat02
+      sszb:                                # or sszb explicitly
+        yes_i_know_what_i_am_doing: 1      # if sszb not present default 1
+        force_reset_offset_on_truncate: 0  # if sszb not present default 1
+
+  logs:                                    # files must be defined
+    - file: corba/fotki/logdaemon.log
+      send_delay: 1                        # default 300
+    - file: nginx/access.log
+      fakename: False                      # skip autogeneration fakename parameter
+    # Внимание КОСТЫЛЬ
+    # regexp-ы должны быть заключены в r'some regexp'
+    # (в !одинарные! кавычки с r перед открывающей кавычкой)
+    # если в pipe до открывающей ' есть какие-то символы, то r можно опустить
+    # Иначе все \ заменятся на \\ как с этим бороться непонятно.
+      regexp: r'^[^\s]+\s+[^\s]+\s+[^\s]*fotki\.yandex.*'
+      pipe: awk r'$3 ~ /yandex\.fotki/{print}'
+      send_delay: 60
+
+
+###############
+#
+#  минималистичная кофига для старта
+#  для музыки в поле domain запишется music.yandex.net
+#
+
+push_client:
+  port: 8088
+  stats:
+    - name: "stat01d"
+      send_delay: 5
+    - name: "stat01f06"
+      send_delay: 5
+  logs:
+    - file: music/web.log
+    - file: nginx/access.log
+    - file: nginx/error.log
+    - file: music/web-gc.log
+    - file: music/web-feed.log
+    - file: music/web-likes.log
+    - file: music/web-play-audio.log
+    - file: music/web-std.log
+
+###############
+#
+# еще пример с отдельными логами для статистики
+#
+
+ push_client:
+   clean_push_client_configs: True
+   port: 8088
+   stats:
+     - name: stat01h
+       send_delay: 10
+     - name: stat01d
+       send_delay: 10
+     - name: archmaster
+       port: default  # если порт = default в конфиге параметра port не будет.
+       fqdn: archmaster.stat.yandex.net
+       ident: api-fotki
+       timeout: 60
+       sszb: False
+       ssl: True
+       logs:
+         - file: nginx/access.log
+           fakename: False
+           pipe: /usr/bin/statparser.pl access-log-photo-api
+   logs:
+     - file: nginx/access.log
+     - file: nginx/error.log
+     - file: yandex-fotki-fimp/fimp.log
+       send_delay: 300
+
+###############
+#
+# пример для logmux
+#
+
+push_client:
+  stats:
+    - name: logmux
+      ident: music-back
+      proto: logmux
+      ssl: 1
+      hosts: [ larix00.yandex.ru, larix01.yandex.ru, larix02.yandex.ru,
+               larix03.yandex.ru, larix04.yandex.ru, larix05.yandex.ru,
+               larix06.yandex.ru, larix07.yandex.ru, larix08.yandex.ru,
+               larix09.yandex.ru ]
+      sszb: False
+      logger:
+        remote: 0
+      logs:
+        - file: nginx/access.log
+          fakename: False
+          send_delay: 300
+          max_chunk_size: 5242880
+          log_type: music-access-log-back
+          pipe: /usr/bin/statparser.pl music-access-log-back
+        - file: music/web.log
+          fakename: False
+          send_delay: 300
+          max_chunk_size: 5242880
+          log_type: music-web-feedback-log
+          pipe: /usr/bin/statparser_java.pl music-web-feedback-log

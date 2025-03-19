@@ -1,0 +1,83 @@
+---
+name: video_static_status
+parsing:
+  groups: [video-proxies]
+  metahost: video-prod-proxies
+  DataFetcher:
+    timetail_url: "/timetail?pattern=video_proxy_static&type=tskv&log_ts="
+  Combainer:
+      MINIMUM_PERIOD: 55
+aggregate:
+  data:
+    static.nginx:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.video
+    5xx:
+      type: juggler
+      namespace: video
+      Host: "video-prod-proxies"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 300
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - bpsavelev
+                - ignition
+      Aggregator: timed_more_than_limit_is_problem
+      checkname: static_5xx
+      description: static_5xx
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 2,time_end: 1,day_end: 7,day_start: 1}]
+      CRIT: ["${static.nginx}['5xx']>3"]
+      tags:
+        - production
+---
+name: video_static_awaps_status
+parsing:
+  groups: [video-proxies]
+  metahost: video-prod-proxies
+  DataFetcher:
+    timetail_url: "/timetail?pattern=video_proxy_static_awaps&type=tskv&log_ts="
+  Combainer:
+      MINIMUM_PERIOD: 55
+aggregate:
+  data:
+    static.nginx.awaps:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.video
+---
+name: video_static_film_trailers_status
+parsing:
+  groups: [video-proxies]
+  metahost: video-prod-proxies
+  DataFetcher:
+    timetail_url: "/timetail?pattern=video_proxy_static_timings_film_trailers&type=tskv&log_ts="
+  Combainer:
+      MINIMUM_PERIOD: 55
+aggregate:
+  data:
+    static.nginx.film_trailers:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.video

@@ -1,0 +1,35 @@
+{%- set services = [ "channel", "udp_reader", "oid_resolver", "dns_lookup", "hooker" ] %}
+{%- set project = "snmptrapper" %}
+storages:
+  - name: metrics_storage
+    plugin: fs
+    config:
+      directory: /var/lib/yandex/unified_agent/storage/metrics
+      max_partition_size: 500mb
+
+routes:
+  {%- for service in services %}
+  - input:
+      plugin: metrics_pull
+      config:
+        format:
+          solomon_json: {}
+        url: http://localhost:10062/metrics/{{ service }}
+        project: {{ project }}
+        service: {{ service }}
+        poll_period: 15s
+        metric_name_label: sensor
+    channel:
+      channel_ref:
+        name: solomon_output
+  {%- endfor %}
+channels:
+  - name: solomon_output
+    channel:
+      pipe:
+        - storage_ref:
+            name: metrics_storage
+      output:
+        plugin: metrics_pull
+        config:
+          port: 11003

@@ -1,0 +1,121 @@
+# vim: ft=sls
+config:
+  environment.LXD: "1"
+  environment.LXD_CONDUCTOR_TOKEN: "{{ salt['pillar.get']("robot_nocdev_salt")["conductor.token"] }}"
+  environment.LXD_CONDUCTOR_GROUP: "nocdev-lost"
+  environment.LXD_DOMAIN: ".yandex.net"
+  security.idmap.size: "524288"
+  user.network_mode: link-local
+  user.vendor-data: |
+    ## template: jinja
+    #cloud-config
+    unverified_modules:
+      - resolv_conf
+    cloud_init_modules:
+      - bootcmd
+      - migrator
+      - ubuntu-init-switch
+      - seed_random
+      - resolv_conf
+      - set_hostname
+      - update_hostname
+      - update_etc_hosts
+      - ssh
+      - write_files
+    cloud_final_modules:
+      - scripts-per-instance
+      - package-update-upgrade-install
+      - [scripts-vendor, always]
+      - scripts-per-once
+      - scripts-per-boot
+      - scripts-user
+    users: []
+    system_info:
+      apt_get_command:
+        - 'apt-get'
+        - '-y'
+        - '--allow-unauthenticated'
+        - '-o'
+        - 'Acquire::AllowInsecureRepositories=true'
+        - '--quiet'
+      package_mirrors:
+        - arches: [default]
+          failsafe:
+            primary: http://mirror.yandex.ru/ubuntu
+            security: http://mirror.yandex.ru/ubuntu
+    timezone: Europe/Moscow
+    manage_resolv_conf: true
+    resolv_conf:
+      nameservers: ['2a02:6b8:0:3400::5005', '2a02:6b8:0:3400::1023']
+      searchdomains:
+        - yandex.net
+        - yandex.ru
+      options:
+        timeout: 1
+        attempts: 1
+    apt_sources:
+      - source: |
+          deb http://dist.yandex.ru/storage-common stable/all/
+          deb http://system.dist.yandex.ru/system configs/all/
+          deb http://common.dist.yandex.ru/common stable/all/
+          deb http://common.dist.yandex.ru/common stable/amd64/
+          deb http://noc.dist.yandex.ru/noc stable/all/
+          deb http://noc.dist.yandex.ru/noc stable/$(ARCH)/
+          deb http://noc.dist.yandex.ru/noc {{'{{v1.distro_release}}'}}/$(ARCH)/
+          deb http://yandex-{{'{{v1.distro_release}}'}}.dist.yandex.ru/yandex-{{'{{v1.distro_release}}'}}/ stable/all/
+          deb http://yandex-{{'{{v1.distro_release}}'}}.dist.yandex.ru/yandex-{{'{{v1.distro_release}}'}}/ stable/amd64/
+        filename: yandex.list
+    packages:
+      - config-apt-allowunauth
+      - yandex-archive-keyring
+      - repo-noc-stable
+      - repo-noc-{{'{{v1.distro_release}}'}}
+      - config-monitoring-pkgver
+      - yandex-netconfig
+      - config-noc-common
+      - ifupdown
+      - yandex-dns-monkey
+      - yandex-nocdev-lxd-bootstrap
+      - config-noc-salt-minion
+    write_files:
+    - path: /etc/network/projectid
+      content: '{{ ctx.config.get('project_id', '') }}'
+    - path: /etc/network/interfaces
+      content: |
+        auto lo
+        iface lo inet loopback
+
+        auto eth0
+        iface eth0 inet6 auto
+                ya-netconfig-enable yes
+                privext 0
+                dad-attempts 0
+                ya-netconfig-fb-disable yes
+                ya-netconfig-bb-disable yes
+                ya-netconfig-host64-override 0
+                mtu 8950
+    - path: /root/.dns-monkey/token-oauth.txt
+      permissions: '0600'
+      content: |
+        <?xml version="1.0" encoding="utf-8"?>
+        <!-- Oauth token for dns-api service -->
+
+        <oauth-token>
+        <token_type>bearer</token_type>
+        <access_token>{{ salt['pillar.get']("robot_nocdev_salt")["dnsapi.token"] }}</access_token>
+        <status>OAUTH-TOKEN</status>
+        <account>mixermsk</account>
+        </oauth-token>
+    bootcmd:
+      - test -e /var/cache/bootstrap_done || while true; do ip addr show eth0 dynamic|grep -q inet6 && break; sleep 1; done
+      - test -e /var/cache/bootstrap_done || sed 's/--net/.net.yandex.net/g' /etc/hostname -i && hostname -F /etc/hostname
+      - test -e /var/cache/bootstrap_done || ip -o -6 addr | awk -F'(\\s+|/)' '$0 ~/2a02/ && $2 ~ /eth0/ {print $4}' | awk -F ":" "{printf \"%s:%s:%s:%s:%s:%s:%s:%s\n\",\$1,\$2,\$3,\$4,0,\"{{ ctx.config.get('project_id', '') }}\",\$7, \$8}" | while read name; do ip addr add "$name"/64 dev eth0; done
+      - test -e /var/cache/bootstrap_done || while true; do curl -s -o /dev/null dist.yandex.ru && break ; sleep 1; done
+      - test -e /var/cache/bootstrap_done || systemctl stop systemd-networkd systemd-networkd.socket
+description: base noc profile
+devices:
+  eth0:
+    nictype: bridged
+    parent: br0
+    type: nic
+name: bootstrap-auto

@@ -1,0 +1,130 @@
+#! /usr/bin/python
+# coding: utf8
+# pylint: disable=invalid-name
+"""
+Main backup script
+"""
+
+import argparse
+import logging
+import os
+import sys
+import time
+
+import requests
+
+from mysql_configurator import ZK, load_config, log2file
+from mysql_configurator.backup import DummyLock, Lock, Worker, stopwatch
+from mysql_configurator.backup.utils import render_backup_config
+from mysql_configurator.mysql import MySQL
+from setproctitle import setproctitle  # pylint: disable=no-name-in-module, import-error
+
+LOG_FILE = "/var/log/mysql-backup-data.log"
+SECONDS_IN_DAY = 3600*24
+
+
+class Backup(object):
+    """
+    Backup class
+    """
+
+    def __init__(self, args, conf):
+        self.log = logging.getLogger(self.__class__.__name__)
+        self.tick = stopwatch()
+
+        self.args = args
+        self.conf = conf
+        self.lock = DummyLock()
+        if not args.force:
+            self.lock = Lock(ZK(conf.zookeeper), conf.backup.zk)
+
+    def run(self):
+        """run worker"""
+        self.log.info("Backup started (took %sms)", self.tick())
+        Worker(self.conf).run()
+
+    def can_backup_here(self):
+        """Check ability backup on this host"""
+        if self.args.force:
+            self.log.warn("Force backup here (took %sms)", self.tick())
+            return True
+
+        mysql = MySQL()
+        if not mysql.connect():
+            self.log.error("Failed to connec mysql (took %sms)", self.tick())
+            sys.exit(1)
+
+        status = False
+        if not mysql.query("show slave status"):
+            self.log.info("Do not backup on master (took %sms)", self.tick())
+        else:
+            try:
+                ret = requests.get(self.conf.backup.api.mon.replica)
+                text = ret.text.strip()
+                status = ret.status_code == 200 and text.startswith("0;")
+                if not status:
+                    self.log.warn("Can not backup here: %s", text)
+            except Exception as exc:  # pylint: disable=broad-except
+                self.log.error("Failed to check replica status: %s", exc)
+        return status
+
+    def done(self):
+        """Gracefully done backup"""
+        self.lock.release()
+        self.log.info("Backup completed (took %sms)", self.tick())
+
+
+def check():
+    """
+    Check backup status
+    :return: None
+    """
+    if os.path.exists(Worker.BACKUP_FAILED_FLAG):
+        stat = os.stat(Worker.BACKUP_FAILED_FLAG)
+        if stat.st_mtime > time.time() - SECONDS_IN_DAY:
+            print("2; {}".format(Worker.ERROR_LOG_LINE))  # pylint: disable=superfluous-parens
+            return
+    print("0;OK")  # pylint: disable=superfluous-parens
+
+
+def main():
+    "parse args, set title and run backup"
+    setproctitle('mysql-backup-data (4 series)')
+
+    parser = argparse.ArgumentParser(description='Mysql Backup Data')
+    parser.add_argument(
+        '--check-log', help='Monrun check backup logs', action='store_true'
+    )
+    parser.add_argument(
+        '--force', help='Skip zk locking, and master check', action='store_true'
+    )
+    args = parser.parse_args()
+    conf = render_backup_config(load_config())
+
+    if not sys.stdout.isatty():
+        log2file(LOG_FILE)
+
+    log = logging.getLogger("main")
+
+    if not conf.backup.enabled:
+        log.info("Backup disabled")
+        return
+
+    if args.check_log:
+        check()
+        sys.exit(0)
+
+    backup = Backup(args, conf)
+    if not backup.can_backup_here():
+        sys.exit(0)
+
+    if not backup.lock.acquire():
+        log.warn("Failed to get lock (took %sms)", backup.tick())
+        sys.exit(0)
+    log.debug("Lock acquired (took %sms)", backup.tick())
+    backup.run()
+    backup.done()
+
+
+if __name__ == '__main__':
+    main()

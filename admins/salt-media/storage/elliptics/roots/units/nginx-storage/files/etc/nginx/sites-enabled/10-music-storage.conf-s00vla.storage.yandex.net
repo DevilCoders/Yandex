@@ -1,0 +1,159 @@
+perl_modules /etc/nginx/YandexMusic;
+perl_require music-secure-download.pm;
+perl_set $token_check_result YandexMusic::checkToken;
+perl_set $ping YandexMusic::ping;
+
+upstream mediastorage_head {
+    server unix:/var/run/mediastorage/mediastorage-proxy.sock fail_timeout=0;
+}
+
+upstream mimic_head {
+    server localhost:11000 fail_timeout=0;
+}
+
+upstream mediastorage {
+    server unix:/var/run/mediastorage/mediastorage-proxy.sock fail_timeout=0 max_fails=0;
+    server spacemimic.storage.yandex.net:11000 fail_timeout=0 backup;
+
+    keepalive 2;
+}
+
+upstream mimic {
+    server localhost:11000 fail_timeout=1 max_fails=0;
+    server spacemimic.storage.yandex.net:11000 backup;
+    keepalive 2;
+}
+
+map $http_origin $allowed_origin {
+    include include/map_allowed_origins.conf;
+}
+
+server {
+    listen 80 reuseport;
+    listen [::]:80 ipv6only=on reuseport;
+    listen 443 ssl reuseport;
+    listen [::]:443 ssl ipv6only=on reuseport;
+    include ssl/https.conf;
+    server_name  ~^(((s|elisto|els)[0-9]+[a-z]+[0-9]*\.(storage|mdst|mds|mt|music|(elliptics\.)?music.dev)\.yandex\.(net|ru))$);
+
+    #https://st.yandex-team.ru/MDS-849
+    include crossdomain/crossdomain-xml;
+
+    #Не надо буферизировать ответ spacemimic, если это делать, то в spacemimic будут НЕчестные времена ответа и будут артефакты;
+    proxy_buffering off;
+
+    # Передаём в upstream Request-ID всегда
+    proxy_set_header X-Request-Id    $request_id;
+    request_id_from_header on;
+    request_id_header_name X-Request-Id;
+
+    more_set_headers -s '200 206 404 401 500' "X-Content-Type-Options: nosniff";
+
+    location /ping {
+        return 200;
+    }
+
+    # MDS-7487
+    location /16m_ping.file {
+        alias /var/www/test_files/16m_ping.file;
+    }
+    location /32m_ping.file {
+        alias /var/www/test_files/32m_ping.file;
+    }
+    location /64m_ping.file {
+        alias /var/www/test_files/64m_ping.file;
+    }
+    location /128m_ping.file {
+        alias /var/www/test_files/128m_ping.file;
+    }
+    location /256m_ping.file {
+        alias /var/www/test_files/256m_ping.file;
+    }
+    location /512m_ping.file {
+        alias /var/www/test_files/512m_ping.file;
+    }
+    location /1024m_ping.file {
+        alias /var/www/test_files/1024m_ping.file;
+    }
+    location /2048m_ping.file {
+        alias /var/www/test_files/2048m_ping.file;
+    }
+    location /4096m_ping.file {
+        alias /var/www/test_files/4096m_ping.file;
+    }
+
+    location / {
+        auth_sign $http_host$uri/$arg_ts;
+        auth_sign_signature $arg_sign$arg_s;
+        auth_sign_expire $arg_ts;
+        auth_sign_hash sha256;
+
+        return 410;
+
+        # templated configs from salt
+        include include/rvideo/*.conf;
+        include include/rns_80443/*.conf;
+
+        include include/docker-registry.conf;
+        include include/maps-offline-caches.conf;
+        include include/mds-dev.conf;
+        include include/music.conf;
+        include include/pogoda.conf;
+        include include/rdisk.conf;
+        include include/sandbox-tmp.conf;
+        include include/skynet.conf;
+        include include/taxi.conf;
+        include include/tfb.conf;
+        include include/tools_st.conf;
+        include include/tv.conf;
+        include include/zen.conf;
+        include include/jing.conf;
+    }
+}
+
+server {
+    listen     *:8090 reuseport;
+    listen  [::]:8090 ipv6only=on reuseport;
+
+    # OLD config for music-search? (by agodin@)
+    #location /music {
+    #    eblob;
+    #    alias /srv/storage/;
+    #}
+
+    location /get/ {
+        if ( $request_method !~ '^(HEAD)$' ) {
+            return 403;
+        }
+        include include/mediastorage-settings-disk-head.conf;
+        include include/maintenance.conf;
+    }
+
+    location /get-([\w-]+) {
+        if ( $request_method !~ '^(HEAD)$' ) {
+            return 403;
+        }
+        include include/mediastorage-settings-head.conf;
+        include include/maintenance.conf;
+    }
+}
+
+server {
+    listen     *:8181 reuseport;
+    listen  [::]:8181 ipv6only=on reuseport;
+
+    location / {
+        auth_sign $hostname$uri/$arg_ts;
+        auth_sign_signature $arg_sign$arg_s;
+        auth_sign_expire $arg_ts;
+        auth_sign_hash sha256;
+
+        include include/rns_8181/*.conf;
+
+        include include/devtools.conf;
+        include include/docker-registry.conf;
+        include include/repo.conf;
+        include include/sandbox-tmp.conf;
+        include include/zen.conf;
+    }
+}

@@ -1,0 +1,5 @@
+RECURSE(
+    src
+    daemon
+    recalculate
+)

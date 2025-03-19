@@ -1,0 +1,12 @@
+include:
+  - units.mastermind
+  - units.mastermind-monrun
+  - units.mds-logbackup
+  - units.la_per_core
+  - units.monitoring
+  - units.iface-ip-conf
+  - units.federation
+  - templates.elliptics-tls
+  - templates.karl-tls
+  - templates.mds-distributed-flock
+  - templates.yasmagentnew

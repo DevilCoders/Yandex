@@ -1,0 +1,361 @@
+# vim: ft=sls
+{%- set is_prod = grains["yandex-environment"] == "production" -%}
+
+{%- if is_prod %}  {# production #}
+  {%- set zk_hosts = salt.conductor.groups2hosts('nocdev-zk') %}
+  {%- set zk_prefix = "/topka/run" %}
+  {%- set restart_fws = true %}
+  {%- set use_python = true %}
+  {%- set snapshot_user = "robot-topka" %}
+  {%- set s3_endpoint = "s3.mds.yandex.net" %}
+  {%- set infra_base_url = "https://infra-api.yandex-team.ru" %}
+  {%- set metrics_oauth_token = pillar['sec']['solomon_oauth'] %}
+  {%- set racktables_oauth = pillar['sec']['racktables_oauth'] %}
+  {%- set s3_key_id = pillar['sec']['s3_id'] %}
+  {%- set s3_key = pillar['sec']['s3_key'] %}
+  {%- set pg_host = "c-mdb9lcq7utb1s23to3ag.rw.db.yandex.net" %}
+  {%- set pg_dbname = "packfw" %}
+  {%- set pg_dbuser = "packfw" %}
+  {%- set pg_dbpass = pillar['sec']['postgresql_password'] %}
+  {%- set juggler_event_host = "topka-prod" %}
+  {%- set juggler_event_base_tags = ["noc_heat"] %}
+  {%- set juggler_event_interested_statuses = ["CRIT"] %}
+  {%- set server_debug = false %}
+  {%- set blackbox_self_id = 2021257 %}
+  {%- set blackbox_secret = pillar['sec']['blackbox_secret'] %}
+  {%- set disable_check_user_perms = false %}
+  {%- set users_limit = 300 %}
+
+{%- else%} {# testing #}
+  {%- set zk_hosts = ['zk01i.tst.ape.yandex.net', 'zk01f.tst.ape.yandex.net', 'zk01h.tst.ape.yandex.net']%}
+  {%- set zk_prefix = "/topka-dev/run" %}
+  {%- set restart_fws = false %}
+  {%- set use_python = false %}
+  {%- set snapshot_user = "robot-topka-test" %}
+  {%- set s3_endpoint = "s3.mdst.yandex.net" %}
+  {%- set infra_base_url = "https://infra-api-test.yandex-team.ru" %}
+  {%- set metrics_oauth_token = "OAuthToken" %}
+  {%- set racktables_oauth = "OAuthToken" %}
+  {%- set s3_key_id = pillar['sec']['s3_id-testing'] %}
+  {%- set s3_key = pillar['sec']['s3_key-testing'] %}
+  {%- set pg_host = "sas-ugub2k1r7dj6c8zx.db.yandex.net" %}
+  {%- set pg_dbname = "topka" %}
+  {%- set pg_dbuser = "topka" %}
+  {%- set pg_dbpass = pillar['sec']['postgresql_password-testing'] %}
+  {%- set juggler_event_host = "topka-dev" %}
+  {%- set juggler_event_base_tags = [] %}
+  {%- set juggler_event_interested_statuses = ["WARN", "CRIT"] %}
+  {%- set server_debug = true %}
+  {%- set blackbox_self_id = 2019010 %}{#In fact, this is valve, should it be changed?#}
+  {%- set blackbox_secret = pillar['sec']['blackbox_secret-testing'] %}{#In fact, this is valve, should it be changed?#}
+  {%- set disable_check_user_perms = false %}
+  {%- set users_limit = 50 %}
+{%- endif %}
+
+# Logging settings.
+logging:
+  # Logging level.
+  # Possible values are: "debug", "info", "warn", "error".
+  level: debug
+  # Where to log.
+  sinks:
+    - stdout
+  # How to log.
+  encoding: json
+
+# ZooKeeper settings.
+zk: &zk
+  # List of ZooKeeper hosts to connect to.
+  hosts:
+  {%- for host in zk_hosts %}
+    - {{ host }}:2181
+  {%- endfor %}
+  # Uniform node prefix.
+  prefix: {{zk_prefix}}
+  # Session timeout sets the amount of time for which a session is
+  # considered valid after losing connection to a server.
+  timeout: 2s
+
+# Election describes master election settings.
+election:
+  zk: *zk
+
+subscription:
+  zk: *zk
+
+# Snapshot forging settings.
+forge:
+  # CVSRoot points at CVS root.
+  cvs_root: tree.yandex.ru:/opt/CVSROOT
+  # CVSDir is a directory where CVS will be checked out.
+  #
+  # Empty value means current directory.
+  cvs_dir: /var/spool/packfw-cvs
+  # CommitPuncherSections describes whether the forge should commit pseudo
+  # puncher sections.
+  commit_puncher_sections: false
+  # Restart balancers and BSD firewalls through the Racktables API
+  restart_fws: {{restart_fws}}
+  # Diff tool settings.
+  diff_tool:
+    timeout: 30s
+    limits:
+      sections: 20
+      files: 0
+      lines: 1000
+      rules: 200
+      section_lines_removed: 30
+      section_lines_added: 20
+      net_macros: 20
+      nets: 40
+      hosts_changed_ips: 200
+      hosts: 1000
+  # Whether to use python script instead of Go todo: get rid of it one trial is done
+  use_python: {{use_python}}
+  # Path on filesystem where diff tool is located.
+  diff_tool_path: /usr/bin/parse-fw-diff.py
+  # If set the packer will not stop even if the diff is empty.
+  force: false
+  # Interval specifies interval of periodic snapshot forging.
+  interval: 120s
+  # VCS checkout timeout
+  checkout_timeout: 5m
+  # Path where to output created archives.
+  #
+  # Optional. It's useful for debugging but nothing more since archives are
+  # pushed to the storage.
+  out_dir: /var/spool/packfw-out
+
+# Snapshot settings.
+snapshot:
+  # Time to wait for validator verdict (and not to accept new shapshots)
+  validator_timeout: 30m
+  # Interval to push the next valid revision to DC
+  push_to_dc_interval: 2m
+  username: {{snapshot_user}}
+  # Number of last obsolete snapshots that cause juggler alert
+  obsolete_alert_limit: 2
+
+# S3 storage access params
+s3:
+  endpoint: {{s3_endpoint}}
+  bucket: topka
+  region: US
+  access_key_id: {{s3_key_id}}
+  secret_key: {{s3_key}}
+  disable_ssl: false
+
+# SQL DB access params
+db:
+  pg_conn_string: "
+    host={{pg_host}}
+    port=6432
+    dbname={{pg_dbname}}
+    user={{pg_dbuser}}
+    password={{pg_dbpass}}
+    sslmode=verify-full
+  "
+  migrations_dir: migrations
+
+# Conductor client settings
+conductor:
+  # Base URL
+  base_url: http://c.yandex-team.ru
+  # Conductor path for resolving conductor groups
+  group_path: /api-cached/groups2hosts
+  # Pattern for fmt of conductor group for HBF servers in dc
+  hbf_group_pattern: nocdev-hbf-%s
+  # Yanet conductor group
+  yanet_group: noc-fw
+
+# Drills settings.
+drills:
+  # Max training duration.
+  max_duration: 72h
+  # Max trainings overlap.
+  overlap_window: 1h
+  # Max users on macro.
+  users_limit: {{users_limit}}
+  # Trainings are always disabled on these macros.
+  macro_blacklist:
+    - _SEARCHNETS_
+    - _SEARCHPRODNETS_
+    - _GENCFG_SEARCHPRODNETS_ROOT_
+    - _YANDEXNETS4_
+    - _YANDEXNETS6_
+    - _YANDEX_ANNOUNCED_NETS_
+    - _MTN_BACKBONENETS_
+    - _HBFPROJECTSNETS_
+    - _PLATFORMNETS_
+    - _SKYNETCLIENTS_
+  # They are allowed to do almost everything
+  masters:
+    - sereglond
+    - korxif
+    {%- if is_prod %}
+    - vdvolovik
+    - bunnyhop
+    - alexunix
+    - alpoluyanov
+    {%- else %}
+    {#- testing #}
+    - esafronov
+    {%- endif %}
+  # CVS settings
+  cvs:
+    # CVS root
+    root: tree.yandex.ru:/opt/CVSROOT
+    # CVS work dir
+    work_dir: /var/spool/topka
+    # Checkout source path
+    src_path: noc/routers/fw/macros-inc.m4
+    # Checkout destination directory
+    dst_dir: macro-cvs
+    # Checkout timeout
+    checkout_timeout: 1m
+  # Default exclude list.
+  default_exclude_list: ["_HBF_EXCLUDE_CLOUD_", "_THERMODENETS_", "_C_TAXI_DMP_GPDB6_", "_C_TAXI_ES_LOGS_DATA_"]
+  # Trainings on these projects can be of any duration.
+  projects_any_drill_duration: ["_YANDEXNETS_"]
+  debug_disable_check_user_macro_permissions: {{disable_check_user_perms}}
+
+# Infra client.
+infra:
+  # Infra base url.
+  base_url: {{infra_base_url}}
+  # OAuth token for authorization.
+  oauth_token: {{pillar['sec']['infra_oauth']}}
+
+# DC snapshot deploy settings
+dc:
+  # Deploy window duration
+  window_duration: 25m
+  # Duration of the gap between windows
+  gap_duration: 5m
+  # DCs to be changed in cycle every (window_duration + gap_duration)
+  dcs_queue: [['iva', 'vlx'], ['sas'], ['vla'], ['myt', 'ams'], ['sas'], ['man', 'fra']]
+
+# Emergency monitor.
+emergency:
+  # Juggler emergency monitor settings.
+  juggler:
+    # Juggle client settings.
+    client:
+      # Juggle URL.
+      host: https://juggler-api.search.yandex.net
+    # Juggler push client settings.
+    push_client:
+      # Juggler push URL.
+      host: http://juggler-push.search.yandex.net
+      # Host for events (must be documented in RT to appear in Heat)
+      event_host: {{juggler_event_host}}
+      # Event source (for Juggler API)
+      event_source: topka
+      # HTTP request timeout
+      timeout: 10s
+      # Tags for every event
+      base_tags: {{juggler_event_base_tags}}
+      # Interval for sending heartbeats
+      heartbeat_interval: 5m
+    # Interested statuses.
+    statuses: {{juggler_event_interested_statuses}}
+    # Interested filters.
+    filters:
+      - host: hbf.drops.hcount.*
+    # Poll interval.
+    interval: 10s
+
+# Staff API settings.
+staff:
+  # Base URL for staff API.
+  base_url: https://staff-api.yandex-team.ru
+  # OAuth token for authorization.
+  oauth_token: {{pillar['sec']['staff_oauth']}}
+  {%- if not is_prod %}
+  cache_size: 1
+  {%- endif %}
+
+# HTTP server settings.
+server:
+  # Addr describes bind address for this HTTP server.
+  addr: "[::]:8080"
+  # Debug activates debug mode in HTTP server.
+  #
+  # With this mode internal server errors will be shown in response body.
+  #
+  # Do not use in production, because sensitive information can be
+  # accidentally leaked.
+  debug: {{server_debug}}
+  # Authentication settings.
+  authentication:
+    # Available authentication methods.
+    methods:
+      # None method that allows every request.
+      none: {}
+      # TVM authentication method settings.
+      tvm:
+        # TVM client settings.
+        tvm:
+          # Our client ID.
+          self_id: 2021257
+          # Our client secret.
+          secret: {{pillar['sec']['blackbox_secret']}}
+      # Blackbox authentication method settings.
+      blackbox:
+        tvm:
+          # Our client ID.
+          self_id: {{blackbox_self_id}}
+          # Passport service ID.
+          #
+          # 223 stands for intranet.
+          service_id: 223
+          # Our client secret.
+          secret: {{blackbox_secret}}
+        scope: rt:access
+    # Permission manager settings.
+  protection:
+    update_interval: 5m
+  permissions:
+    update_interval: 5m
+
+# Diff tool settings
+diff:
+  # Diff type: "go" or "external"
+  type: external
+  # Patterns (substrings) in paths to exclude from diff
+  excludes: ['CVS']
+
+# Racktables client settings
+racktables:
+  # Base URL.
+  base_url: https://racktables.yandex-team.ru
+  # OAuth token for authorization.
+  oauth_token: {{racktables_oauth}}
+  # HTTP request timeout
+  timeout: 300s
+
+# Metrics settings
+metrics:
+  pull:
+    # If set to true, creates http handler to collect metrics
+    enabled: true
+  push:
+    # If set to true, periodically pushes metrics to storage
+    enabled: false
+    # OAuth token
+    oauth_token: {{metrics_oauth_token}}
+    # Push interval
+    interval: 15s
+    # Solomon project name
+    project_name: topka
+    # Solomon cluster name
+    cluster_name: all
+
+# Debug server settings.
+#
+# Optional. If unspecified the debug server will not run.
+debug:
+  # Port specifies port where pprof server will be listen on.
+  #
+  # We explicitly do not allow to specify address for security reasons.
+  port: 6060

@@ -1,0 +1,1 @@
+resizer-secrets: {{salt.yav.get('sec-01d0w3nrngwwy5nbb1m97bn67v')|json}}

@@ -1,0 +1,222 @@
+{%- set env = grains['yandex-environment'] -%}
+
+{%- if env == 'testing' -%}
+{%- set blackbox_client_id = "b43e4f9172184d8d95f59bd91f697d7a" -%}
+{%- set nscfg_url = "http://nscfg.mdst.yandex.net:9532" -%}
+{%- set abcd_ns_white_list = [ "s3-dev", "s3-dev-x3" ] -%}
+{%- set abcd_services_black_list = [ ] -%}
+{%- else -%}
+{%- set blackbox_client_id = "6797456f343042aabba07f49b478c49b" -%}
+{%- set nscfg_url = "http://nscfg.mds.yandex.net:9532" -%}
+{%- set abcd_ns_white_list = [ "s3-default", "s3-default-cold", "s3-default-smart", "s3-ringbuffer" ] -%}
+{%- set abcd_services_black_list = [ "967", "1164", "1944", "2229", "2603", "2604", "2605", "2606", "2607", "3197", "3598", "3806", "4031", "4173", "5155", "5158", "5647", "5829", "5883", "5924", "7547", "7551", "15882", "24495", "24521", "30818", "32325", "32530", "32626", "32699", "32736", "32737", "32784", "32967", "33141", "33142", "33143", "33823", "33875", "34039", "34040", "34041", "34042", "34580", "34648", "34663", "34827", "34855", "34904", "34959", "34967", "35116", "35236", "35237", "35238", "35371", "35418", "35773", "35788", "35792", "36423", "36653", "36663", "36762", "36837", "36901", "37257", "37328", "37332", "37333", "37334", "37336", "37376", "37377", "37378", "37386", "37444", "37529", "37596", "37785", "37816", "38090", "38400", "38407", "38581", "38787", "38854", "39015", "39042", "39078", "39079", "39177", "102", "103", "104", "926", "1306", "2281", "2455", "2546", "3783", "4359", "7623", "31116", "32641", "32760", "32880", "34856", "35025", "36202" ] -%}
+{%- endif -%}
+
+{
+  "environment": "{{ 'inner-testing' if env == 'testing' else 'inner-production' }}",
+  "dc": "{{ grains['conductor']['root_datacenter'] | upper }}",
+
+  "application": {
+    "open_private_bucket_patterns": [
+      "vh-[a-z0-9_-]+-converted",
+      "yandexcloud-dbaas-[a-z0-9_-]+",
+      "pano-src-[0-9]+"
+    ]
+  },
+
+  "yc": {
+    "enable_team_integration": true,
+    "ts_endpoint": "ts.cloud.yandex-team.ru:4282",
+    "as_endpoint": "as.cloud.yandex-team.ru:4286",
+    "iam_endpoint": "iamcp.cloud.yandex-team.ru:443",
+    "iam_http": "iam.cloud.yandex-team.ru:14336",
+    "rm_endpoint": "rm.cloud.yandex-team.ru:443",
+    "cm_endpoint": "",
+    "ti_endpoint": "ti.cloud.yandex-team.ru:443",
+    "presign_scheme": "",
+    "presign_endpoint": "",
+    "ca_path": "/etc/ssl/certs/ca-certificates.crt",
+    "id_prefix": "",
+    "service_account_id": "f6o4bbhig2nr34c7s191",
+    "iam_key_id": "f6o8ne3l0rcbhlgnjlt8",
+    "iam_key_private_filepath": "/etc/s3-goose/iam_private.pem",
+    "request_attempts": 7,
+    "per_retry_timeout_msec": 2000,
+    "base_retry_delay_msec": 10,
+    "keep_alive_period_sec": 15,
+    "keep_alive_timeout_sec": 3
+  },
+
+  "init_timeout_sec": 55,
+
+  "features": {
+    "sequential_listing_enabled": true,
+    "external_control_enabled": true,
+    "reject_illegal_external_access": true,
+    "batch_lifecycle_enabled": true,
+    "bucket_acl_enabled": true,
+    "bucket_policy_enabled": true,
+    "cors_enabled": true,
+    "credentials_enabled": {{ "true" if env == "testing" else "false" }},
+    "delete_bucket_async_enabled": true,
+    "delete_bucket_external_links_enabled": true,
+    "disable_default_content_type": true,
+    "lifecycle_abort_multipart_upload_enabled": true,
+    "lifecycle_enabled": true,
+    "object_acl_enabled": true,
+    "object_redirect_enabled": false,
+    "object_size_limits_enabled": false,
+    "object_versioning_enabled": true,
+    "object_info_with_parts_enabled": true,
+    "separate_parts_enabled": true,
+    "separate_parts_whitelist": [],
+    "quotas_enabled": true,
+    "select_enabled": {{ "true" if env == "testing" else "false" }},
+    "sse_enabled": false,
+    "transition_enabled": {{ "true" if env == "testing" else "false" }},
+    "website_routing_rules_enabled": true,
+    "website_settings_enabled": true,
+    "write_billing_headers": true,
+    "storage_class_quotas_enabled": true,
+    "abcd_enabled": true,
+    "abcd_namespaces_white_list": {{ abcd_ns_white_list | tojson() }},
+    "abcd_services_black_list": {{ abcd_services_black_list | tojson() }}
+  },
+
+  "logging": {
+    "log_queue_size": 1000000,
+    "log_buf_size_kb": 128
+  },
+
+  {% if env == "testing" -%}
+    {% set sqs_identificator = "storage-test" -%}
+  {% else -%}
+    {% set sqs_identificator = "storage" -%}
+  {% endif -%}
+  "sqs": {
+    "endpoint": "http://sqs.yandex.net:8771",
+    "region": "EU",
+    "max_retries": 4,
+    "retry_timeout_msec": 25000,
+
+    "auth": {
+      "auth_method": "tvm2",
+      "sqs_credentials_expire_seconds": 10,
+
+      "aws_access_key_id": "{{ sqs_identificator }}",
+      "aws_secret_access_key": "unused"
+    },
+
+    "queues": {
+      "lifecycle_queue_url": "http://sqs.yandex.net:8771/{{ sqs_identificator }}/s3-api-lf-expiration",
+      "background_queue_url": "http://sqs.yandex.net:8771/{{ sqs_identificator }}/s3-background"
+    }
+  },
+
+  "adapters": {
+    "external": "yc",
+    "bucket_acl": "postgres",
+    "identity": "postgres",
+    "object_meta": "postgres",
+    "metadata": "postgres+mds",
+    "data": "mds+ydb",
+    "task_queue": "sqs",
+    "lock": "zk"
+  },
+
+  {% if env == "testing" -%}
+    {% set zk_conductor_group = "elliptics-test-zk" -%}
+  {% else -%}
+    {% set zk_conductor_group = "elliptics-zk" -%}
+  {% endif -%}
+  "zookeeper": {
+    "servers": [
+      {%- for host in salt.conductor.groups2hosts(zk_conductor_group) %}
+      "{{ host }}:2181"{{ "," if not loop.last else "" }}
+      {%- endfor %}
+    ],
+    "timeout_sec": 60,
+    "connect_timeout_sec": 30,
+    "key_prefix": "/s3/lifecycle/"
+  },
+
+  "auth_backends": [
+    "intranet",
+    "yc",
+    "tvm2",
+    "postgres"
+  ],
+
+  "permission_backends": [
+    "postgres"
+  ],
+
+  {% if env == "testing" -%}
+    {% set tvm2_client_id = "2017577" -%}
+    {% set tvm2_secret_key = pillar['s3_tvm_secret_testing'] -%}
+  {% else -%}
+    {% set tvm2_client_id = "2017579" -%}
+    {% set tvm2_secret_key = pillar['s3_tvm_secret_prod'] -%}
+  {% endif -%}
+  "tvm2": {
+    "client_id": {{ tvm2_client_id }},
+    "services_cache_ttl_sec": 3600,
+    "secret": "{{ tvm2_secret_key }}",
+    "clients": {
+        "idm": 2001600,
+        "logbroker": 2001059,
+        "sqs": 2002456,
+        "ydb": 2002490,
+        "blackbox": 223
+    }
+  },
+
+  "abc": {
+    "base_url": "https://abc-back.yandex-team.ru/",
+    "dispenser_url": "https://d-api.yandex-team.ru/",
+    "oauth_token": "{{ pillar['yav']['s3-abcd-oauth-token'] }}"
+  },
+
+  "rate_limiter": {
+    "upstreams": [
+      "localhost:14589"
+    ],
+    "quota_match_rules": {
+      "buckets": [
+        { "name_pattern": "^internal-dbaas-[\\p{L}\\p{N}-]+$",
+          "target_name": "internal-dbaas" },
+        { "name_pattern": "^yandexcloud-dbaas-[\\p{L}\\p{N}-]+$",
+          "target_name": "yandexcloud-dbaas" },
+        { "name_pattern": "^s3-test-[\\p{L}\\p{N}-]+$",
+          "target_name": "s3-test" }
+      ]
+    }
+  },
+  "ydb": {
+    "address": "{{ salt.pillar.get('s3:ydb:address', 'ydb-ru.yandex.net:2135') }}",
+    "db_name": "{{ salt.pillar.get('s3:ydb:db_name', '/ru/s3/prod/storage') }}",
+    "ca_path": "",
+    "request_timeout_sec": 60,
+    "discovery_interval_sec": 60,
+    "pool": {
+        "max_connection_lifetime_sec": 60
+    }
+  },
+  "intranet": {
+    "oauth": {
+        "blackbox_type": "intranet",
+        "blackbox_client_id": "{{ blackbox_client_id }}"
+    },
+    "authorization": {
+      "clients": [
+        {
+          "tvm_id": 2023017,
+          "service_name": "abcd"
+        }
+      ]
+    }
+  },
+  "nscfg": {
+    "url": "{{ nscfg_url }}"
+  }
+}

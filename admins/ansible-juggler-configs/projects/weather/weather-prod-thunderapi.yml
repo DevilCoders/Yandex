@@ -1,0 +1,47 @@
+- hosts: localhost
+  gather_facts: False
+  vars:
+    host: weather-prod-thunderapi
+    type: production
+    host_tags:
+      - prod
+
+  pre_tasks:
+    - juggler_facts: jserver_api={{ jserver_search_api }}
+    - include_vars: "vars"
+  post_tasks:
+    - juggler_cleanup: #jcheck_mark={{ host }} # commented for clean up all checks made with playbook
+
+  tasks:
+    - include: tasks/yasm.yml
+      vars:
+        service_tags:
+          - specific
+        checks:
+          weather.alerts.prod.balancer.thunderapi.status.2xx: 2xx
+          weather.alerts.prod.balancer.thunderapi.status.4xx: 4xx
+          weather.alerts.prod.balancer.thunderapi.status.404: 404
+          weather.alerts.prod.balancer.thunderapi.status.5xx: 5xx
+          weather.alerts.prod.balancer.thunderapi.timings.99_prc: 99_prc
+        notifications:
+          - template: golem
+          - template: on_status_change
+            golem_responsible: yes
+            method: [sms]
+            status: "{{ statuses_critical }}"
+        night_percent: "0%"
+        custom_flap:
+          stable: 30
+          critical: 150
+    - include: tasks/yasm.yml
+      vars:
+        service_tags:
+          - specific
+        checks:
+          weather.alerts.prod.balancer.thunderapi.diskusage.cwd.percentage: balancer_unispace_cwd
+          weather.alerts.prod.balancer.thunderapi.diskusage.root.percentage: balancer_unispace_root
+          weather.alerts.prod.balancer.thunderapi.diskusage./logs.percentage: balancer_unispace_logs
+          weather.alerts.prod.thunderapi.diskusage.cwd.percentage: unispace_cwd
+          weather.alerts.prod.thunderapi.diskusage.root.percentage: unispace_root
+          weather.alerts.prod.thunderapi.diskusage./logs.percentage: unispace_logs
+

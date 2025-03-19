@@ -1,0 +1,235 @@
+---
+name: content_front_http
+parsing:
+  groups: [content_front]
+  metahost: content_front
+  DataFetcher:
+    logname: "nginx/access.log"
+    timetail_url: "/timetail?pattern=tv_front_http&type=tskv&log_ts="
+  Combainer:
+      MINIMUM_PERIOD: 60
+aggregate:
+  data:
+    http_stat:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.content
+    solomon:
+      type: solomon
+      cluster: tv-prod-front
+      project: tv
+      service: nginx.tv_front_http
+---
+name: tv-prod-front-media-tskv
+parsing:
+  groups: [tv-prod-front]
+  metahost: tv-prod-front
+  DataFetcher:
+    logname: "nginx/access.log"
+    timetail_url: "/timetail?pattern=media_tskv_common&type=tskv&log_ts="
+  Combainer:
+      MINIMUM_PERIOD: 60
+aggregate:
+  data:
+    tskv.common:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.content
+    solomon:
+      type: solomon
+      cluster: tv-prod-front
+      project: tv
+      service: combaine.tskv.common
+    tv_5xx:
+      type: juggler
+      plugin: picker
+      Host: "tv-stable-front"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            delay: 300
+            logins:
+                - '@svc_sre_kinopoiskotttv:sre_kptvott'
+                - etruntaev
+                - coldmind
+                - gibzer
+                - sergeyv
+                - vyacheslav
+        - template_name: on_status_change
+          template_kwargs:
+            status:
+              - {from: "OK", to: "CRIT"}
+              - {from: "WARN", to: "CRIT"}
+              - {from: "CRIT", to: "OK"}
+              - {from: "CRIT", to: "WARN"}
+            method:
+              - telegram
+            login: [tv-monitoring]
+      Aggregator: timed_more_than_limit_is_problem
+      checkname: "tv_5xx_rps"
+      description: "tv 5xx"
+      ttl: 90
+      tags: ['tv-stable-front', 'production', 'front', 'combaine']
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 0,time_end: 23,day_end: 7,day_start: 1}]
+      config:
+        history: 7
+        type: metahost
+        query: "((5xx))$"
+        prefix: "combaine_"
+        as_percent: true
+        limits:
+          "5xx": {limit: {WARN: 0.3, CRIT: 0.4}, explain: "5xx rate(%)"}
+          "default": 0.02
+    tv_34xx:
+      type: juggler
+      plugin: picker
+      Host: "tv-stable-front"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            delay: 300
+            logins:
+                - '@svc_sre_kinopoiskotttv:sre_kptvott'
+                - etruntaev
+                - coldmind
+                - gibzer
+                - sergeyv
+                - vyacheslav
+        - template_name: on_status_change
+          template_kwargs:
+            status:
+              - {from: "OK", to: "CRIT"}
+              - {from: "WARN", to: "CRIT"}
+              - {from: "CRIT", to: "OK"}
+              - {from: "CRIT", to: "WARN"}
+            method:
+              - telegram
+            login: [tv-monitoring]
+      Aggregator: timed_more_than_limit_is_problem
+      checkname: "tv_4xx_rps"
+      description: "tv 4xx"
+      ttl: 90
+      tags: ['tv-stable-front', 'production', 'front', 'combaine']
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 0,time_end: 23,day_end: 7,day_start: 1}]
+      config:
+        history: 7
+        type: metahost
+        query: "(([34]xx))$"
+        prefix: "combaine_"
+        limits:
+          "4xx": {limit: {WARN: 35, CRIT: 50}, explain: "4xx rate: see AAB and molly first"}
+          "3xx": {limit: {WARN: 140, CRIT: 170}, explain: "abnomal 3xx rate"}
+          "default": 100
+    tv_timings:
+      type: juggler
+      plugin: picker
+      Host: "tv-stable-front"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            delay: 300
+            logins:
+                - '@svc_sre_kinopoiskotttv:sre_kptvott'
+                - etruntaev
+                - coldmind
+                - gibzer
+                - sergeyv
+                - vyacheslav
+        - template_name: on_status_change
+          template_kwargs:
+            status:
+              - {from: "OK", to: "CRIT"}
+              - {from: "WARN", to: "CRIT"}
+              - {from: "CRIT", to: "OK"}
+              - {from: "CRIT", to: "WARN"}
+            method:
+              - telegram
+            login: [tv-monitoring]
+      Aggregator: timed_more_than_limit_is_problem
+      checkname: "tv_99prc"
+      description: "tv 99prc"
+      ttl: 90
+      tags: ['tv-stable-front', 'production', 'front', 'combaine']
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 0,time_end: 23,day_end: 7,day_start: 1}]
+      config:
+        history: 12
+        type: metahost
+        query: "(request_timings(/[9]))$"
+        prefix: "combaine_"
+        limits:
+          "request_timings/9": {limit: {WARN: 850, CRIT: 1000}, explain: "99prc"}
+          "default": 1000
+---
+name: tv-test-front-media-tskv
+parsing:
+  groups: [tv-test-front]
+  metahost: tv-test-front
+  DataFetcher:
+    logname: "nginx/access.log"
+    timetail_url: "/timetail?pattern=media_tskv_common&type=tskv&log_ts="
+  Combainer:
+      MINIMUM_PERIOD: 60
+aggregate:
+  data:
+    tskv.common:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.content
+---
+name: tv-prod-front-tskv-pda
+parsing:
+  groups: [tv-prod-front]
+  metahost: tv-prod-front
+  DataFetcher:
+    logname: "nginx/access.log"
+    timetail_url: "/timetail?pattern=front_tskv_pda&type=tskv&log_ts="
+  Combainer:
+      MINIMUM_PERIOD: 60
+aggregate:
+  data:
+    tskv.pda:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.content
+---
+name: tv-prod-front-timings-by-upstream
+parsing:
+  groups: [tv-prod-front]
+  metahost: tv-prod-front
+  DataFetcher:
+    logname: "nginx/access.log"
+    timetail_url: "/timetail?pattern=front_upstream_timings&type=tskv&log_ts="
+  Combainer:
+      MINIMUM_PERIOD: 60
+aggregate:
+  data:
+    tskv.by_upstream:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.content

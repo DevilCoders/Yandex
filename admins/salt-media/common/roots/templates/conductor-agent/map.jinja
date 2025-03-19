@@ -1,0 +1,29 @@
+{% load_yaml as conductor_agent %}
+service: conductor-agent
+packages:
+  - conductor-agent
+{% endload %}
+
+{% set conductor_agent = salt["pillar.get"]("conductor_agent", conductor_agent, merge=True) %}
+{% set not_managed_cfgs = salt.file.find("/etc/conductor-agent", name="*.conf", type="f") %}
+
+# 80-common is managed config
+{% if '/etc/conductor-agent/conf.d/80-common.conf' in not_managed_cfgs %}
+  {% do not_managed_cfgs.remove('/etc/conductor-agent/conf.d/80-common.conf') %}
+{% endif %}
+
+{% if '/etc/conductor-agent/conductor-agent.conf' in not_managed_cfgs %}
+  {% do not_managed_cfgs.remove('/etc/conductor-agent/conductor-agent.conf') %}
+{% endif %}
+
+{% if conductor_agent.rules is defined %}
+  {% for g in conductor_agent.rules %}
+    {% set conf="/etc/conductor-agent/conf.d/{}.conf".format(g.name) %}
+    {% if conf in not_managed_cfgs %}
+      {% do not_managed_cfgs.remove(conf) %}
+    {% endif %}
+  {% endfor %}
+{% endif %}
+
+{% do conductor_agent.update({"not_managed_cfgs": not_managed_cfgs}) %}
+

@@ -1,0 +1,132 @@
+client_max_body_size 15M;
+proxy_read_timeout 3900ms;
+proxy_connect_timeout 500ms;
+large_client_header_buffers 4 16k;
+
+include sites-available/ping;
+include sites-available/touch-proxy-export;
+# aab named location
+include sites-available/aab-proxy;
+
+include sites-available/touch-block;
+
+#see https://st.yandex-team.ru/TVFRONT-737
+rewrite ^/bower_components/romochka/blocks-common/i-social/closer/i-social__closer.html /blocks-common/i-social/closer/i-social__closer.html permanent;
+location /blocks-common/i-social/closer/i-social__closer.html {
+    root $root;
+}
+
+# https://st.yandex-team.ru/TVFRONT-1274
+if ($args ~* filter\-channels=yes) {
+    rewrite ^ /tune? permanent;
+}
+
+# https://st.yandex-team.ru/TVFRONT-1275
+if ($args ~* provider\-settings) {
+    rewrite ^ /providers? permanent;
+}
+
+# https://st.yandex-team.ru/TVFRONT-2794
+# TVFRONT-6418
+location ~ ^/(\d+/)?channels/(\d+/)?player$ {
+	rewrite ^/(.*)/player$  https://$host/$1/stream permanent;
+}
+
+location ~ ^/(\d+/)?tune$ {
+    rewrite ^/.* / permanent;
+}
+
+# Security alerts [pykto] (https://st.yandex-team.ru/SECALERTS-1787)
+location = /pages/common/common.xml {
+    return 403;
+}
+
+location = /robots.txt {
+    rewrite ^/.* /robots/robots.touch.$tld.txt last;
+}
+
+location /robots/ {
+    root $root;
+}
+
+# TVFRONT-6648: Sitemap set upstream path(defined in pillar/tv/front.sls)
+set $proxy_sitemap_path {{pillar['front']['sitemap_path']}};
+
+location = /sitemap.xml {
+    # clear X-Upstream-Host to prevent proxy-pass to wrong location
+    proxy_set_header X-Upstream-Host "";
+    proxy_pass $proxy_sitemap_path/sitemap.touch.$tld.xml;
+}
+
+location ~* ^/sitemap\. {
+    # clear X-Upstream-Host to prevent proxy-pass to wrong location
+    proxy_set_header X-Upstream-Host "";
+    proxy_pass $proxy_sitemap_path$request_uri;
+}
+
+# https://st.yandex-team.ru/TVFRONT-2907
+location /google8a673bafbd7cf210.html {
+    root $root;
+}
+
+# https://st.yandex-team.ru/TVFRONT-4398
+location /google419fbd824d7ff97d.html {
+    root $root;
+}
+
+# https://st.yandex-team.ru/TVFRONT-2843
+location /tv-message-fast/  {
+    proxy_pass http://avatars-fast.yandex.net/;
+}
+
+location /tv-message-mds/  {
+    proxy_pass https://avatars.mds.yandex.net/get-direct/;
+}
+
+# 404 https://wiki.yandex-team.ru/morda/404
+location @404portal {
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Yandex-NotFound-Project "tv";
+    proxy_pass http://any.yandex.ru;
+}
+
+error_page 404 = @404portal;
+
+rewrite ^/(.*)/$ https://$host/$1 permanent;
+
+location /ajax {
+    include sites-available/aab-proxy-check;
+
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Request-Id $request_id;
+    proxy_set_header Host $http_host;
+    proxy_set_header X-NginX-Proxy true;
+
+    proxy_pass http://unix:/tmp/$socket_name.socket:$request_uri;
+
+    proxy_intercept_errors on;
+    proxy_redirect off;
+
+    #add_header Strict-Transport-Security "max-age=31536000";
+}
+
+location /ajax/i-tv-region {
+    return 404;
+}
+
+location / {
+    include sites-available/aab-proxy-check;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Request-Id $request_id;
+    proxy_set_header Host $proxy_qloud_host;
+    proxy_set_header X-Upstream-Host $host;
+    proxy_set_header X-NginX-Proxy true;
+
+    proxy_pass https://react_tv_front$request_uri;
+    proxy_intercept_errors on;
+    proxy_redirect off;
+}

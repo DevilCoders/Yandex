@@ -1,0 +1,50 @@
+parsing:
+  groups: [disk_mqueue]
+  metahost: disk_mqueue
+  DataFetcher:
+      type: http
+      port: 3132
+      uri: "/exec_pattern?pattern=rabbitmq_mqueue_vhost_stats"
+aggregate:
+  data:
+    rabbitmq_mqueue_vhost_stats:
+      type: "custom"
+      class: "Multimetrics"
+      rps: no
+      perHost: YES
+
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+
+    juggler_mqueue_vhost_stats_disk_operation_messages: &juggler-conf
+      type: juggler
+      namespace: disk
+      Host: "disk_mqueue"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - ignition
+      Aggregator: logic_or
+      checkname: disk_operation_messages
+      description: operations queue is too long
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      flaps: { stable_time: 120, critical_time: 180 }
+      CRIT: [ "${rabbitmq_mqueue_vhost_stats}['mqueue-vhost_count-disk_operation-messages']  > 20000" ]
+      tags:
+        - production
+
+
+
+

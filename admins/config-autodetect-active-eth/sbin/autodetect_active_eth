@@ -1,0 +1,163 @@
+#
+#1st, check if bridge already active
+#
+
+default_iface=""
+buggy_nic=0
+pathip=$(type -p ip) # везде из протестированных рез ip находится в /sbin/ip ...
+
+_debug_msg() {
+    [ -n "$debug" ] && echo "DEBUG: $1"
+}
+
+_debug_msg "debugging active (debug=$debug)"
+#
+# try to detect active ethX iface in system (ignore dublicate default routes too)
+#
+# NOTE: skacheev@
+#   ubuntu lucid precise trusty xenil bionic focal все печатают 'default via'
+#   centos 5, 6, 7, 8, 9 все печатают 'default via' поэтому я решил оставить тут только 'default via'
+_grep_eth() { grep -P "^(eth|en.|bond)[^\s]+$"; }
+_grep_default_route_iface() {
+    # \K для grep -Po не работает на centos:5 поэтому юзаем awk $NF
+    if test -n "$debug"; then
+        tee /dev/stderr
+    else
+        cat
+    fi |
+    grep -Po 'default\s+via\s+.*\s+dev\s+[\w.]+' | awk '{print $NF}'
+}
+get_ipv4_default_route_dev() {
+    $pathip route show default | _grep_default_route_iface
+}
+get_ipv6_default_route_dev() {
+    $pathip -6 route show default | _grep_default_route_iface
+}
+get_default_route_dev() {
+    local iface
+    iface=$(get_ipv6_default_route_dev)
+    if test -z "$iface"; then
+      iface=$(get_ipv4_default_route_dev)
+    fi
+    echo -n "$iface"
+}
+#   проверяем что есть физ интерфейс с именованием по типу eth enx eno e...
+check_eth=$( get_default_route_dev | sort -u | grep -c ^e || true )
+
+if grep -qF eine.server /proc/cmdline && [ -n "$IFACE" ]; then
+    default_iface="$IFACE"
+elif [ $check_eth -eq 0 ] ; then #no eth ifaces in default routes
+    _debug_msg "no ethX ifaces in default routing, m.b. bridge/bonding is active?"
+
+    default_bridge4=`$pathip route show default | _grep_default_route_iface| grep ^br | sort -u`
+    default_bridge6=`$pathip -6 route show default | _grep_default_route_iface | grep ^br | sort -u`
+    if [ -z "$default_bridge4" ]; then
+        default_bridge="$default_bridge6"
+    else
+        default_bridge="$default_bridge4"
+    fi
+
+    default_bonding4=`$pathip route show default | _grep_default_route_iface | grep ^bond | sort -u`
+    default_bonding6=`$pathip -6 route show default | _grep_default_route_iface | grep ^bond | sort -u`
+    if [ -z "$default_bonding4" ]; then
+        default_bonding="$default_bonding6"
+    else
+        default_bonding="$default_bonding4"
+    fi
+
+    [ -n "$default_bridge" ] && _debug_msg "Found default bridge: $default_bridge!"
+    [ -n "$default_bonding" ] && _debug_msg "Found default bonding: $default_bonding!"
+
+
+    if [ `echo $default_bridge | wc -w` -eq 1 ] ; then # active bridge in system
+        _debug_msg "bridge detected, try to get active eth from brctl"
+        if which ovs-vsctl >/dev/null 2>/dev/null && ovs-vsctl br-exists $default_bridge; then
+            default_iface=$(ovs-vsctl list-ports $default_bridge | _grep_eth)
+        else
+            default_iface=$(brctl show | grep -P "^$default_bridge\s" | head -n 1 | awk '{print $NF}' | _grep_eth)
+        fi
+        if [ `echo $default_iface | wc -w` -eq 0 ]; then
+            echo "ERROR: no physical interfaces detected in $default_bridge"
+            exit 1
+        elif [ `echo $default_iface | wc -w` -gt 1 ]; then
+            echo "ERROR: multiple physical interfaces detected in $default_bridge"
+            exit 1
+        fi
+
+        _debug_msg "default ethX iface is: $default_iface"
+
+    elif [ `echo $default_bridge | wc -w` -gt 1 ]; then
+        echo "ERROR: multiple default bridges detected"
+        exit 1
+    elif [ `echo $default_bonding | wc -w` -eq 1 ] ; then # active bonding
+        _debug_msg "bonding detected, try to get active eth from sysfs"
+        enslaved_eths=`cat /sys/class/net/${default_bonding}/bonding/slaves`
+
+        for enslaved_eth in $enslaved_eths ; do
+            default_iface=${default_iface:=$enslaved_eth}
+            carrier_path="/sys/class/net/${default_bonding}/lower_${enslaved_eth}/carrier"
+            [ -f $carrier_path ] || carrier_path="/sys/class/net/${default_bonding}/slave_${enslaved_eth}/carrier"
+
+            if [ 1 -ne $(cat $carrier_path) ] ; then
+                echo ERROR: there is no carrier at ${enslaved_eth}
+                exit 1
+            fi
+        done
+    elif [ `echo $default_bonding | wc -w` -gt 1 ]; then
+        echo "ERROR: multiple default bonding detected"
+        exit 1
+    else
+        echo "ERROR: neither bridge/bonding nor physical interfaces detected"
+        exit 1
+    fi
+else
+     if [ $check_eth -eq 1 ]; then # one eth iface in default routes -- all ok
+         _debug_msg "non bridge mode, try to get default ethX iface";
+
+         default_iface=$(get_default_route_dev)
+         _debug_msg "default ethX iface is: $default_iface"
+    else # no br, no eth ifaces in default routes - unknown problem
+        echo "ERROR: fail to detect active ethX iface in system, abort"
+        exit 1;
+    fi
+fi
+
+true_eth=$default_iface
+if echo "$default_iface" | grep -P "[.]\d+$" >/dev/null; then
+    true_eth=$(echo $default_iface | sed -r "s/\..*//")
+    _debug_msg "WARINING: vlan in default ifaces detected: $default_iface"
+    _debug_msg "true iface: $true_eth"
+fi
+
+#detect active route iface
+default_route_iface=$(get_default_route_dev|head -n1)
+_debug_msg "active route iface default_route_iface : $default_route_iface"
+
+_get_physical_net_ifaces() {
+    grep -Po "^\s*(eth|en\w)\w+:" /proc/net/dev|sed 's/[ :]//g'|awk '{print $NF}'|sort|uniq
+}
+# detect all eth interfaces in case we want to make bond interface
+if [ $(_get_physical_net_ifaces|wc -l) -gt 2 ]; then
+    _debug_msg "Be careful, found more than 2 physical interfaces. Bonding configuration may be incorrect!"
+fi
+eth_interfaces=$(_get_physical_net_ifaces|awk '{if (x) {x=x", "$0}else{x=$0}}END{print x}')
+_debug_msg "physical interfaces to make bonding: $eth_interfaces"
+
+# detect buggy nic
+
+buggy_nic=0
+
+. /usr/local/sbin/autodetect_environment
+
+if [ -n "$is_virtual_host" ] && [ $is_virtual_host -eq 0 ] ; then
+    nic=`ethtool -i $true_eth | grep driver | egrep -c "bnx[0-9]|tg3" || true`
+        if [ $nic -eq 1 ]; then
+            exception=`lshw | egrep "vendor|version" | grep -E "Huawei|V100R001" | wc -l`
+                if  [ $exception -eq 0 ]; then
+                        buggy_nic=1
+                fi
+        fi
+fi
+
+_debug_msg "buggy_nic: $buggy_nic"
+# vim:ft=sh

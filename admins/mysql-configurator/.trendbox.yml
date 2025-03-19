@@ -1,0 +1,95 @@
+format: 0.2
+
+jobs:
+  build_trusty:
+    cloud:
+      type: sandbox
+      owner: MEDIAADMIN
+    env:
+      SANDBOX_PRIVILEGED_CONTAINER: true
+    container:
+      type: LXC
+      storage:
+        type: sandbox-resource
+        host: sandbox.yandex-team.ru
+        resource:
+          owner: TRENDBOX_CI_TEAM
+          attrs:
+            components: base
+            platform: linux_ubuntu_14.04_trusty
+    lifecycle_flow: typical
+    lifecycle:
+      before_install:
+        - sudo apt-get update
+        - sudo apt-get install -y --force-yes devscripts python-pip python-virtualenv fakeroot python-dev
+        - apt-get install -y --force-yes libmysqlclient-dev libssl-dev dupload
+        - chmod +x /usr/lib/python2.7/dist-packages/virtualenv.py || true
+        - git clone https://github.yandex-team.ru/admins/mysql-configurator.git
+        - printenv MEDIA_ROBOT_TEAMCITY_PGP_PUBKEY | gpg --import
+        - printenv MEDIA_ROBOT_TEAMCITY_PGP_PRIVKEY | gpg --allow-secret-key-import --import
+        - mkdir -p ~/.ssh || true
+        - printenv MEDIA_TCI_DUPLOAD_CONF > ~/.dupload.conf
+        - printenv MEDIA_TCI_DUPLOAD_KEY > ~/.ssh/d_key
+        - printenv MEDIA_TCI_SSH_CONF > ~/.ssh/config
+        - chmod 0600 ~/.ssh/d_key
+      install:
+        - cd mysql-configurator && debuild || true
+        - debsign -kteamcity@yandex-team.ru ../mysql-configurator*.changes
+      script:
+        - debrelease --to yandex-trusty || true
+  build_xenial:
+    cloud:
+      type: sandbox
+      owner: MEDIAADMIN
+    env:
+      SANDBOX_PRIVILEGED_CONTAINER: true
+    container:
+      type: LXC
+      storage:
+        type: sandbox-resource
+        host: sandbox.yandex-team.ru
+        resource:
+          owner: TRENDBOX_CI_TEAM
+          attrs:
+            components: base
+            platform: linux_ubuntu_16.04_xenial
+    lifecycle_flow: typical
+    lifecycle:
+      before_install:
+        - sudo apt-get update
+        - sudo apt-get install -y --force-yes devscripts python-pip python-virtualenv=15.0.1+ds-3 fakeroot
+        - apt-get install -y --force-yes libmysqlclient-dev libssl-dev dupload conductor-utils
+        - chmod +x /usr/lib/python2.7/dist-packages/virtualenv.py
+        - git clone https://github.yandex-team.ru/admins/mysql-configurator.git
+        - printenv MEDIA_ROBOT_TEAMCITY_PGP_PUBKEY | gpg --import
+        - printenv MEDIA_ROBOT_TEAMCITY_PGP_PRIVKEY | gpg --allow-secret-key-import --import
+        - mkdir -p ~/.ssh || true
+        - printenv MEDIA_TCI_DUPLOAD_CONF > ~/.dupload.conf
+        - printenv MEDIA_TCI_DUPLOAD_KEY > ~/.ssh/d_key
+        - printenv MEDIA_TCI_SSH_CONF > ~/.ssh/config
+        - printenv MEDIA_TCI_CONDUCTOR_OAUTH > ~/.conductor_oauth
+        - chmod 0600 ~/.ssh/d_key
+      install:
+        - cd mysql-configurator && debuild || true
+        - debsign -kteamcity@yandex-team.ru ../mysql-configurator*.changes
+      script:
+        - debrelease --to yandex-xenial || true
+        - debticket -n
+
+workflows:
+  build:
+    jobs:
+      - build_trusty
+      - build_xenial
+
+triggers:
+  - trigger: branch
+    filters:
+      names:
+        only:
+        - master
+  - trigger: pull_request
+    filters:
+      events:
+        only: merged
+    workflows: build

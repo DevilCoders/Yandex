@@ -1,0 +1,77 @@
+Director {
+  Name = {{ bacula.dir.name }}
+  DirAddresses = {
+    ipv6 = {
+      addr = {{ bacula.dir.address }}
+      port = {{ bacula.dir.port }}
+    }
+  }
+  QueryFile = "/etc/bacula/scripts/query.sql"
+  WorkingDirectory = {{ bacula.dirs.work }}
+  PidDirectory = "/var/run/bacula"
+  Maximum Concurrent Jobs = 1
+  Messages = Daemon
+  @{{ secret_file }}
+}
+
+{%- for cfg in bacula.dir.conf %}
+{%- if not 'bacula-dir' in  cfg %}
+@{{cfg.replace('.j2', '.conf') }}
+{%- endif %}
+{%- endfor %}
+
+Storage {
+  Name = File
+  Address = {{ bacula.sd.address }}
+  SDPort = {{ bacula.sd.port }}
+  @{{ bacula.secrets.dst }}/{{ bacula.sd.secret_file }}
+  Device = {{ bacula.sd.device }}
+  Media Type = {{ bacula.sd.media_type }}
+}
+
+Pool { # File
+  Name = File
+  Pool Type = Backup
+  Recycle = yes
+  AutoPrune = yes
+  Label Format = {{ bacula.dir.pool.label_format }}
+  Volume Retention = {{ bacula.dir.pool.volume_retention }}
+  Maximum Volume Bytes = {{ bacula.dir.pool.maximum_volume_bytes }}
+  Maximum Volumes = 100
+}
+
+Catalog { # Generic catalog service
+  Name = {{ bacula.dir.catalog.name }}
+  dbname = {{ bacula.dir.catalog.name }}
+  dbuser = {{ bacula.dir.catalog.user }}
+  dbpassword = {{ bacula.dir.catalog.password }}
+}
+
+Messages { # Standard
+  Name = Standard
+  # NOTE! If you send to email-s , to replace the %r in the from  field (-f part)
+  #  with a single valid email in both mail and operator command.
+  mailcommand = "/usr/sbin/bsmtp -8 -h localhost -f \"\(Bacula\) \<%r\>\" -s \"Bacula: %t %e of %c %l\" %r"
+  operatorcommand = "/usr/sbin/bsmtp -8 -h localhost -f \"\(Bacula\) \<%r\>\" -s \"Bacula: Intervention needed for %j\" %r"
+  mail = {{ bacula.dir.recipients }} = all, !skipped
+  operator = {{ bacula.dir.recipients }} = mount
+  console = all, !skipped, !saved
+  # WARNING! need logrotate
+  append = "/var/log/bacula/bacula.log" = all, !skipped
+  catalog = all
+}
+Messages { # Message delivery for daemon messages (no job).
+  Name = Daemon
+  mailcommand = "/usr/sbin/bsmtp -8 -h localhost -f \"\(Bacula\) \<%r\>\" -s \"Bacula daemon message\" %r"
+  mail = {{ bacula.dir.recipients }} = all, !skipped
+  console = all, !skipped, !saved
+  append = "/var/log/bacula/bacula.log" = all, !skipped
+}
+
+# Include subfiles associated with configuration of clients.
+# They define the bulk of the Clients, Jobs, and FileSets.
+# Remember to "reload" the Director after adding a client file.
+#@|"sh -c 'for f in /etc/bacula/clientdefs/*.conf ; do echo @${f} ; done'"
+
+# vim :set foldmethod=expr|set foldexpr=getline(v:lnum)=~'{[^}]*$'?'a1':getline(v:lnum)=~'^[^{]*}'?'s1':'='
+# vim :hi Folded term=standout ctermfg=7 ctermbg=8 guifg=DarkBlue guibg=LightGrey

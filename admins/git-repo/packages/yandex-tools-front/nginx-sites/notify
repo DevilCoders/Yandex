@@ -1,0 +1,39 @@
+upstream notify_upstream {
+        server notify01e.tools.yandex.net max_fails=1 fail_timeout=10s;
+        server notify02g.tools.yandex.net max_fails=1 fail_timeout=10s backup;
+}
+
+server {
+        listen 80;
+        server_name   notify.yandex-team.ru;
+        rewrite       ^ https://notify.yandex-team.ru$request_uri? permanent;
+}
+
+server {
+        listen 443;
+
+        server_name  notify.yandex-team.ru;
+
+        location / {
+                proxy_pass       http://notify_upstream;
+                proxy_set_header Host      notify.yandex-team.ru;
+                proxy_set_header X-Real-IP $remote_addr;
+        }
+
+        location /socket.io {
+                proxy_pass      http://notify_upstream;
+                proxy_http_version  1.1;
+                proxy_set_header    Host        notify.yandex-team.ru;
+                proxy_set_header    X-Real-IP   $remote_addr;
+                proxy_set_header    Upgrade     $http_upgrade;
+                proxy_set_header    Connection  "upgrade";
+        }
+}
+
+server {
+        listen 80;
+        listen 443;
+        
+        server_name notify;
+        rewrite ^(.*)$ https://notify.yandex-team.ru$1 permanent;
+}

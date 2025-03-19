@@ -1,0 +1,471 @@
+---
+solomon:
+  oauth_token: "{{pillar['sec']['solomon_token']}}"
+  url: "https://solomon.yandex.net/api/v2/push"
+  pushers: 500
+  spack: true
+
+invapi:
+  oauth: "{{pillar['sec']['invapi_token']}}"
+  url: "https://ro.racktables.yandex-team.ru/api"
+
+bot_token: "{{pillar['sec']['solomon_token']}}"
+
+logging:
+  level: info
+logbroker:
+  database: "/Root"
+  oauth_token: "{{pillar['sec']['logbroker_token']}}"
+  consumer: "/grad/data/metridat_client"
+  topic:
+    - "/grad/data/network"
+    - "/grad/data/other"
+    - "/grad/data_testing/other"
+
+output:
+  sr_policies:
+    - type: solomon
+      args: { project: grad_testing, cluster: all, service: sr }
+      filter: { keys: [ host, endpoint, color ], values: [ traff, packets ] }
+  interface:
+    - type: solomon
+      args: { project: grad_testing, cluster: all, service: interface }
+
+  snmp_poller.snmp:
+    - type: solomon
+      args: { project: noc, cluster: all, service: snmp }
+      filter:
+        keys: [ "host", "index" ]
+        values: [ "in_pkts", "in_bad_values", "in_gen_error", "in_total_req_vars", "in_get_requests",
+                  "in_get_next", "out_pkts", "out_too_big", "out_no_such_names", "out_bad_values",
+                  "out_gen_error", "out_get_responses", "out_traps", "in_bad_community",
+                  "in_too_big", "in_no_such_names" ]
+
+  snmp_poller.network: &network
+    - type: solomon
+      args: { project: noc, cluster: all, service: network, host_hash: sha1_last4 }
+      filter:
+        keys: [ "ifname", "host", "ifalias" ]
+        values: [ "tx", "rx", "rx_drop", "tx_drop", "rx_errs", "tx_errs", "tx_unicast", "rx_unicast", "speed",
+                  "rx_packets", "tx_packets", "rx_nunicast", "tx_nunicast", "flap", "admin_status", "oper_status" ]
+  comocutor_poller.network: *network
+
+  http_server.network: *network
+  snmp_poller.network_fast: *network
+  comocutor_poller.network_fast: *network
+
+  snmp_poller.cisco_wlc_ap:
+    - type: solomon
+      args: { "project": "offnet", "cluster": "all", "service": "cisco_wlc_ap" }
+
+  snmp_poller.cisco_wlc_ssid:
+    - type: solomon
+      args: { "project": "offnet", "cluster": "all", "service": "cisco_wlc_ssid" }
+
+  snmp_poller.cisco_pop_mgmt_active:
+    - type: solomon
+      args: { project: noc, cluster: all, service: cisco_pop_mgmt_active }
+      filter:
+        keys: [ "host", "index" ]
+        values: [ "active" ]
+
+  snmp_poller.temp: &temp
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "temp" }
+      filter:
+        keys: [ "component", "host" ]
+        values: [ "temp", "threshold_low", "threshold_high" ]
+
+  comocutor_poller.temp: *temp
+
+  snmp_poller.stat:
+    - type: solomon
+      args: { "project": "grad", "cluster": "all", "service": "pollers" }
+
+  snmp_poller.power:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "power" }
+      filter:
+        keys: [ "host", "index" ]
+        values: [ "power" ]
+    - type: graphite
+      args: { project: grad_testing, cluster: all, service: snmp_poller.power }
+
+  snmp_poller.optical: &optical
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "transceiver" }
+      filter:
+        keys: [ "ifname", "host", "lane" ]
+        values: [ "rx_power", "rx_power_threshold_high", "rx_power_threshold_low", "tx_power",
+                  "temp", "oper_status", "admin_status" ]
+  comocutor_poller.netconf_transceiver: *optical
+  snmp_poller.transceiver: *optical
+  comocutor_poller.optical: *optical
+
+  http_server.pyping:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "pyping" }
+
+  http_server.netstat_mbuf:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "netstat_mbuf" }
+
+  http_server.dns_poller:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "dns_poller" }
+
+  snmp_poller.aruba_wlc:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "aruba_wlc" }
+      filter:
+        keys: [ "host", "ssid" ]
+        values: [ "clients" ]
+
+  snmp_poller.aruba_radio:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "aruba_radio" }
+      filter:
+        keys: [ "host", "index" ]
+        values: [ clients,tx_power,noise_floor,radio_util64,channel,tx_traff,rx_traff,tx_mgmt,tx_drops,
+                  rx_total,rx_data,rx_mgmt,rx_bad,phy_events,tx_total,status ]
+
+  snmp_poller.aruba_wlc_ap:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "aruba_wlc_ap" }
+
+  snmp_poller.aruba_wlc_radio:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "aruba_wlc_radio" }
+
+  snmp_poller.aruba_wlc_ssid:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "aruba_wlc_ssid" }
+
+  snmp_poller.aruba_iap_ap:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "aruba_iap_ap" }
+      filter:
+        keys: [ host, ap_name ]
+        values: [ iap_uptime, ap_count ]
+
+  snmp_poller.bgp_peers:
+    - type: solomon
+      args: { project: noc, cluster: all, service: bgp_peers, host_hash: sha1_last4 }
+      filter:
+        keys: [ "host", "peer", "vrf", "group" ]
+        values: [ "state", "flap", "uptime" ]
+
+  snmp_poller.bgp_peers_counters:
+    - type: solomon
+      args: { project: noc, cluster: all, service: bgp_peers_counters, host_hash: sha1_last4 }
+
+  comocutor_poller.route_types:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "external routes" }
+      filter:
+        keys: [ "host", "route_type" ]
+        values: [ "count" ]
+
+  comocutor_poller.netconf_bundle: &netconf_bundle
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "bundle_status" }
+      filter:
+        keys: [ "host", "ifname" ]
+        values: [ "total", "up", "oper_status", "admin_status" ]
+
+  snmp_poller.catalyst_stp:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "catalyst_stp" }
+
+  snmp_poller.cpu: &cpu
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "switch_cpu" }
+      filter:
+        keys: [ "component", "host", "index", "component_verbose" ]
+        values: [ "load1", "load5", "heap", "buffer", "ISR", "system", "user", "idle", "utilization" ]
+
+  comocutor_poller.netconf_cpu: *cpu
+
+  snmp_poller.dwdm:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "ekinops" }
+      filter:
+        keys: [ "host", "line" ]
+        values: [ "tx_level", "rx_level", "dgd_level", "fec", "fec_uncorr", "osnr" ]
+
+  snmp_poller.coriant_g30:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "coriant_g30" }
+      filter:
+        keys: [ "host", "ifname" ]
+        values: [ "tx_level", "rx_level", "fec", "fec_uncorr", "osnr", "ses", "es", "bbe" ]
+
+  comocutor_poller.hit_pms:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "coriant_hit" }
+      filter:
+        keys: [ "host", "ifname" ]
+        values: [ "rx_level", "tx_level", "rx_level_min", "tx_level_min" ]
+
+  snmp_poller.adva_f7:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "adva_f7" }
+      filter:
+        keys: [ "host", "ifname" ]
+        values: [ "tx_level", "rx_level", "tx_level_min", "rx_level_min", "fec", "fec_uncorr" ]
+
+  asynk_poller.adva_f8_rest:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "adva_f8_rest" }
+      filter:
+        keys: [ "host", "ifname" ]
+        values: [ "rx_level", "rx_level_min", "rx_level_max", "tx_level", "tx_level_min", "tx_level_max", "osnr",
+                  "osnr_min", "qfactor", "qfactor_min", "fec", "fec_uncorr", "dgd_level", "bbe", "es", "ses", "uas",
+                  "rxcrcerr", "rxerrbip", "rxerrblk", "rxes", "txcrcerr", "txerrbip", "txerrblk", "txes", "qfactor_max",
+                  "osnr_max", "rx_level_osc", "tx_level_osc", "rx_level_osc_min", "rx_level_osc_max" ]
+
+  snmp_poller.hrStorage:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "hrStorage" }
+      filter:
+        keys: [ "host", "descr" ]
+        values: [ "size", "used", "alloc_fail", "used_percent" ]
+
+  comocutor_poller.vrp_acl:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "vrp_acl" }
+      filter:
+        keys: [ "host", "ifname" ]
+        values: [ "packets", "drops" ]
+
+  comocutor_poller.vrp_resources:
+    - type: solomon
+      args: { project: noc, cluster: all, service: vrp_resources }
+      filter:
+        keys: [ host, type, name ]
+        values: [ total, remain, used, used_percent ]
+
+  snmp_poller.hwsensor:
+    - type: solomon
+      args: { project: noc, cluster: all, service: hwsensor }
+      filter:
+        keys: [ phys_descr, phys_class, host ]
+        values: [ sensor_type, value, alert_level ]
+
+  snmp_poller.juniper_bgp:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "juniper_bgp" }
+      filter:
+        keys: [ "host", "peer", "peer_name" ]
+        values: [ "out_prefixes", "in_prefixes", "in_prefixes_accepted", "in_prefixes_rejected", "in_prefixes_active" ]
+
+  snmp_poller.memory: &memory
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "switch_memory" }
+      filter:
+        keys: [ host, index ]
+        values: [ total, free, free_percent ]
+
+  comocutor_poller.memory: *memory
+
+  snmp_poller.mtxrWl:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "mtxrWl" }
+      filter:
+        keys: [ "host", "ifname", "state", "channel" ]
+        values: [ "reg_client_count", "auth_client_count", "entry_count", "uptime" ]
+
+  snmp_poller.mtxrHealth:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "mtxrHealth" }
+      filter:
+        keys: [ "host", "index" ]
+        values: [ core_voltage, three_voltage, five_voltage, twelve_voltage,
+                  sensor_temperature, cpu_temperature, board_temperature, voltage,
+                  temperature, processor_temperature, power, current, frequency, fan_speed1, fan_speed2 ]
+
+  snmp_poller.mpls:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "mpls" }
+      filter:
+        keys: [ "host", "lsp" ]
+        values: [ "traff", "flap", "packets" ]
+
+  comocutor_poller.netconf_psu: &psu
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "switch_psu" }
+      filter:
+        keys: [ "host", "name" ]
+        values: [ "temperature", "status", "voltage", "power" ]
+
+  snmp_poller.psu: *psu
+
+  snmp_poller.qos_total:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "qos_total" }
+      filter:
+        keys: [ "host", "index" ]
+        values: [ "total", "used" ]
+
+  snmp_poller.qos_per_queue: &qos_per_queue
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "qos_per_queue" }
+      filter:
+        keys: [ "host", "ifname", "class" ]
+        values: [ "queue_passed_packets", "queue_passed_bytes", "queue_discarded_packets", "queue_discarded_bytes", "buffer_usage" ]
+
+  comocutor_poller.netconf_qos_per_queue: *qos_per_queue
+
+  snmp_poller.qos_per_queue_arista:
+    - type: solomon
+      args: { project: noc, cluster: all, service: qos_per_queue_arista, host_hash: sha1_last4 }
+
+  snmp_poller.qos_per_queue_nokia:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "qos_per_queue_nokia" }
+
+  snmp_poller.qos_per_queue_juniper:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "qos_per_queue_juniper" }
+
+  snmp_poller.qos_per_queue_switchdev:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "qos_per_queue_switchdev" }
+
+  comocutor_poller.netconf_ram:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "switch_ram" }
+      filter:
+        keys: [ "host", "mem_type" ]
+        values: [ "usage" ]
+
+  snmp_poller.pdu_inlet:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "pdu_inlet" }
+      filter:
+        keys: [ "label", "host" ]
+        values: [ "rms_current", "rms_voltage", "active_power", "frequency" ]
+
+  snmp_poller.pdu_outlet:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "pdu_outlet" }
+      filter:
+        keys: [ "label", "host" ]
+        values: [ "rms_current", "rms_voltage", "active_power" ]
+
+  snmp_poller.pdu_external_sensors:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "pdu_external_sensors" }
+      filter:
+        keys: [ "sensor_name", "host" ]
+        values: [ "value" ]
+
+  snmp_poller.sdc_network:
+    - type: solomon
+      args: { project: "sdc-locations", cluster: all, service: network }
+      filter:
+        keys: [ ifname, host, ifalias ]
+        values: [ tx, rx, rx_drop, tx_drop, rx_errs, tx_errs, tx_unicast, rx_unicast,
+                  speed, rx_packets, tx_packets, rx_nunicast, tx_nunicast, flap, admin_status,oper_status ]
+
+  snmp_poller.sr_policies:
+    - type: solomon
+      args: { project: noc, cluster: all, service: sr_policies }
+
+  telemetry.network:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "telemetry_network" }
+      filter:
+        keys: [ "ifname", "host", "ifalias" ]
+        values: [ "tx", "rx", "tx_multicast", "rx_multicast", "rx_broadcast", "tx_broadcast",
+                  "tx_unicast", "rx_unicast", "rx_packets", "tx_packets", "rx_nunicast", "tx_nunicast",
+                  "rx_errs", "tx_errs" ]
+
+  telemetry.jnx_fw:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "jnx_fw" }
+      filter:
+        keys: [ "ifname", "host", "ifalias", "counter", "direction", "card" ]
+        values: [ "packets", "traff" ]
+
+  telemetry.juniper_linecard_counters:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "juniper_linecard_counters" }
+      filter:
+        keys: [ "host", "name", "counter" ]
+        values: [ "traff", "packets" ]
+
+  telemetry.juniper_fabric_counters:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "juniper_fabric_counters" }
+      filter:
+        keys: [ "host", "src", "dst", "priority" ]
+        values: [ "traff", "drop_traff", "packets", "drop_packets", "queue_depth_current", "error_packets" ]
+
+  snmp_poller.ups:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "ups" }
+      filter:
+        keys: [ "host", "index", "mains_description", "battery_description", "input_description" ]
+        values: [ "rectifiers_current", "rectifiers_current_major_high", "rectifiers_current_minor_high", "mains_voltage_major_low",
+                  "mains_voltage", "mains_voltage_major_high","mains_voltage_minor_high","mains_voltage_minor_low",
+                  "battery_voltage", "battery_voltage_major_high", "battery_voltage_minor_high", "battery_voltage_minor_low",
+                  "battery_voltage_major_low", "battery_used_capacity", "battery_used_capacity_major_high", "battery_used_capacity_minor_high",
+                  "battery_total_capacity", "battery_total_capacity_minor_low", "battery_total_capacity_major_low", "battery_current",
+                  "battery_current_major_high", "battery_current_minor_high", "battery_currents", "battery_currents_major_high",
+                  "battery_currents_minor_high", "battery_currents_minor_low", "battery_currents_major_low", "battery_temperature",
+                  "battery_temperature_major_high", "battery_temperature_minor_high", "battery_temperature_minor_low", "battery_temperature_major_low",
+                  "battery_time_left", "battery_time_left_minor_low", "battery_time_left_major_low", "load_current", "load_current_major_high",
+                  "load_current_minor_high", "input_status" ]
+
+  snmp_poller.upsmib: # NOCDEV-2894
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "mibups" }
+      filter:
+        keys: [ "host", "index" ]
+        values: [ "battery_status", "remaining", "output_voltage", "output_percent_load", "input_frequency", "input_voltage" ]
+
+  snmp_poller.yattl:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "yattl" }
+      filter:
+        keys: [ "host", "name", "rule_index" ]
+        values: [ "packets_pass_up", "traff_pass_up", "packets_pass_down", "traff_pass_down", "traff_pass", "packets_pass" ]
+
+  snmp_poller.flaps:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "flaps" }
+      filter:
+        keys: [ "host", "ifname" ]
+        values: [ "flap" ]
+
+  comocutor_poller.netconf_network:
+    - type: solomon
+      args: { "project": "grad_testing", "cluster": "all", "service": "netconf_network" }
+      filter:
+        keys: [ "ifname", "host", "ifalias" ]
+        values: [ "tx", "rx", "rx_drop", "tx_drop", "rx_errs", "tx_errs", "tx_unicast",
+                  "rx_unicast", "speed", "rx_packets", "tx_packets", "rx_nunicast",
+                  "tx_nunicast", "flap", "admin_status","oper_status" ]
+
+  comocutor_poller.netconf_network_juniper_extended:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "juniper_network_extended" }
+
+  aggregator.network_magistral:
+    - type: "solomon"
+      args: { "project": "noc", "cluster": "all", "service": "network_magistral" }
+
+  telemetry_jnx_interface:
+    - type: solomon
+      args: { "project": "grad_testing", "cluster": "all", "service": "telemetry_jnx_interface" }
+  telemetry_jnx_queue:
+    - type: solomon
+      args: { "project": "grad_testing", "cluster": "all", "service": "telemetry_jnx_queue" }
+
+  asynk_poller.sevensignal_rest:
+    - type: solomon
+      args: { "project": "noc", "cluster": "all", "service": "sevensignal_eyes" }
+      filter:
+        keys: [ "host", "SSID" ]
+        values: [ "airtime_utilization" ]

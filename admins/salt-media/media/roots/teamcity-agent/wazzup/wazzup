@@ -1,0 +1,32 @@
+#! /usr/bin/perl
+
+use strict;
+use warnings;
+
+my %modes = (Free => 0);
+my $mode = "Free";
+
+my @files = glob("/usr/local/teamcity-agents/*/logs/teamcity-agent.log");
+open (F, $files[0]);
+while(<F>) {
+    if (/Starting Build {id=\d+, buildTypeId='(.*?)'/) {
+        my @splits = split("_", $1);
+        $mode = $splits[0];
+        $modes{$mode} = 0;
+        next;
+    }
+    if (/Build finished, build id \d+/) {
+        $mode = "Free";
+    }
+}
+close(F);
+
+$modes{$mode} = 1;
+
+my $data = "";
+foreach (keys %modes) {
+    $data .= "$_: $modes{$_}\n"
+}
+
+my $size = length($data);
+print "HTTP/1.0 200 Ok\nConnection: close\nContent-length: $size\n\n$data";

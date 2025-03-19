@@ -1,0 +1,112 @@
+diff --git salt/loader/lazy.py salt/loader/lazy.py
+index 48c70d01c0..5513d64e81 100644
+--- salt/loader/lazy.py
++++ salt/loader/lazy.py
+@@ -5,6 +5,7 @@ import importlib.machinery
+ import importlib.util
+ import inspect
+ import logging
++import marshal
+ import os
+ import pathlib
+ import re
+@@ -184,6 +185,53 @@ class LoadedMod:
+         )
+ 
+ 
++def copy_with_marshal(data):
++    return marshal.loads(marshal.dumps(data))
++
++
++def copy_noop(data):
++    return data
++
++
++funcs = {
++    'marshal': copy_with_marshal,
++    'copy': copy.copy,
++    'noop': copy_noop,
++    'deepcopy': copy.deepcopy,
++    'default': copy.deepcopy,
++}
++
++def opts_deep_copy(opts, tag=None):
++    """
++    Exmaple:
++        workaround_deepcopy:
++          copy_func: marshal
++          skip:
++            - pillar
++            - grains
++    """
++    start = time.time()
++    copy_func = copy.deepcopy
++    if 'workaround_deepcopy' in opts:
++        copy_opts = {}
++        conf = opts['workaround_deepcopy']
++        copy_func = funcs[conf.get('copy_func', 'default')]
++        skip_keys = set(conf.get('skip', []))
++
++        for k in opts:
++            if k not in skip_keys:
++                copy_opts[k] = opts[k]
++        copy_opts = copy_func(copy_opts)
++        for k in skip_keys:
++            if k in opts:
++                copy_opts[k] = opts[k]
++    else:
++        copy_opts = copy_func(opts)
++
++    log.profile('LazyLoader %s deepcopy with %s took %f', tag, copy_func.__name__, time.time() - start)
++    return copy_opts
++
++
+ class LazyLoader(salt.utils.lazy.LazyDict):
+     """
+     A pseduo-dictionary which has a set of keys which are the
+@@ -244,7 +292,9 @@ class LazyLoader(salt.utils.lazy.LazyDict):
+                 self.pack[i] = self.pack[i].value()
+         if opts is None:
+             opts = {}
+-        opts = copy.deepcopy(opts)
++
++        opts = opts_deep_copy(opts, tag)
++
+         for i in ["pillar", "grains"]:
+             if i in opts and isinstance(
+                 opts[i], salt.loader.context.NamedLoaderContext
+diff --git salt/matchers/confirm_top.py salt/matchers/confirm_top.py
+index 7435f4ae94..7a2cc0bbcd 100644
+--- salt/matchers/confirm_top.py
++++ salt/matchers/confirm_top.py
+@@ -10,7 +10,7 @@ import salt.loader
+ log = logging.getLogger(__file__)
+ 
+ 
+-def confirm_top(match, data, nodegroups=None):
++def confirm_top(match, data, nodegroups=None, matchers=None):
+     """
+     Takes the data passed to a top file environment and determines if the
+     data matches this minion
+@@ -21,7 +21,7 @@ def confirm_top(match, data, nodegroups=None):
+             if "match" in item:
+                 matcher = item["match"]
+ 
+-    matchers = salt.loader.matchers(__opts__)
++    matchers = salt.loader.matchers(__opts__) if matchers is None else matchers
+     funcname = matcher + "_match.match"
+     if matcher == "nodegroup":
+         return matchers[funcname](match, nodegroups)
+diff --git salt/state.py salt/state.py
+index 91927d9ec6..3c1d91e513 100644
+--- salt/state.py
++++ salt/state.py
+@@ -3946,7 +3946,7 @@ class BaseHighState:
+                 def _filter_matches(_match, _data, _opts):
+                     if isinstance(_data, str):
+                         _data = [_data]
+-                    if self.matchers["confirm_top.confirm_top"](_match, _data, _opts):
++                    if self.matchers["confirm_top.confirm_top"](_match, _data, _opts, matchers=self.matchers):
+                         if saltenv not in matches:
+                             matches[saltenv] = []
+                         for item in _data:

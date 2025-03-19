@@ -1,0 +1,88 @@
+---
+name: disk_mpfs-billing_buy_status_graphite
+parsing:
+  groups: [disk_mpfs]
+  metahost: mpfs.disk.yandex.net
+  DataFetcher:
+    logname: "mpfs/access-tskv.log"
+    timetail_url: "/timetail?pattern=disk_mpfs_billing_buy_endpoint_status&type=java&log_ts="
+  Combainer:
+    MINIMUM_PERIOD: 60
+aggregate:
+  data:
+    endpoints.billing_buy.status:
+      type: "custom"
+      class: "Multimetrics"
+      factor: 1000
+
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+---
+name: disk_mpfs-billing_buy_status_monitoring
+parsing:
+  groups: [disk_mpfs]
+  metahost: mpfs.disk.yandex.net
+  DataFetcher:
+    timetail_url: "/exec_pattern?pattern=disk_mpfs_billing_buy_endpoint_status_hourly&timeout=300"
+  Combainer:
+    MINIMUM_PERIOD: 60
+
+aggregate:
+  data:
+    status_count_hourly:
+      type: "custom"
+      class: "Multimetrics"
+      rps: no
+  senders:
+    juggler_mpfs_billing_buy_endpoint_status_hourly: &juggler-conf
+      type: juggler
+      namespace: disk-devops
+      config:
+        type: metahost
+      Host: "disk_mpfs_devops"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-java-mntr
+                - shirankov
+                - akinfold
+                - kis8ya
+                - sanya2013
+                - yak-dmitriy
+                - friendlyevil
+                - c4et4uk
+                - derovi
+      Aggregator: logic_or
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      flaps: { stable_time: 120, critical_time: 180 }
+      checkname: billing_buy_endpoint_status_hourly_failed
+      description: billing_buy_endpoint_status_hourly_failed
+      CRIT:
+        - "${status_count_hourly}['non_2xx']>5"
+
+---
+name: disk_mpfs-billing_buy_nginx_timings
+parsing:
+  groups: [disk_mpfs]
+  DataFetcher:
+    logname: "nginx/mpfs/tskv.log"
+    timetail_url: "/timetail?pattern=disk_mpfs_billing_buy_endpoint_nginx_timings&type=tskv&log_ts="
+aggregate:
+  data:
+    endpoints.billing_buy.nginx.timings:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+      perHost: YES
+  senders:
+    graphite:
+      type: graphite
+      cluster: "media.disk"

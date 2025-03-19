@@ -1,0 +1,46 @@
+- hosts: localhost
+  gather_facts: False
+  vars:
+    host: weather-prod-gridapi
+    type: production
+    host_tags:
+      - prod
+
+  pre_tasks:
+    - juggler_facts: jserver_api={{ jserver_search_api }}
+    - include_vars: "vars"
+  post_tasks:
+    - juggler_cleanup: #jcheck_mark={{ host }} # commented for clean up all checks made with playbook
+
+  tasks:
+    - include: tasks/yasm.yml
+      vars:
+        service_tags:
+          - specific
+        checks:
+          weather.alerts.prod.balancer.gridapi.status.2xx: 2xx
+          weather.alerts.prod.balancer.gridapi.status.4xx: 4xx
+          weather.alerts.prod.balancer.gridapi.status.404: 404
+          weather.alerts.prod.balancer.gridapi.status.5xx: 5xx
+          weather.alerts.prod.balancer.gridapi.timings.99_prc: 99_prc
+        night_percent: "0%"
+        notifications:
+          - template: golem
+          - template: on_status_change
+            golem_responsible: yes
+        custom_flap:
+          stable: 30
+          critical: 120
+    - include: tasks/yasm.yml
+      vars:
+        service_tags:
+          - specific
+        checks:
+          weather.alerts.prod.balancer.gridapi.diskusage.cwd.percentage: balancer_unispace_cwd
+          weather.alerts.prod.balancer.gridapi.diskusage.root.percentage: balancer_unispace_root
+          weather.alerts.prod.balancer.gridapi.diskusage./state.percentage: balancer_unispace_state
+          weather.alerts.prod.balancer.gridapi.diskusage./logs.percentage: balancer_unispace_logs
+          weather.alerts.prod.gridapi.diskusage.cwd.percentage: unispace_cwd
+          weather.alerts.prod.gridapi.diskusage.root.percentage: unispace_root
+          weather.alerts.prod.gridapi.diskusage./gridapi_data.percentage: unispace_gridapi_data
+          weather.alerts.prod.gridapi.diskusage./logs.percentage: unispace_logs

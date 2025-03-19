@@ -1,0 +1,69 @@
+#!/bin/bash
+
+cpu="$(mawk -F: '
+/^model na/{a=$2;gsub(/ |\\t|\([^)]+\)| 0 |CPU|Processor|Intel/,y,a);x[a]++}
+END{printf "%d×%s",x[a],a}
+' /proc/cpuinfo)"
+
+mem="$(free -g | mawk '/Mem:/{print $2"G"}')"
+
+vendor="$(sudo dmidecode -t 2 |& mawk '/Prod[^N]+Name/{print $3}')"
+
+disks="$(mawk '{
+    szf=$0"/size"
+    getline size < szf
+    rtf=$0"/queue/rotational"
+    getline rotational < rtf
+
+    type="s"
+    if (rotational) {
+        type="h"
+    }
+    if (int(s=size/1953e3)) x[sprintf("%s×%dG", type, s)]++
+}
+END{
+  for(k in x){
+      printf i"%d%s", x[k], k
+      i=", "
+  }
+}' < <(echo /sys/block/[vs]d* | tr ' ' '\n'))"
+
+VIRT="lxc"
+LXC_COLOR="[31m"
+LXC_BINARY=lxctl
+if pgrep -x lxd &>/dev/null; then
+    VIRT="lxd"
+    LXC_COLOR="[33m"
+    LXC_BINARY=/usr/bin/lxc
+    if test -f /snap/bin/lxc; then
+        LXC_COLOR="[32m"
+        LXC_BINARY=/snap/bin/lxc
+    fi
+fi
+vms="$({ if [[ "$LXC_BINARY" =~ lxctl ]] &>/dev/null; then
+    sudo $LXC_BINARY list -c name,status
+else
+    echo NAME
+    sudo $LXC_BINARY list --columns=ns --format=csv | tr ',' ' '
+fi; } |& mawk 'NR>1{
+        gsub("--",".",$1)
+        sub("[.]yandex.*","",$1)
+        if(/[rR][uU][nN][nN][iI][nN]/){
+            $1="\e[1;32m"$1
+        } else {
+            $1="\e[31m"$1
+        }
+        printf $1"\e[0m "
+    }')"
+
+lp() {
+    local size="$1" msg="$2"
+    local padding=$((size - ${#msg}))
+    if ((padding > 0)); then
+        msg="$(printf "%${padding}s" "")""$msg"
+    fi
+    echo "$msg"
+}
+hostname=$(hostname | cut -d. -f1)
+#printf "%-25s %-4s %-12s %-24s %-30s %-s\n" $cpu_mem "$vendor" "$disks" "$vms"
+echo -e "$hostname:\e$LXC_COLOR$VIRT \e[93m$cpu  \e[95;1m $(lp 4 "$mem")\e[36;1m $(lp 11 "$vendor")\e[0;1m $(lp 26 "$disks")\e[0m $vms\e[0m"

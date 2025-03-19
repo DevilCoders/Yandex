@@ -1,0 +1,19 @@
+OWNER(g:music-sre)
+
+RECURSE(
+    awacs_stage_inserter
+    yaconfig
+    downtimer
+    combaine
+    solomon-mr
+    lazy_trim
+    pingdom
+    zk
+    mongo_grants
+    media-graphite-sender
+    yandex-media-tskv-parser
+    ftp2s3
+    yandex_salt_components
+    python_netconfig
+    yandex-media-jdowntime
+)

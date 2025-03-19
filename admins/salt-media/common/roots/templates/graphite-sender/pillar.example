@@ -1,0 +1,54 @@
+# vim: ft=yaml
+# pillars are optional, see default config in map.jinja
+
+# example settings
+graphite-sender:
+    graphite:
+        server:
+            - localhost:2024
+        # кол-во переподключений которые должны уложиться в send_interval
+        # connection timeout рассчитывается так send_interval / max_reconnect
+        # если подключиться не удается, пишем данные да диск
+        max_reconnect: 3
+        # минимальное и максимальное время подключения, если max_reconnect
+        # не укладывается в send_interval то беруться эти значения
+        min_conn_time_ms: 300
+        max_conn_time_ms: 2000
+    sender:
+        # incomming sender port
+        # исторически тут 42000 но это плохой порт, потому-что любое приложение
+        # при отправке данных может занять этот порт.
+        # Поэтому формула приносит net.ipv4.ip_local_reserved_ports += 42000
+        port: 42000
+        # by default log to stderr
+        logfile: "/dev/stderr"
+        loglevel: "debug"
+        # disk cache, save on send errors
+        queue_dir: "/var/spool/graphite-sender"
+        # drop disk cache after queue_timeout
+        queue_timeout: 3h
+        # Max num. of metrics per send_interval
+        # metrics above this value will be delayed
+        max_metrics: 1000
+        # Multiple of max_metrics to send later (in mem cache)
+        # this is max_metrics * delayed_max_metrics_factor len cache
+        # incomming metrics above this value will be dropped
+        delayed_max_metrics_factor: 10
+        # Interval between attempts to send data to graphite
+        send_interval: 1m
+        # cache_speedup на сколько поделить send_interval чтобы получить
+        # send_interval с которым отправлять метрики с диска
+        # другими словами, для воркера отправляющего дисковый кэш в
+        # графит сендер, который стал доступен send_interval расчитывается так
+        # send_interval = send_interval / cache_speedup
+        cache_speedup: 2
+    status: # внутренняя статистика
+        # reset monitoring stats after period,
+        # will be made only if critical values not changed in the past period
+        period: 30m
+        # с какой гранулярностью писать самодиагностику
+        interval: 1m
+        # monitoring http endpoint
+        # /stats - internal sender statistics
+        # /status - monitoring status
+        port: 8082

@@ -1,0 +1,55 @@
+{%- for name, client in bacula.clients.items() %}
+Job {
+  Name = {{ name }}
+  Client = {{ name }}
+  JobDefs = {{ client.get("jobdefs", "DefaultJob") }}
+  FileSet = {{ client.fileset }}
+{%- if client.get("run") %}
+  {% if client.run.get("before")%}RunBeforeJob = "{{ client.run.before }}"{% endif %}
+  {% if client.run.get("after") %}RunAfterJob  = "{{ client.run.after }}"{% endif %}
+{%- endif %}
+}
+{%- endfor %}
+
+Job {
+  Name = "RestoreFiles"
+  Type = Restore
+  Client = {{ grains["fqdn"] }}
+  FileSet = {{ bacula.clients[grains["fqdn"]].fileset }}
+  Storage = File
+  Pool = File
+  Messages = Standard
+  Where = {{ bacula.dirs.restore }}
+  Write Bootstrap = "{{ bacula.dirs.work }}/%n.bsr"
+}
+
+{#- Job {
+      Name = "BackupCatalog"
+      JobDefs = "DefaultJob"
+      Level = Full
+      FileSet="Catalog"
+      Schedule = "WeeklyCycleAfterBackup"
+      RunBeforeJob = "/etc/bacula/scripts/make_catalog_backup.pl MyCatalog"
+      RunAfterJob  = "/etc/bacula/scripts/delete_catalog_backup"
+      Priority = 11                   # run after main backup
+    } -#}
+
+{%- for name, jobdef in bacula.jobdefs.items() %}
+JobDefs {
+  Name = {{ name }}
+  Type = {{ jobdef.get("type", "Backup") }}
+  Level = {{ jobdef.get("level", "Full") }}
+  Client = {{ jobdef.get("name", grains["fqdn"]) }}
+{%- if jobdef.get("fileset") %}
+  FileSet = {{ jobdef.fileset }}
+{%- endif %}
+{%- if jobdef.get("schedule") %}
+  Schedule = {{ jobdef.schedule }}
+{%- endif %}
+  Storage = File
+  Messages = Standard
+  Pool = File
+  Priority = 10
+  Write Bootstrap = "{{ bacula.dirs.work }}/%c.bsr"
+}
+{%- endfor %}

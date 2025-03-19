@@ -1,0 +1,36 @@
+php=/usr/local/bin/php2loggiver.pl |grep -v awaps_err
+
+php-levels=awk {' print $4 '} | sort  | uniq -c | egrep 'kinopoisk_db|kinopoisk_ext|kinopoisk_main' | awk '{ print $2" "$1 }' | sed 's/://g'
+
+mail_sent=grep "status=sent (250.*Ok" |wc -l |awk '{print "mail_ok " $1}'
+
+nginx_tskv=tskv  -h "(.kinopoisk.ru|bk.kp.yandex.net)" --timings-code-filter ^2 -y -s -t req -z
+
+film_votes=tskv -r '/film/[-a-zA-Z0-9]+/votes/*'  -s -t req,up
+
+php_optimings=/usr/local/bin/services_latency.py
+
+nginx_back_handles=tskv -r '/(name|film|s|afisha|user|top|lists)/*' -s -t req,up -x -z
+### /var/log/nginx/awaps-access.log
+awaps_nginx_log=tskv -s -t req,up --timings-code-filter ^2 -z
+
+### /var/log/nginx/laas-access.log
+laas_nginx_log=tskv -s -t req,up --timings-code-filter ^2 -z
+
+### /var/log/nginx/music-api-access.log
+musicapi_nginx_log=tskv -s -t req,up --timings-code-filter ^2 -z
+
+### /var/log/php/php-hs.log
+hs_error=awk '{ sub(":","",$4); count[$4]++ }END{ for (x in count) print x, count[x]}'
+
+### CADMIN-7068
+internal-api-media=grep 'kp-php-internal-api.kp.yandex.net' | sed -r 's|/([0-9]+)/|/Id/|g' | tskv -s -r '^/[^?&%]+' -x -t up,req -z
+
+### /var/log/nginx/kp1-api-internal-access.log
+kp1_api_internal_nginx_log=tskv -s -t req,up --timings-code-filter ^2 -z
+
+### CADMIN-8990
+upload-s3=perl -ne 'chomp; %F = map { split("=", $_, 2) } grep { /^\S+=/ } split(/\t/); $S{$F{"level"}}++; } { for (keys %S) { printf "status.%s %d\n", $_, $S{$_} }'
+
+### CADMIN-9060
+cleanweb=perl -ne 'if (/(CLEAN_WEB_\w+)/) { $c{$1}++; } } { for (keys %c) { printf "cleanweb.%s %d\n", $_, $c{$_}; }'

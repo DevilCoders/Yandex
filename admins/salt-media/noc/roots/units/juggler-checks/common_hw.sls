@@ -1,0 +1,12 @@
+include:
+  - units.jmonrun
+  - units.daemon-check
+  - units.juggler-checks.ipmi
+  - units.juggler-checks.reboot
+  - units.juggler-checks.buggy_nic
+  - units.juggler-checks.grub
+  - units.juggler-checks.hw-errs
+  - units.juggler-checks.hw-watcher
+  - units.juggler-checks.ncq-enable
+  - units.juggler-checks.raid
+  - units.juggler-checks.watchdog

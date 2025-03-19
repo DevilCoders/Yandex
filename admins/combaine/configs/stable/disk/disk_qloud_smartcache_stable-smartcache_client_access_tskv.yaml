@@ -1,0 +1,137 @@
+---
+name: disk_deploy_smartcache_stable-smartcache_client_access_tskv
+parsing:
+  groups: [disk_deploy_smartcache_stable]
+  metahost: smartcache.disk.yandex.net
+  DataFetcher:
+    logname: "nginx/access-tskv.log"
+    timetail_url: "/timetail?pattern=smartcache_nginx&type=tskv&log_ts="
+aggregate:
+  data:
+    smartcache_nginx:
+      type: "custom"
+      class: "Multimetrics"
+      factor: 1000
+
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+    juggler_smartcache_client_status_5xx: &juggler-conf
+      type: juggler
+      namespace: disk
+      host: "smartcache.disk.yandex.net"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - ignition
+      Aggregator: logic_or
+      checkname: smartcache-client_5xx
+      description: smartcache-client_5xx
+      flaps: { stable_time: 120, critical_time: 400 }
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      CRIT: [" ${smartcache_nginx}['5xx'] > 3.5 "]
+      tags:
+        - production
+
+    juggler_smartcache_client_status_4xx:
+      << : *juggler-conf
+      checkname: smartcache-client_4xx
+      description: smartcache-client_4xx
+      WARN: [" ${smartcache_nginx}['4xx'] > 5 "]
+      CRIT: [" ${smartcache_nginx}['4xx'] > 10 "]
+
+
+    juggler_smartcache_client_timings_95perc:
+      << : *juggler-conf
+      checkname: smartcache-client_timings_95perc
+      description: smartcache-client_timings_95perc
+      CRIT: [" ${smartcache_nginx}['request_timings'][4] > 8000" ]
+
+    juggler_valid_traffic:
+      << : *juggler-conf
+      checkname: valid_traffic
+      description: valid_traffic
+      CRIT: [" ${smartcache_nginx}['2xx'] <= 3 "]
+      config:
+          type: metahost
+
+    juggler_low_traffic:
+      <<: *juggler-conf
+      checkname: low_traffic
+      description: low_traffic
+      config:
+          type: metahost
+      variables:
+        trigger_n5_d20: "iftimeofday(22, 10, 5, 20)"
+      CRIT: [" ${smartcache_nginx}['2xx'] < trigger_n5_d20 "]
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        unreach_checks: [":valid_traffic"]
+
+---
+name: disk_deploy_smartcache_stable-smartcache_client_access_tskv_by_handle
+parsing:
+  groups: [disk_deploy_smartcache_stable]
+  metahost: smartcache.disk.yandex.net
+  DataFetcher:
+    logname: "nginx/access-tskv.log"
+    timetail_url: "/timetail?pattern=smartcache_nginx_by_handle&type=tskv&log_ts="
+aggregate:
+  data:
+    smartcache_nginx_by_handle:
+      type: "custom"
+      class: "Multimetrics"
+      factor: 1000
+
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+    juggler_timings_deltas-list: &juggler-conf
+      type: juggler
+      namespace: disk
+      Host: "smartcache.disk.yandex.net"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - ignition
+      Aggregator: logic_or
+      checkname: smartcache-client_timings_deltas-list
+      description: smartcache-client_timings_deltas-list_95_prc
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      CRIT: [" ${smartcache_nginx_by_handle}['handles.smartcache.smartcache-deltas-list.request_timings'][4] > 5000 "]
+      tags:
+        - production
+
+    juggler_timings_smartcache-snapshot:
+      << : *juggler-conf
+      checkname: smartcache-client_timings_snapshot
+      description: smartcache-client_timings_snapshot
+      CRIT: [" ${smartcache_nginx_by_handle}['handles.smartcache.smartcache-snapshot.request_timings'][4] > 1500 "]
+
+    juggler_timings_deltas-list_90_prc:
+      << : *juggler-conf
+      checkname: smartcache-client_timings_deltas-list_90
+      description: smartcache-client_timings_deltas-list_90_prc
+      CRIT: [" ${smartcache_nginx_by_handle}['handles.smartcache.smartcache-deltas-list.request_timings'][1] > 800 "]

@@ -1,0 +1,31 @@
+storages:
+  - name: metrics_storage
+    plugin: fs
+    config:
+      directory: /var/lib/yandex/unified_agent/storage/metrics
+      max_partition_size: 500mb
+
+routes:
+{%- for service in ["GNMI", "huawei"] %}
+  - input:
+      plugin: metrics_pull
+      config:
+        url: http://localhost:16312/metrics/{{ service }}
+        project: grad
+        service: {{ service }}
+        poll_period: 15s
+        metric_name_label: sensor
+    channel:
+      channel_ref:
+        name: solomon_output
+{%- endfor %}
+channels:
+  - name: solomon_output
+    channel:
+      pipe:
+        - storage_ref:
+            name: metrics_storage
+      output:
+        plugin: metrics_pull
+        config:
+          port: 11003

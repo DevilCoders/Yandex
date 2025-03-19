@@ -1,0 +1,56 @@
+HTTPPort: 12345
+logging:
+  level: info
+pprof: true
+invapi:
+  oauth: "{{ pillar['sec']['invapi_token'] }}"
+  url: "https://ro.racktables.yandex-team.ru/api"
+logbroker_reader:
+  database: "/Root"
+  oauth_token: "{{pillar['sec']['logbroker_token']}}"
+  consumer: "/grad/data/metridat_aggregator"
+  topic:
+    - "/grad/data/network"
+    - "/noc/nocdev/syslog"
+
+logbroker_writer:
+  database: "/Root"
+  oauth_token: "{{pillar['sec']['logbroker_token']}}"
+  topic: "/grad/data/other"
+  endpoint: "logbroker.yandex.net"
+
+aggregators:
+  network_magistral:
+    type: mq
+    topics:
+      - "/grad/data/network@snmp_poller.network"
+      - "/grad/data/network@snmp_poller.network_fast"
+      - "/grad/data/network@comocutor_poller.network"
+      - "/grad/data/network@comocutor_poller.network_fast"
+      - "/grad/data/network@http_server.network"
+    args:
+      filter:
+        keys:
+          ifalias: /.*(peer|client|transit)%.*/
+      target: aggregator.network_magistral
+  tcam_error:
+    type: syslog
+    topics:
+      - "/noc/nocdev/syslog"
+    args:
+      message_filter: /.*HARDWARE-\d*-TCAM_ERROR.*/
+      sensor: tcam_error
+  bfd_count:
+    type: syslog
+    topics:
+      - "/noc/nocdev/syslog"
+    args:
+      message_filter: BFD session changed to Down
+      sensor: bfd_down_count
+  save_commit:
+    type: syslog
+    topics:
+      - "/noc/nocdev/syslog"
+    args:
+      message_filter: "/(%%01SHELL/5/CMDRECORD.*save.*|%SYS-5-CONFIG.*|%%01CONFIGURATION/6/hwcfgmaneventlog.*|^.*management.*SECURITY.*User.*commit)/"
+      webhook: "http://gfglister.yandex.net/syslog"

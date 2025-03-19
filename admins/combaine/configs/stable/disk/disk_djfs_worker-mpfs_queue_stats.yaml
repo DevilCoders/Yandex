@@ -1,0 +1,101 @@
+name: disk_djfs_worker-mpfs_queue_stats
+parsing:
+  groups: [disk_qloud_djfs_worker_stable]
+  metahost: djfs-worker.qloud.disk.yandex.net
+  DataFetcher:
+    logname: "yandex/disk/djfs-worker-default-tskv.log"
+    timetail_url: "/timetail?pattern=mpfs_queue_stats&type=java&timeout=55&log_ts="
+  Combainer:
+    MINIMUM_PERIOD: 55
+
+aggregate:
+  data:
+    mpfs_queue_stats:
+      type: "custom"
+      class: "Multimetrics"
+      rps: no
+      perHost: YES
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+    juggler_djfs_worker_task_total_failed:
+      type: juggler
+      namespace: disk-devops
+      Host: "djfs-worker.qloud.disk.yandex.net"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-java-mntr
+                - shirankov
+                - akinfold
+                - kis8ya
+                - sanya2013
+                - yak-dmitriy
+                - friendlyevil
+                - c4et4uk
+                - derovi
+      Aggregator: logic_or
+      checkname: djfs_worker_task_total_failed
+      description: djfs_worker_task_total_failed
+      aggregator_kwargs:
+        nodata_mode: force_crit
+      flaps: { stable_time: 120, critical_time: 180 }
+      CRIT: [" ${mpfs_queue_stats}['mpfs_count_aggr_task_status_total_fail'] > 120 "]
+      config:
+        type: metahost
+      tags:
+        - disk_djfs_worker
+        - production
+        - disk_critical
+
+    juggler_djfs_worker_task_total_failed_zbp:
+      type: juggler
+      namespace: disk-devops
+      Host: "djfs-worker.qloud.disk.yandex.net"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-java-mntr
+                - shirankov
+                - akinfold
+                - kis8ya
+                - sanya2013
+                - yak-dmitriy
+                - friendlyevil
+                - c4et4uk
+                - derovi
+      Aggregator: timed_more_than_limit_is_problem
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits:
+          - crit: 0
+            time_start: 10
+            time_end: 18
+            day_start: 1
+            day_end: 5
+          - crit: 146%
+            time_start: 19
+            time_end: 9
+            day_start: 1
+            day_end: 5
+          - crit: 146%
+            time_start: 0
+            time_end: 23
+            day_start: 6
+            day_end: 7
+      flaps: { stable_time: 120, critical_time: 180 }
+      checkname: djfs_worker_task_total_failed_zbp
+      description: djfs_worker_task_total_failed_zbp
+      CRIT: [" ${mpfs_queue_stats}['mpfs_count_aggr_task_status_total_fail'] > 0 "]
+      config:
+          type: metahost

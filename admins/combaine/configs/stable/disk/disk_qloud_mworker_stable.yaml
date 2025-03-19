@@ -1,0 +1,379 @@
+---
+name: disk_qloud_mworker_stable-mpfs_amqp
+parsing:
+  groups: [disk_qloud_mworker_stable]
+  metahost: disk_qloud_mworker_stable
+  DataFetcher:
+    logname: "mpfs/requests-tskv.log"
+    timetail_url: "/timetail?pattern=mpfs_amqp_timings&type=java&log_ts="
+aggregate:
+  data:
+    mpfs_amqp:
+      type: "custom"
+      class: "Multimetrics"
+      factor: 1000
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+
+---
+name: disk_qloud_mworker_stable-mpfs_billing_errors
+parsing:
+  groups: [disk_qloud_mworker_stable]
+  metahost: disk_qloud_mworker_devops_stable
+  DataFetcher:
+    type: http
+    port: 3132
+    uri: "/exec_pattern?timeout=60&pattern=mpfs_billing_errors"
+  Combainer:
+    MINIMUM_PERIOD: 55
+
+aggregate:
+  data:
+    mpfs_billing_errors:
+      type: "custom"
+      class: "Multimetrics"
+      rps: no
+
+  senders:
+
+    juggler_mworker_billing_errors_last_hour: &juggler-conf
+      type: juggler
+      namespace: disk-devops
+      Host: "disk_qloud_mworker_devops_stable"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-java-mntr
+                - shirankov
+                - akinfold
+                - kis8ya
+                - sanya2013
+                - yak-dmitriy
+                - friendlyevil
+                - c4et4uk
+                - derovi
+      Aggregator: logic_or
+      checkname: mworker_billing_errors_last_hour
+      description: mworker_billing_errors_last_hour
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      flaps: { stable_time: 800, critical_time: 1200 }
+      variables:
+        trigger_n1200_d1500: "iftimeofday(23, 7, 1200, 1500)"
+      CRIT: [" ${mpfs_billing_errors}['count_total'] >= trigger_n1200_d1500 "]
+
+
+---
+name: disk_qloud_mworker_stable-mpfs_error_exceptions
+parsing:
+  groups: [disk_qloud_mworker_stable]
+  metahost: disk_qloud_mworker_stable
+  DataFetcher:
+    logname: "mpfs/error-tskv.log"
+    timetail_url: "/timetail?pattern=mpfs_error_exceptions&type=java&log_ts="
+aggregate:
+  data:
+    mpfs_error_exceptions:
+      type: "custom"
+      class: "Multimetrics"
+      rps: no
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+---
+name: disk_qloud_mworker_stable-mpfs_hang_tasks_statistics
+parsing:
+  groups: [disk_qloud_mworker_stable]
+  metahost: disk_qloud_mworker_stable
+  DataFetcher:
+    type: http
+    port: 3132
+    uri: "/exec_pattern?timeout=300&pattern=mpfs_hang_tasks_statistics"
+  Combainer:
+    MINIMUM_PERIOD: 300
+
+aggregate:
+  data:
+    mpfs_hang_tasks_statistic:
+      type: "custom"
+      class: "Multimetrics"
+      rps: no
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+    juggler_mworker_task_total_hang: &juggler-conf-devops
+      type: juggler
+      namespace: disk-devops
+      Host: "disk_qloud_mworker_devops_stable"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-java-mntr
+                - shirankov
+                - akinfold
+                - kis8ya
+                - sanya2013
+                - yak-dmitriy
+                - friendlyevil
+                - c4et4uk
+                - derovi
+      Aggregator: logic_or
+      checkname: mworker_task_total_hang
+      description: mworker_task_total_hang
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      flaps: { stable_time: 120, critical_time: 180 }
+      CRIT: [" ${mpfs_hang_tasks_statistic}['hang_task_count_Total'] > 40 "]
+
+---
+name: disk_qloud_mworker_stable-mpfs_queue_stats
+parsing:
+  groups: [disk_qloud_mworker_stable]
+  metahost: disk_qloud_mworker_stable
+  DataFetcher:
+    logname: "mpfs/default-tskv.log"
+    timetail_url: "/timetail?pattern=mpfs_queue_stats&type=java&timeout=55&log_ts="
+  Combainer:
+    MINIMUM_PERIOD: 55
+
+
+
+aggregate:
+  data:
+    mpfs_queue_stats:
+      type: "custom"
+      class: "Multimetrics"
+      rps: no
+
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+    juggler_mworker_task_total_fail: &juggler-conf
+      type: juggler
+      namespace: disk
+      Host: "disk_qloud_mworker_stable"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - ignition
+      Aggregator: logic_or
+      checkname: mworker_task_total_failed
+      description: mworker_task_total_failed
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      flaps: { stable_time: 120, critical_time: 260 }
+      CRIT: [" (${mpfs_queue_stats}['mpfs_count_aggr_task_status_total_fail'] - ${mpfs_queue_stats}['mpfs_count_status_task_mpfs-core-job_handlers-push-handle_push_notification_fail']) >= 200 "]
+      tags:
+        - production
+        - disk_admin_critical
+
+    juggler_mworker_task_total_fail_devops: &juggler-conf-devops
+      type: juggler
+      namespace: disk-devops
+      Host: "disk_qloud_mworker_devops_stable"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-java-mntr
+                - shirankov
+                - akinfold
+                - kis8ya
+                - sanya2013
+                - yak-dmitriy
+                - friendlyevil
+                - c4et4uk
+                - derovi
+      Aggregator: logic_or
+      checkname: mworker_task_total_failed
+      description: mworker_task_total_failed
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      flaps: { stable_time: 120, critical_time: 180 }
+      CRIT: [" (${mpfs_queue_stats}['mpfs_count_aggr_task_status_total_fail'] - ${mpfs_queue_stats}['mpfs_count_status_task_mpfs-core-job_handlers-push-handle_push_notification_fail']) >= 200 "]
+
+    juggler_mworker_handle_push_notification_fail_devops:
+      << : *juggler-conf-devops
+      checkname: mworker_handle_push_notification_fail
+      description: mworker_handle_push_notification_fail
+      meta:
+        urls:
+          - title: Documentation
+            url: https://wiki.yandex-team.ru/disk/mpfs/meps/mep-025/#diskmworkerdevops/mworkerfail
+            type: wiki
+      CRIT: [" ${mpfs_queue_stats}['mpfs_count_status_task_mpfs-core-job_handlers-push-handle_push_notification_fail'] > 1000 "]
+
+
+    juggler_mworker_operation_total_failed_devops:
+      << : *juggler-conf-devops
+      checkname: mworker_operation_total_failed
+      description: mworker_operation_total_failed
+      CRIT: [" ${mpfs_queue_stats}['mpfs_count_status_task_mpfs-core-job_handlers-operation-handle_operation_fail'] > 150 "]
+
+
+    juggler_mworker_operation_bulk_failed_devops:
+      << : *juggler-conf-devops
+      checkname: mworker_operation_bulk_failed
+      description: mworker_operation_bulk_failed
+      CRIT: [" ${mpfs_queue_stats}['mpfs_count_status_opertype_bulk_fail'] > 5 "]
+
+
+    juggler_mworker_operation_copy_failed_devops:
+      << : *juggler-conf-devops
+      checkname: mworker_operation_copy_failed
+      description: mworker_operation_copy_failed
+      CRIT: [" ${mpfs_queue_stats}['mpfs_count_status_opertype_copy_fail'] > 5 "]
+
+
+    juggler_mworker_operation_move_failed_devops:
+      << : *juggler-conf-devops
+      checkname: mworker_operation_move_failed
+      description: mworker_operation_move_failed
+      CRIT: [" ${mpfs_queue_stats}['mpfs_count_status_opertype_move_fail'] > 10 "]
+
+
+    juggler_mworker_operation_office_failed_devops:
+      << : *juggler-conf-devops
+      checkname: mworker_operation_office_failed
+      description: mworker_operation_office_failed
+      CRIT: [" ${mpfs_queue_stats}['mpfs_count_status_opertype_office_fail'] > 10 "]
+
+
+    juggler_mworker_operation_social_failed_devops:
+      << : *juggler-conf-devops
+      checkname: mworker_operation_social_failed
+      description: mworker_operation_social_failed
+      CRIT: [" ${mpfs_queue_stats}['mpfs_count_status_opertype_social_fail'] > 10 "]
+
+    juggler_mworker_operation_remove_failed_devops:
+      << : *juggler-conf-devops
+      checkname: mworker_operation_remove_failed
+      description: mworker_operation_remove_failed
+      CRIT: [" ${mpfs_queue_stats}['mpfs_count_status_opertype_remove_fail'] > 15 "]
+
+    juggler_mworker_operation_trash_failed_devops:
+      << : *juggler-conf-devops
+      checkname: mworker_operation_trash_failed
+      description: mworker_operation_trash_failed
+      CRIT: [" ${mpfs_queue_stats}['mpfs_count_status_opertype_trash_fail'] > 120 "]
+
+    juggler_mworker_operation_lifetime_devops:
+      << : *juggler-conf-devops
+      checkname: mworker_operation_lifetime
+      description: mworker_operation_lifetime
+      CRIT: [" ${mpfs_queue_stats}['mpfs_count_processed_time_task_mpfs-core-job_handlers-operation-handle_operation']  > 200000 "]
+
+---
+name: disk_qloud_mworker_stable-mpfs_requests_http
+parsing:
+  groups: [disk_qloud_mworker_stable]
+  metahost: disk_qloud_mworker_stable
+  DataFetcher:
+    logname: "mpfs/requests-tskv.log"
+    timetail_url: "/timetail?pattern=mpfs_requests_http&timeout=60&type=java&log_ts="
+  Combainer:
+    MINIMUM_PERIOD: 55
+aggregate:
+  data:
+    mpfs_requests_http:
+      type: "custom"
+      class: "Multimetrics"
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+    juggler_mworker_req-mpfs-sharpei_disk_yandex_net_status_5xx_9xx:
+      type: juggler
+      namespace: disk
+      Host: "disk_qloud_mworker_stable"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - ignition
+      Aggregator: logic_or
+      checkname: mworker_req-mpfs-sharpei_disk_yandex_net_status_5xx_9xx
+      description: mworker_req-mpfs-sharpei_disk_yandex_net_status_5xx_9xx
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      flaps: { stable_time: 120, critical_time: 180 }
+      CRIT: [" (${mpfs_requests_http}['request_aggr_count_code_mpfs-sharpei_disk_yandex_net_5xx'] + ${mpfs_requests_http}['request_aggr_count_code_mpfs-sharpei_disk_yandex_net_9xx'])  > 100 "]
+      WARN: [" (${mpfs_requests_http}['request_aggr_count_code_mpfs-sharpei_disk_yandex_net_5xx'] + ${mpfs_requests_http}['request_aggr_count_code_mpfs-sharpei_disk_yandex_net_9xx'])  > 10 "]
+      tags:
+        - production
+
+---
+name: disk_qloud_mworker_stable-mpfs_requests_mongo
+parsing:
+  groups: [disk_qloud_mworker_stable]
+  metahost: disk_qloud_mworker_stable
+  DataFetcher:
+    logname: "mpfs/requests-tskv.log"
+    timetail_url: "/timetail?pattern=mpfs_requests_mongo&type=java&log_ts="
+aggregate:
+  data:
+    mpfs_requests_mongo:
+      type: "custom"
+      class: "Multimetrics"
+      factor: 1000
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+---
+name: disk_qloud_mworker_stable-mpfs_requests_postgres
+parsing:
+  groups: [disk_qloud_mworker_stable]
+  metahost: disk_qloud_mworker_stable
+  DataFetcher:
+    logname: "mpfs/requests-tskv.log"
+    timetail_url: "/timetail?pattern=mpfs_requests_postgres&type=java&log_ts="
+aggregate:
+  data:
+    mpfs_requests_postgres:
+      type: "custom"
+      class: "Multimetrics"
+      factor: 1000
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+

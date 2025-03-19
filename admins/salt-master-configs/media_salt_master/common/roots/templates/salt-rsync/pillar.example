@@ -1,0 +1,39 @@
+# Remove all comments before use it
+# Example for pillar if need to redefine default values
+# If master_group = <conductor group>: use hosts from there in hosts_allow rsyncd.conf and in salt_sync script
+# If master_group not defined, using "project ~ senv ~ '-salt'" via master_group by default
+# If master_group = False - not set hosts_allow in rsync share, not run salt_sync script
+salt_rsync:
+  lookup:
+    senv: salt['grains.get']('yandex-environment', 'base')
+    project: salt['grains.get']('conductor:project').encode('utf8')
+    package: rsync
+    service: rsync
+    config: 'salt://templates/salt-rsync/files/etc/rsyncd.conf.tmpl'
+    default_config: 'salt://templates/salt-rsync/files/etc/default/rsync'
+    logrotate: 'salt://templates/salt-rsync/files/etc/logrotate.d/rsyncd.tmpl'
+    logrotate_name: '/etc/logrotate.d/rsyncd'
+    user: root
+    group: root
+    log: '/var/log/rsync/rsyncd.log'
+    loglevel: 256
+    master_group: "project ~ senv ~ '-salt'"
+    shares:
+      keys:
+      - 'read only': 'no'
+      - 'path': '/etc/salt/pki/master'
+      - 'comment': 'salt keys'
+      roots:
+      - 'read only': 'no'
+      - 'path': '/srv/salt/roots'
+      - 'comment': 'salt roots'
+      gpgkeys:
+      - 'read only': 'no'
+      - 'path': '/etc/salt/gpgkeys'
+      - 'comment': 'salt gpg keys'
+    sync_script: 'salt://templates/salt-rsync/files/usr/bin/salt_sync.tmpl'
+    sync_log: '/var/log/salt/backup.log'
+    sync_logrotate: 'salt://templates/salt-rsync/files/etc/logrotate.d/salt_sync.tmpl'
+    sync_logrotate_name: '/etc/logrotate.d/salt_sync'
+    sync_cron: 'salt://templates/salt-rsync/files/etc/cron.d/salt_sync.tmpl'
+    sync_cron_name: '/etc/cron.d/salt_sync'

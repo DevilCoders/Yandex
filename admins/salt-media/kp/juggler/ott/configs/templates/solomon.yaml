@@ -1,0 +1,37 @@
+host: {{ host|default(group|replace("CGROUP%", "")) }}
+namespace: ott
+tags: {{_context.macro.add_env_tags_by_group(group, and_add=["prod"])}}
+ttl: 600
+refresh_time: 300
+aggregator: timed_more_than_limit_is_problem
+aggregator_kwargs:
+    nodata_mode: force_ok
+    limits:
+{% if 'stable' in tags %}
+        - {day_start: 1, day_end: 5, time_start: 11, time_end: 19, warn: 0, crit: 0}
+        - {day_start: 6, day_end: 7, time_start: 11, time_end: 19, warn: 0, crit: 0}
+        - {day_start: 1, day_end: 7, time_start: 20, time_end: 10, warn: 0, crit: 0}
+{% else %}
+        - {day_start: 1, day_end: 5, time_start: 11, time_end: 19, warn: 0, crit:  35%}
+        - {day_start: 6, day_end: 7, time_start: 11, time_end: 19, warn: 0, crit: 101%}
+        - {day_start: 1, day_end: 7, time_start: 20, time_end: 10, warn: 0, crit: 101%}
+{% endif %}
+
+flaps:
+  stable: 300
+  critical: 1500
+  boost: 0
+
+notifications:
+  - template_name: phone_escalation
+    template_kwargs:
+      repeat: 2
+      delay: 900
+      logins:
+        - '@svc_sre_kinopoiskotttv:sre_kptvott'
+        - etruntaev
+        - coldmind
+        - gibzer
+        - sergeyv
+        - vyacheslav
+      on_success_next_call_delay: 300

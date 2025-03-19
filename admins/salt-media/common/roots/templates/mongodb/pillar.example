@@ -1,0 +1,106 @@
+# для replicaset нужно подключить правильные стейты
+# По умолчанию имя репликасета возмется из группы
+# логика как в пакете yandex-conf-comm-mongodb
+
+# Если нужна какая-то особенная логика, можно написать свои
+# кастомные grains положить их в <project>/roots/_grains/<grainname>.py
+# этот grain должен определять pillar mongodb.replSet
+
+
+# все pillar с их дефолтными значениями
+mongodb:
+  ulimit_n: 65536 # ulimit для стоковой версии монги. Для нашей сборки - не используется.
+  stock: False # для включения стоковой версии монги.
+  keyFile: False # для включения авторизации указать путь до ключа (пример: /etc/mongo.key)
+  keyFilePillar: cluster_yav_secrets:keyFilePillar # Приносим mongo.key через секретницу
+  mongoMonitorPillar: cluster_yav_secrets:mongoMonitorPillar # Приносим mongo-monitor.conf через секретницу
+  keyFile_nomanage: False # Если True - солт не управляет выкладкой самого файла с ключем, мы его раскладываем другими способами
+  enable_daytime: True # выкатываем конфиги для daytime и xinetd по умолчанию.
+  cluster: <some_conductor_group> # кластерно-зависимые файлы ищуется в roots/files/{{cluster}}
+  managed-database: False
+  mongo-checks-lock-on-primary-only: False
+  mongorcPillar: cluster_yav_secrets:mongorcPillar # Приносим .mongorc.js через секретницу
+  mongod:
+    dbpath:         /opt/mongodb
+    port:           27018
+    replSet:  # формируется из кастомных grains или из grain conductor:group (можно переопределить тут). Если выставлен в False - replSet параметр исключается из конфига (standalone)
+    slowms:         300
+    syncdelay:      60
+    storageEngine:  False
+  mongodbcfg:
+    # boolean или имя репликасета, если этот параметр включен, то на монгосах
+    # в pillar нужно указвать первый конфиг сервер примерно так (в начале replSet конфиг серверов)
+    #  cfg-dbs:
+    #       # now replset for config servers is only indicated as shown below
+    #       - music-test-mongo-baz-mongodbcfg/mcs1-baz.mt.yandex.net:27019
+    #       - mcs2-baz.mt.yandex.net:27019
+    #       - mcs3-baz.mt.yandex.net:27019
+    replSet: False # указать True или имя репликасета для конфиг серверов
+  mongos:
+    cfg-dbs: [] # вписать список конфиг серверов c портами (или положить свой mongos.conf в root/files/{{cluster}}/etc )
+    watchdog: False # если True - добавляет cron task (/etc/cron.d/wd-mongos)  для вотчдога монгоса (/usr/bin/wd-mongos.sh), если False - удаляет cron task
+  exec-files:
+    - /usr/bin/mongodb-check-recovery
+    - /usr/bin/mongodb-check-rs
+    - /usr/bin/mongodb-check-health
+    - /usr/bin/mongodb-check-pool
+    - /usr/bin/mongodb-check-alive
+    - /usr/lib/yandex-graphite-checks/enabled/mongodb.py
+    - /usr/bin/safe-rsync.sh
+    - /usr/lib/mongodb_health/mongostate.py
+    - /usr/bin/mongodb-refill-from-hidden-check.sh
+  logrotate-files:  # можно выставить в False, тогда логротейты притаскиваться не будут и ванильные логротейты удаляться не будут
+    - /etc/logrotate.d/mongo.conf
+  common-files:
+    - /etc/init/mongodb.conf
+    - /usr/lib/mongodb_health/basecheck.py
+    - /usr/lib/mongodb_health/__init__.py
+    - /usr/lib/mongodb_health/disk_usage.py
+    - /usr/lib/mongodb_health/indexes.py
+  monrun:
+    activeClients-total: <50
+    asserts-user: <10001
+    connections-available: >2000
+    connections-current: <14000
+    disk-read: <50
+    disk-write: <50
+    flush-average-ms: <1500
+    fragmentation: <1.4
+    indexes-miss-ratio: =0
+    indexes-to-memory-ratio: <0.7
+    lock-on-primary-only: False
+    master-present: >0
+    read-queue: <50
+    replica-lag-common: 60
+    replica-lag-hidden: 4000
+    resident-to-memory-ratio: <0.7
+    rs-indexes-consistency: __all__
+    uptime: >300
+    write-queue: <50
+    rs_secondary_alive_count: 1
+    rs_secondary_fresh_count: 1
+    rs_secondary_fresh_lag: 15
+    mongodb_restore_timedelta: 129600 # secs, 129600 == 36 hours
+  grants-sources:
+    - mongo/files/mongo_grants_config
+    - mongo/grants/files/mongo_grants_config
+  grants-pillar: cluster_yav_secrets:mongo_grants
+  restore:
+    config: {}
+    schedule: False
+    monitor: False
+  rsyncd_secrets: "superstrong_rsync_password" # Если выставить (например, привозить из yav) - будет использоваться вместо файлов
+  index_usage:
+    email:
+      src: mongodb_index_usage@{{ salt['grains.get']('nodename') }}
+      dst: {{ salt['grains.get']('conductor:project_info:mailto', '') }}
+      subject: {{ salt['grains.get']('conductor:group') }} not effective indexes
+    schedule: '30 01 * * 1'
+    config:
+      thresholds:
+        ops: 0
+        mindays: 7
+        size: 10 # MB
+      filters:
+        local: False
+        admin: False

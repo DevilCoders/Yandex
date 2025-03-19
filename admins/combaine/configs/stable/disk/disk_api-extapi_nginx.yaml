@@ -1,0 +1,147 @@
+parsing:
+  groups: [disk_api]
+  metahost: cloud-api.yandex.net
+  DataFetcher:
+    timetail_port: 3333
+    logname: "nginx/access-tskv.log"
+    timetail_url: "/timetail?pattern=extapi_nginx&type=tskv&log_ts="
+aggregate:
+  data:
+    extapi_nginx:
+      type: "custom"
+      class: "Multimetrics"
+      values: [75, 90, 93, 94, 95, 96, 97, 98, 99, 99.5, 99.8, 99.9]
+      factor: 1000
+      perHost: YES
+
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+      Fields: ["75_prc", "90_prc", "93_prc", "94_prc", "95_prc", "96_prc", "97_prc", "98_prc", "99_prc", "99_5_prc", "99_8_prc", "99_9_prc"]
+
+    juggler_mpfs_nginx_status_507:  &juggler-conf
+      type: juggler
+      namespace: disk
+      Host: "cloud-api.yandex.net"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - ignition
+      Aggregator: logic_or
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      flaps: { stable_time: 120, critical_time: 400 }
+      config:
+          type: metahost
+      checkname: mpfs_nginx_status_507
+      description: mpfs_nginx_status_507
+      CRIT: [" ${extapi_nginx}['507'] > 500 "]
+      tags:
+        - disk_api
+        - production
+
+    juggler_valid_traffic:
+      <<: *juggler-conf
+      checkname: valid_traffic
+      description: valid_traffic
+      CRIT: [" ${extapi_nginx}['2xx'] < 50 "]
+      tags:
+        - disk_api
+        - disk_admin_critical
+        - production
+
+    juggler_low_traffic:
+      <<: *juggler-conf
+      checkname: low_traffic
+      description: low_traffic
+      variables:
+        trigger_n2k_d7k: "iftimeofday(21, 10, 2000, 7000)"
+      CRIT: [" ${extapi_nginx}['2xx'] < trigger_n2k_d7k "]
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        unreach_checks: [":valid_traffic"]
+      tags:
+        - disk_api
+        - production
+
+    juggler_datacenter_valid_traffic:
+      << : *juggler-conf
+      checkname: datacenter_valid_traffic
+      description: datacenter_valid_traffic
+      config:
+          type: datacenter
+      CRIT: [" ${extapi_nginx}['2xx'] < 40 "]
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        unreach_checks: ["cloud-api.yandex.net:valid_traffic"]
+      tags:
+        - disk_api
+        - disk_admin_critical
+        - production
+
+    juggler_datacenter_low_traffic:
+      << : *juggler-conf
+      checkname: datacenter_low_traffic
+      description: datacenter_low_traffic
+      config:
+          type: datacenter
+      variables:
+        trigger_n500_d1500: "iftimeofday(21, 10, 500, 1500)"
+      CRIT: [" ${extapi_nginx}['2xx'] < trigger_n500_d1500 "]
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        unreach_checks: [":datacenter_valid_traffic"]
+
+    juggler_mpfs_nginx_status_5xx-507:
+      << : *juggler-conf
+      checkname: mpfs_nginx_status_5xx-507
+      description: mpfs_nginx_status_5xx-507
+      CRIT: [" (${extapi_nginx}['5xx'] - ${extapi_nginx}['507'] )  > 100 "]
+      tags:
+        - disk_api
+        - disk_admin_critical
+        - production
+
+    juggler_mpfs_nginx_status_4xx_except_429_and_404_and_403:
+      << : *juggler-conf
+      checkname: mpfs_nginx_status_4xx_except_429_and_404_and_403
+      description: mpfs_nginx_status_4xx_except_429_and_404_and_403
+      CRIT: [" ${extapi_nginx}['4xx'] - ${extapi_nginx}['429'] - ${extapi_nginx}['404'] - ${extapi_nginx}['403'] > 1900"]
+
+    juggler_mpfs_nginx_status_403:
+      << : *juggler-conf
+      checkname: mpfs_nginx_status_403
+      description: mpfs_nginx_status_403
+      CRIT: [" ${extapi_nginx}['403'] > 2000"]
+
+    juggler_mpfs_nginx_status_404:
+      << : *juggler-conf
+      checkname: mpfs_nginx_status_404
+      description: mpfs_nginx_status_404
+      CRIT: [" ${extapi_nginx}['404'] > 3500"]
+
+    juggler_mpfs_nginx_status_429:
+      << : *juggler-conf
+      checkname: mpfs_nginx_status_429
+      description: mpfs_nginx_status_429
+      CRIT: [" ${extapi_nginx}['429'] > 10000 "]
+
+    juggler_mpfs_nginx_timings_95perc:
+      << : *juggler-conf
+      checkname: mpfs_nginx_timings_95perc
+      description: mpfs_nginx_timings_95perc
+      CRIT: [" ${extapi_nginx}['request_timings'][5] > 650 "]
+      tags:
+        - disk_api
+        - disk_timings
+        - disk_admin_critical
+        - production

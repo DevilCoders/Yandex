@@ -1,0 +1,42 @@
+#!/usr/bin/env python2
+
+import os
+import yaml
+import difflib
+import requests
+
+MINION_CONF="/etc/salt/minion"
+MASTER_SIGN_PUB="/etc/salt/pki/minion/master_sign.pub"
+
+# if master_type: failover specified and uncommented
+# in main conf or in conf.d directory, check master_sign.pub.
+
+if not os.path.exists(MINION_CONF):
+    os._exit(0)
+
+with open(MINION_CONF) as conf_file:
+    conf = yaml.load(conf_file)
+
+if conf.get("master_type") != "failover":
+    # if failover not configured, nothing to do
+    os._exit(0)
+
+for master in conf["master"]:
+    try:
+        r = requests.get("http://{0}/master_sign.pub".format(master))
+        if r.status_code != requests.codes.ok:
+            continue
+
+        new_sign_pub_key = r.text
+
+        old_sign_pub_key = ""
+        if os.path.exists(MASTER_SIGN_PUB):
+            with open(MASTER_SIGN_PUB) as f:
+                old_sign_pub_key = f.read()
+
+        diff = ''.join(difflib.unified_diff(old_sign_pub_key, new_sign_pub_key))
+        if diff:
+            with open(MASTER_SIGN_PUB, 'wb') as f:
+                f.write(new_sign_pub_key)
+    except:
+        pass

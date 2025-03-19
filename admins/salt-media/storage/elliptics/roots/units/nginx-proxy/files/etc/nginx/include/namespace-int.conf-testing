@@ -1,0 +1,180 @@
+{%- set speed_iface = salt['cmd.shell']('source /usr/local/sbin/autodetect_active_eth; ethtool $default_route_iface |grep Speed |awk "{print $NF}"  |egrep "[0-9]+" -o') | int %}
+
+{%- if speed_iface > 0 %}
+     {%- set slb_weight = ((( speed_iface / 1000 ) + 40 ) / 5 ) %}
+     {%- if slb_weight <= 0 %}
+         {%- set slb_weight = 2 %}
+     {%- endif %}
+{%- endif %}
+
+    location ~ ^/get-(mds-loadtest|s3|ichwill|lego-site|taxi|backa|qabs|yastore-private|thoth|disk-worker|erudit|dataapi|va|icwill|photo-broken|photo-facemodels|bugbounty|qa|load-ammo|load-artefact|yandex-podcast|skygrid|antivir|direct-files|disk-smartcache|webmaster|signer|molly|bannerstorage|sandbox|glance|autotest|serp-lfs|direct-moderate-internal|signals|advisor|npm|metrics-serpsets|shuttilka|ydf-dev|corestore-staging|browser-infra|bot|ydf-private|comdep-analytics|kinopoisk|iex|contest|callrec|pogoda|gorynych|speechbase|skynet|avia|mpro-dataset|kinopoisk-archive|dist|mobsearchandroid|appmetrica-export|docker-registry|browser-api-spa2|jing|sentry|pypi|terminal|libra|wiki-evaluation|wiki-school|wiki-wiki|cern-ei|zbackup|geo-metrics|market-ichwill|tools_sp|maps_mrc|mds-dev|literacy|patterns|marketcrm|newhire|eine|browser-api-data|crypta|yamarec|tv|radioatushka|hurge|classif-archive|balance|toloka|rock-int|appchecker|review|yambo|market|wiki-connect|market-ios|alet|metrika-logs|parts|sentryaas|femida|tv-import|snapshot|gigaminer-ng|tfb|oebs_group_print|browser-tests|avia-suggest-history|browser-clouddoc|outdoorcams|vendors-offer-documents|rtmr|otrs|iss|devtools|oops|smeh|voicedata|oebs_dss_doc|passp-sec-backup|turbo-commodity-feed|modadvert|uzedo-test|payments|payments-modadvert|blogs|ps-cache|telephony-internal|qyp|tickets-private|telephony-external|mass-recruitment|pdd-ipa|avia-partner-raw-response|backpack|yamonetization|yadoc|yadoc-test|test-lrc-convert|test-lrc-convert-lepton|test-lrc-convert-lepton-external|oebs-lob|sologger|q-internal|mba-ariba-integration|music-qa-blobs|music-blobs|MDS-16977-gryb-a)/ {
+        if ($arg_content_type) {
+            more_set_headers -s '200 206' "Content-Type: $arg_content_type";
+        }
+        proxy_pass http://mediastorage-int;
+
+        set $unistat_request_type "get";
+        set $unistat_namespace $1;
+        log_by_lua_file /etc/nginx/include/metrics.lua;
+    }
+
+    location /get-tools_st/ {
+        if ($arg_content_type) {
+            more_set_headers -s '200 206' "Content-Type: $arg_content_type";
+        }
+        proxy_pass http://mediastorage-int;
+        header_filter_by_lua_block {
+            local args = ngx.req.get_uri_args()
+            local filename = ""
+            local escaped_fn = ngx.escape_uri(args.filename)
+            escaped_fn = ngx.re.gsub(escaped_fn, ",", "%2C")
+            filename ="filename*=UTF-8''" .. escaped_fn
+
+            if filename ~= nil and args.disposition ~= nil and args.disposition ~= "" then
+                ngx.header.Content_Disposition = args.disposition .. "; " .. filename
+            end
+
+            increment_metric("stat_monitor_dmmm", 1)
+        }
+
+        set $unistat_request_type "get";
+        set $unistat_namespace "tools_st";
+        log_by_lua_file /etc/nginx/include/metrics.lua;
+    }
+
+    location /get-distbuild/ {
+        if ($arg_content_type) {
+            more_set_headers -s '200 206' "Content-Type: $arg_content_type";
+        }
+        proxy_pass http://mediastorage-int;
+
+        set $unistat_request_type "get";
+        set $unistat_namespace "distbuild";
+        log_by_lua_file /etc/nginx/include/metrics.lua;
+    }
+
+    location /get-intmimca/ {
+        if ($arg_content_type) {
+            more_set_headers -s '200 206' "Content-Type: $arg_content_type";
+        }
+        proxy_pass http://mediastorage-int;
+
+        set $unistat_request_type "get";
+        set $unistat_namespace "intmimca";
+        log_by_lua_file /etc/nginx/include/metrics.lua;
+    }
+
+    # Сюда добавляем все namespace S3
+    # For S3 NS;
+    location ~ /get-s3-(dev)/ {
+        proxy_pass http://mediastorage;
+        proxy_request_buffering on;
+        proxy_read_timeout 7200s;
+        proxy_send_timeout 600s;
+        proxy_connect_timeout 300s;
+        proxy_buffer_size           64k;
+        proxy_buffers               16 32k;
+        proxy_redirect              off;
+
+        set $unistat_request_type "get";
+        set $unistat_namespace s3-$1;
+        log_by_lua_file /etc/nginx/include/metrics.lua;
+    }
+
+    # For videoplatform NS;
+    location ~ /(downloadinfo|get)-video-(user-backup|ya-awaps|migration-dev|edu-platform|kinopoisk-trailers|ya-holiday|ruscorpora|developers|autoru-office|ya-expert|ya-ukraine-official|ya-events|afisha-trailers|ya-maps|ya-fishki|ya-cinema|platon|podskazky|direct|adv-blog|shad-spb|ya-taxi|ya-money|ya-zno|market-review|sales-edu|ya-maps-help|histrf|ya-traffic|ya-adfox|an|ya-study-hr|disk|nda|news|ott|agencyevents|hosting|geo|videodirekt)/ {
+        proxy_pass http://mediastorage;
+
+        set $unistat_request_type $1;
+        set $unistat_namespace video-$2;
+        log_by_lua_file /etc/nginx/include/metrics.lua;
+    }
+
+    # Это тестинг для неймспейсов, которые в проде storage.yandex-team.ru
+    location ~ ^/get-(diapositiva)/ {
+            proxy_pass http://mediastorage-int;
+
+            set $unistat_request_type "get";
+            set $unistat_namespace $1;
+            log_by_lua_file /etc/nginx/include/metrics.lua;
+    }
+
+    #https://st.yandex-team.ru/MUSIC-10793#1489490854000
+    location /get-music/ {
+        proxy_pass http://mediastorage;
+
+        set $unistat_request_type "get";
+        set $unistat_namespace "music";
+        log_by_lua_file /etc/nginx/include/metrics.lua;
+    }
+
+    location ~ /(downloadinfo|get)-video/ {
+        proxy_pass http://mediastorage;
+
+        set $unistat_request_type $1;
+        set $unistat_namespace "video";
+        log_by_lua_file /etc/nginx/include/metrics.lua;
+    }
+
+    # location for torrent
+    location ~ /(downloadinfo|get)-(zen|arcadia-review|docker-registry|sandbox-tmp|sandbox|repo|devtools)/ {
+        proxy_pass http://mediastorage;
+
+        set $unistat_request_type $1;
+        set $unistat_namespace $2;
+        log_by_lua_file /etc/nginx/include/metrics.lua;
+    }
+
+    location /get/weather-embed/ {
+        rewrite ^/get/weather-embed(.*) /get-weather-embed$1 break;
+        proxy_pass http://mediastorage;
+
+        set $unistat_request_type "get";
+        set $unistat_namespace "weather-embed";
+        log_by_lua_file /etc/nginx/include/metrics.lua;
+    }
+
+    location ~ ^/statistics-([\w-]+) {
+        proxy_pass http://mavrodi/statistics/$1;
+        request_id_from_header on;
+        request_id_header_name X-Request-Id;
+
+        log_by_lua_block {
+            increment_metric("stat_system_dmmm", 1)
+        }
+    }
+
+    location /ping {
+        proxy_pass http://mediastorage;
+
+        more_set_headers -s '200' "RS-Weight: {{ slb_weight | int }}";
+
+        set $unistat_request_type "ping";
+        log_by_lua_file /etc/nginx/include/metrics.lua;
+    }
+
+    location /get-deritest/ {
+        proxy_pass http://mediastorage;
+
+        set $unistat_request_type "get";
+        set $unistat_namespace "deritest";
+        log_by_lua_file /etc/nginx/include/metrics.lua;
+    }
+
+    location /get-browser-tracing/ {
+        proxy_pass http://mediastorage;
+        more_set_headers -s '200 206 404 401 500' "Access-Control-Allow-Origin: *";
+
+        set $unistat_request_type "get";
+        set $unistat_namespace "browser-tracing";
+        log_by_lua_file /etc/nginx/include/metrics.lua;
+    }
+
+    location / {
+        return 410;
+
+        log_by_lua_block {
+            increment_metric("stat_system_dmmm", 1)
+        }
+
+    }

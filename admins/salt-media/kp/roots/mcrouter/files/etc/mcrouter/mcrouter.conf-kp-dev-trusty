@@ -1,0 +1,37 @@
+{%- set mport = salt['pillar.get']('memcached:port', 11211) -%}
+{%- set get_policy = salt['pillar.get']('memcached:mcrouter:get_policy', 'FailoverRoute') -%}
+
+{
+    "pools": {
+        "localhost": {
+            "servers": [
+                "[::1]:{{ mport }}"
+            ]
+        },
+        "localdc": {
+            "servers": [
+                "[::1]:{{ mport }}"
+            ]
+        },
+        "anotherdcs": {
+            "servers": [
+                "[::1]:{{ mport }}"
+            ]
+        },
+        "all": {
+            "servers": [
+                "[::1]:{{ mport }}",
+            ]
+        }
+    },
+    "route": {
+        "type": "OperationSelectorRoute",
+        "operation_policies": {
+            "get": {
+                "type": "{{ get_policy }}",
+                "children": [ "PoolRoute|localhost", "PoolRoute|localdc", "PoolRoute|anotherdcs" ]
+            }
+        },
+        "default_policy": "{{ salt['pillar.get']('memcached:mcrouter:default_policy', 'AllInitialRoute') }}|Pool|all"
+    }
+}

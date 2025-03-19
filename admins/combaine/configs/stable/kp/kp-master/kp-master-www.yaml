@@ -1,0 +1,104 @@
+---
+name: kp-master-www
+parsing:
+  groups: [kp-master]
+  DataFetcher:
+    logname: "nginx/access.log"
+    timetail_url: "/timetail?pattern=nginx_tskv&type=tskv&log_ts="
+  Combainer:
+    MINIMUM_PERIOD: 60
+aggregate:
+  data:
+    nginx:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+      perHost: YES
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.kp
+    juggler:
+      type: juggler
+      config:
+        type: metahost
+      Host: kp-master
+      notifications:
+          - template_name: phone_escalation
+            template_kwargs:
+                delay: 600
+                logins:
+                    - '@svc_sre_kinopoiskotttv:sre_kptvott'
+                    - etruntaev
+                    - coldmind
+                    - gibzer
+                    - sergeyv
+                    - vyacheslav
+      tags:
+        - kinopoisk
+        - master
+        - production
+        - specific
+      Aggregator: timed_more_than_limit_is_problem
+      checkname: 5xx
+      description: "nginx 5xx"
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{day_start: 1, day_end: 7, time_start: 0, time_end: 23, crit: 0}]
+      WARN: ["['nginx']['5xx']>5"]
+      CRIT: ["['nginx']['5xx']>10"]
+---
+name: kp-master-php-main-tinyproxy
+parsing:
+  groups: [kp-master]
+  DataFetcher:
+    logname: "php/php-main.log"
+    timetail_url: "/timetail?pattern=tinyproxy_not_200&type=java&log_ts="
+  Combainer:
+    MINIMUM_PERIOD: 60
+aggregate:
+  data:
+    php_main.tinyproxy:
+      type: custom
+      class: Multimetrics
+      perHost: YES
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.kp
+    http_codes:
+      type: juggler
+      plugin: picker
+      Host: "kp-master"
+      notifications:
+          - template_name: phone_escalation
+            template_kwargs:
+                delay: 600
+                logins:
+                    - '@svc_sre_kinopoiskotttv:sre_kptvott'
+                    - etruntaev
+                    - coldmind
+                    - gibzer
+                    - sergeyv
+                    - vyacheslav
+      Aggregator: timed_more_than_limit_is_problem
+      checkname: "tinyproxy_500"
+      description: "tinyproxy error"
+      ttl: 90
+      tags: ['kp']
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 2,time_end: 1,day_end: 7,day_start: 1}]
+      variables:
+        # с 19 до 8 утра первый порог (предпоследний параметр), в остальное время последний
+        night_limit_rps: "iftimeofday(19, 8, 10, 2)"  # MUSIC-15439#1511200358000
+      config:
+        history: 3
+        type: metahost
+        query: "^(([45][0-9x][0-9x]))$"
+        prefix: "tiny_"
+        limits:
+          "500": [0.2, "combainer. too many 500 status code. See /var/log/tinyproxy/tinyproxy.log"]
+          "404": [0.4, "combainer. too many 404 status code. See /var/log/tinyproxy/tinyproxy.log"]
+          "default": 10
+

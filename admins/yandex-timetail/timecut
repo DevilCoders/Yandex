@@ -1,0 +1,117 @@
+#! /usr/bin/perl
+
+use strict;
+use Date::Parse;
+use Time::Local;
+
+$SIG{'PIPE'} = "CATCH_PIPE";
+
+my $me = $0;
+
+my $logfile;
+my $timebegin = 0; # five minutes default
+my $timeend = time();
+
+my %types = (
+		'common', '(?:^|\s)\[([^\]]+)\]',
+		'java', '(\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d)',
+		'syslog', '(\w+\s+\d+\s+\d+:\d+:\d+)',
+		'lighttpd', ' - \[([^\]]+)\]',
+		'baida', '(\d+\/\w+\/\d{4}:\d\d:\d\d:\d\d\s[^\s]+)',
+                'squid', '^(\d+)\.',
+                'phantom', '^\d+\s+(\d+-\d+-\d+\s+\d+:\d+:\d+)',
+		'clck-error', '\tts=(\d+)\t',
+                'alertlog', '^([STMWF][uoehra][neduit].*\s+\d\d\d\d)$',
+                'statbox', '^\[(.+? \d\d:\d\d:\d\d)',
+	    );
+
+sub usage {
+  print STDERR "Usage: $me [-b <secs>] [-b <secs>] [-t <timestamp type>] <log file>\n";
+  print STDERR "\t-b - begin timecut (unix timestamp)\n";
+  print STDERR "\t-e - end timecut (unix timestamp)\n";
+  print STDERR "\t-t - Timestamp type (default: common)\n";
+  print STDERR "\t-r - Replace matched time with unixtime\n";
+  my $valid;
+  foreach (keys %types) {
+      $valid .= " $_";
+  }
+  exit 0;
+}
+
+my $type = 'common';
+my $replace_flag = 0;
+
+usage unless (scalar @ARGV);
+
+while (my $param = shift(@ARGV)) {
+    usage if ($param eq '-h' or $param eq '--help');
+    if ($param eq '-b') {
+	my $num = shift(@ARGV);
+        unless ($num =~ /\d+/) {
+	    print STDERR "Wrong number: $num\n";
+	    exit 2;
+	}
+	$timebegin = $num;
+        next;
+    }
+    if ($param eq '-e') {
+	my $num = shift(@ARGV);
+        unless ($num =~ /\d+/) {
+	    print STDERR "Wrong number: $num\n";
+	    exit 2;
+	}
+	$timeend = $num;
+        next;
+    }
+    if ($param eq '-t') {
+	my $str = shift(@ARGV);
+        unless ($types{$str}) {
+	    my $valid;
+	    foreach (keys %types) {
+		$valid .= " $_";
+	    }
+	    print STDERR "Wrong log type: $str\nValid types are:" . $valid . "\n";
+	    exit 2;
+	}
+	$type = $str;
+        next;
+    }
+    if ($param eq '-r') {
+    	$replace_flag = 1;
+	next;
+    }
+    if (not $param =~ /^-/ and not $logfile) {
+	$logfile = $param;
+	next;
+    }
+    usage;
+}
+
+usage unless ($logfile);
+
+sub line2time($) {
+    my ($line) = @_;
+    if ($line =~ m/$types{$type}/) {
+        my $time = $1;
+        chomp($time);
+        return $time if $time =~ /^\d{9,11}$/;
+        my $timelocal =  str2time($time);
+        return $timelocal;
+    } else {
+        return undef;
+    }
+}
+
+open (LOG, "cat $logfile |");
+while (my $line = <LOG>) {
+    my $timelocal = line2time($line);
+    if ( defined($timelocal) and ($timelocal >= $timebegin) and ($timelocal < $timeend)) {
+        if ( $replace_flag == 1) { 
+            $line =~ s/$types{$type}/$timelocal/;
+        }
+        print $line;
+    }
+}
+
+close (LOG);
+exit 0;

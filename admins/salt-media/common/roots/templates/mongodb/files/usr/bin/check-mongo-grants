@@ -1,0 +1,85 @@
+#!/bin/bash
+
+GRANTS_FILE=/var/cache/mongo-grants/mongo_grants_config
+MONGOS="/etc/mongos.conf"
+MONGOD="/etc/mongodb.conf"
+MONGO_GRANT=$(type -p mongo-grants)
+MONGO_BIN=$(type -p mongo)
+GRANT="${MONGO_GRANT} -l $GRANTS_FILE -u root"
+
+function apply_grants() {
+    # mongos
+    if test -e "$MONGOS"; then
+        if ! $GRANT --init -s &>/dev/null; then
+            $GRANT -s
+        fi
+    fi
+
+    # mongod
+    if test -e "$MONGOD"; then
+        if ! $GRANT --init -r &>/dev/null; then
+            $GRANT -r
+        fi
+    fi
+}
+
+function check_grants() {
+    if test -e "$MONGOS"; then
+        mongo --quiet --port 27017 -eval "
+        load('/root/.mongorc.js');
+        var db = db.getSiblingDB('admin')
+        var roles = db.getUser('admin');
+        if ( roles === null) {
+            quit(1)
+        }
+        quit(0);" || exit $?
+    fi
+
+    if test -e "$MONGOD"; then
+        mongo --quiet --port 27018 -eval "
+        load('/root/.mongorc.js');
+        var db = db.getSiblingDB('admin')
+        var master = rs.isMaster().ismaster;
+        if ( master ) {
+            var roles = db.getUser('admin');
+            if ( roles === null) {
+                quit(1)
+            }
+        };
+        // slave does not check grants
+        quit(0);" || exit $?
+    fi
+}
+
+function create_mongorc() {
+    $GRANT --rc
+}
+
+# check if mongo-grants tool is installed
+if test -z "$MONGO_GRANT"; then exit 1; fi
+
+# check if mongo binary is installed
+if test -z "$MONGO_BIN"; then exit 1; fi
+
+while getopts "gc" OPTIONS; do
+    case "$OPTIONS" in
+    g)
+        # grant
+        apply_grants
+        exit
+        ;;
+    c)
+        # check grants
+        create_mongorc
+        check_grants
+        exit
+        ;;
+    *)
+        echo "Unexpected args"
+        exit 1
+        ;;
+    esac
+done
+
+# no options were passed
+exit 1

@@ -1,0 +1,41 @@
+upstream tm_upstream {
+        server tm01h.otools.yandex.net max_fails=1 fail_timeout=10s;
+}
+upstream tm_upstream_ws {
+        server tm01h.otools.yandex.net:8080 max_fails=1 fail_timeout=10s;
+}
+
+server {
+        listen 80;
+        server_name   tm.yandex-team.ru timemachine.yandex-team.ru;
+        rewrite       ^ https://timemachine.yandex-team.ru$request_uri? permanent;
+}
+
+server {
+        listen 443;
+
+        server_name  tm.yandex-team.ru timemachine.yandex-team.ru;
+
+        location / {
+                proxy_pass       http://tm_upstream;
+                proxy_set_header Host      tm.yandex-team.ru;
+                proxy_set_header X-Real-IP $remote_addr;
+        }
+
+        location /socket.io {
+                proxy_pass      http://tm_upstream_ws;
+                proxy_http_version  1.1;
+                proxy_set_header    Host        tm.yandex-team.ru;
+                proxy_set_header    X-Real-IP   $remote_addr;
+                proxy_set_header    Upgrade     $http_upgrade;
+                proxy_set_header    Connection  "upgrade";
+        }
+}
+
+server {
+        listen 80;
+        listen 443;
+        
+        server_name tm;
+        rewrite ^(.*)$ https://timemachine.yandex-team.ru$1 permanent;
+}

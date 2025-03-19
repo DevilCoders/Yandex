@@ -1,0 +1,71 @@
+%define _builddir       .
+%define _sourcedir      .
+%define _specdir        .
+%define _rpmdir         .
+
+Name:           @package@
+Version:        @version@
+Release:        1%{?dist}
+Summary:        Yandex ZooKeeper package
+
+Group:          System Environment/Meta
+License:        Yandex License
+URL:            ssh://hg.yandex-team.ru/media/zookeeper-pkg
+Packager:       Sergey Vavinov <vavinov@yandex-team.ru>
+Distribution:   Red Hat Enterprise Linux
+BuildRoot:      %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
+BuildArch:      noarch
+
+BuildRequires:  java-1.6.0-sun-devel
+BuildRequires:  ant
+BuildRequires:  ant-apache-regexp
+BuildRequires:  git
+BuildRequires:  mercurial >= 1.7
+
+Requires:       java-1.6.0-sun-devel
+
+%description
+Yandex ZooKeeper package
+
+%build
+
+%install
+rm -rf $RPM_BUILD_ROOT
+../install-package.sh $RPM_BUILD_ROOT @dir@ @package@ @project@
+mkdir -p $RPM_BUILD_ROOT/etc/rc.d/init.d
+cp redhat.init $RPM_BUILD_ROOT/etc/rc.d/init.d/@package@
+mkdir -p $RPM_BUILD_ROOT/var/run/yandex/@dir@
+mkdir -p $RPM_BUILD_ROOT/var/log/yandex/@dir@
+mkdir -p $RPM_BUILD_ROOT/var/lib/yandex/@dir@
+
+%clean
+#rm -rf $RPM_BUILD_ROOT
+
+
+%files
+%defattr(-, root, root)
+/*
+%defattr(-, disk, disk)
+%dir /var/run/yandex/@dir@
+%dir /var/log/yandex/@dir@
+%dir /var/lib/yandex/@dir@
+
+%pre
+getent group @user@ >/dev/null || groupadd -r -g @user@
+getent passwd @user@ >/dev/null || useradd -r -g @user@ -d /var/run/yandex/@user@/ -s /sbin/nologin -c "Disk" disk
+exit 0
+
+%post
+@@@replace-whole-line-with-post-inst@@@
+if [ $1 -eq 1 ]; then
+    /sbin/service @package@ start
+fi
+exit 0
+
+%postun
+if [ $1 -eq 1 ]; then
+    /sbin/service @package@ restart
+fi
+exit 0
+
+%changelog

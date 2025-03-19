@@ -1,0 +1,48 @@
+parsing:
+  groups: [disk_deploy_mpfs_stable]
+  metahost: mpfs.deploy.disk.yandex.net
+  DataFetcher:
+    logname: "mpfs/default-tskv.log"
+    timetail_url: "/timetail?pattern=mpfs_billing_inapp_invalid_receipt&type=java&log_ts="
+
+aggregate:
+  data:
+    mpfs_nginx_by_handle:
+      type: "custom"
+      class: "Multimetrics"
+      factor: 1000
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+    juggler_mpfs_billing_inapp_invalid_receipt: &juggler-conf
+      type: juggler
+      namespace: disk-devops
+      Host: "mpfs.deploy.disk.yandex.net"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-java-mntr
+                - shirankov
+                - akinfold
+                - kis8ya
+                - sanya2013
+                - yak-dmitriy
+                - friendlyevil
+                - c4et4uk
+                - derovi
+      Aggregator: logic_or
+      checkname: billing_inapp_invalid_receipt
+      description: billing_inapp_invalid_receipt
+      config:
+          type: metahost
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      CRIT: [" ${invalid_receipt_count} > 0 "]
+      tags:
+        - production

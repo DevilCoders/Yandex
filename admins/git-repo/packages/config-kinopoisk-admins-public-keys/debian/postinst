@@ -1,0 +1,43 @@
+#!/bin/sh
+
+dir="/root/.ssh"
+
+ec() {
+#    echo "$@" >&2
+    "$@"
+}
+
+evale() {
+#    echo "$@" >&2
+    eval "$@"
+}
+
+case $1 in
+    configure)
+	#https://jira.yandex-team.ru/browse/HTADMIN-1134
+	echo '' > $dir/authorized_keys
+        ak=$dir/authorized_keys
+        
+	for i in `ls -1 $dir/authorized_keys-from-package* | sed -r "s/.*(authorized_keys-from-package.*)/\1/"`; do
+	
+	    cat $dir/$i | egrep -v '^ *(#|$)' | while read key; do
+                if test -e $ak && grep -q "$key" $ak; then
+                    keyu=$(echo $key | sed -r "s/.*= (.*)/\1/")
+		    echo "key $keyu is already installed"
+                    continue
+                fi
+                evale "echo $key >> $ak"
+            done
+	done
+        ec chmod 700 $dir
+        ec chmod 600 $dir/authorized_keys
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        ;;
+esac
+
+

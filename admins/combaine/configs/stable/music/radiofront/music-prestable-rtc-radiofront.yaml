@@ -1,0 +1,416 @@
+---
+name: rtc_prestable_music_radiofront_status_499
+parsing:
+  groups: [music_prestable_radiofront]
+  metahost: rtc-music-prestable-radiofront
+  DataFetcher:
+    timetail_url: "/timetail?pattern=499_more_500ms&type=tskv&log_ts="
+  HostFetcher:
+    type: "rtc"
+    geo: ["sas", "man", "vla"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+aggregate:
+  data:
+    rtc_radio.nginx499:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+      perHost: YES
+  senders:
+    solomon:
+        type: solomon
+        cluster: prestable
+        project: music
+        service: rtc_radio.nginx499
+    radio_ru_499_more_500ms: &juggler-conf
+      type: juggler
+      namespace: music.combaine
+      config:
+          type: metahost
+      Host: "radio.yandex.ru"
+      notifications:
+          - template_name: phone_escalation
+            template_kwargs:
+                delay: 900 # seconds
+                logins:
+                  - '@svc_muzfrontend:mfront'
+                  - svarog
+                  - morgunv
+                  - oleksii
+                  - msermakov
+                  - iv-morozovv
+                  - denis-grekov
+                  - fat32elena
+          - template_name: on_status_change
+            template_kwargs:
+                delay: 300 # seconds
+                status:
+                  - {from: OK, to: CRIT}
+                  - {from: WARN, to: CRIT}
+                method:
+                    - telegram
+                login:  [ya-musfront-monitoring]
+      Aggregator: timed_more_than_limit_is_problem
+      checkname: radio_yandex_ru_499_more_than_500ms
+      description: "Client Closed Request"
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits:
+            - {day_start: 1,day_end: 7,time_start: 10,time_end: 18,warn: 0,crit: 0%}
+            - {day_start: 1,day_end: 7,time_start: 19,time_end: 9,warn:  0,crit: 101%}
+      CRIT: ["${rtc_radio.nginx499}['radio_yandex_ru_499_more_than_500ms']>0.2"]
+    radio_by_499_more_500ms:
+      << : *juggler-conf
+      checkname: radio_yandex_by_499_more_than_500ms
+      description: "Client Closed Request"
+      CRIT: ["${rtc_radio.nginx499}['radio_yandex_by_499_more_than_500ms']>0.1"]
+    radio_kz_499_more_500ms:
+      << : *juggler-conf
+      checkname: radio_yandex_kz_499_more_than_500ms
+      description: "Client Closed Request"
+      CRIT: ["${rtc_radio.nginx499}['radio_yandex_kz_499_more_than_500ms']>0.1"]
+---
+name: rtc_prestable_music_radiofront_status
+parsing:
+  groups: [music_prestable_radiofront]
+  metahost: rtc-music-prestable-radiofront
+  DataFetcher:
+    timetail_url: "/timetail?pattern=radiofront-status&type=tskv&log_ts="
+  HostFetcher:
+    type: "rtc"
+    geo: ["sas", "man", "vla"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+aggregate:
+  data:
+    rtc_radio.nginx_status:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+      perHost: YES
+  senders:
+    solomon:
+      type: solomon
+      cluster: prestable
+      project: music
+      service: rtc_radio.nginx_status
+    http_codes:
+      type: juggler
+      namespace: music.combaine
+      plugin: picker
+      Host: "radio.yandex.ru"
+      notifications:
+          - template_name: phone_escalation
+            template_kwargs:
+                delay: 900 # seconds
+                logins:
+                  - '@svc_muzfrontend:mfront'
+                  - svarog
+                  - morgunv
+                  - oleksii
+                  - msermakov
+                  - iv-morozovv
+                  - denis-grekov
+                  - fat32elena
+          - template_name: on_status_change
+            template_kwargs:
+                delay: 300 # seconds
+                status:
+                  - {from: OK, to: CRIT}
+                  - {from: WARN, to: CRIT}
+                method:
+                    - telegram
+                login:  [ya-musfront-monitoring]
+      Aggregator: timed_more_than_limit_is_problem
+      checkname: 4xx
+      description: 4xx
+      ttl: 90
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 2,time_end: 1,day_end: 7,day_start: 1}]
+      config:
+        history: 5
+        type: metahost
+        prefix: "radio_"
+        query: "^(([45][0-9x][0-9x]))$"
+        limits:
+          # если имя проверки не соотвестует описанию (смотри описание query)
+          # то описание лимитов будет таким {limits: {"serviceName":{"desc": <limit>}}}
+          # где limit - это число. (это старый формат описания лимитов, и он не очень удобен)
+          # новый формат делает описание лимитов более плоским.
+          # limits: {<serviceName or desc>: <limit>}
+          # где <limit> может быть
+          # - простым числом (N)
+          # - списком из [<N or variable>, <description>]
+          # - диктом из {limit: <N or variable>, explain: <description>}
+          #
+          # !!!XXX!!! КОДЫ ТУТ НУЖНО ПЕРЕДАВАТЬ СТРОКАМИ,
+          # потому-что lua ищет в мапе строку с кодом
+          "400": [1, "(400) Bad Request"]
+          "403": {limit: {WARN: 1, CRIT: 2}, explain: "(403) Forbidden"}
+          "404": {limit: {WARN: 10, CRIT: 20}, explain: "(404) Not Found"}
+          "405": {limit: {WARN: 0.1, CRIT: 0.2}, explain: "(405) Method Not Allowed"}
+          "408": [0.5, "(408) Request Timeout CADMIN-5431"]
+          "429": {limit: {WARN: 10, CRIT: 50}, explain: "(429) CBB Blocked - Too Many Requests"}
+          "451": {limit: {WARN: 0.5, CRIT: 1}, explain: "(451) Unavailable For Legal Reasons"}
+          "499": {limit: {WARN: 5, CRIT: 10}, explain: "(499) Client Closed Request"}
+          "4xx": {limit: {WARN: 20, CRIT: 40}, explain: "4xx http errors"}
+
+          "500": [1, "(500) Internal Server Error"]
+          "502": {limit: {WARN: 0.2, CRIT: 1}, explain: "(502) Bad Gateway"}
+          "503": [0.1, "(503) Service Unavailable"]
+          "504": [0.1, "(504) Gateway Timeout"]
+          "524": {limit: {WARN: 0.4, CRIT: 0.6}, explain: "(524) Nodejs Client Timeout"}
+          "5xx": {limit: {WARN: 3, CRIT: 4}, explain: "5xx http errors"}
+          "default": 1
+    timings:
+      type: juggler
+      namespace: music.combaine
+      config:
+        history: 5
+        type: metahost
+      Host: "radio.yandex.ru"
+      notifications:
+         - template_name: phone_escalation
+           template_kwargs:
+               delay: 900 # seconds
+               logins:
+                  - '@svc_muzfrontend:mfront'
+                  - svarog
+                  - morgunv
+                  - oleksii
+                  - msermakov
+                  - iv-morozovv
+                  - denis-grekov
+                  - fat32elena
+         - template_name: on_status_change
+           template_kwargs:
+               delay: 300 # seconds
+               status:
+                 - {from: OK, to: CRIT}
+                 - {from: WARN, to: CRIT}
+               method:
+                   - telegram
+               login:  [ya-musfront-monitoring]
+      Aggregator: timed_more_than_limit_is_problem
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      checkname: nginx_timings
+      description: nginx_timings
+      flaps: { prestable_time: 180, critical_time: 300 }
+      CRIT: ["${rtc_radio.nginx_status}['total_upstream_timings'][4]>800"]
+---
+name: rtc_prestable_music_radiofront_nodejs
+parsing:
+  groups: [music_prestable_radiofront]
+  metahost: rtc-music-prestable-radiofront
+  DataFetcher:
+    logname: "nodejs/server.log"
+    timetail_url: "/timetail?pattern=music-nodejs&type=tskv&log_ts="
+  HostFetcher:
+    type: "rtc"
+    geo: ["sas", "man", "vla"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+aggregate:
+  data:
+    rtc_radio.nodejs_svcs:
+      type: custom
+      class: Multimetrics
+      perHost: YES
+      factor: 1000
+  senders:
+    solomon:
+      type: solomon
+      cluster: prestable
+      project: music
+      service: rtc_radio.nodejs_svcs
+    nodejs_timings: &cfg
+      type: juggler
+      namespace: music.combaine
+      config:
+        history: 5
+        type: metahost
+      Host: "radio.yandex.ru"
+      notifications:
+          - template_name: phone_escalation
+            template_kwargs:
+                delay: 900 # seconds
+                logins:
+                  - '@svc_muzfrontend:mfront'
+                  - svarog
+                  - morgunv
+                  - oleksii
+                  - msermakov
+                  - iv-morozovv
+                  - denis-grekov
+                  - fat32elena
+          - template_name: on_status_change
+            template_kwargs:
+                delay: 300 # seconds
+                status:
+                  - {from: OK, to: CRIT}
+                  - {from: WARN, to: CRIT}
+                method:
+                    - telegram
+                login:  [ya-musfront-monitoring]
+      Aggregator: timed_more_than_limit_is_problem
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 2,time_end: 1,day_end: 7,day_start: 1}]
+      checkname: nodejs_timings
+      description: nodejs_timings
+      CRIT: ["${rtc_radio.nodejs_svcs}['nodejs_timings'][4]>600"]
+    langdetect_4xx:
+      << : *cfg
+      checkname: langdetect_4xx
+      description: langdetect 4xx
+      # MUSIC-22672 - day only monitoring
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits:
+            - {crit: 0,time_start: 10,time_end: 19,day_end: 7,day_start: 1}
+            - {crit: 101%,time_start: 20,time_end: 9,day_end: 7,day_start: 1}
+      CRIT: ["${rtc_radio.nodejs_svcs}['langdetect.4xx']>30"]
+    langdetect_5xx:
+      << : *cfg
+      checkname: langdetect_5xx
+      description: langdetect 5xx
+      # MUSIC-22672 - day only monitoring
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits:
+            - {crit: 0,time_start: 10,time_end: 19,day_end: 7,day_start: 1}
+            - {crit: 101%,time_start: 20,time_end: 9,day_end: 7,day_start: 1}
+      CRIT: ["${rtc_radio.nodejs_svcs}['langdetect.5xx']>30"]
+    langdetect_timings:
+      << : *cfg
+      checkname: langdetect_timings
+      description: langdetect timings
+      # MUSIC-22672 - monitor timeout (250ms)
+      flaps: { prestable_time: 120, critical_time: 180 }
+      CRIT: ["${rtc_radio.nodejs_svcs}['langdetect_timings'][4]>300"]
+    geobase_4xx:
+      << : *cfg
+      checkname: geobase_4xx
+      description: geobase 4xx
+      # MUSIC-22672 - day only monitoring
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits:
+            - {crit: 0,time_start: 10,time_end: 19,day_end: 7,day_start: 1}
+            - {crit: 101%,time_start: 20,time_end: 9,day_end: 7,day_start: 1}
+      CRIT: ["${rtc_radio.nodejs_svcs}['geobase.4xx']>30"]
+    geobase_5xx:
+      << : *cfg
+      checkname: geobase_5xx
+      description: geobase 5xx
+      # MUSIC-22672 - day only monitoring
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits:
+            - {crit: 0,time_start: 10,time_end: 19,day_end: 7,day_start: 1}
+            - {crit: 101%,time_start: 20,time_end: 9,day_end: 7,day_start: 1}
+      CRIT: ["${rtc_radio.nodejs_svcs}['geobase.5xx']>30"]
+    geobase_timings:
+      << : *cfg
+      checkname: geobase_timings
+      description: geobase timings
+      # MUSIC-22672 - monitor timeout (250ms)
+      CRIT: ["${rtc_radio.nodejs_svcs}['geobase_timings'][4]>300"]
+    blackbox_err:
+      << : *cfg
+      checkname: nodejs_blackbox_err
+      description: nodejs_blackbox_err
+      CRIT: ["${rtc_radio.nodejs_svcs}['blackbox.error']>2"]
+    blackbox_4xx:
+      << : *cfg
+      checkname: blackbox_4xx
+      description: blackbox 4xx
+      CRIT: ["${rtc_radio.nodejs_svcs}['blackbox.4xx']>10"]
+    blackbox_5xx:
+      << : *cfg
+      checkname: blackbox_5xx
+      description: blackbox 5xx
+      CRIT: ["${rtc_radio.nodejs_svcs}['blackbox.5xx']>10"]
+    blackbox_timings:
+      << : *cfg
+      checkname: blackbox_timings
+      description: blackbox timings
+      flaps: { prestable_time: 120, critical_time: 180 }
+      CRIT: ["${rtc_radio.nodejs_svcs}['blackbox_timings'][4]>50"]
+---
+name: rtc_music_prestable_radiofront_nodejs
+parsing:
+  groups: [music_prestable_radiofront]
+  metahost: rtc-music-prestable-radiofront
+  DataFetcher:
+    logname: "nodejs/server.log"
+    timetail_url: "/timetail?pattern=musfront-nodejs&type=tskv&log_ts="
+  HostFetcher:
+    type: "rtc"
+    geo: ["sas", "man", "vla"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+aggregate:
+  data:
+    rtc_radio.nodejs:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+      perHost: YES
+      timings_is: 'duration'
+  senders:
+    solomon:
+      type: solomon
+      cluster: prestable
+      project: music
+      service: rtc_radio.nodejs
+---
+name: rtc_music_prestable_radiofront_nginx
+parsing:
+  groups: [music_prestable_radiofront]
+  metahost: rtc-music-prestable-radiofront
+  DataFetcher:
+    timetail_url: "/timetail?pattern=musfront-nginx&type=tskv&log_ts="
+  HostFetcher:
+    type: "rtc"
+    geo: ["sas", "man", "vla"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+aggregate:
+  data:
+    rtc_radio.nginx:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+      perHost: YES
+      timings_is: 'duration'
+  senders:
+    solomon:
+      type: solomon
+      cluster: prestable
+      project: music
+      service: rtc_radio.nginx
+---
+name: rtc_music_prestable_radiofront_resources
+parsing:
+  groups: [music_prestable_radiofront]
+  metahost: rtc-music-prestable-radiofront
+  DataFetcher:
+    timetail_url: "/timetail?pattern=resources&type=tskv&log_ts="
+  HostFetcher:
+    type: "rtc"
+    geo: ["sas", "man", "vla"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+aggregate:
+  data:
+    rtc_radio.resources:
+      type: custom
+      class: Multimetrics
+      rps: "no"
+      factor: 1000
+      perHost: YES
+      timings_is: 'duration'
+  senders:
+    solomon:
+      type: solomon
+      cluster: prestable
+      project: music
+      service: rtc_radio.resources

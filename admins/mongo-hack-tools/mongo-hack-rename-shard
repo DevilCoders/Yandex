@@ -1,0 +1,42 @@
+#! /usr/bin/python
+
+from mongo_hack import *
+
+
+class RenameShardScript (BaseScript):
+
+    script_description  = 'Rename a mongo shard'
+    argument_names      = ['mongos_group', 'from_name', 'to_name']
+
+    def gather_info(self):
+        self.mongos_hosts = group2hosts(self.args.mongos_group)
+        self.ctrl         = MongosController(self.mongos_hosts[0])
+        self.hostlist     = self.ctrl.host_list(self.args.from_name)
+
+        return (
+            ('From', self.args.from_name),
+            ('To',   self.args.to_name),
+            ('Via',  ' '.join(self.mongos_hosts)),
+            ('On',   ' '.join(self.hostlist))
+        )
+
+    @parallel
+    def switch_host(self, host):
+        MongodController(host).rename_rs(self.args.to_name)
+
+    @parallel
+    def restart_mongos(self, host):
+        MongosController(host).restart()
+
+    def run(self):
+        self.ctrl.disable_balancer()
+        self.switch_host(self.hostlist)
+        self.ctrl.rename_rs(self.args.from_name, self.args.to_name, self.hostlist)
+        self.restart_mongos(self.mongos_hosts)
+        self.ctrl.connect()
+        self.ctrl.enable_balancer()
+        print '\nAll done.\n\n>>>>>   Please RESTART ALL OTHER MONGOS!   <<<<<\n'
+
+
+if __name__ == '__main__':
+    RenameShardScript()

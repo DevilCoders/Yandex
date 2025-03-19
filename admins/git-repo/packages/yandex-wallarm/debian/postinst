@@ -1,0 +1,73 @@
+#!/bin/bash
+## Variables
+PKGNAME="yandex-wallarm"
+WORKDIR="/usr/share/yandex-configs/$PKGNAME"
+
+# Get host information
+HOST=`hostname -f`
+GROUP=`curl -fs "http://c.yandex-team.ru/api/hosts/$HOST?format=yaml" | grep 'group' | awk '{print $NF}'`
+PROJECT=`curl -fs "http://c.yandex-team.ru/api/groups2projects/$GROUP?format=yaml" | grep 'name' | awk '{print $NF}'`
+CORE_DC_VLAN=`ip ro | grep default | awk '{print $3}'`
+
+## Helpers
+# Get environment type
+if [ -f "/etc/yandex/environment.type" ]; then
+        ENVIR=`cat /etc/yandex/environment.type`
+else
+        echo 'No /etc/yandex/environment.type, trying detect env by conductor group'
+        preenvir=`echo $GROUP | awk -F\- '{print $NF}'`
+        if [[ "$preenvir" == "testing" ]] || [[ "$preenvir" == "prestable" ]]; then
+                ENVIR=`echo $preenvir`
+        else
+                ENVIR="production"
+        fi
+fi
+
+# Function to make symlinks
+function create_symlink {
+        src=$1
+        dst=$2
+        if [ ! -L $dst ]; then
+                if [ ! -f $dst ]; then
+                        ln -s $src $dst
+                else
+                        echo "File exists, removing $dst and making symlink on $src"
+                        rm -f $dst
+                        ln -s $src $dst
+                fi
+        else
+                echo "Symlink already exists. Rewriting"
+		ln -f -s $src $dst
+        fi
+}
+
+if [ -f  /var/run/nginx.pid ]; then
+  kill $(cat /var/run/nginx.pid)
+fi
+if [ -d /etc/nginx/ ]; then
+  rm -rf /etc/nginx-wallarm
+  ln -s /etc/nginx/ /etc/nginx-wallarm
+else
+  ln -s /etc/nginx-wallarm  /etc/nginx/
+fi
+if [ ! -f /etc/wallarm/license.key ]; then
+echo "Enter a  license file:"
+while read license 
+do
+  echo "$license" >> "/etc/wallarm/license.key"
+done
+fi
+/usr/share/wallarm-common/addnode
+/usr/share/wallarm-common/syncnode 
+
+sleep 5
+if [ ! -f /usr/sbin/nginx ] || [ ! -L /usr/sbin/nginx ]; then
+	ln -s  /usr/sbin/nginx-wallarm  /usr/sbin/nginx
+fi
+
+killall nginx-wallarm
+sleep 1
+/etc/init.d/nginx-wallarm-kinopoisk restart
+	
+
+echo -n "$HOST configured with $PKGNAME"

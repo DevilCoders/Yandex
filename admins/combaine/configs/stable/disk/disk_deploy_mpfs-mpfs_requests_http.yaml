@@ -1,0 +1,122 @@
+parsing:
+  groups: [disk_deploy_mpfs_stable]
+  metahost: mpfs.deploy.disk.yandex.net
+  DataFetcher:
+    logname: "mpfs/requests-tskv.log"
+    timetail_url: "/timetail?pattern=mpfs_requests_http&type=java&timeout=120&log_ts="
+  Combainer:
+    MINIMUM_PERIOD: 60
+
+aggregate:
+  data:
+
+    mpfs_requests_http:
+      type: "custom"
+      class: "Multimetrics"
+      perHost: NO
+
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+
+    juggler_mpfs_req-loader_disk_yandex_net_status_5xx: &juggler-conf
+      type: juggler
+      namespace: disk
+      Host: "mpfs.deploy.disk.yandex.net"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - ignition
+      Aggregator: logic_or
+      checkname: mpfs_req-loader_disk_yandex_net_status_5xx
+      description: mpfs_req-loader_disk_yandex_net_status_5xx
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      flaps: { stable_time: 120, critical_time: 180 }
+      CRIT: [" ${mpfs_requests_http}['request_aggr_count_code_loader_disk_yandex_net_5xx'] > 3 "]
+      tags:
+        - production
+
+
+    juggler_mpfs_req-mpfs-sharpei_disk_yandex_net_status_5xx_9xx:
+      << : *juggler-conf
+      checkname: mpfs_req-mpfs-sharpei_disk_yandex_net_status_5xx_9xx
+      description: mpfs_req-mpfs-sharpei_disk_yandex_net_status_5xx_9xx
+      CRIT: [" (${mpfs_requests_http}['request_aggr_count_code_mpfs-sharpei_disk_yandex_net_5xx'] + ${mpfs_requests_http}['request_aggr_count_code_mpfs-sharpei_disk_yandex_net_9xx'])  > 90 "]
+
+
+    juggler_mpfs_req-loader_disk_yandex_net_status_5xx_devops: &juggler-conf-devops
+      type: juggler
+      namespace: disk-devops
+      Host: "disk_deploy_mpfs_stable_devops"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-java-mntr
+                - shirankov
+                - akinfold
+                - kis8ya
+                - sanya2013
+                - yak-dmitriy
+                - friendlyevil
+                - c4et4uk
+                - derovi
+      Aggregator: logic_or
+      checkname: mpfs_req-loader_disk_yandex_net_status_5xx
+      description: mpfs_req-loader_disk_yandex_net_status_5xx
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      flaps: { stable_time: 120, critical_time: 180 }
+      CRIT: [" ${mpfs_requests_http}['request_aggr_count_code_loader_disk_yandex_net_5xx'] > 3 "]
+
+
+    juggler_mpfs_req-queller_qloud_disk_yandex_net_status_5xx_devops:
+      << : *juggler-conf-devops
+      checkname: mpfs_req-queller_qloud_disk_yandex_net_status_5xx
+      description: mpfs_req-queller_qloud_disk_yandex_net_status_5xx
+      CRIT: [" ${mpfs_requests_http}['request_aggr_count_code_queller_qloud_disk_yandex_net_5xx'] > 1 "]
+
+
+    juggler_mpfs_req-disk_uploader_status_5xx_devops: &juggler-conf-java-devops
+      type: juggler
+      namespace: disk-devops
+      Host: "disk_deploy_mpfs_stable-disk_uploader_devops"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-java-mntr
+                - shirankov
+                - akinfold
+                - kis8ya
+                - sanya2013
+                - yak-dmitriy
+                - friendlyevil
+                - c4et4uk
+                - derovi
+      Aggregator: logic_or
+      checkname: mpfs_req-disk_uploader_status_5xx
+      description: mpfs_req-disk_uploader_status_5xx
+      config:
+          type: metahost
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      flaps: { stable_time: 120, critical_time: 180 }
+      CRIT: [" ${mpfs_requests_http}['request_aggr_count_code_disk_uploader_5xx'] > 27 "]

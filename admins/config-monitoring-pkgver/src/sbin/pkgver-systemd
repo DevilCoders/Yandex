@@ -1,0 +1,390 @@
+#!/bin/bash
+
+# script logic:
+#
+#     conductor available?
+#       /              \
+#     yes              no
+#       \               |
+#        \     wait for conductor to be ready
+#         \              /
+#         is group *-lost?
+#            /        \
+#           no        yes
+#          /            \
+#         /        wait to be
+#        /       dropped from *-lost
+#       /                  \
+#      flag 'pkgver_autosetup'?
+#      /               \
+#    yes               no
+#     |                 |
+#  run pkgver           |
+#     |                 |
+#  run salt             |
+#      \            runlevel 2
+#       \
+#     any fail?
+#       / \
+#     no   yes
+#      \    \
+#       \   flag 'pkgver_autosetup_retry'?
+#        \                /    \
+#         \             yes    no
+#          \            /       \
+#           \     retry updates  \
+#            \                    \
+#         runlevel 2            runlevel 1
+
+
+LOG=/var/log/pkgver/pkgver.log
+LOCAL_STATE_FLAGS=/var/lib/pkgver/flags.local
+LOCAL_STATE_GROUPS=/var/lib/pkgver/groups.local
+
+HOSTNAME=`hostname -f`
+
+# remove all our warnings from /etc/motd, if they are there
+[ -f /etc/motd ] && sed -i /^PKGVER/d /etc/motd
+
+function log {
+	echo $(date +"%F %T") $1 >> $LOG
+}
+
+function error {
+	log "${1}, staying on runlevel 1."
+	echo -e "PKGVER: \033[0;31m${1}! Please do something.\033[0m See $LOG for details." >> /etc/motd
+	if [ -x /usr/sbin/sendmail ]; then
+		sendmail root <<- EOF
+		Subject: $HOSTNAME is at runlevel 1
+		Machine stopped boot process at runlevel 1.
+		See $LOG for details.
+		.
+EOF
+	fi
+	exit 1
+}
+
+
+function update_conductor_tags() {
+    # Dirty hack to avoid curl bug. On IPv6-only machines first curl run
+ 	# trying to connect to IPv4 address.
+ 	curl -s http://c.yandex-team.ru >/dev/null 2>&1
+
+ 	while true; do
+ 		if flags=$(curl -f --retry 5 --retry-delay 2 --connect-timeout 5 -s http://c.yandex-team.ru/api/get_host_tags/$HOSTNAME); then
+ 			echo $flags > $LOCAL_STATE_FLAGS.tmp && mv $LOCAL_STATE_FLAGS.tmp $LOCAL_STATE_FLAGS
+			bootstrap_state "BOOTSTRAPPING" "Update conductor tags"
+ 			break
+ 		else
+			bootstrap_state "BOOTSTRAPPING" "Conductor is not available, cannot determine host tags. Try again in ten seconds."
+ 			log "Conductor is not available, cannot determine host tags. Try again in ten seconds."
+ 			sleep 10
+ 		fi
+ 	done
+}
+
+function check_tag() {
+    tag_name=$1
+    if grep -q "$tag_name" $LOCAL_STATE_FLAGS; then
+        log "tag ${tag_name} found"
+        return 0
+    else
+        log "tag ${tag_name} NOT found"
+        return 1
+    fi
+}
+
+function autosetup_needed {
+	log "Checking if we need to autosetup packages..."
+	if check_tag pkgver_autosetup; then
+		log "Yes, autosetup is needed."
+		return 0
+	else
+		log "No, autosetup is not needed."
+		return 1
+	fi
+}
+
+function check_packages {
+	if [ "$systemd" == "true" ]; then
+		# detect enabled services in vestal container
+		if [ ! -f /lib/systemd/system/vestal.target ]; then
+			log "Detect enabled systemd services"
+			is_enabled=$(systemctl --no-legend list-unit-files --state=enabled \
+				--type=service | awk '{ print $1 }')
+			log "Creating /lib/systemd/system/vestal.target"
+			cat > /lib/systemd/system/vestal.target << EOF
+[Unit]
+Description=Vestal container enabled software target
+EOF
+			echo "Requires="$is_enabled >> /lib/systemd/system/vestal.target
+		else
+			log "vestal.target exist. Get enabled servises from it"
+			is_enabled=$(awk -F= '/Requires/ { print $NF }' /lib/systemd/system/vestal.target)
+		fi
+	fi
+
+	log "Running pkgver..."
+	pkgver.pl &>> $LOG
+	return_value="$?"
+
+	if [ $return_value = 0 ]; then
+		log "All packages are up to date."
+		if [ -f /lib/systemd/system/strm.target ]; then
+			to_stop=$(awk -F= '/Requires/ { print $NF }' /lib/systemd/system/strm.target | sed 's/ strm-status.service//g')
+			log "Stop STRM services: $to_stop"
+			systemctl disable cron.service nginx.service ubic-watchdog.service $to_stop &>> $LOG
+			systemctl stop cron.service nginx.service ubic-watchdog.service $to_stop &>> $LOG
+		fi
+		return 0
+	elif [ $return_value = 1 ]; then
+		godmode=""
+		if check_tag pkgver_godmode; then
+			log "pkgver godmode active"
+			godmode="--forceyes"
+		fi
+
+		if ! dpkg -l ubic | grep ^ii; then
+			log "Installing ubic"
+			apt-get -y install ubic &>> $LOG
+			log "Stopping ubic"
+			ubic stop ubic &>> $LOG
+		fi
+
+		log "Packages are not up to date, running pkgver in install mode."
+		DEBIAN_FRONTEND=noninteractive pkgver.pl -i -y $godmode &>> $LOG
+		return_value="$?"
+		if [ $return_value != 0 ]; then
+			log "Pkgver returned error"
+			return 1
+		else
+			log "Pkgver successfully installed all missing packages."
+			if [ "$systemd" == "true" ]; then
+				if dpkg -l yandex-unbound | grep ^ii > /dev/null 2>&1; then
+					systemctl unmask unbound.service
+				fi
+
+				to_disable=$(systemctl --no-legend list-unit-files --state=enabled,disabled \
+		                        --type=service | awk '{ print $1 }' | grep \
+					-Ev "smartd.service|ipmievd.service|ulogd.service|ulogd2.service|strm-status.service|pkgver-systemd.service|$(echo $is_enabled | sed 's@ @|@g')")
+				if [ ! -z "$to_disable" ]; then
+					log "Creating /lib/systemd/system/strm.target"
+					cat > /lib/systemd/system/strm.target << EOF
+[Unit]
+Description=STRM software target
+EOF
+					echo "Requires=cron.service nginx.service ubic-watchdog.service" $to_disable >> /lib/systemd/system/strm.target
+
+					log "Disable STRM workflow services: $to_disable"
+					systemctl disable cron.service nginx.service ubic-watchdog.service $to_disable &>> $LOG
+					systemctl stop cron.service nginx.service ubic-watchdog.service $to_disable &>> $LOG
+				fi
+			fi
+			return 0
+		fi
+	else
+		bootstrap_state "ERROR" "Pkgver returned error $return_value"
+		error "Pkgver returned error $return_value"
+	fi
+}
+
+function is_lost {
+	# We think, that host require more time to be dropped from lost group.
+	# So add retries.
+
+	while true; do
+		log "Checking if we are in lost group..."
+		if groups=$(curl -f -s --retry 5 --retry-delay 2 --connect-timeout 5 http://c.yandex-team.ru/api/hosts2groups/${HOSTNAME}); then
+			echo $groups > $LOCAL_STATE_GROUPS.tmp && mv $LOCAL_STATE_GROUPS.tmp $LOCAL_STATE_GROUPS
+
+			if grep -q "lost$" $LOCAL_STATE_GROUPS; then
+				bootstrap_state "BOOTSTRAPPING" "We are in lost group. Try again in ten seconds."
+				log "We are in lost group. Try again in ten seconds."
+				sleep 10
+			else
+				bootstrap_state "BOOTSTRAPPING" "All ok, we are not in lost"
+				log "No, we are not lost. :)"
+				break
+			fi
+		else
+			bootstrap_state "BOOTSTRAPPING" "Conductor is not available. Try again in ten seconds."
+			log "Conductor is not available. Try again in ten seconds."
+			sleep 10
+		fi
+	done
+}
+
+function fixhosts {
+    if [ "$firstrun" == "true" ]; then
+	log "Fixing hosts..."
+	while true; do
+		/etc/init.d/fixhosts start &>> $LOG
+		if [ $? -eq 0 ]; then
+			bootstrap_state "BOOTSTRAPPING" "Fixing hosts success."
+			log "Fixing hosts success"
+			break
+		else
+			bootstrap_state "BOOTSTRAPPING" "Fixing hosts error. Try in 30 seconds."
+			log "Fixing hosts error. Try in 30 seconds"
+			sleep 30
+		fi
+	done
+    else
+	log "Skipping Fixing hosts. Not first run."
+    fi
+}
+
+function configure_eth {
+  if [ "$(hostname | grep '^src-')" ]; then
+    current_eth="$(ip a show | grep -Po 'eth\d+' | sort -Vu | grep -v eth0)"
+
+    if [ "x$current_eth" != "x" ]; then
+      bootstrap_state "BOOTSTRAPPING" "Configure ethernets"
+      log "Configure ethernets $current_eth"
+
+      for eth in $current_eth; do
+        if [ ! -f /etc/network/interfaces.d/${eth}.cfg ]; then
+          eth_num="$(echo $eth | grep -Po '\d+')"
+          log "Configure $eth"
+          ip a add 127.$(($eth_num%256)).$((1+$eth_num/256)).1/32 \
+            brd 127.$(($eth_num%256)).$((1+$eth_num/256)).1 dev $eth
+        else
+          log "Skipping $eth configure"
+        fi
+      done
+    fi
+  else
+    log "Skipping ethernets configure, not src"
+  fi
+}
+
+function run_salt {
+	log "Checking if salt-auto in installed..."
+	if dpkg -l yandex-media-common-salt-auto | grep -q "^ii"; then
+		if [ -e /usr/bin/salt_update ]; then
+			log "/usr/bin/salt_update is present, running it"
+			salt_update_opts=""
+			check_tag pkgver_autosetup_salt_update_https && salt_update_opts="--https"
+			/usr/bin/salt_update -u $salt_update_opts &>> $LOG
+			return_value="$?"
+			if [ $return_value != 0 ]; then
+				log "salt_update failed with code ${return_value}"
+				return 1
+			fi
+			if [ -f /etc/salt/minion ]; then
+				log "Clean up old salt keys"
+
+				for host in $(grep -Po 'salt[0-9]+.*.strm.yandex.net' /etc/salt/minion | uniq); do
+					curl -s "http://$host/clean-keys" &>> $LOG
+				done
+			fi
+			log "Running salt-call state.highstate"
+			if [ -e /usr/bin/salt-call ]; then
+                salt_opts=""
+                check_tag pkgver_autosetup_salt_retcode && salt_opts="--retcode-passthrough"
+				bootstrap_state "BOOTSTRAPPING" "Runs salt-call"
+				/usr/bin/salt-call state.highstate queue=True $salt_opts &>> $LOG
+				return_value="$?"
+				if [ $return_value != 0 ]; then
+					bootstrap_state "BOOTSTRAPPING" "salt-call failed with code ${return_value}, try again."
+					log "salt-call failed with code ${return_value}"
+					return 1
+				fi
+			else
+				bootstrap_state "ERROR" "salt-call not found, fail"
+				error "salt-call not found, fail"
+			fi
+		else
+			log "/usr/bin/salt_update not found, skipping"
+		fi
+	else
+		log "salt-auto not found, skipping"
+	fi
+	return 0
+}
+
+function bootstrap_state {
+    # log current bootstrap state
+    echo "{" > /var/run/state
+    echo "    \"bootstrap_start_time\": \"$bootstrap_start_time\"," >> /var/run/state
+    echo "    \"state\": \"$1\"," >> /var/run/state
+    if [ -n "$2" ]; then
+        echo "    \"info\": \"$2\"," >> /var/run/state
+    fi
+    echo "    \"timestamp\": \"$(date +%s)\"" >> /var/run/state
+    echo "}" >> /var/run/state
+}
+
+bootstrap_start_time="$(date +%s)"
+bootstrap_state "BOOTSTRAPPING"
+
+log "Sleep 30 seconds"
+sleep 30
+
+# check for systemd
+if (( $(echo "$(lsb_release -rs) >= 18.04" | bc -l) )); then
+	systemd="true"
+fi
+
+if autosetup_needed; then
+    log "Stopping cron daemon"
+    systemctl stop cron.service &>> $LOG
+fi
+
+SYSTEMSERV="acpid.service|debug-shell.service|iscsid.service|mdadm-shutdown.service|smartmontools.service|sysstat.service|systemd-resolved.service|watchdog.service"
+
+# I think if system does not have strm-status it means
+# that pkgver.pl run first time. FIXME
+if dpkg -l strm-status | grep ^ii > /dev/null 2>&1; then
+  firstrun="false"
+else
+  firstrun="true"
+fi
+
+log "Firstrun: $firstrun"
+
+is_lost
+update_conductor_tags
+if check_tag pkgver_autosetup_retry; then
+	attempts="99"
+else
+	attempts="1"
+fi
+
+if autosetup_needed; then
+	for attempt in `seq 1 ${attempts}`; do
+		log "attempt ${attempt} out of ${attempts}"
+		if check_packages && configure_eth && fixhosts && run_salt ; then
+			log "Evertyhing OK. Starting services"
+			systemctl start ubic-watchdog.service unbound.service \
+				$(echo $(for serv in $(awk -F= '/Requires/ { print $NF }' /lib/systemd/system/strm.target); do echo $serv; done | grep -Ev "$SYSTEMSERV")) &>> $LOG
+
+			sleep 10
+
+			if [ "$firstrun" == "true" ]; then
+			    log "Starting strm-status.service"
+			    systemctl start strm-status.service &>> $LOG
+			fi
+
+			log "Starting ubic"
+			ubic start ubic &>> $LOG
+
+			if [ "$firstrun" == "true" ]; then
+			    log "Restarting statbox"
+			    systemctl restart statbox-push-client.service &>> $LOG
+			fi
+
+			bootstrap_state "ALIVE"
+			log "Setup complete. Mazel tov."
+			exit 0
+		else
+			log "Try again in ten seconds."
+			sleep 10
+		fi
+	done
+	bootstrap_state "ERROR" "All attemps failed. Oy vey"
+	error "All attemps failed. Oy vey"
+else
+	bootstrap_state "ALIVE"
+	log "Setup complete. Mazel tov."
+fi

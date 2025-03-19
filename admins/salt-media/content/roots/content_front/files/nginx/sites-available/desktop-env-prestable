@@ -1,0 +1,41 @@
+include sites-available/aab-proxy-map;
+include sites-available/set-yandex-l7;
+include sites-available/upstreams;
+
+server {
+    include listen;
+    resolver [::1] ipv6=only;
+
+    server_name ~^beta\.tv\.yandex\.(?<tld>ru|ua|by|kz|com|com\.tr|uz)$;
+
+    set $root /usr/local/www5/kino-ui-tv;
+    set $socket_name tv-ui;
+
+    set $export_host export.tv.yandex.ru;
+    set $export_proxy_host export.tv.yandex.ru;
+
+    set $proxy_qloud_host new.beta.tv.yandex.$tld;
+
+    set $should_aab_proxy "${should_aab_proxy_get}${should_aab_proxy_post}";
+
+    set $do_not_redirect "${is_ping}${is_ukraine}${ya_l7}";
+
+    if ($do_not_redirect = "" ) {
+       return 301 https://$host$request_uri;
+    }
+
+    set_real_ip_from     2a02:6b8::/32;
+    set_real_ip_from     2620:10f:d000::/44;
+    real_ip_header       X-Forwarded-For-Y;
+
+    include sites-available/desktop-common;
+
+    location ~* ^/[^/]+\.(png|ico)$ {
+        root $root/blocks-common/b-page/favicon/production/;
+        try_files $uri @aab_proxy_images;
+    }
+
+}
+
+include sites-available/desktop-redirect-www;
+include sites-available/desktop-redirect-turkey;

@@ -1,0 +1,36 @@
+#! /bin/bash
+
+# We are called either with -ldebian/changelog or -lproject/debian/changelog
+#DIR=`echo $1 | sed s/-l// | sed 's/debian\/changelog//'`
+#if [ "x$DIR" != "x" ]; then cd $DIR; fi
+TC_BUILD_NUMBER=$1
+
+# Extract info from git
+AUTHOR=`git log -n 1 --format="format:%an <%ae>"`
+DATE=`git log -n 1 --format="format:%aD"`
+DATETAG=`date -d "$DATE" +%Y%m%d%H%M`
+BRANCH=`git rev-parse --abbrev-ref HEAD | tr _ -`
+ORIGIN=`git remote -v | fgrep fetch | awk '{print $2}'`
+VERSION=`echo $DATETAG-$BRANCH | tr - + | tr / .`
+
+#parameter from team-city agent like debuild --no-lintian --set-envvar TC_BUILD_NUMBER=%build.number%
+if [[ -n "$TC_BUILD_NUMBER" ]]; then
+    VERSION=$TC_BUILD_NUMBER
+fi
+
+SOURCE=`grep Source debian/control | cut -f2 -d' '`
+PREV_RELEASE_TAG=$(git describe --match='release.*' $(git describe --match='release.*')^)
+SQL_MIGRATIONS=$(git log --oneline --no-merges --name-only "$PREV_RELEASE_TAG"..HEAD -- database/migrations/ | grep "\.sql" | sort -u | sed 's/^/   * /')
+
+# Print out info
+
+echo "$SOURCE ($VERSION) unstable; urgency=low"
+echo ""
+echo "  See $ORIGIN for full log"
+git log --oneline --no-merges "$PREV_RELEASE_TAG"..HEAD | egrep -o "\b([A-Z]+)-([0-9]+)\b" | sort -u | sed 's/^/   * /'
+if [[ -n "$SQL_MIGRATIONS" ]]; then
+    echo "   Migrations:"
+    echo "$SQL_MIGRATIONS"
+fi
+echo ""
+echo " -- $AUTHOR  $DATE"

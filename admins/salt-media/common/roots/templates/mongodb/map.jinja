@@ -1,0 +1,139 @@
+# vim: set ft=sls ts=2 expandtab :
+
+{% set mg = salt["grains.get"]('mongodb', {}) %}
+
+{% set replSetByGrains = "{0}".format(
+            mg.get("replSet", None) or salt["grains.get"]("conductor:group"
+                              ).replace("-generic", "").replace("_generic", ""
+                              ).replace("-arbiter", "").replace("_arbiter", ""
+                              ).replace("-hidden", "").replace("_hidden", ""
+                              ).replace("-backup", "").replace("_backup", "")
+      ) %}
+
+{% load_yaml as mongodb %}
+ulimit_n: 65536
+stock: False
+python3: True
+keyFile: False
+keyFile_nomanage: False
+enable_daytime: True
+managed-database: False
+mongo-checks-lock-on-primary-only: False
+notArbiter: {{ not mg.get('isArbiter', False) }}
+isHidden: {{ mg.get('isHidden', False) }}
+server_params: []
+mongos_server_params: []
+mongo_hack: True
+mongod:
+  dbpath:         /opt/mongodb
+  replSet:        {{ replSetByGrains }}
+  port:           27018
+  slowms:         300
+  syncdelay:      60
+  storageEngine:  False
+  rest:           'true'
+  profile:        1
+mongodbcfg:
+  mongod_monrun:  False
+  replSet:        False
+  dbpath:         /var/lib/mongodbcfg
+mongos:
+  cfg-dbs: []
+  watchdog: False
+exec-files:
+  - /usr/bin/mongodb-check-recovery
+  - /usr/bin/mongodb-check-rs
+  - /usr/bin/mongodb-check-health
+  - /usr/bin/mongodb-check-pool
+  - /usr/bin/mongodb-check-alive
+  - /usr/lib/yandex-graphite-checks/enabled/mongodb.py
+  - /usr/bin/safe-rsync.sh
+  - /usr/lib/mongodb_health/mongostate.py
+  - /usr/bin/mongodb-refill-from-hidden-check.sh
+  - /usr/bin/mongodb-aggr-health
+
+logrotate-files:
+  - /etc/logrotate.d/mongo.conf
+common-files:
+  - /etc/init/mongodb.conf
+  - /usr/lib/mongodb_health/basecheck.py
+  - /usr/lib/mongodb_health/__init__.py
+  - /usr/lib/mongodb_health/disk_usage.py
+  - /usr/lib/mongodb_health/indexes.py
+  - /usr/lib/mongodb_health/verify_indexes.py
+  - /usr/lib/mongodb_health/replicaset.py
+monrun:
+  activeClients-total: '<50'
+  asserts-user: '<10001'
+  connections-available: '>2000'
+  connections-current: '<14000'
+  disk-read: '<50'
+  disk-write: '<50'
+  flush-average-ms: '<1500'
+  fragmentation: '<1.4'
+  indexes-miss-ratio: '=0'
+  indexes-to-memory-ratio: '<0.7'
+  lock-on-primary-only: False
+  master-present: '>0'
+  read-queue: '<50'
+  replica-lag-common: 60
+  replica-lag-hidden: 4000
+  resident-to-memory-ratio: '<0.7'
+  rs-indexes-consistency: __all__
+  uptime: '>300'
+  write-queue: '<50'
+  verify_indexes_errorcode: 2
+  mongodb_slow_queries_ms: 300
+  mongodb_slow_queries_count: 20
+  mongodb_slow_queries_port: 27018
+  mongodb_slow_queries_disabled: False
+  mongodb_slow_queries_show_collscan: False
+  rs_secondary_alive_count: 1
+  rs_secondary_fresh_count: 1
+  rs_secondary_fresh_lag: 15
+  mongodb_restore_timedelta: 129600
+index_usage:
+  email:
+    src: mongodb_index_usage@{{ salt['grains.get']('nodename') }}
+    dst: {{ salt['grains.get']('conductor:project_info:mailto', '') }}
+    subject: {{ salt['grains.get']('conductor:group') }} not effective indexes
+  schedule: '30 01 * * 1'
+  config:
+    creds:
+      /etc/mongo-monitor.conf
+    thresholds:
+      ops: 0
+      mindays: 7
+      size: 10
+    filters:
+      local: False
+      admin: False
+restore:
+  config: {}
+  schedule: False
+  monitor: False
+restoreCheck:
+  mongos_group: ""
+  mongodb_group: ""
+  interval: 500
+  timeout: 120
+rsyncd_secrets: ""
+
+{% endload %}
+
+{% set mongodb = salt["pillar.get"]("mongodb", mongodb, merge=True) %}
+{% set cluster = pillar.get('cluster') %}
+
+{% if mongodb.get("mongodbcfg", {}).replSet|lower == "true" %}
+  {% do mongodb.mongodbcfg.update(
+      { "replSet": replSetByGrains }
+  ) %}
+{% endif %}
+
+{% if grains['oscodename'] == "xenial" %}
+  {% set _cf = mongodb["common-files"] %}
+  {% do _cf.append("/etc/systemd/system/mongodb.service") %}
+  {% if '/etc/init/mongodb.conf' in _cf %}
+    {% do _cf.pop(_cf.index('/etc/init/mongodb.conf')) %}
+  {% endif %}
+{% endif %}

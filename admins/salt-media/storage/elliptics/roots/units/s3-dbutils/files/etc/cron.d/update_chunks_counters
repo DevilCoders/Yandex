@@ -1,0 +1,35 @@
+{% set env = grains['yandex-environment'] -%}
+{%- set mover_threads = salt['pillar.get']('s3-dbutils:scripts:chunk_mover:threads') -%}
+{%- set mover_threshold = salt['pillar.get']('s3-dbutils:scripts:chunk_mover:threshold') -%}
+{%- set mover_max_objects = salt['pillar.get']('s3-dbutils:scripts:chunk_mover:max_objects') -%}
+{%- set mover_min_objects = salt['pillar.get']('s3-dbutils:scripts:chunk_mover:min_objects') -%}
+{%- set mover_delay = salt['pillar.get']('s3-dbutils:scripts:chunk_mover:delay') -%}
+
+#Update counters
+* * * * * root sleep $[$RANDOM \% 30]; /usr/local/bin/s3dbutils_wrapper.sh update_chunks_counters >/dev/null 2>&1
+* * * * * root sleep $[$RANDOM \% 30]; /usr/local/bin/s3dbutils_wrapper.sh update_chunks_counters_meta >/dev/null 2>&1
+
+#Check counters
+50 5 * * 1 root sleep $[$RANDOM \% 150]; /usr/local/bin/s3dbutils_wrapper.sh check_chunks_counters "--storage-class 1 --skip-deleted" >/dev/null 2>&1
+50 5 * * 2 root sleep $[$RANDOM \% 150]; /usr/local/bin/s3dbutils_wrapper.sh check_chunks_counters "--skip-deleted" >/dev/null 2>&1
+50 5 * * 3 root sleep $[$RANDOM \% 150]; /usr/local/bin/s3dbutils_wrapper.sh check_chunks_counters "--check-only-presence" >/dev/null 2>&1
+30 6 * * * root sleep $[$RANDOM \% 150]; /usr/local/bin/s3dbutils_wrapper.sh check_chunks_counters_meta >/dev/null 2>&1
+
+#Chunk manipulation
+*/5 * * * * root sleep $[$RANDOM \% 150]; /usr/local/bin/s3dbutils_wrapper.sh chunk_merger >/dev/null 2>&1
+*/5 * * * * root sleep $[$RANDOM \% 150]; /usr/local/bin/s3dbutils_wrapper.sh chunk_splitter >/dev/null 2>&1
+* * * * * root sleep $[$RANDOM \% 150]; /usr/local/bin/s3dbutils_wrapper.sh chunk_purger >/dev/null 2>&1
+* * * * * root sleep $[$RANDOM \% 150]; /usr/local/bin/s3dbutils_wrapper.sh chunk_mover "--only-queue {% if mover_threads %}--max-threads={{ mover_threads }}{% endif %} --allow-same-shard " >/dev/null 2>&1
+{% if salt['pillar.get']('s3-dbutils:scripts:chunk_mover:auto', False) %}
+*/3 * * * * root sleep $[$RANDOM \% 150]; /usr/local/bin/s3dbutils_wrapper.sh chunk_mover "{% if mover_threshold %}--diff-threshold={{ mover_threshold }}{% endif %} {% if mover_max_objects %}--max-objects={{ mover_max_objects }}{% endif %} {% if mover_min_objects %}--min-objects={{ mover_min_objects }}{% endif %} {% if mover_delay %}--delay='{{ mover_delay }}'{% endif %}" >/dev/null 2>&1
+{% endif %}
+
+#Stats
+* * * * * root sleep $[$RANDOM \% 30]; /usr/local/bin/s3dbutils_wrapper.sh update_bucket_stat >/dev/null 2>&1
+* * * * * root sleep $[$RANDOM \% 30]; /usr/local/bin/s3dbutils_wrapper.sh update_shard_stat >/dev/null 2>&1
+
+#Billing
+0 1 * * 1 root /usr/local/bin/s3dbutils_wrapper.sh update_buckets_size >/dev/null 2>&1
+*/5 * * * * root /usr/local/bin/s3dbutils_wrapper.sh update_buckets_usage >/dev/null 2>&1
+
+

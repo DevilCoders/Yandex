@@ -1,0 +1,44 @@
+location @aab_proxy {
+    error_page 403 500 502 503 504 599 = @loop_proxy;
+
+    proxy_pass_request_headers on;
+    proxy_intercept_errors on;
+    proxy_redirect off;
+
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto "https";
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-No-Aab-Proxy "1";
+    proxy_set_header X-AAB-RequestId $request_id;
+    proxy_set_header X-AAB-PartnerToken "{{pillar['secrets']['aab_token']}}";
+
+    proxy_next_upstream error timeout;
+
+    proxy_pass http://aab_upstream;
+}
+
+location @loop_proxy {
+    proxy_pass_request_headers on;
+    proxy_intercept_errors on;
+    proxy_redirect off;
+
+    proxy_set_header X-No-Aab-Proxy "1";
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto "https";
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-AAB-PartnerToken "";
+    proxy_set_header X-Loop "$loop_host";
+    add_header Set-Cookie tvoid=0;
+
+    proxy_pass http://${loop_host};
+}
+
+location @aab_proxy_images {
+    include sites-available/aab-proxy-check;
+    return 404;
+}

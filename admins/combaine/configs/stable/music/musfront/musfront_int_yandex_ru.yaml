@@ -1,0 +1,213 @@
+---
+name: music-int_musfront_status
+parsing:
+  groups: [music_stable_musfront]
+  DataFetcher:
+      timetail_url: "/timetail?pattern=int-xfront-status&type=tskv&log_ts="
+  HostFetcher:
+    type: "rtc"
+    geo: ["sas", "man", "vla"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+aggregate:
+  data:
+    rtc.nginx.int:
+      type: custom
+      class: Multimetrics
+      timings_is: _time
+      factor: 1000
+      perHost: YES
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.music
+  senders:
+    solomon:
+      type: solomon
+      cluster: prod
+      project: music
+      service: musfront.int-api.nginx
+    http_codes: &http-code-sender
+      type: juggler
+      namespace: music.frontend
+      plugin: picker
+      Host: "music.yandex.ru"
+      notifications:
+          - template_name: phone_escalation
+            template_kwargs:
+                delay: 900 # seconds
+                logins:
+                    - robot-music-frontend
+                    - svarog
+                    - oleksii
+                    - morgunv
+                    - msermakov
+                    - iv-morozovv
+                    - denis-grekov
+                    - fat32elena
+          - template_name: on_status_change
+            template_kwargs:
+                delay: 300 # seconds
+                status:
+                  - {from: OK, to: CRIT}
+                  - {from: WARN, to: CRIT}
+                method:
+                    - telegram
+                login:  [ya-musfront-monitoring]
+      Aggregator: timed_more_than_limit_is_problem
+      checkname: fron-int-http-codes
+      description:  fron-int-http-codes
+      tags: ['music-int', 'front']
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 2,time_end: 1,day_end: 7,day_start: 1}]
+      config:
+        history: 5
+        type: metahost
+        prefix: "int_"
+        query: "^(([4][0-9x][0-9x]))$"
+        limits:
+          "4xx": {limit: {WARN: 5, CRIT: 10}, explain: "4xx http errors"}
+          "400": [1, "(400) Bad Request"]
+          "401": [1, "(401) Unauthorized"]
+          "403": [4, "(403) Forbidden"]
+          "404": [1, "(404) Not Found"]
+          "451": {limit: {WARN: 0.1, CRIT: 1}, explain: "(451) Unavailable For Legal Reasons"}
+          "499": [1, "(499) Client Closed Request"]
+          "default": {limit: {WARN: 1, CRIT: 2}, explain: "http errors"}
+    http_code_5xx:
+      << : *http-code-sender
+      checkname: fron-int-http-code-5xx
+      description: fron-int-http-code-5xx
+      config:
+        history: 5
+        type: metahost
+        prefix: "int_"
+        query: "^((5xx))$"
+        limits:
+          "5xx": {limit: {WARN: 10, CRIT: 30}, explain: "5xx http errors"}
+          "default": {limit: {WARN: 1, CRIT: 2}, explain: "http errors"}
+    http_code_500:
+      <<: *http-code-sender
+      checkname: fron-int-http-code-500
+      description:  fron-int-http-code-500
+      aggregator_kwargs:
+        unreach_checks: ["music-prod-back:api_500"]
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 2,time_end: 1,day_end: 7,day_start: 1}]
+      config:
+        history: 5
+        type: metahost
+        prefix: "int_"
+        query: "^((500))$"
+        limits:
+          "500": [1, "(500) Internal Server Error"]
+          "default": {limit: {WARN: 1, CRIT: 2}, explain: "http errors"}
+    http_code_502:
+      <<: *http-code-sender
+      checkname: fron-int-http-code-502
+      description:  fron-int-http-code-502
+      aggregator_kwargs:
+        unreach_checks: ["music-prod-back:api_502"]
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 2,time_end: 1,day_end: 7,day_start: 1}]
+      config:
+        history: 5
+        type: metahost
+        prefix: "int_"
+        query: "^((502))$"
+        limits:
+          "502": {limit: {WARN: 0.05, CRIT: 0.2}, explain: "(502) Bad Gateway"}
+          "default": {limit: {WARN: 1, CRIT: 2}, explain: "http errors"}
+    http_code_503:
+      <<: *http-code-sender
+      checkname: fron-int-http-code-503
+      description:  fron-int-http-code-503
+      aggregator_kwargs:
+        unreach_checks: ["music-prod-back:api_503"]
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 2,time_end: 1,day_end: 7,day_start: 1}]
+      config:
+        history: 5
+        type: metahost
+        prefix: "int_"
+        query: "^((503))$"
+        limits:
+          "503": {limit: {WARN: 0.5, CRIT: 1.25}, explain: "(503) Service Unavailable"}
+          "default": {limit: {WARN: 1, CRIT: 2}, explain: "http errors"}
+    http_code_504:
+      <<: *http-code-sender
+      checkname: fron-int-http-code-504
+      description:  fron-int-http-code-504
+      aggregator_kwargs:
+        unreach_checks: ["music-prod-back:api_504"]
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 2,time_end: 1,day_end: 7,day_start: 1}]
+      config:
+        history: 5
+        type: metahost
+        prefix: "int_"
+        query: "^((504))$"
+        limits:
+          "504": [0.1, "(504) Gateway Timeout"]
+          "default": {limit: {WARN: 1, CRIT: 2}, explain: "http errors"}
+    http_code_520:
+      <<: *http-code-sender
+      checkname: fron-int-http-code-520
+      description:  fron-int-http-code-520
+      config:
+        history: 5
+        type: metahost
+        prefix: "int_"
+        query: "^((520))$"
+        limits:
+          "520": {limit: {WARN: 1, CRIT: 2}, explain: "(520) Unknown Error. MUSIC-14939 MUSIC-20144"}
+          "default": {limit: {WARN: 1, CRIT: 2}, explain: "http errors"}
+    http_code_524:
+      <<: *http-code-sender
+      checkname: fron-int-http-code-524
+      description:  fron-int-http-code-524
+      config:
+        history: 5
+        type: metahost
+        prefix: "int_"
+        query: "^((524))$"
+        limits:
+          "524": {limit: {WARN: 1, CRIT: 20}, explain: "(524) Nodejs Client Timeout"}
+          "default": {limit: {WARN: 1, CRIT: 2}, explain: "http errors"}
+    timings:
+      type: juggler
+      namespace: music.frontend
+      config:
+          history: 5
+          type: metahost
+      Host: "music.yandex.ru"
+      notifications:
+          - template_name: phone_escalation
+            template_kwargs:
+                delay: 900 # seconds
+                logins:
+                    - robot-music-frontend
+                    - svarog
+                    - oleksii
+                    - morgunv
+                    - msermakov
+                    - iv-morozovv
+                    - denis-grekov
+                    - fat32elena
+          - template_name: on_status_change
+            template_kwargs:
+                delay: 300 # seconds
+                status:
+                  - {from: OK, to: CRIT}
+                  - {from: WARN, to: CRIT}
+                method:
+                    - telegram
+                login:  [ya-musfront-monitoring]
+      Aggregator: timed_more_than_limit_is_problem
+      checkname: int-nginx_timings
+      description: int-nginx_timings
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 2,time_end: 1,day_end: 7,day_start: 1}]
+      flaps: { stable_time: 120, critical_time: 180 }
+      CRIT: ["${rtc.nginx.int}['total_upstream_timings'][4] > 800"]

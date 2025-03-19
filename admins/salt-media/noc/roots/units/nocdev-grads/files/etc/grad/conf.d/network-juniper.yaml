@@ -1,0 +1,108 @@
+variables:
+  # счетчик em2 глючит и он неинтересен
+  juniper_ifname_filter: &juniper_ifname_filter { 'ifname': '^((?!ge|fxp|em|irb|ae|xe|et|fti)|(em2))' }
+  jnx_counters: &jnx_counters
+    - ifmib.ifDescr
+    - ifmib.ifAlias
+    - { oid: ifmib.ifHighSpeed, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifHCInOctets, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifHCOutOctets, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifHCInUcastPkts, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifHCOutUcastPkts, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifInNUcastPkts, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifOutNUcastPkts, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifInDiscards, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifOutDiscards, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifInErrors, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifOutErrors, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifOperStatus, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifAdminStatus, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifInMulticastPkts, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifOutMulticastPkts, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifInBroadcastPkts, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifOutBroadcastPkts, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifLastChange, options: [ "use_snmpget" ] }
+  jnx_counters_shkvoren: &jnx_counters_shkvoren
+    - ifmib.ifDescr
+    - ifmib.ifAlias
+    - { oid: ifmib.ifHighSpeed, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifHCInOctets, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifHCOutOctets, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifHCInUcastPkts, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifHCOutUcastPkts, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifInNUcastPkts, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifOutNUcastPkts, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifInDiscards, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifOutDiscards, options: [ "use_snmpget", "prep_fn_apply_fn_for_period_max_900" ] } # NOCREQUESTS-21509
+    - { oid: ifmib.ifInErrors, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifOutErrors, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifOperStatus, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifAdminStatus, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifInMulticastPkts, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifOutMulticastPkts, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifInBroadcastPkts, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifOutBroadcastPkts, options: [ "use_snmpget" ] }
+    - { oid: ifmib.ifLastChange, options: [ "use_snmpget" ] }
+
+pollers:
+  SNMP network juniper QFX:
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters: !flatten
+        - *jnx_counters
+        - { oid: juniper_cos.jnxCosQstatTotalDropPkts, options: [ "use_snmpget", "prep_fn_apply_fn_for_period_max_600" ] } # NOCREQUESTS-21509
+      # jnxCosQstatTotalDropPkts собирается отдельно от остальных и пересчитывается в recalc_cos_index
+
+      skip_key_expr: *juniper_ifname_filter
+      post_fn: [ recalc_cos_index,
+        [ rearrange_partial_data, { values_filter: [ 'admin_status', 'flap', 'oper_status', 'rx', 'rx_broadcast', 'rx_drop', 'rx_errs',
+                                                     'rx_multicast', 'rx_nunicast', 'rx_unicast', 'speed', 'tx', 'tx_broadcast',
+                                                     'tx_drop', 'tx_errs', 'tx_multicast', 'tx_nunicast', 'tx_unicast' ] } ],
+          check_net_data_stage1,
+          sum_ifmib_counters_new,
+          check_net_data_sanity,
+      ]
+    filter: |
+      {Juniper QFX} and [опрос SNMP] and not [juniper qfx shkvoren]
+    series: network
+    interval: 60
+
+  SNMP network juniper:
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters: *jnx_counters
+      skip_key_expr: *juniper_ifname_filter
+      post_fn: [
+        [ rearrange_partial_data, { values_filter: [ 'admin_status', 'flap', 'oper_status', 'rx', 'rx_broadcast', 'rx_drop', 'rx_errs',
+                                                     'rx_multicast', 'rx_nunicast', 'rx_unicast', 'speed', 'tx', 'tx_broadcast',
+                                                     'tx_drop', 'tx_errs', 'tx_multicast', 'tx_nunicast', 'tx_unicast' ] } ],
+          check_net_data_stage1,
+          sum_ifmib_counters_new,
+          check_net_data_sanity,
+      ]
+    filter: |
+      {Juniper} and [опрос SNMP] and ({$attr_2_74584} or {Juniper MX} or {Juniper PTX}) and not [juniper qfx shkvoren]
+    series: network
+    interval: 120
+
+  SNMP network juniper shkvoren:
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters: !flatten
+        - *jnx_counters_shkvoren
+        - { oid: juniper_cos.jnxCosQstatTotalDropPkts }
+      skip_key_expr: *juniper_ifname_filter
+      post_fn: [ recalc_cos_index,
+        [ rearrange_partial_data, { values_filter: [ 'admin_status', 'flap', 'oper_status', 'rx', 'rx_broadcast', 'tx_drop', 'rx_drop', 'rx_errs',
+                                                     'rx_multicast', 'rx_nunicast', 'rx_unicast', 'speed', 'tx', 'tx_broadcast',
+                                                     'tx_errs', 'tx_multicast', 'tx_nunicast', 'tx_unicast' ] } ],
+          check_net_data_stage1,
+          sum_ifmib_counters_new,
+          check_net_data_sanity,
+      ]
+    filter: "rt%[juniper qfx shkvoren]"
+    series: network
+    interval: 120

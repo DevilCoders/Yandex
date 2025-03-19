@@ -1,0 +1,39 @@
+- hosts: localhost
+  gather_facts: False
+  vars:
+    host: weather-prod-api
+    type: production
+    host_tags:
+      - prod
+
+  pre_tasks:
+    - juggler_facts: jserver_api={{ jserver_search_api }}
+    - include_vars: "vars"
+  post_tasks:
+    - juggler_cleanup: #jcheck_mark={{ host }} # commented for clean up all checks made with playbook
+
+  tasks:
+    - include: tasks/yasm.yml
+      vars:
+        service_tags:
+          - specific
+        checks:
+          weather.alerts.prod.balancer.weatherapi.status.2xx: 2xx
+          weather.alerts.prod.balancer.weatherapi.status.4xx: 4xx
+          weather.alerts.prod.balancer.weatherapi.status.5xx: 5xx
+          weather.alerts.Morda_errors: morda_alerts
+          weather.alerts.turbo_weather_errors: turbo_errors
+        night_percent: "0%"
+        notifications:
+          - template: on_status_change
+            golem_responsible: no
+            method: [telegram]
+            login: [khomikki]
+            status: "{{ statuses_critical + statuses_warning }}"
+          - template: on_status_change
+            golem_responsible: yes
+            method: [sms]
+            status: "{{ statuses_critical }}"
+        custom_flap:
+          stable: 15
+          critical: 30

@@ -1,0 +1,104 @@
+---
+name: content_front_http
+parsing:
+  groups: [tv-test-front]
+  metahost: tv-test-front
+  DataFetcher:
+    logname: "nginx/access.log"
+    timetail_url: "/timetail?pattern=tv_front_http&type=tskv&log_ts="
+  Combainer:
+      MINIMUM_PERIOD: 60
+aggregate:
+  data:
+    http_stat:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.content
+---
+name: tv-test-front-media-tskv
+parsing:
+  groups: [tv-test-front]
+  metahost: tv-test-front
+  DataFetcher:
+    logname: "nginx/access.log"
+    timetail_url: "/timetail?pattern=media_tskv_common&type=tskv&log_ts="
+  Combainer:
+      MINIMUM_PERIOD: 60
+aggregate:
+  data:
+    tskv.common:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.content
+    tv_5xx:
+      type: juggler
+      plugin: picker
+      Host: "tv-test-front"
+      notifications:
+        - template_name: on_status_change
+          template_kwargs:
+            status:
+              - {from: "OK", to: "CRIT"}
+              - {from: "WARN", to: "CRIT"}
+              - {from: "CRIT", to: "OK"}
+              - {from: "CRIT", to: "WARN"}
+            method:
+              - telegram
+            login: [tv-monitoring]
+      Aggregator: timed_more_than_limit_is_problem
+      checkname: "tv_5xx_rps"
+      description: "tv 5xx"
+      ttl: 90
+      tags: ['tv-test-front', 'combaine', 'front', 'testing']
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{crit: 146%, warn: 0, time_start: 2,time_end: 1,day_end: 7,day_start: 1}]
+      config:
+        history: 3
+        type: metahost
+        query: "((5xx))$"
+        prefix: "combaine_"
+        limits:
+          "tv_5xx": {limit: {WARN: 0.6, CRIT: 1}, explain: "5xx rate"}
+          "default": 1
+    tv_timings:
+      type: juggler
+      plugin: picker
+      Host: "tv-test-front"
+      notifications:
+        - template_name: on_status_change
+          template_kwargs:
+            status:
+              - {from: "OK", to: "CRIT"}
+              - {from: "WARN", to: "CRIT"}
+              - {from: "CRIT", to: "OK"}
+              - {from: "CRIT", to: "WARN"}
+            method:
+              - telegram
+            login: [tv-monitoring]
+      Aggregator: timed_more_than_limit_is_problem
+      checkname: "tv_99prc"
+      description: "tv 99prc"
+      ttl: 90
+      tags: ['tv-test-front', 'combaine', 'front', 'testing']
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{crit: 146%, warn: 0, time_start: 1,time_end: 2,day_end: 7,day_start: 1}]
+      config:
+        history: 3
+        type: metahost
+        query: "(request_timings(/[9]))$"
+        prefix: "combaine_"
+        limits:
+          "tv_99prc": {limit: {WARN: 700, CRIT: 850}, explain: "99prc"}
+          "default": 850
+
+

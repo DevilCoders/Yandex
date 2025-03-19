@@ -1,0 +1,23 @@
+series:
+  snmp_poller.hrStorage:
+    min_interval: 60
+
+pollers:
+  SNMP host resources storage:
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters:
+        - {oid: host-resources.hrStorageDescr, options: ["use_snmpbulkget"]}
+        - {oid: host-resources.hrStorageSize, options: ["use_snmpget"]}
+        - {oid: host-resources.hrStorageUsed, options: ["use_snmpget"]}
+        - {oid: host-resources.hrStorageAllocationFailures, options: ["use_snmpget"]}
+      post_fn: [[rearrange_partial_data, {values_filter: [size, used, alloc_fail]}],
+                [calc_fraction, {dividend_sensor: used, divider_sensor: size, new_sensor: used_percent, percent: true}]]
+      skip_key_expr: { 'descr': '^(/vmfs/|.+\.zfs/snapshot/)$' }
+
+    filter: ["rt%({FreeBSD} or {Arista} or {Mellanox SN} or {VMware}) and [опрос SNMP]",
+             "rt_taxi_mon%{taxi_lavka_base}"]
+    series: hrStorage
+    interval: 120
+    instances: 3

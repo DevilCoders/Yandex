@@ -1,0 +1,77 @@
+#!/bin/bash
+## Variables
+PKGNAME="yandex-cult-common-nginx-pushclient"
+WORKDIR="/usr/share/yandex-configs/$PKGNAME"
+
+# Get host information
+HOST=`hostname -f`
+GROUP=`curl -fs "http://c.yandex-team.ru/api/hosts/$HOST?format=yaml" | grep 'group' | awk '{print $NF}'`
+GROUP_TAGS=`curl -fs "http://c.yandex-team.ru/api/get_group_tags/$GROUP?format=yaml"`
+PROJECT=`curl -fs "http://c.yandex-team.ru/api/groups2projects/$GROUP?format=yaml" | grep 'name' | awk '{print $NF}'`
+CORE_DC_VLAN=`ip ro | grep default | awk '{print $3}'`
+
+## Helpers
+# Get environment type
+if [ -f "/etc/yandex/environment.type" ]; then
+        ENVIR=`cat /etc/yandex/environment.type`
+else
+        echo 'No /etc/yandex/environment.type, trying detect env by conductor group'
+        preenvir=`echo $GROUP | awk -F\- '{print $NF}'`
+        if [[ "$preenvir" == "testing" ]] || [[ "$preenvir" == "prestable" ]]; then
+                ENVIR=`echo $preenvir`
+        else
+                ENVIR="production"
+        fi
+fi
+
+# Function to make symlinks
+function create_symlink {
+        src=$1
+        dst=$2
+        if [ ! -L $dst ]; then
+                if [ ! -f $dst ]; then
+                        ln -s $src $dst
+                else
+                        echo "File exists, removing $dst and making symlink on $src"
+                        rm -f $dst
+                        ln -s $src $dst
+                fi
+        else
+                echo "Symlink already exists. Rewriting"
+		ln -f -s $src $dst
+        fi
+}
+
+# Determ delay for logstore via c-tags
+HAS_LOGSTORE_DELAY=`echo $GROUP_TAGS | grep nginx-logstore-delay`
+if [[ "x$HAS_LOGSTORE_DELAY" != "x" ]]; then
+        LDELAY=`echo $HAS_LOGSTORE_DELAY | sed 's/.* \(nginx-logstore-delay=[0-9]*\).*/\1/' | awk -F\= '{print $NF}'`
+else
+        LDELAY="300"
+fi
+
+# Configure
+sed -i "s/_GROUP_/$GROUP/g" $WORKDIR/nginx-logstore.yaml
+sed -i "s/_GROUP_/$GROUP/g" $WORKDIR/nginx-statbox*.yaml
+sed -i "s/_HOSTNAME_/$HOST/g" $WORKDIR/nginx-logstore.yaml
+sed -i "s/_PROJECT_/$PROJECT/g" $WORKDIR/nginx-logstore.yaml
+
+sed -i "s/_DELAY_/$LDELAY/g" $WORKDIR/nginx-logstore.yaml
+
+# Install
+## statbox-push-client confs install
+create_symlink $WORKDIR/nginx-logstore.yaml /etc/yandex/statbox-push-client/nginx-logstore.yaml
+# Send logs to statbox only if we need it (group have tag statbox in conductor)
+if [[ "x`echo $GROUP_TAGS | grep statbox-tskv`" != "x" ]]; then
+	create_symlink $WORKDIR/nginx-statbox-tskv.$ENVIR.yaml /etc/yandex/statbox-push-client/nginx-statbox.yaml
+elif [[ "x`echo $GROUP_TAGS | grep statbox`" != "x" ]]; then
+	create_symlink $WORKDIR/nginx-statbox.$ENVIR.yaml /etc/yandex/statbox-push-client/nginx-statbox.yaml
+fi
+
+# Try to generate /etc/default/push-client config
+GENERATOR="/etc/init.d/rewrite-push-client-cfgs"
+GENERATOR_PACKAGE="yandex-media-common-push-client-cfgs-rewriter"
+[ -f "$GENERATOR" ] && echo -e "\e[42mRegenerating /etc/default/push-client via $GENERATOR\e[0m" && $GENERATOR start || echo -e "\e[41mNot found $GENERATOR from $GENERATOR_PACKAGE. \
+    Update /etc/default/push-client manually or install $GENERATOR_PACKAGE and run $GENERATOR\e[0m"
+
+echo -n "$HOST configured with $PKGNAME"

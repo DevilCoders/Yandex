@@ -1,0 +1,5 @@
+RECURSE(
+    ftpd
+    pwdhasher
+    sftpd
+)

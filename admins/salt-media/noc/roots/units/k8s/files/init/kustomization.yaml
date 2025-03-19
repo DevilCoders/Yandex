@@ -1,0 +1,92 @@
+resources:
+  - https://projectcalico.docs.tigera.io/manifests/calico.yaml
+patches:
+  - target:
+      kind: ConfigMap
+      name: calico-config
+    patch: |-
+      - op: replace
+        path: /data/calico_backend
+        value: "none"
+      - op: replace
+        path: /data/cni_network_config
+        value: |-
+          {
+            "name": "k8s-pod-network",
+            "cniVersion": "0.3.1",
+            "plugins": [
+              {
+                "type": "calico",
+                "log_level": "info",
+                "log_file_path": "/var/log/calico/cni/cni.log",
+                "datastore_type": "kubernetes",
+                "nodename": "__KUBERNETES_NODE_NAME__",
+                "mtu": __CNI_MTU__,
+                "ipam": {
+                    "type": "calico-ipam",
+                    "assign_ipv4": "false",
+                    "assign_ipv6": "true"
+                },
+                "policy": {
+                    "type": "k8s"
+                },
+               "kubernetes": {
+                    "kubeconfig": "__KUBECONFIG_FILEPATH__"
+                }
+              },
+              {
+                "type": "portmap",
+                "snat": true,
+                "capabilities": {"portMappings": true}
+              },
+              {
+                "type": "bandwidth",
+                "capabilities": {"bandwidth": true}
+              }
+            ]
+          }
+  - target:
+      kind: DaemonSet
+      name: calico-node
+    patch: |-
+      # IP
+      - op: replace
+        path: /spec/template/spec/containers/0/env/5/value
+        value: "none"
+      # CALICO_IPV4POOL_IPIP
+      - op: replace
+        path: /spec/template/spec/containers/0/env/6/value
+        value: "Never"
+      # FELIX_IPV6SUPPORT
+      - op: replace
+        path: /spec/template/spec/containers/0/env/14/value
+        value: "true"
+      # IP6
+      - op: add
+        path: /spec/template/spec/containers/0/env/16
+        value:
+          name: IP6
+          value: "autodetect"
+      # CALICO_IPV6POOL_CIDR
+      - op: add
+        path: /spec/template/spec/containers/0/env/17
+        value:
+          name: CALICO_IPV6POOL_CIDR
+          value: "2001:db8:42:0::/56"
+      # remove "-bird-live"
+      - op: remove
+        path: /spec/template/spec/containers/0/livenessProbe/exec/command/2
+        value: "-bird-live"
+      - op: remove
+        path: /spec/template/spec/containers/0/readinessProbe/exec/command/2
+        value: "-bird-live"
+      # remove sysfs mount
+      - op: remove
+        path: /spec/template/spec/containers/0/volumeMounts/6
+      - op: remove
+        path: /spec/template/spec/volumes/5
+      - op: remove
+        path: /spec/template/spec/volumes/4
+      # remove mount-bpffs
+      - op: remove
+        path: /spec/template/spec/initContainers/2

@@ -1,0 +1,87 @@
+#!/bin/bash
+2>&1
+PATH=/sbin:/usr/sbin:/bin:/usr/bin
+
+NAME=yasmagent
+
+BASEDIR="/usr/local/yasmagent"
+LOGDIR="/var/log/yasmagent"
+RUNDIR="/var/run/yasmagent"
+PIDFILE="${BASEDIR}/run/agent.pid"
+HTTP_PORT=11003
+PUSH_PORT=$((${HTTP_PORT} + 2))
+PORTO="true"
+USER=""
+_SYSTEMCTL_SKIP_REDIRECT=1
+
+sleep 5
+
+# MAYBE LATER
+# Read configuration variable file if it is present
+#[ -r "/etc/default/${NAME}" ] && . /etc/default/"${NAME}"
+#[ -z "${instance}" ] && instance="${instances}"
+#[ -z "${instance}" ] && instance="--instance-getter=/usr/local/bin/srw_instance_getter.sh qloud"
+instance="--instance-type=apecloud --instance-getter='/usr/local/bin/srw_instance_getter.sh qloud'"
+#instance="--instance-getter=/usr/local/bin/srw_instance_getter.sh qloud"
+
+
+# RUNTIMECLOUD-3960
+# For RTC - option "instance_runtimecloud_opts=..." in /etc/default/$NAME
+#[ ! -z "${instance_runtimecloud_opts}" ] && instance="${instance} ${instance_runtimecloud_opts}"
+
+[ -z "${USER}" ] && USER="monitor"
+[ -z "${GROUP}" ] && GROUP="monitor"
+
+PYTHON="${BASEDIR}/python/bin/python -B"
+RUNCMD="${BASEDIR}/run.py --config=${BASEDIR}/agent.conf --log-dir=${LOGDIR} --pid-file=${PIDFILE} --yasmutil-dir=${BASEDIR}/lib --http-port=${HTTP_PORT} --push-enabled --push-http-port ${PUSH_PORT}"
+PORTO_CONTAINER_NAME="${NAME}_cocaine"
+
+while ! [ -f $BASEDIR/run.py ]; do
+    echo "Yasmagent not present. Try install."
+    apt-get update -qq
+    apt-get install -y --force-yes yandex-yasmagent
+    sleep 5
+done
+
+chown -R monitor:monitor /var/log/yasmagent/
+
+echo "Starting ${NAME}..."
+# Check if we are in porto-container
+#if ! grep -q "PORTO" /proc/1/environ && command -v portoctl >/dev/null 2>&1 && [ "${PORTO}" = "true" ]; then
+# wait until portod will be available
+#while :; do
+#    agent_running=`portoctl --timeout 8 list -r "{PORTO_CONTAINER_NAME}"`
+#    [ $? -eq 0 ] && { portod="alive"; break; }
+#    echo "Cant check porto, wait 60 sec and try again."
+#    sleep 60
+#done
+
+# check if yasmagent is already running
+#if [ -n "$agent_running" ]; then
+#    echo "Yasmagent is already running: $agent_running!"
+#else
+# kill dead container if exists
+#    portoctl --timeout 180 destroy "${PORTO_CONTAINER_NAME}"
+#    echo portoctl --timeout 180 run "${PORTO_CONTAINER_NAME}" command="${PYTHON} ${RUNCMD} --fg ${instance}" isolate=false \
+#    user="${USER}" group="${GROUP}" porto_namespace="" controllers[devices]=false \
+#    ulimit[memlock]=unlimited \
+#    cpu_limit=2c memory_limit=4Gb
+    #capabilities[IPC_LOCK]=true capabilities[SYS_RAWIO]=true \
+#fi
+
+echo exec su - "${USER}" -c "PATH=${PATH} ${PYTHON} ${RUNCMD} ${instance} --fg"
+exec su - "${USER}" -c "PATH=${PATH} ${PYTHON} ${RUNCMD} ${instance} --fg"
+
+
+# main loop
+#while :; do
+#    sleep 60
+#    curl -s 'http://localhost:11003/json/' > /dev/null 2>&1 || sv restart yasmagent
+#    sleep 10
+#    [ -s /usr/local/yasmagent/run/agent.pid ] && \
+#        kill -0 $(cat /usr/local/yasmagent/run/agent.pid) || sv restart yasmagent
+#    sleep 1
+#    "Main sleep loop."
+#done
+
+

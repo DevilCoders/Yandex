@@ -1,0 +1,58 @@
+#!/bin/bash
+
+export LC_ALL=en_US.UTF-8
+export LANG=en_US.UTF-8
+export LANGUAGE=en_US.UTF-8
+
+exec 2>&1
+
+set -x 
+
+sleep 10
+
+FQDN=$(hostname -f)
+
+if (( ${#FQDN} < 3 ))
+then
+  exit 191
+fi
+
+
+function restart_after_log_mount {
+  if (( ${#1} < 3 )); then
+    sv restart spacemimic
+    sv hup elliptics
+  elif [[ $1 == *elliptics* ]]; then
+    sv hup elliptics
+  elif [[ $1 == *spacemimic* ]]; then
+    sv restart spacemimic
+  fi
+}
+
+ROTATESIZE=104857600
+LOGFILES="/var/log/elliptics/node-1.log /var/log/spacemimic/access.log"
+
+while :; do
+  if [ ! -h /var/log/spacemimic ]; then
+    restart_after_log_mount spacemimic
+  fi
+  if [ -S /var/run/loggiver/loggiver.sock ]; then
+    if [[ $(stat -c %a /var/run/loggiver/loggiver.sock) != "777" ]]; then
+      chmod 777 /var/run/loggiver/loggiver.sock
+    fi
+  fi
+  for f in $LOGFILES
+  do
+    if (( $(stat --printf="%s" $f) > $ROTATESIZE ))
+    then
+      nlfile=$f"."$(date +%Y%m%d-%H%M%S)
+      mv -v $f $nlfile
+      if [[ $f == *elliptics* ]]; then
+        restart_after_log_mount $f
+      fi
+      gzip $nlfile
+    fi
+  done
+  sleep 60
+done
+

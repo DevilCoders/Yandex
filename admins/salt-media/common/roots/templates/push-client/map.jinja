@@ -1,0 +1,50 @@
+{% load_yaml as push_client %}
+stats: []
+domain: {{ salt["grains.get"]("conductor:project") }}.yandex.net
+service: statbox-push-client
+clean_push_client_configs: False
+packages:
+  - yandex-push-client
+check:
+  script: salt://templates/push-client/files/usr/local/bin/push-client-check.sh
+logrotate: salt://templates/push-client/files/etc/logrotate.d/logrotate.tmpl
+{% endload %}
+{% if not salt['pillar.get']('push_client:ignore_pkgver', false) %}
+{% do push_client.update({
+                  "packages": salt["conductor.package"](push_client.packages)
+                              or push_client.packages}) %}
+{% else %}
+{# Freeze current stable push-client release. #}
+{% do push_client.update({"packages": ["yandex-push-client=6.74.0"]}) %}
+{% endif %}
+
+{% set push_client = salt["pillar.get"]("push_client", push_client, merge=True) %}
+
+{% set not_managed_cfgs = salt.file.find("/etc/yandex/statbox-push-client", name="*.yaml", type="f") %}
+
+{%- for st in push_client.stats %}
+  {% if st.get("proto" ,"").startswith("logmux") and
+    "libstatbox-push-logmux" not in push_client.packages %}
+    {% do push_client.packages.append("libstatbox-push-logmux") %}
+  {% endif %}
+  {% if not "fqdn" in st %}
+    {% do st.update({"fqdn": ".".join([st.name, push_client.domain])}) %}
+  {% endif %}
+  {% if not "port" in st %}
+    {% if "port" in push_client %}
+      {% do st.update({"port": push_client.port }) %}
+    {% endif %}
+  {% endif %}
+  {% if "ssl" in st %}
+    {% if not push_client.get("ssl") and st.ssl %}
+      {% do push_client.update({"ssl": st.ssl }) %}
+    {% endif %}
+  {% endif %}
+
+  {% set conf = "/etc/yandex/statbox-push-client/{0}.yaml".format(st.name) %}
+  {% if conf in not_managed_cfgs %}{% do not_managed_cfgs.remove(conf) %}{% endif %}
+  {% if not "conf" in st %}
+    {% do st.update({"conf": conf}) %}
+  {% endif %}
+{% endfor %}
+{% do push_client.update({"not_managed_cfgs": not_managed_cfgs}) %}

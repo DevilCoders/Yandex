@@ -1,0 +1,36 @@
+pollers:
+  http server:
+    poller: http_server
+    poller params:
+      port: 12344
+      fn:
+        http_server.dns_poller:
+          "/.+/": [["resampler_linear", {"period": 30, "max_delta": 1200}]]
+        http_server.pyping:
+          "/.+/": [["resampler_repeat", {"period": 30, "max_delta": 1200}]]
+        http_server.netstat_mbuf:
+          #  mbuf clusters in use (current/cache/total/max)
+          #  4k (page size) jumbo clusters in use (current/cache/total/max)
+          #  9k jumbo clusters in use (current/cache/total/max)
+          #  16k jumbo clusters in use (current/cache/total/max)
+          "/^(cluster|jumbo)(9|16)?-[ctml].+$/": [["resampler_linear", {"period": 30}]]
+
+          #  requests for mbufs denied (mbufs/clusters/mbuf+clusters)
+          #  requests for mbufs delayed (mbufs/clusters/mbuf+clusters)
+          "/^[a-z0-9]+-(sle|fai).+$/": [["resampler_linear", {"period": 30}]]
+
+          #  requests for sfbufs denied
+          #  requests for sfbufs delayed
+          "/^sfbufs-alloc-(failed|wait)$/": [["resampler_linear", {"period": 30}]]
+
+          # mbuf clusters in use current
+          # mbufs in use
+          "/^(mbuf|cluster)-current$/": [["resampler_linear", {"period": 30}]]
+        http_server.network: # NOCDEV-3990
+          "/^(tx|rx)_(drop|errs|unicast|packets|nunicast)$/": [ [ "speed", { "resample": "{sample_period}" } ] ]
+          "/^(tx|rx)$/": [ [ "speed", { "factor": 8, "resample": "{sample_period}" } ] ]
+          "/^flap$/": [ [ "resampler_repeat", { "period": "{sample_period}", "max_delta": 1200 } ], "delta_count" ]
+          "/^speed|(admin|oper)_status$/": [ [ "resampler_repeat", { "period": "{sample_period}", "max_delta": 1200 } ] ]
+    filter: ["dummy"]
+    series: dummy # не влияет. нужен по схеме
+    interval: 99999999999 # не влияет. нужен по схеме

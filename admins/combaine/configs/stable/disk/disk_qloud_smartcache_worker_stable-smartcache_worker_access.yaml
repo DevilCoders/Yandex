@@ -1,0 +1,46 @@
+parsing:
+  groups: [disk_deploy_smartcache_worker_stable]
+  metahost: smartcache-worker.deploy.disk.yandex.net
+  DataFetcher:
+    logname: 'yandex/disk/smartcache-worker-access-tskv.log'
+    timetail_url: '/timetail?pattern=disk_smartcache_worker_access_update_snapshot_lag&type=java&log_ts='
+aggregate:
+  data:
+    smartcache-worker-access:
+      type: "custom"
+      class: Multimetrics
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+    juggler_smartcache-worker_timings_lag_get_a3_smartcache-update-snapshot:
+      type: juggler
+      namespace: disk
+      Host: "smartcache-worker.deploy.disk.yandex.net"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - ignition
+      Aggregator: logic_or
+      checkname: smartcache_update_lag_93_perc
+      description: smartcache lag 93perc > 6 hours
+      flaps:
+        stable_time: 120
+        critical_time: 600
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      CRIT: [ "${smartcache-worker-access}['smartcache-worker_timings_lag_get_a3_smartcache-update-snapshot'][2]> 21600" ]
+      tags:
+        - production
+
+
+

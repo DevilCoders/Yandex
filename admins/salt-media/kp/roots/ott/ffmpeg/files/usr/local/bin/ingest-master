@@ -1,0 +1,351 @@
+#!/bin/bash
+shopt -s nullglob
+# Переименование русских названий файлов, если они есть
+# Перебираем все файлы в текущем каталоге
+for NAME in * ; do
+# sed-ом заменяем символы кирилицы на символы латиницы
+TRS=`echo $NAME | sed "y/абвгдезийклмнопрстуфхцы/abvgdezijklmnoprstufxcy/"`
+TRS=`echo $TRS | sed "y/АБВГДЕЗИЙКЛМНОПРСТУФХЦЫ/ABVGDEZIJKLMNOPRSTUFXCY/"`
+TRS=${TRS//ч/ch};
+TRS=${TRS//Ч/CH} TRS=${TRS//ш/sh};
+TRS=${TRS//Ш/SH} TRS=${TRS//ё/e};
+TRS=${TRS//Ё/E} TRS=${TRS//ж/j};
+TRS=${TRS//Ж/J} TRS=${TRS//щ/sh\b};
+TRS=${TRS///SH\b} TRS=${TRS//э/e};
+TRS=${TRS//Э/E} TRS=${TRS//ю/ju};
+TRS=${TRS//Ю/JU} TRS=${TRS//я/ya};
+TRS=${TRS//Я/YA} TRS=${TRS//ъ/\b};
+TRS=${TRS//ъ\b} TRS=${TRS//ь/\b};
+TRS=${TRS//Ь/\b}
+TRS=${TRS// /_}
+# переименовываем
+mv -v "$NAME" "$TRS"
+# Если это каталог, заходим в него
+if [[ `file -b "$TRS"` == directory ]]; then
+cd "$TRS"
+"$0"
+cd ..
+fi
+done;
+
+# Проверка наличия и создание каталога DONE
+if ! [ -d DONE ]
+then 
+	mkdir DONE
+fi
+
+# анализ видео
+echo "Исходный файл содержит потоки:"
+for v in *.mov *.avi *.mpg *.mxf *.m2ts *.ts *.mp4 *.vob *.VOB *.AVI *mkv *.MOV *.MPG *.MXF *.M2TS *.TS *.MP4 *.MKV
+do
+	fs_proxy=$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of default=noprint_wrappers=1:nokey=1 $v);
+	fs=`echo ${fs_proxy} | awk '{print $1}'`
+	if [[ $fs -gt "0" ]]
+	then
+		ffprobe -v error -show_entries stream=index,codec_type,codec_name,channels $v
+		break
+	fi
+done
+if [[ $fs -lt "769" ]] #Если исходник SD
+then 
+	echo "Работаем с SD $fs"
+elif [[ $fs -gt "768" && $fs -lt "1921" ]] #Если исходник HD
+then 
+	echo "Работаем с HD $fs"
+elif [[ $fs -gt "1920" ]] #Если исходник HD
+then 
+	echo "Работаем с 4K $fs"
+fi
+
+# сбор параметров кропа
+echo '==============================================='
+echo 'Скрипт сделает просмотровку для студии, извлечет аудио каналы, затем сделает мастер.'
+echo 'В диалогах, любой символ кроме y, в том числе перевода каретки, воспринимается как отрицательный ответ!'
+echo '==============================================='
+echo 'Кроп нужен? (y/n)'
+read crop
+if [[ $crop = "y" ]]
+then
+	echo 'Выполнить кроп автоматически?'
+	read autocrop
+	if [[ $autocrop = "y" ]]
+	then
+		echo 'Интервал расчета кропа по умолчанию - 30 секунд, начиная с пятой минуты. Изменить?'
+		read crop_dialog
+		if [[ $crop_dialog = "y" ]]
+		then
+			echo 'введите -ss в формате HH:MM:SS'
+			read crop_ss
+			echo 'введите -t в формате HH:MM:SS, либо S...(S)'
+			read crop_t
+		elif [[ $crop_dialog != "y" ]]
+		then
+			crop_ss='00:05:00'
+			crop_t='30'
+		fi
+	echo 'Изменить допуски границ черного для кропдетекта?'
+	read crop_threshold_dialog 
+	if [[ $crop_threshold_dialog = "y" ]]
+	then 
+		echo 'введите допуски в формате в формате XX:YY:Z'
+		read crop_threshold_proxy
+		crop_threshold="=$crop_threshold_proxy"
+	elif [[ $crop_threshold_dialog != "y" ]]
+	then 
+		crop_threshold=""
+	fi
+	elif [[ $autocrop != "y" ]]
+	then 
+		echo 'введите величину кропа в формате XX:YY:ZZ:WW, либо XX:YY'
+		read cdresult_kor
+		cdresult_suf="crop="
+		cdresult=$cdresult_suf$cdresult_kor
+	fi
+fi
+
+echo 'введите виличину отреза в начале в формате ЧЧ:ММ:СС, или нажмите ENTER для продолжения без отрезания'
+read ss_value_kor
+if [[ $ss_value_kor != "" ]]
+then ss_value_suf='-ss '
+fi 
+
+echo 'введите виличину отреза в конце в формате ЧЧ:ММ:СС, или нажмите ENTER для продолжения без отрезания'
+echo 'это параметр -t, то есть продолжительность видео, а не время его окончания!'
+read t_value_kor
+if [[ $t_value_kor != "" ]]
+then t_value_suf='-t '
+fi
+echo 'Значения отреза будут действовать для извлекаемого звука, просмотровки и мастера.'
+
+#сбор параметров русской дорожки
+echo 'Сколько аудио каналов извлекаем? (2/3/4/6/8/12)'
+echo '2 канала - стереодорожка'
+echo '3 канала - частный случай 5.1, когда каналы разложены по стерео, попарно'
+echo '4 канала - две стереодорожки, mix и m&e например'
+echo '6 каналов - 5.1 звук'
+echo '8 каналов - 5.1 и стерео'
+echo '12 каналов - два раза по 5.1'
+read stereo_str
+if [[ $stereo_str = "2" ]]
+then
+	echo 'Каналы будут извлечены в отдельные файлы и из них будет собран стерео звук мастера и просмотровки'
+	echo 'укажите номер левого канала'
+	read st_left
+	echo 'укажите номер правого канала'
+	read st_right
+	audio_channel=(-filter_complex "[0:$st_left][0:$st_right] amerge=inputs=2[aout]" -map \[aout\])
+	audio_out=(-map 0:$st_left -y DONE/"${v%.*}"_ch1.flac -map 0:$st_right -y DONE/"${v%.*}"_ch2.flac)
+elif [[ $stereo_str = "3" ]]
+then
+	echo 'Каналы будут извлечены в отдельные файлы и из них будет собран стерео звук мастера и просмотровки'
+	echo 'укажите номер первого стереоканала. Здесь должны лежать левый и правый из 5.1'
+	read sur_1
+	echo 'укажите номер второго стереоканала Здесь должны лежать C и LFE из 5.1'
+	read sur_2
+	echo 'укажите номер третьего стереоканала. Здесь должны ледать тыловые каналы из 5.1'
+	read sur_3
+	audio_channel=(-filter_complex "[0:$sur_1][0:$sur_2][0:$sur_3] amerge=inputs=3[aout]" -map \[aout\] -ac 2 -clev 1.414 -slev .5)
+	audio_out=(-map 0:$sur_1 -y DONE/"${v%.*}"_ch1.flac -map 0:$sur_2 -y DONE/"${v%.*}"_ch2.flac -map 0:$sur_3 -y DONE/"${v%.*}"_ch3.flac)
+	
+elif [[ $stereo_str = "4" ]]
+then
+	echo 'Каналы будут извлечены в отдельные файлы. Стерео звук мастера и просмотровки будет собран из первых двух каналов'
+	echo 'укажите номер левого канала'
+	read st_left
+	echo 'укажите номер правого канала'
+	read st_right
+	echo 'укажите номер левого m&e канала'
+	read st_me_left
+	echo 'укажите номер правого m&e канала'
+	read st_me_right
+	audio_channel=(-filter_complex "[0:$st_left][0:$st_right] amerge=inputs=2[aout]" -map \[aout\])
+	audio_out=(-map 0:$st_left -y DONE/"${v%.*}"_ch1.flac -map 0:$st_right -y DONE/"${v%.*}"_ch2.flac -map 0:$st_me_left -y DONE/"${v%.*}"_ch3.flac -map 0:$st_me_right -y DONE/"${v%.*}"_ch4.flac)
+elif [[ $stereo_str = "6" ]]
+then
+	echo 'Каналы будут извлечены в отдельные файлы и из них будет собран стерео звук мастера и просмотровки'
+	echo 'укажите номер левого 5.1 канала'
+	read sur_left
+	echo 'укажите номер правого 5.1 канала'
+	read sur_right
+	echo 'укажите номер центрального 5.1 канала'
+	read sur_centr
+	echo 'укажите номер низкочастотного 5.1 канала'
+	read sur_lfe
+	echo 'укажите номер левого заднего 5.1 канала'
+	read sur_left_sur
+	echo 'укажите номер правого заднего 5.1 канала'
+	read sur_right_sur
+	audio_channel=(-filter_complex "[0:$sur_left][0:$sur_right][0:$sur_centr][0:$sur_lfe][0:$sur_left_sur][0:$sur_right_sur] amerge=inputs=6[aout]" -map \[aout\] -ac 2 -clev 1.414 -slev .5)
+	audio_out=(-map 0:$sur_left -y DONE/"${v%.*}"_ch1.flac -map 0:$sur_right -y DONE/"${v%.*}"_ch2.flac -map 0:$sur_centr -y DONE/"${v%.*}"_ch3.flac -map 0:$sur_lfe -y DONE/"${v%.*}"_ch4.flac -map 0:$sur_left_sur -y DONE/"${v%.*}"_ch5.flac -map 0:$sur_right_sur -y DONE/"${v%.*}"_ch6.flac)
+elif [[ $stereo_str = "8" ]]
+then
+	echo 'укажите номер левого стерео канала'
+	read st_left
+	echo 'укажите номер правого стерео канала'
+	read st_right
+	echo 'укажите номер левого 5.1 канала'
+	read sur_left
+	echo 'укажите номер правого 5.1 канала'
+	read sur_right
+	echo 'укажите номер центрального 5.1 канала'
+	read sur_centr
+	echo 'укажите номер низкочастотного 5.1 канала'
+	read sur_lfe
+	echo 'укажите номер левого заднего 5.1 канала'
+	read sur_left_sur
+	echo 'укажите номер правого заднего 5.1 канала'
+	read sur_right_sur
+	echo 'Все каналы будут извлечены в отдельные файлы'
+	
+	#audio_channel1=(-filter_complex "[0:$st_left][0:$st_right] amerge=inputs=2[aout]" -map \[aout\])
+	#audio_channel2=(-filter_complex "[0:$sur_left][0:$sur_right][0:$sur_centr][0:$sur_lfe][0:$sur_left_sur][0:$sur_right_sur] amerge=inputs=6[aout]" -map \[aout\] -ac 2 -clev 1.414 -slev .5)
+	audio_out=(-map 0:$st_left -y DONE/"${v%.*}"_ch1.flac -map 0:$st_right -y DONE/"${v%.*}"_ch2.flac -map 0:$sur_left -y DONE/"${v%.*}"_ch3.flac -map 0:$sur_right -y DONE/"${v%.*}"_ch4.flac -map 0:$sur_centr -y DONE/"${v%.*}"_ch5.flac -map 0:$sur_lfe -y DONE/"${v%.*}"_ch6.flac -map 0:$sur_left_sur -y DONE/"${v%.*}"_ch7.flac -map 0:$sur_right_sur -y DONE/"${v%.*}"_ch8.flac)
+	echo 'Из каких собрать стерео звук мастера? (2/6)'
+	read audio_channel_dialog
+	if [[ $audio_channel_dialog = "2" ]]
+	then
+	audio_channel=(-filter_complex "[0:$st_left][0:$st_right] amerge=inputs=2[aout]" -map \[aout\])
+	elif [[ $audio_channel_dialog = "6" ]]
+	then
+	audio_channel=(-filter_complex "[0:$sur_left][0:$sur_right][0:$sur_centr][0:$sur_lfe][0:$sur_left_sur][0:$sur_right_sur] amerge=inputs=6[aout]" -map \[aout\] -ac 2 -clev 1.414 -slev .5)
+	fi
+elif [[ $stereo_str = "12" ]]
+then
+	echo 'укажите номер левого 5.1 канала'
+	read sur_left
+	echo 'укажите номер правого 5.1 канала'
+	read sur_right
+	echo 'укажите номер центрального 5.1 канала'
+	read sur_centr
+	echo 'укажите номер низкочастотного 5.1 канала'
+	read sur_lfe
+	echo 'укажите номер левого заднего 5.1 канала'
+	read sur_left_sur
+	echo 'укажите номер правого заднего 5.1 канала'
+	read sur_right_sur
+	echo 'укажите номер левого 5.1 m&e канала'
+	read sur_left_me
+	echo 'укажите номер правого 5.1 m&e канала'
+	read sur_right_me
+	echo 'укажите номер центрального 5.1 m&e канала'
+	read sur_centr_me
+	echo 'укажите номер низкочастотного 5.1 m&e канала'
+	read sur_lfe_me
+	echo 'укажите номер левого заднего 5.1 m&e канала'
+	read sur_left_sur_me
+	echo 'укажите номер правого заднего 5.1 m&e канала'
+	read sur_right_sur_me
+	echo 'Все каналы будут извлечены в отдельные файлы. Стерео звук для мастера будет собран из первых 6 каналов.'
+	audio_channel=(-filter_complex "[0:$sur_left][0:$sur_right][0:$sur_centr][0:$sur_lfe][0:$sur_left_sur][0:$sur_right_sur] amerge=inputs=6[aout]" -map \[aout\] -ac 2 -clev 1.414 -slev .5)
+	audio_out=(-map 0:$sur_left -y DONE/"${v%.*}"_ch1.flac -map 0:$sur_right -y DONE/"${v%.*}"_ch2.flac -map 0:$sur_centr -y DONE/"${v%.*}"_ch3.flac -map 0:$sur_lfe -y DONE/"${v%.*}"_ch4.flac -map 0:$sur_left_sur -y DONE/"${v%.*}"_ch5.flac -map 0:$sur_right_sur -y DONE/"${v%.*}"_ch6.flac -map 0:$sur_left_me -y DONE/"${v%.*}"_ch7.flac -map 0:$sur_right_me -y DONE/"${v%.*}"_ch8.flac -map 0:$sur_centr_me -y DONE/"${v%.*}"_ch9.flac -map 0:$sur_lfe_me -y DONE/"${v%.*}"_ch10.flac -map 0:$sur_left_sur_me -y DONE/"${v%.*}"_ch11.flac -map 0:$sur_right_sur_me -y DONE/"${v%.*}"_ch12.flac)
+fi
+
+#Сбор параметров просмотровки
+echo 'введите название студии озвучки'
+read studio
+echo 'подготовить просмотровку для еще одной студии?'
+read studio_dialog
+if [[ $studio_dialog = "y" ]] 
+	then 
+	echo 'введите название второй студии озвучки'
+	read studio2
+	echo 'копирайт для второй студии будет обычным или уменьшенным? (s/l)'
+	read logosize
+fi
+echo 'Мастер нужен? (y/n)'
+read master
+if [[ $master = "y" ]]
+then 
+	echo 'деинтерлейс мастера нужен? (y/n)'
+		read deinterlace_dialog
+fi
+if [[ $deinterlace_dialog = "y" ]]
+	then
+	deinterlace=",yadif,setsar=1,scale=interl=1,format=pix_fmts=yuv420p"
+	deinterlace_cropless=(-vf 'yadif,setsar=1,scale=interl=1,format=pix_fmts=yuv420p')
+elif [[ $deinterlace_dialog != "y" ]]
+	then deinterlace=""
+	deinterlace_cropless=""
+fi
+
+echo 'Сначала будет извлечен звук, потом посчитана просмотровка, затем мастер. Готовые файлы звука и просмотровки можно забирать в папке DONE до окончания пересчета мастера!'
+
+#Пересчет
+for f in *.mov *.avi *.mpg *.mxf *.m2ts *.ts *.mp4 *.vob *.VOB *.AVI *mkv *.MOV *.MPG *.MXF *.M2TS *.TS *.MP4 *.MKV 
+do
+	ffmpeg $ss_value_suf$ss_value_kor $t_value_suf$t_value_kor -i "$f" -acodec flac -map_metadata -1 -map_chapters -1 "${audio_out[@]}"
+	if [[ $stereo_str = "3" ]] 
+		then 
+		cd DONE/
+		for v in *.flac
+			do
+			ffmpeg -i "$v" -acodec flac -map_channel 0.0.0 "${v%.*}"_ch1.flac -map_channel 0.0.1 "${v%.*}"_ch2.flac
+		done
+		cd ..
+	fi
+	let fsi=$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of csv=s=x:p=0 $f)/25;
+	ffmpeg $ss_value_suf$ss_value_kor $t_value_suf$t_value_kor -i "$f" -map 0:v -vcodec h264 -profile:v high -level 5.1 -pix_fmt yuv420p -crf 25 -map_metadata -1 -vf "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:fontcolor_expr='ffffff%{eif\:max(80,min(180,255*(between(mod(t,10),6,5)+((mod(t,10)-1)/4.8)*between(mod(t,10),1,6)+(-(mod(t,10)-10)/5)*between(mod(t,10),5,10))))\:x\:2}':fontsize="$fsi":text='КОНФИДЕНЦИАЛЬНАЯ ИНФОРМАЦИЯ
+
+
+
+
+UNAUTHORIZED FOR PUBLIC SCREENING
+
+"$studio"':x=(w-tw)/2:y=(h-th)/2,scale=-2:360,setsar=1:1" -acodec aac -ar 48000 -ab 256K "${audio_channel[@]}" -map_chapters -1 -y DONE/"${v%.*}"_locked_$studio.mp4;
+if [[ $studio_dialog = "y" ]]
+	then 
+		if [[ $logosize = "l" ]]
+		then
+			let fsi=$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of csv=s=x:p=0 $f)/25;
+			ffmpeg $ss_value_suf$ss_value_kor $t_value_suf$t_value_kor -i "$f" -map 0:v -vcodec h264 -profile:v high -level 5.1 -pix_fmt yuv420p -crf 25 -map_metadata -1 -vf "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:fontcolor_expr='ffffff%{eif\:max(80,min(180,255*(between(mod(t,10),6,5)+((mod(t,10)-1)/4.8)*between(mod(t,10),1,6)+(-(mod(t,10)-10)/5)*between(mod(t,10),5,10))))\:x\:2}':fontsize="$fsi":text='КОНФИДЕНЦИАЛЬНАЯ ИНФОРМАЦИЯ
+
+
+
+
+UNAUTHORIZED FOR PUBLIC SCREENING
+
+"$studio2"':x=(w-tw)/2:y=(h-th)/2,scale=-2:360,setsar=1:1" -acodec aac -ar 48000 -ab 256K "${audio_channel[@]}" -map_chapters -1 -y DONE/"${v%.*}"_locked_$studio2.mp4;
+		elif [[ $logosize = "s" ]]
+		then
+			let fsi=$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of csv=s=x:p=0 $f)/40;
+			ffmpeg $ss_value_suf$ss_value_kor $t_value_suf$t_value_kor -i "$f" -map 0:v -vcodec h264 -profile:v high -level 5.1 -pix_fmt yuv420p -crf 25 -map_metadata -1 -vf "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:fontcolor_expr='ffffff%{eif\:max(80,min(180,255*(between(mod(t,10),6,5)+((mod(t,10)-1)/4.8)*between(mod(t,10),1,6)+(-(mod(t,10)-10)/5)*between(mod(t,10),5,10))))\:x\:2}':fontsize="$fsi":text='КОНФИДЕНЦИАЛЬНАЯ ИНФОРМАЦИЯ
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+UNAUTHORIZED FOR PUBLIC SCREENING
+
+"$studio2"':x=(w-tw)/2:y=(h-th)/2,scale=-2:360,setsar=1:1" -acodec aac -ar 48000 -ab 256K "${audio_channel[@]}" -map_chapters -1 -y DONE/"${v%.*}"_locked_$studio2.mp4;
+
+fi
+fi
+
+if [[ $master = "y" ]]
+	then
+	if [[ $autocrop = "y" ]]
+			then ffmpeg -ss $crop_ss -t $crop_t -i "$f" -map 0:v -vcodec h264 -profile:v high -preset slow -level 5.1 -pix_fmt yuv420p -crf 15 -y temp.mp4; cdresult=$(ffmpeg -i temp.mp4 -vf cropdetect$crop_threshold -f null - 2>&1 | awk '/crop/ { print $NF }' | tail -1);
+			ffmpeg $ss_value_suf$ss_value_kor $t_value_suf$t_value_kor -i "$f" -map 0:v -vcodec h264 -profile:v high -level 5.1 -pix_fmt yuv420p -crf 15 -map_metadata -1 -vf "$cdresult$deinterlace" -acodec aac -ar 48000 -ab 256K -map_chapters -1 "${audio_channel[@]}" -y DONE/"${f%.*}"_master_eng.mp4;
+	elif [[ $autocrop != "y" ]]
+			then
+				if [[ $deinterlace_dialog = "y" ]]
+					then 
+					ffmpeg $ss_value_suf$ss_value_kor $t_value_suf$t_value_kor -i "$f" -map 0:v -vcodec h264 -profile:v high -level 5.1 -pix_fmt yuv420p -crf 15 -map_metadata -1 "${deinterlace_cropless[@]}" -acodec aac -ar 48000 -ab 256K -map_chapters -1 "${audio_channel[@]}" -y DONE/"${f%.*}"_master_eng.mp4;
+				elif [[ $deinterlace_dialog != "y" ]]
+					then
+					ffmpeg $ss_value_suf$ss_value_kor $t_value_suf$t_value_kor -i "$f" -map 0:v -vcodec h264 -profile:v high -level 5.1 -pix_fmt yuv420p -crf 15 -map_metadata -1 -acodec aac -ar 48000 -ab 256K -map_chapters -1 "${audio_channel[@]}" -y DONE/"${f%.*}"_master_eng.mp4;
+				fi
+	fi
+fi
+
+done;
+rm temp.mp4;

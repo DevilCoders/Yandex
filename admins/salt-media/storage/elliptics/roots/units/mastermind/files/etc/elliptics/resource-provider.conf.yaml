@@ -1,0 +1,152 @@
+{%- set config = vars -%}
+
+metadata:
+  url: "{{ config.mongo.mdb_url_template.format(user=config.mongo.mdb_user, password=config.mongo.mdb_password) }}"
+  options:
+    max_pool_size: 100
+    socketTimeoutMS: 10000
+    connectTimeoutMS: 10000
+    w: 2
+    wtimeout: 10000
+  namespaces:
+    db: "{{ config.mongo.metadata_db_prefix }}_namespaces"
+
+zookeeper:
+  endpoints: "{{ config.zk.hosts }}"
+  prefix: "/nscfg/folders_test/"
+  options:
+    timeout: 10
+    command_retry:
+      max_tries: 10
+
+federation:
+  allowed_to_set_host_federations:
+    {%- for fed in config.inventory.allowed_to_set_host_federations %}
+    - "{{ fed }}"
+    {%- endfor %}
+  fallback_federation_id: {{ config.federation | int }}
+
+mastermind:
+  endpoints: 'localhost:9010'
+  request_timeout: 10
+
+service_account:
+  endpoint: "[::]:9777"
+  mds_id: "{{ config.resource_provider.mds_id }}"
+  mds_min_space_gib: {{ config.resource_provider.min_space_gib }}
+  avatars_id: "{{ config.resource_provider.avatars_id }}"
+  avatars_min_space_gib: {{ config.resource_provider.min_space_gib }}
+  gib_unit_key: "gibibytes"
+  max_accounts_per_folder: 100
+  max_list_batch_size: 1000
+  ping_period: 3
+  forbidden_to_move_quota_namespaces:
+    - "disk"
+    - "mail"
+  # MDS-16124:
+  skip_import_folder_ids:
+    - "8b455aaf-56fd-4545-93d1-284542c03c73"
+    - "9db2dfc5-9238-445b-a3de-4016062904d5"
+    - "22426b7c-101b-4368-9d87-385d848655c8"
+    - "5e4ca3dd-8f0e-4e32-8fe9-fb58a6796171"
+    - "9a5e1bc4-3e6d-4905-93c8-ca9650ee9f8d"
+
+  tls:
+    enable: true
+    key_path: "/etc/yandex-certs/{{ config.resource_provider.cert_name }}.key"
+    cert_path: "/etc/yandex-certs/{{ config.resource_provider.cert_name }}.pem"
+  tvm:
+    enable: true
+    service_d_id: 2023017
+    allowed_user_ids:
+      # service D ticket
+      - 2023017
+      # self ticket for self checking
+      - {{ config.resource_provider.self_tvm_id }}
+    self_id: {{ config.resource_provider.self_tvm_id }}
+    tvm_secret_path: "/etc/nscfg/resource-provider-tvm-secret"
+
+stats_updater:
+  update_period: 10
+
+system:
+  port: 9778
+
+abcd:
+  collect_enabled: true
+  endpoint: "grpc.d-api.yandex-team.ru:8080"
+  sleep_between_requests: 0.1
+  collect_period: 3600
+  reserved_folder_ids:
+    - "6ff1f689-4a60-4a9f-8f67-5ea5af5452b5"
+    - "8027c89a-81d6-4884-a41e-5f27aa12587b"
+
+s3:
+  collect_enabled: true
+  idm:
+    url: "{{ config.resource_provider.s3_idm_url }}"
+    timeout: 5
+  default_namespace: "{{ config.resource_provider.s3_default_namespace }}"
+  abc_id_to_namespace:
+    {%- for abc, ns in config.resource_provider.s3_id_to_mds_ns.items() %}
+    "{{ abc }}": "{{ ns }}"
+    {%- endfor %}
+  skip_namespaces:
+    - "s3-yc-cold"
+    - "s3-yc-ringbuffer"
+    - "s3-yc-ice"
+  collect_period: 60
+
+logging:
+  version: 1
+  formatters:
+    requestlog:
+      format: "[%(asctime)s.%(msecs)03d] %(levelname)s %(trace_id)s %(method)s %(message)s"
+      datefmt: "%Y-%m-%d %H:%M:%S"
+      converter: "time.gtime"
+    default:
+      format: "[%(asctime)s.%(msecs)03d] %(levelname)s %(name)s: %(message)s"
+      datefmt: "%Y-%m-%d %H:%M:%S"
+      converter: "time.gtime"
+  handlers:
+    accesslog_file:
+      class: "logging.handlers.WatchedFileHandler"
+      formatter: "requestlog"
+      filename: "/var/log/resource-provider/access.log"
+    defaultlog_file:
+      class: "logging.handlers.WatchedFileHandler"
+      formatter: "default"
+      filename: "/var/log/resource-provider/server.log"
+    requestlog_file:
+      class: "logging.handlers.WatchedFileHandler"
+      formatter: "requestlog"
+      filename: "/var/log/resource-provider/server.log"
+  root:
+    handlers:
+      - "defaultlog_file"
+  loggers:
+    resource_provider.access:
+      level: "INFO"
+      handlers:
+        - "accesslog_file"
+      propagate: false
+    resource_provider.account_service:
+      level: "INFO"
+      handlers:
+        - "requestlog_file"
+      propagate: false
+    resource_provider:
+      level: "INFO"
+      handlers:
+        - "defaultlog_file"
+      propagate: false
+    mm.mongo:
+      level: "DEBUG"
+      handlers:
+        - "defaultlog_file"
+      propagate: false
+    TVM:
+      level: "INFO"
+      handlers:
+        - "defaultlog_file"
+      propagate: false

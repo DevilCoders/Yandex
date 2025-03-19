@@ -1,0 +1,39 @@
+# NOCDEV-4268
+credentials: !include ../credentials.yml
+variable: !include variables.yaml
+
+series:
+  comocutor_poller.netconf_network:
+    min_interval: 30
+
+  comocutor_poller.netconf_network_juniper_extended:
+    min_interval: 30
+
+pollers:
+  comocutor netconf huawei network:
+    poller: comocutor
+    poller params:
+      getter: get_huawei_ifm_network
+      device: NetconfDevice
+      <<: *comocutor_credentials
+      post_fn: [check_net_data_stage1, [filter_keys, {"filtr": *huawei_ifname_filter}]]
+      fn: *network_fn
+    series: comocutor_poller.netconf_network
+    interval: 30
+    instance_group: main netconf instance
+    filter: *huawei_test_hosts
+
+  comocutor netconf juniper network:
+    poller: comocutor
+    poller params:
+      getter: get_jnx_network
+      device: NetconfDevice
+      <<: *comocutor_credentials
+      post_fn: [check_net_data_stage1, [filter_keys, {"filtr": *juniper_ifname_filter}]]
+      fn:
+        << : *network_fn
+        "/^(output|input|mtu|hs-link|framing|carrier)-.+/": [ [ "speed", { "resample": "{sample_period}" } ] ]
+    series: comocutor_poller.netconf_network
+    interval: 30
+    instance_group: main netconf instance
+    filter: *netconf_juniper_filter

@@ -1,0 +1,84 @@
+parsing:
+  groups: [disk_mqueue]
+  metahost: disk_mqueue
+  DataFetcher:
+      type: http
+      port: 3132
+      uri: "/exec_pattern?pattern=rabbitmq_overview_stats"
+aggregate:
+  data:
+    rabbitmq_overview_stats:
+      type: "custom"
+      class: "Multimetrics"
+      rps: no
+      perHost: YES
+
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+    juggler_overview_messages_total: &juggler-conf
+      type: juggler
+      namespace: disk
+      Host: "disk_mqueue"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - ignition
+      Aggregator: logic_or
+      checkname: overview_messages_total
+      description: overview_messages_total
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      flaps: { stable_time: 120, critical_time: 180 }
+      CRIT: [ "${rabbitmq_overview_stats}['overview_messages']  > 600000" ]
+      tags:
+        - disk_mqueue
+        - disk_mpfs
+        - disk_admin_critical
+        - production
+
+    juggler_overview_messages_total_devops:
+      type: juggler
+      namespace: disk-devops
+      Host: "disk_mqueue_devops"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 420
+            logins:
+                - robot-disk-java-mntr
+                - shirankov
+                - akinfold
+                - kis8ya
+                - sanya2013
+                - yak-dmitriy
+                - friendlyevil
+                - c4et4uk
+                - derovi
+      Aggregator: logic_or
+      checkname: overview_messages_total
+      description: overview_messages_total
+      meta:
+        urls:
+            -
+                title: Documentation
+                url: >-
+                    https://wiki.yandex-team.ru/disk/mpfs/meps/mep-025/#overviewmessagestotal
+                type: wiki
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      flaps: { stable_time: 120, critical_time: 180 }
+      CRIT: [ "${rabbitmq_overview_stats}['overview_messages']  > 100000" ]
+

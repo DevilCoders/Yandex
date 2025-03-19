@@ -1,0 +1,50 @@
+{%- set cgroup = grains['conductor']['group'] -%}
+{%- set env = grains['yandex-environment'] -%}
+{%- if env in ['production','prestable'] -%}
+{%- set cenv = 'production' -%}
+{%- else -%}
+{%- set cenv = 'testing' -%}
+{%- endif -%}
+{%- if 'elliptics' in cgroup -%}
+{%- if cenv == 'testing' -%}
+{%- set ctype = 'srw' -%}
+{%- else -%}
+{%- set ctype = 'mds' -%}
+{%- endif -%}
+{%- else -%}
+{%- set ctype = 'offload' -%}
+{%- endif -%}
+{%- if cenv == 'testing' -%}
+{%- set lcount = 20 -%}
+{%- else -%}
+{%- if ctype == 'offload' -%}
+{%- set lcount = '50' -%}
+{%- else -%}
+{%- set lcount = '200' -%}
+{%- endif -%}
+{%- endif -%}
+unicorn_service_name: unicorn_dark
+stop_apps: false
+stop_by_control: true                    
+control_with_ack: true
+run.semaphore:
+ locks_count: {{ lcount }}
+feedback:
+  unicorn_feedback: true
+sharding:
+  enabled: true
+  common_prefix: /darkvoice
+  {# MDS-19540 -#}
+  {% if grains['conductor']['root_datacenter'] == 'vlx' -%}
+  default_tag: {{ cenv }}_{{ ctype }}_vla
+  {%- else -%}
+  default_tag: {{ cenv }}_{{ ctype }}_{{ grains['conductor']['root_datacenter'] }}
+  {%- endif %}
+metrics:
+  enabled: true
+  poll_interval_sec: 5
+  post_interval_sec: 30
+netlink:
+  default_name: {{salt['cmd.shell']('grep eth /etc/network/interfaces | grep auto | head -n 1| cut -d\  -f2')}}
+  speed_mbits: {{salt['cmd.shell']('grep eth /etc/network/interfaces | grep auto | head -n1 | cut -d\  -f2 | xargs ethtool | grep Speed | grep -o "[0-9]*" | egrep "[0-9]" || echo 10000')}}
+

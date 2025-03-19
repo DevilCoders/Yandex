@@ -1,0 +1,255 @@
+{% set speed_iface = salt['cmd.shell']('source /usr/local/sbin/autodetect_active_eth; ethtool $default_route_iface |grep Speed |awk "{print $NF}"  |egrep "[0-9]+" -o') | int %}
+
+{% if speed_iface > 0 %}
+     {% set slb_weight = ((( speed_iface / 1000 ) + 40 ) / 5 ) %}
+     {% if slb_weight <= 0 %}
+         {% set slb_weight = 2 %}
+     {% endif %}
+{% endif %}
+
+upstream mediastorage-int {
+    server unix:/var/run/mediastorage/mediastorage-proxy.sock;
+    keepalive 10;
+}
+
+upstream mds-hide {
+    server 127.0.0.1:8998;
+}
+
+upstream mavrodi {
+    server mavrodi.mdst.yandex.net:5050;
+}
+
+# Internal use only
+server {
+    listen 127.0.0.1:80;
+    listen [::1]:80;
+
+    listen 93.158.157.159:80;
+    listen [2a02:6b8:0:3400::1:159]:80;
+
+    listen 93.158.157.159:443 ssl;
+    listen [2a02:6b8:0:3400::1:159]:443 ssl;
+
+    listen 127.0.0.1:443 ssl;
+    listen [::1]:443 ssl;
+
+    listen *:8080 backlog=4096;
+    listen [::]:8080 ipv6only=on backlog=4096;
+
+    listen *:8443 ssl backlog=4096;
+    listen [::]:8443 ssl ipv6only=on backlog=4096;
+
+    server_name
+        storage-int.mds.yandex.net
+        storage-int.mdst.yandex.net
+        weather-elliptics-test.weather.yandex.net;
+    tskv_log /var/log/nginx/int-tskv.log mds-int-access-log;
+
+    include ssl/https.conf;
+
+    #https://st.yandex-team.ru/MDS-54 - НЕ УБИРАТЬ НИКОГДА
+    proxy_set_header X-MDS-SECURITY "{{ pillar['yav']['x_mds_security'] }}";
+    proxy_set_header X-Request-Id    $request_id;
+    request_id_from_header on;
+    request_id_header_name X-Request-Id;
+
+    #https://st.yandex-team.ru/MDS-7737
+    proxy_set_header X-MDS-NGINX-URI $uri;
+
+    underscores_in_headers on;
+
+    set $port 80;
+    if ($scheme = https) {
+        set $port 443;
+    }
+
+    location ~ ^/(fileinfo|dist-info)-([\w-]+)/ {
+        proxy_pass http://mediastorage;
+        request_id_from_header on;
+        request_id_header_name X-Request-Id;
+
+        set $unistat_request_type $1;
+        set $unistat_namespace $2;
+        log_by_lua_file /etc/nginx/include/metrics.lua;
+    }
+
+    # TODO: https://st.yandex-team.ru/PLAN-4121#1490191097000
+    location = /resources/namespaces {
+        proxy_pass http://mediastorage;
+
+        log_by_lua_block {
+            increment_metric("stat_system_dmmm", 1)
+        }
+    }
+
+    include include/namespace-int.conf;
+
+    # https://st.yandex-team.ru/MDS-4809
+    set $unistat_cluster_type "mdsproxy";
+    header_filter_by_lua_block {
+        increment_metric("stat_monitor_dmmm", 1)
+    }
+    # MDS-15314
+    set $unistat_prior '';
+    access_by_lua_file /etc/nginx/include/mds_yarl.lua;
+}
+
+
+map $remote_addr $deny {
+  default 1;
+  2a02:6b8:c03:337:0:428f:2389:561d 0;
+  2a02:6b8:c02:5cc:0:428f:7004:15f2 0;
+}
+
+# internal: modify
+server {
+    listen *:1111     backlog=4096;
+    listen [::]:1111  backlog=4096;
+    listen *:12000    backlog=4096;
+    listen [::]:12000 backlog=4096;
+
+    listen *:1443    ssl backlog=4096;
+    listen [::]:1443 ssl backlog=4096;
+
+    server_name storage-int.mds.yandex.net
+                storage-int.mdst.yandex.net;
+
+    tskv_log /var/log/nginx/int-tskv.log mds-int-access-log;
+
+    include ssl/https.conf;
+
+    #https://st.yandex-team.ru/MDS-54 - НЕ УБИРАТЬ НИКОГДА
+    proxy_set_header X-MDS-SECURITY "{{ pillar['yav']['x_mds_security'] }}";
+    proxy_set_header X-Request-Id    $request_id;
+
+    proxy_request_buffering     off;
+#    proxy_http_version 1.1;
+    proxy_read_timeout          7200s;
+    proxy_send_timeout          600s;
+    proxy_connect_timeout       300s;
+    proxy_buffer_size           64k;
+    proxy_buffers               16 32k;
+    proxy_redirect              off;
+    proxy_set_header X-Https-Request yes;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+    client_max_body_size 500g;
+
+    underscores_in_headers on;
+
+    location ~ ^/upload-([\w-]+)/ {
+        proxy_pass http://mediastorage;
+        request_id_from_header on;
+        request_id_header_name X-Request-Id;
+
+        set $unistat_request_type "put";
+        set $unistat_namespace $1;
+        log_by_lua_file /etc/nginx/include/metrics.lua;
+    }
+
+    location ~ ^/delete-([\w-]+)/ {
+        proxy_pass http://mediastorage;
+        request_id_from_header on;
+        request_id_header_name X-Request-Id;
+
+        set $unistat_request_type "delete";
+        set $unistat_namespace $1;
+        log_by_lua_file /etc/nginx/include/metrics.lua;
+    }
+
+    location ~ ^/exec-([\w-]+)/ {
+        proxy_pass http://mediastorage;
+        request_id_from_header on;
+        request_id_header_name X-Request-Id;
+
+        set $unistat_request_type "exec";
+        set $unistat_namespace $1;
+        log_by_lua_file /etc/nginx/include/metrics.lua;
+    }
+
+    location ~ ^/ban-put-([\w-]+)/ {
+        proxy_pass http://mds-hide;
+        request_id_from_header on;
+        request_id_header_name X-Request-Id;
+
+        set $unistat_request_type "ban-put";
+        set $unistat_namespace $1;
+        log_by_lua_file /etc/nginx/include/metrics.lua;
+    }
+
+    location ~ ^/ban-list-([\w-]+)/ {
+        proxy_pass http://mds-hide;
+        request_id_from_header on;
+        request_id_header_name X-Request-Id;
+
+        set $unistat_request_type "ban-list";
+        set $unistat_namespace $1;
+        log_by_lua_file /etc/nginx/include/metrics.lua;
+    }
+
+    location = /ban-list {
+        proxy_pass http://mds-hide;
+        request_id_from_header on;
+        request_id_header_name X-Request-Id;
+
+        set $unistat_request_type "ban-list";
+        set $unistat_namespace $1;
+        log_by_lua_file /etc/nginx/include/metrics.lua;
+    }
+
+    #Location for S3-API DELETE worker process
+    location ~ ^/v1/delete/ {
+        if ($deny) {
+            return 403;
+
+            log_by_lua_block {
+                increment_metric("stat_system_dmmm", 1)
+            }
+        }
+        proxy_pass http://mediastorage;
+        request_id_from_header on;
+        request_id_header_name X-Request-Id;
+
+        set $unistat_request_type "s3del";
+        set $unistat_namespace "s3";
+        log_by_lua_file /etc/nginx/include/metrics.lua;
+    }
+
+    location ~ ^/(ping) {
+        proxy_pass http://mediastorage;
+
+        log_by_lua_block {
+            increment_metric("stat_system_dmmm", 1)
+        }
+        more_set_headers -s '200' "RS-Weight: {{ slb_weight | int }}";
+    }
+
+    location /hostname {
+        add_header "Content-Type" "text/plain";
+        return 200 $hostname;
+
+        log_by_lua_block {
+            increment_metric("stat_system_dmmm", 1)
+        }
+    }
+
+    location / {
+            return 423;
+
+            log_by_lua_block {
+                increment_metric("stat_system_dmmm", 1)
+            }
+    }
+
+    # https://st.yandex-team.ru/MDS-4809
+    set $unistat_cluster_type "mdsproxy";
+    header_filter_by_lua_block {
+        increment_metric("stat_monitor_dmmm", 1)
+    }
+    # MDS-15314
+    set $unistat_prior '';
+    access_by_lua_file /etc/nginx/include/mds_yarl.lua;
+}

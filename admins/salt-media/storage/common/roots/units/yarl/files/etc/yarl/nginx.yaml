@@ -1,0 +1,36 @@
+{%- set config = vars -%}
+log:
+  level: warn
+  sinks:
+    - logrotate-stat:///var/log/yarl/nginx.log
+grpc_endpoint: "reverse-tcp://localhost:14590"
+rest_endpoint: ""
+limiter:
+  gc_interval: 10m
+  {% if config.quota_spaces -%}
+  quota_spaces:
+    names:
+      {% for name in config.quota_spaces -%}
+      - {{ name }}
+      {%- endfor %}
+  {%- endif %}
+  quota_updater:
+    type: "grpc"
+    upstreams:
+      - type: grpc
+        endpoint: "127.0.0.1:14589"
+        grpc:
+          timeout: 5s
+          limit: 10000
+  counters_updater:
+    # timeout for upstream when more than half of them are ready
+    soft_timeout: 500ms
+    # timeout for upstream when less than half of them are ready
+    hard_timeout: 500ms
+    # time to freeze upstream when we failed to sync with
+    freeze_time: 500ms
+    upstreams:
+      - endpoint: "127.0.0.1:14589"
+monitor:
+  enabled: true
+

@@ -1,0 +1,194 @@
+{%- set env = grains['yandex-environment'] -%}
+{%- set cgroup = grains['conductor']['group'] -%}
+
+{%- if cgroup == 'elliptics-s3cleanup' -%}
+{%- set parallel_count = 2 -%}
+{%- set bb_parallel_count = 8 -%}
+{%- elif 'cloud' in cgroup and 'testing' not in env -%}
+{%- set parallel_count = 1 -%}
+{%- set bb_parallel_count = 2 -%}
+{%- else -%}
+{%- set parallel_count = 2 -%}
+{%- set bb_parallel_count = 4 -%}
+{%- endif -%}
+
+{%- if env == 'testing' -%}
+  {%- set s3api_password = pillar['yav']["s3int-db-cleanup-passwd-testing"] -%}
+{% else %}
+  {%- set s3api_password = pillar['yav']["s3int-db-cleanup-passwd"] -%}
+{%- endif  %}
+
+{
+  "init_timeout_sec": 600,
+  "system_app": {
+    "monitor_addr": ":3355",
+    "max_header_bytes": 8388608,
+    "read_header_timeout": 1,
+    "health_check_timeout_msec": 1000
+  },
+  "logging": {
+    "default": {
+      "level": "error",
+      "file_path": "logrotate+asyncskip:///var/log/s3/goose-cleanup/main.log"
+    },
+    "filtered": [
+      {
+        "level": "info",
+        "name": "cleanup.scheduler.mds.access",
+        "file_path": "logrotate+asyncskip:///var/log/s3/goose-cleanup/mds-access.log"
+      },
+      {
+        "level": "info",
+        "name": "cleanup.scheduler.ydb.access",
+        "file_path": "logrotate+asyncskip:///var/log/s3/goose-cleanup/ydb-access.log"
+      },
+      {
+        "level": "info",
+        "name": "cleanup.scheduler.access_log",
+        "file_path": "logrotate+asyncskip:///var/log/s3/goose-cleanup/access.log"
+      },
+      {
+        "level": "error",
+        "name": "cleanup.scheduler.alive",
+        "file_path": "logrotate+asyncskip:///var/log/s3/goose-cleanup/alive.log"
+      },
+      {
+        "level": "info",
+        "name": "cleanup.scheduler",
+        "file_path": "logrotate+async:///var/log/s3/goose-cleanup/scheduler.log"
+      }
+    ]
+  },
+
+  "cron": {
+    "tasks": [
+      {
+        "event_name": "SelfCleanup",
+        "run_every": "1h",
+        "run_immediate": true,
+        "parallel_count": 1
+      },
+      {
+        "event_name": "Cleanup",
+        "run_every": "15m",
+        "run_immediate": true,
+        "parallel_count": {{ parallel_count }}
+      },
+      {
+        "event_name": "CleanupByBucket",
+        "run_every": "15m",
+        "run_immediate": true,
+        "parallel_count": {{ bb_parallel_count }}
+      }
+    ]
+  },
+
+  "cleanup": {
+    "delete_failed_delay_min": 1560,
+    "batch_size": 500,
+    "list_deleted_objects_delay_days": 1,
+    "list_deleted_objects_delay_by_bucket_min": 30,
+    "bucket_names": [
+    {%- if env == "testing" %}
+      "kekbucket", "levdik-ydb"
+    {%- else %}
+      "disk-backup-pg",
+      "disk-backup-mongo",
+      "gpdb-backup",
+      "nirvana",
+      "portal-exports",
+      "selfdriving",
+      "solomon-backup",
+      "weather-data"
+    {% endif -%}
+    ]
+  },
+  "postgres": {
+    "rw_pool": {
+      "user": "s3cleanup",
+      "password": "{{ s3api_password }}",
+      "max_open_conns": 20
+    },
+    "pgmeta": {
+      "force_replica_read": true
+    }
+  },
+  "mds": {
+    "libmds": {
+      "loggers": {
+        "levels": {
+          "elliptics": "error",
+          "mastermind": "error",
+          "libmds": "error"
+        },
+        "core": [
+          {
+            "sinks": [
+              {
+                "sink": {
+                  "flush": 100,
+                  "type": "file",
+                  "path": "/dev/null"
+                },
+                "type": "asynchronous",
+                "overflow": "wait",
+                "factor": 16
+              }
+            ],
+            "formatter": {
+              "sevmap": [
+                "DEBUG",
+                "NOTICE",
+                "INFO",
+                "WARNING",
+                "ERROR"
+              ],
+              "type": "string",
+              "pattern": "{timestamp:l} {trace_id:{0:default}0>16}/{thread:d}/{process} {severity}: {message}, attrs: [{...}]"
+            }
+          }
+        ],
+        "access": [
+          {
+            "sinks": [
+              {
+                "sink": {
+                  "flush": 100,
+                  "type": "file",
+                  "path": "/dev/null"
+                },
+                "type": "asynchronous",
+                "overflow": "wait",
+                "factor": 16
+              }
+            ],
+            "formatter": {
+              "remove": [
+                "severity",
+                "message"
+              ],
+              "create": {
+                "tskv_format": "elliptics-storage-server-log",
+                "type": "elliptics-storage"
+              },
+              "mutate": {
+                "timestamp": {
+                  "gmtime": false,
+                  "strftime": "%Y-%m-%dT%H:%M:%S"
+                },
+                "unixtime_microsec_utc": {
+                  "strftime": "%s.%f",
+                  "gmtime": false
+                },
+                "timezone": {
+                  "strftime": "%z"
+                }
+              },
+              "type": "tskv"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

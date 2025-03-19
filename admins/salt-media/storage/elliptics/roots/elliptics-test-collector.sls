@@ -1,0 +1,11 @@
+include:
+  - templates.certificates
+  - templates.yasmagent
+  - templates.elliptics-tls
+  - templates.mds-distributed-flock
+  - templates.karl-tls
+  - units.mastermind
+  - units.mastermind-monrun
+  - units.iface-ip-conf
+  - units.mds-logbackup
+  - units.federation

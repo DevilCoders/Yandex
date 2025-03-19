@@ -1,0 +1,50 @@
+-- vim: ft=lua
+
+package.preload["log"] = function()
+  local o = string.char(27).."["
+  local e = string.char(27).."[0m"
+  local M = {}
+  function M.log(level, msg, ...) print(string.format("%s: %s", level, msg:format(...))) end
+  function M.debug(msg, ...) M.log(o.."2mDEBUG"..e, msg, ...) end
+  function M.info(msg, ...) M.log(o.."32mINFO "..e, msg, ...) end
+  function M.warn(msg, ...) M.log(o.."33mWARN "..e, msg, ...) end
+  function M.error(msg, ...) M.log(o.."31mERROR"..e, msg, ...) end
+  return M
+end
+
+package.preload["re"] = function()
+  return {gmatch = function(...) return
+    function() local l = require("log");l.error("re not supported in tests"); return nil end
+  end }
+end -- dummy
+
+function tprint (tbl, indent, res)
+  local text = res or ""
+  indent = indent or 0
+  for k, v in pairs(tbl) do
+    text = text .. "\n" .. string.rep("  ", indent) .. k .. ": "
+    if type(v) == "table"
+      then text = text .. tprint(v, indent+1, res)
+      else text = text .. tostring(v)
+    end
+  end
+  return text
+end
+
+
+function loadPlugin(name)
+  f, err = loadfile("../"..name); if err then print(err); os.exit(1); end; f()
+end
+
+function replace(eval, query, metric)
+  local ret
+  local sstart, send = eval:find(query)
+  if sstart and sstart > 1 then
+    ret = query:sub(1, sstart)
+  end
+  if send then
+    ret = ret or ""
+    ret = ret..tostring(metric)..query:sub(send)
+  end
+  return ret or eval
+end

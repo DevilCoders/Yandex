@@ -1,0 +1,55 @@
+host: {{ host|default(group|replace("CGROUP%", "dev--")) }}
+namespace: tv
+tags: {{_context.macro.add_env_tags_by_group(group, and_add=["developer", "backend"])}}
+ttl: 900
+refresh_time: 60
+aggregator: timed_more_than_limit_is_problem
+aggregator_kwargs:
+    unreach_service: []
+    nodata_mode: force_crit
+    unreach_mode: force_ok
+    limits:
+        - time_start: 12
+          time_end: 19
+          day_start: 1
+          day_end: 5
+          warn: 0
+          crit: 0
+        - time_start: 11
+          time_end: 19
+          day_start: 6
+          day_end: 7
+          warn: 0
+          crit: 101%
+        - time_start: 20
+          time_end: 10
+          day_start: 1
+          day_end: 7
+          warn: 0
+          crit: 101%
+notifications:
+    {% if 'stable' in group %}
+    - template_name: phone_escalation
+      template_kwargs:
+          repeat: 2
+          delay: 300
+          logins:
+              - robot-tv-java
+              - artem-spb
+              - rikunov
+              - baltor
+          on_success_next_call_delay: 300
+    {% endif %}
+    - template_name: on_status_change
+      template_kwargs:
+          status:
+              - {from: "OK", to: "CRIT"}
+              - {from: "WARN", to: "CRIT"}
+              - {from: "CRIT", to: "OK"}
+              - {from: "CRIT", to: "WARN"}
+          method:
+              - telegram
+          login:
+              - artem-spb
+              - rikunov
+              - baltor

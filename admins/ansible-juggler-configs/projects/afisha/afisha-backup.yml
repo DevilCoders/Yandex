@@ -1,0 +1,28 @@
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cgroup: media-stable-worker
+    host: afisha-backup
+
+  pre_tasks:
+    - juggler_facts: jserver_api={{ jserver_search_api }}
+    - include_vars: "vars"
+
+  tasks:
+    - juggler_check:
+      args:
+        host: "{{ host }}"
+        service: afisha-mongo-backups
+        children: ["CGROUP%{{ cgroup }}"]
+        responsible: "{{ resps }}"
+        alert_method: ['GOLEM']
+        tags: ['afisha','backup']
+        namespace: media.afisha
+        ttl: 11700
+        aggregator: timed_more_than_limit_is_problem
+        aggregator_kwargs:
+          nodata_mode: "force_ok"
+          limits:
+          - {crit: 0, day_start: 1, day_end: 7, time_start: 12, time_end: 18, warn: '0'}
+          - {crit: 101%, day_start: 1, day_end: 7, time_start: 19, time_end: 11, warn: '0'}

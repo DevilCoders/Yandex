@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# This is helper functions and magic variables file
+# For selfdns media plugins
+
+
+VERSION="0.1"
+LOCAL_HOSTNAME="$(cat /proc/sys/kernel/hostname)"
+TAGS_FILE="/var/lib/config-init-disable-ra/conductor_tags"
+# For host type env variables
+. /usr/local/sbin/autodetect_environment
+# For active eth variable
+. /usr/local/sbin/autodetect_active_eth
+
+
+function log {
+    # Log into stderr
+    echo "$1" >&2
+}
+
+
+function check_virtual {
+    # Check if host is virtual
+    # If not - log and exit
+    if [ "$is_virtual_host" -ne 1 ]; then
+        log "plugin works only with virtual machines. Exiting"
+        exit 0
+    fi
+}
+
+
+function check_conductor_tag {
+    # Check if tag present
+    # If not - log and exit
+    checking_tag="$1"
+    if ! grep -sqx "$checking_tag" $TAGS_FILE; then
+        log "no $TAGS_FILE file or no $checking_tag tag in it. Exiting"
+        exit 0
+    fi
+}
+
+
+function answer {
+    # Check if local hostname is valid
+    # If not - log and exit
+    # If so - print hostname addresses from $1 in selfdns format
+    addresses="$1"
+    if ! echo "${LOCAL_HOSTNAME}" | grep -Eq "\.[a-z0-9-]+\." ; then
+        log "hostname seems not as fqdn, please fix it"
+        exit 0
+    else
+        if [ -z "${addresses}" ]; then
+            log "ip addresses not found"
+        else
+            for addr in ${addresses}; do echo "${VERSION} ${LOCAL_HOSTNAME} ${addr}"; done
+        fi
+    fi
+}
+
+
+function http {
+    # Make http call
+    url="$1"
+    curl -f -s --connect-timeout 10 --max-time 10 --retry 0 "$1" 2>/dev/null ; ec=$?
+    if [ $ec -ne 0 ]; then
+       log "Error while communicating with $url"
+    fi
+    return $ec
+}

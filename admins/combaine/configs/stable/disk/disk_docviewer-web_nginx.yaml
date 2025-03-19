@@ -1,0 +1,57 @@
+parsing:
+  groups: [disk_qloud_dv_web]
+  metahost: docviewer.web.qloud.disk.yandex.net
+  DataFetcher:
+    logname: "nginx/access-tskv.log"
+    timetail_url: "/timetail?pattern=docviewer_nginx&type=tskv&log_ts="
+aggregate:
+  data:
+    docviewer_nginx:
+      type: "custom"
+      class: "Multimetrics"
+      factor: 1000
+
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+    juggler_dv_web_qloud_status_5xx: &juggler-conf
+      type: juggler
+      namespace: disk
+      host: "docviewer.web.qloud.disk.yandex.net"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - ignition
+      Aggregator: logic_or
+      checkname: dv_web_qloud_status_5xx
+      description: dv_web_qloud_status_5xx
+      flaps: { stable_time: 120, critical_time: 300 }
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      CRIT: [" ${docviewer_nginx}['5xx'] > 5 "]
+      tags:
+        - disk_dv_qloud
+        - disk_admin_critical
+        - production
+
+    juggler_dv_web_qloud_timings_95perc:
+      << : *juggler-conf
+      checkname: dv_web_qloud_timings_95perc
+      description: dv_web_qloud_timings_95perc
+      CRIT: [" ${docviewer_nginx}['request_timings'][5] > 1000" ]
+      tags:
+        - disk_dv_qloud
+        - disk_timings
+        - disk_admin_critical
+        - production
+

@@ -1,0 +1,121 @@
+#!/usr/bin/env python
+import requests
+
+
+def lb_url(dc, handler, port=8999):
+    return 'http://%(dc)s.logbroker.yandex.net:%(port)s%(handler)s' % {'dc': dc, 'handler': handler, 'port': port}
+
+s = requests.session()
+
+def get_offsets(params):
+    ans = get_offsets_request(params)
+
+    data = [x.split('\t') for x in ans.strip().split('\n')]
+    result = {}
+    for topic, offset, start, end, lag, session in data:
+        result[topic] = {'offset': int(offset), 'start': int(start), 'end': int(end), 'lag': int(lag), 'session': session}
+
+    return result
+
+def commit(params, offsets):
+    allowed_params = ['client']
+    url = lb_url(params['dc'], '/pull/commit')
+    ans = requests.post(url=url, params={p: params[p] for p in allowed_params if p in params}, data='\n'.join('%s:%s' % (topic, offset) for topic, offset in offsets))
+    if ans.status_code != 200:
+        raise ValueError('http error: %s text=%s' % (ans.status_code , ans.content))
+
+
+
+def get_offsets_request(params):
+    allowed_params = ['client', 'ident', 'log-type', 'topic']
+    url = lb_url(params['dc'], '/pull/offsets')
+    ans = requests.get(url=url, params={p: params[p] for p in allowed_params if p in params})
+    if ans.status_code != 200:
+        raise ValueError('http error: %s text=%s' % (ans.status_code , ans.content))
+    return ans.content
+
+
+dc_topics = [
+    (dc, il)
+    for dc in ('myt', 'sas', 'fol', 'iva', 'ugr', 'man')
+    for il in [
+        ('cocaine-log', 'cocaine-testing-log')
+    ]
+]
+
+
+def fix_negative(client):
+    for dc, (ident, lt) in dc_topics:
+        offsets = get_offsets({'dc': dc, 'client': client, 'ident': ident, 'log-type': lt})
+        commit({'dc': dc, 'client': client}, [(topic, x['end']) for topic, x in offsets.iteritems() if x['end'] < x['offset']])
+
+def reset_offsets(dc, client, ident, log_type, to_start=False):
+    offsets = get_offsets({'dc': dc, 'client': client, 'ident': ident, 'log-type': log_type})
+    commit({'dc': dc, 'client': client}, [(topic, (x['start'] if to_start else  x['end'])) for topic, x in offsets.iteritems()])
+
+
+def print_offsets(params):
+    print get_offsets_request(params).strip()
+
+
+def fix_name(string):
+    return string.replace('_', '-')
+
+def suggest(params):
+    allowed_params = ['client', 'ident', 'log-type', 'topic']
+    url = lb_url(params['dc'], '/pull/suggest')
+    ans = requests.get(url=url, params={p: params[p] for p in allowed_params if p in params})
+    if ans.status_code != 200:
+        raise ValueError('http error: %s text=%s' % (ans.status_code , ans.content))
+    return ans.content
+
+
+def read(params):
+    allowed_params = ['client', 'topic', 'offset', 'limit', 'format']
+    addr = suggest(params)
+    hostport = addr.split()[0]
+    if 'offset' not in params:
+        params['offset'] = max(0, get_offsets(params)[params['topic']]['end'] - params['limit'])
+
+    url = 'http://%(hostport)s/pull/read' % dict(hostport=hostport)
+    r = requests.Request(url=url, params={p: params[p] for p in allowed_params if p in params})
+    print r.prepare().url
+    ans = requests.get(url=url, params={p: params[p] for p in allowed_params if p in params})
+    if ans.status_code != 200:
+        raise ValueError('http error: %s text=%s' % (ans.status_code , ans.content))
+    return ans.content
+
+
+
+
+
+
+
+
+import argparse
+if __name__ == '__main__':
+    argparser = argparse.ArgumentParser('logbroker commands')
+    argparser.add_argument('command', choices=('reset_offsets', 'offsets', 'suggest', 'read'))
+    argparser.add_argument('--dc', choices=('sas', 'myt', 'fol', 'ugr', 'iva', 'man'), required=True)
+    argparser.add_argument('--log-type', dest='log_type')
+    argparser.add_argument('--ident')
+    argparser.add_argument('--topic')
+    argparser.add_argument('--offset')
+    argparser.add_argument('--format', default='unparsed', choices=('unparsed', 'raw', 'tskv'))
+    argparser.add_argument('--limit', default=100, type=int)
+    argparser.add_argument('--client', default='cocaine-logshatter')
+    argparser.add_argument('--to-start', dest='to_start', action='store_true', default=False)
+    args = argparser.parse_args()
+
+    if args.command == 'reset_offsets':
+        if args.log_type is None:
+            print 'need log-type and ident while resetting offsets'
+        reset_offsets(dc=args.dc, ident=args.ident, log_type=args.log_type, client=args.client, to_start=args.to_start)
+
+    elif args.command == 'offsets':
+        print get_offsets_request({fix_name(x): getattr(args, x) for x in ['dc', 'log_type', 'ident', 'topic', 'client'] if getattr(args, x)}).strip()
+    elif args.command == 'suggest':
+        print suggest({fix_name(x): getattr(args, x) for x in ['dc', 'log_type', 'ident', 'topic', 'client'] if getattr(args, x)})
+    elif args.command == 'read':
+        print read({fix_name(x): getattr(args, x) for x in ['dc', 'topic', 'client', 'offset', 'limit', 'format'] if getattr(args, x)})
+

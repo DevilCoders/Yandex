@@ -1,0 +1,104 @@
+{% load_yaml as bacula_defaults %}
+secrets:
+  src: salt://secrets/bacula
+  dst: /etc/bacula/secrets
+dirs:
+   archive: /opt/bacula/archive
+   restore: /opt/bacula/restore
+   work: /var/lib/bacula
+
+dir:
+  name: bacula-dir
+  secret_file: dir
+  address: {{ grains["fqdn"] }}
+  recipients: {{ salt['grains.get']('conductor:project_info:root_email', 'root') }}
+  port: 9101
+  conf:
+    - /etc/bacula/bacula-dir.conf
+    - /etc/bacula/clients.conf
+    - /etc/bacula/filesets.conf
+    - /etc/bacula/jobs.conf
+    - /etc/bacula/shedules.conf
+  pkg : [ bacula-sqlite3, bacula-common, bacula-console ]
+  service: bacula-dir
+  makedirs: [ restore, work ]
+  pool:
+    label_format: '"bacula-${Year}_${Month}_${Day}"'
+    maximum_volume_bytes: "50G"
+    volume_retention: "365 days"
+  defjob:
+    level: Full
+    name : DefaultJob
+  catalog:
+    name: bacula
+    user: '""'
+    password: '""'
+sd:
+  secret_file: sd
+  device: FileStorage
+  media_type: File
+  pkg : [ bacula-sqlite3, bacula-common ]
+  address: {{ grains["fqdn"] }}
+  port: 9103
+  service: bacula-sd
+  conf: [ /etc/bacula/bacula-sd.conf ]
+  makedirs: [ archive, work ]
+console:
+  secret_file: dir
+  pkg: [ bacula-console ]
+  conf: [ /etc/bacula/bconsole.conf ]
+fd:
+  name: {{ grains["fqdn"] }}
+  address: {{ grains["fqdn"] }}
+  port: 9102
+  conf: [ /etc/bacula/bacula-fd.conf ]
+  pkg : [ bacula-client, bacula-common ]
+  service: bacula-fd
+  makedirs: [ work ]
+
+clients:
+  "{{ grains["fqdn"] }}":
+    run:
+      before: "/etc/bacula/scripts/make_catalog_backup.pl bacula"
+      after: /etc/bacula/scripts/delete_catalog_backup
+    fileset: catalog.sql
+    schedule: daily
+
+filesets:
+  catalog.sql:
+    include: [ /var/lib/bacula/bacula.sql ]
+
+schedules:
+  daily:
+    - "Full mon-sun at 23:05"
+# daily_diff_incr:
+#    - "Full 1st sun at 23:05"
+#    - "Differential 2nd-5th sun at 23:05"
+#    - "Incremental mon-sat at 23:05"
+
+jobdefs:
+  DefaultJob:
+    level: Full
+    client: {{ grains["fqdn"] }}
+    schedule: daily
+{% endload %}
+
+{% set bacula = salt["pillar.get"]("bacula", bacula_defaults, merge=True) %}
+
+{% set client_names = bacula.clients.keys() %}
+{% for name in client_names %}
+{% if name.startswith('%') %}
+  {% set values =  bacula.clients.pop(name) %}
+  {% for client in salt.conductor.groups2hosts(name[1:]) %}
+    {% if client not in bacula.clients %}
+      {% do bacula.clients.update({client.encode(): values}) %}
+    {# else %}  # should or not handle this case?
+      {% for k in values %}
+        {% if k not in bacula.clients[client] %}
+          {% do bacula.clients[client].setdefaults(k, values[k]) %}
+        {% endif %}
+      {% endfor #}
+    {% endif %}
+  {% endfor %}
+{% endif %}
+{% endfor %}

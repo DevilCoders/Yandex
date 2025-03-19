@@ -1,0 +1,187 @@
+---
+name: disk_lenta_loader-logbroker_lag
+parsing:
+  groups: [disk_lenta_loader]
+  metahost: lenta-loader.deploy.disk.yandex.net
+  DataFetcher:
+    type: http
+    port: 3132
+    uri: "/exec_pattern?pattern=logbroker_lag&timeout=100"
+  Combainer:
+    MINIMUM_PERIOD: 55
+aggregate:
+  data:
+    logbroker_lag:
+      type: "custom"
+      class: "Max"
+      rps: no
+
+
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+    juggler_logbroker_pull_lag_sas: &juggler-conf
+      type: juggler
+      namespace: disk
+      Host: "lenta-loader.deploy.disk.yandex.net"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - ignition
+      Aggregator: logic_or
+      checkname: logbroker_pull_lag_sas
+      description: logbroker_pull_lag_sas
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      flaps: { stable_time: 120, critical_time: 180 }
+      CRIT: [ "${logbroker_lag}['sas_sas']  > 150000" ]
+      tags:
+        - production
+
+
+    juggler_logbroker_lag_myt:
+      << : *juggler-conf
+      checkname: logbroker_pull_lag_myt
+      description: logbroker_pull_lag_myt
+      CRIT: [ "${logbroker_lag}['myt_myt']  > 150000" ]
+
+    juggler_logbroker_lag_fol:
+      << : *juggler-conf
+      checkname: logbroker_pull_lag_fol
+      description: logbroker_pull_lag_fol
+      CRIT: [ "${logbroker_lag}['fol_fol']  > 150000" ]
+
+    juggler_logbroker_lag_iva:
+      << : *juggler-conf
+      checkname: logbroker_pull_lag_iva
+      description: logbroker_pull_lag_iva
+      CRIT: [ "${logbroker_lag}['iva_iva']  > 150000" ]
+
+
+    juggler_logbroker_lag_man:
+      << : *juggler-conf
+      checkname: logbroker_pull_lag_man
+      description: logbroker_pull_lag_man
+      CRIT: [ "${logbroker_lag}['man_man']  > 150000" ]
+
+---
+name: disk_lenta_loader-logbroker_stat
+parsing:
+  groups: [disk_lenta_loader]
+  metahost: lenta-loader.deploy.disk.yandex.net
+  DataFetcher:
+    logname: 'yandex/disk/lenta-loader-tskv.log'
+    timetail_url: '/timetail?pattern=logbroker_stat&timeout=60&type=java&log_ts='
+  Combainer:
+    MINIMUM_PERIOD: 60
+aggregate:
+  data:
+    logbroker_stat:
+      type: "custom"
+      class: "Multimetrics"
+
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+    juggler_lag_timings_90perc: &juggler-conf
+      type: juggler
+      namespace: disk
+      Host: "lenta-loader.deploy.disk.yandex.net"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - ignition
+      Aggregator: logic_or
+      checkname: lag_timings_90perc
+      description: lag_timings_90perc
+      flaps: { stable_time: 300, critical_time: 3600 }
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      CRIT: [" ${logbroker_stat}['lag_timings'][1] > 1800 "]
+      tags:
+        - production
+
+---
+name: disk_lenta_loader-requests_http
+parsing:
+  groups: [disk_lenta_loader]
+  metahost: lenta-loader.deploy.disk.yandex.net
+  DataFetcher: 
+    logname: 'yandex/disk/lenta-loader-tskv.log'
+    timetail_url: '/timetail?pattern=requests_http&type=java&timeout=60&log_ts='
+  Combainer:
+    MINIMUM_PERIOD: 60
+
+aggregate:
+  data:
+    requests_http:
+      type: "custom"
+      class: "Multimetrics"
+
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+---
+name: disk_lenta_loader-requests_pg
+parsing:
+  groups: [disk_lenta_loader]
+  metahost: lenta-loader.deploy.disk.yandex.net
+  DataFetcher: 
+    logname: 'yandex/disk/lenta-loader-tskv.log'
+    timetail_url: '/timetail?pattern=requests_pg&type=java&timeout=60&log_ts='
+  Combainer:
+    MINIMUM_PERIOD: 60
+
+aggregate:
+  data:
+    requests_pg:
+      type: "custom"
+      class: "Multimetrics"
+
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+---
+name: disk_lenta_loader-nginx_stat
+parsing:
+  groups: [disk_lenta_loader]
+  metahost: "lenta-loader.deploy.disk.yandex.net"
+  DataFetcher:
+    logname: "nginx/access-tskv.log"
+    timetail_url: "/timetail?pattern=nginx&type=tskv&log_ts="
+aggregate:
+  data:
+    nginx:
+      type: "custom"
+      class: "Multimetrics"
+      factor: 1000
+
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+

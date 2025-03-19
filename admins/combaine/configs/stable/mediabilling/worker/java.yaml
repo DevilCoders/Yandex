@@ -1,0 +1,49 @@
+---
+name: mediabilling-prod-worker-java
+parsing:
+  groups: [mediabilling-prod-worker]
+  DataFetcher:
+    logname: "mediabilling/worker.log"
+    timetail_url: "/timetail?pattern=worker-java-parser&type=java&log_ts="
+  Combainer:
+      MINIMUM_PERIOD: 60
+aggregate:
+  data:
+    java:
+      type: custom
+      class: Multimetrics
+      perHost: YES
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.mediabilling
+    java_exceptions:
+      type: juggler
+      plugin: picker
+      Host: "mediabilling-prod-worker"
+      Aggregator: timed_more_than_limit_is_problem
+      checkname: "java_exceptions"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            delay: 900 # seconds
+            logins:
+              - '@svc_musicbackend:music-infra'
+              - stepanar
+              - skacheev
+              - paulus
+      description: "Java exceptions"
+      ttl: 90
+      tags: ['mediabilling']
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 2,time_end: 1,day_end: 7,day_start: 1}]
+      config:
+        history: 3
+        type: metahost
+        query: "^exceptions.((.*))$"
+        prefix: "java_"
+        limits:
+          "NotFoundConductor": [1, "NotFoundConductor exception. See /var/log/mediabilling/worker.log"]
+          "default": [0.8, "Too many Java exceptions. See /var/log/mediabilling/worker.log"]
+

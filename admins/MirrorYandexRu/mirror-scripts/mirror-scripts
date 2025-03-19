@@ -1,0 +1,302 @@
+#!/bin/bash
+
+RSYNC_OPT="rsync -avSHP --delete-after --ignore-errors --stats --timeout=240 --exclude=.~tmp~/ --exclude=.syncing $SPECIAL_PARAM $EXCLUDE"
+RSYNC_OPT_NODEL="rsync -avSHP --stats --timeout=240 --exclude=.~tmp~/ --exclude=.syncing $SPECIAL_PARAM $EXCLUDE"
+RSYNC="$RSYNC_OPT --exclude=.mirror.yandex.ru"
+RSYNC_SIMPLE="rsync -a --timeout=60"
+
+RSYNC_REPO="$HOST::$MODULE/"
+
+FULL_LOCAL_PATH="$MAINSYNCDIR/$REL_LOCAL_PATH/"
+NAME=$(echo $REL_LOCAL_PATH | sed 's@mirrors/@@;s@/*$@@g;s@/@-@g')
+
+LOCKFILE="$LOCKDIR/$NAME-mirror"
+LOGFILE="$LOGDIR/${NAME}_$DATE.log"
+ERRORFILE="$LOGDIR/$NAME-error"
+
+TRACE="$HOST::$MODULE/$REMOTE_TRACE"
+CURLTRACE="http://$HOST/$MODULE/$REMOTE_TRACE"
+LOCAL_TRACE="$FULL_LOCAL_PATH/$REMOTE_TRACE"
+
+if [ $(id -u) -ne 0 ]; then
+    echo "Root is required. Abort..."
+    exit 0
+fi
+
+
+# ----------------------------------------------------------------------------------
+
+debian_sync()
+{
+
+    if [ ! -d "$LOGDIR" ]; then
+        mkdir -p $LOGDIR
+    fi
+
+    echo "$(date -u)" > $FULL_LOCAL_PATH/.syncing
+
+    # while should get not 0
+    false
+
+    while [ "$?" -ne "0" -a "$?" -ne "24" -a "$?" -ne 23 ]; do
+        sleep 3
+        echo "Running stage 1: Syncing packages" >> $LOGFILE 2>&1
+        (time $RSYNC_OPT_NODEL --exclude=.mirror.yandex.ru --exclude=Packages* --exclude=Sources* \
+		--exclude=Release* --exclude=InRelease* --exclude=Archive-Update-in-Progress* --exclude=project/ \
+		--exclude=ls-lR* --exclude=Archive-Update-in-Progress* \
+		$REPO_USER@$RSYNC_REPO $FULL_LOCAL_PATH) >> $LOGFILE 2>&1
+    done
+
+    false
+
+    while [ "$?" -ne "0" -a "$?" -ne "24" -a "$?" -ne 23 ]; do
+        sleep 3
+	echo "Running stage 2: Syncing metadata" >> $LOGFILE 2>&1
+        (time $RSYNC --delay-updates $REPO_USER@$RSYNC_REPO $FULL_LOCAL_PATH) >> $LOGFILE 2>&1
+    done
+
+    rm -f $FULL_LOCAL_PATH/.syncing
+
+}
+
+# ----------------------------------------------------------------------------------
+
+simple_sync()
+{
+    if [ ! -d "$LOGDIR" ]; then
+        mkdir -p $LOGDIR
+    fi
+    
+    echo "$(date -u)" > $FULL_LOCAL_PATH/.syncing
+
+    # while should get not 0
+    false
+
+    while [ "$?" -ne "0" -a "$?" -ne "24" -a "$?" -ne 23 ]; do
+        sleep 3
+        $RSYNC $REPO_USER@$RSYNC_REPO $FULL_LOCAL_PATH >> $LOGFILE 2>&1
+    done
+
+    rm -f $FULL_LOCAL_PATH/.syncing
+
+}
+
+# ----------------------------------------------------------------------------------
+
+rsync_check()
+
+{
+    TRACE_NAME="$REMOTE_TRACE"
+    REMOTE_TRACE=$(mktemp)
+
+    if [ "$CHECK_METHOD" == "curl" ]; then
+        curl -m5 -s $CURLTRACE -o $REMOTE_TRACE > /dev/null 2>&1
+        LOCAL_TRACE="$FULL_LOCAL_PATH/$TRACE_NAME"
+    else
+        $RSYNC_SIMPLE $REPO_USER@$TRACE $REMOTE_TRACE > /dev/null 2>&1
+    fi
+
+    if [ -f $LOCAL_TRACE ]; then
+        SHA256SUM_LOCAL=$(sha256sum $LOCAL_TRACE | awk '{ print $1 }')
+        SHA256SUM_REMOTE=$(sha256sum $REMOTE_TRACE | awk '{ print $1 }')
+
+	echo -e "$SHA256SUM_LOCAL\n$SHA256SUM_REMOTE"
+
+        if [ "$SHA256SUM_LOCAL" != "$SHA256SUM_REMOTE" ]; then
+            RUNSYNC="1"
+        fi
+        
+        rm -f $REMOTE_TRACE
+    else
+        RUNSYNC="1"
+    fi
+
+}
+
+# -----------------------------------------------------------------------------------
+
+check4run()
+
+{
+    if [[ -f $LOCKFILE ]]; then
+        echo "Another copy of $NAME mirror script already running"
+        exit 0
+    else
+        touch $LOCKFILE
+    fi
+}
+
+# -----------------------------------------------------------------------------------
+# If remote host is syncing and push any lock file to repo we can check for it
+# and sleep about five minutes awainting recheck
+#
+
+check4remotelock()
+{
+    rsync --timeout=30 $HOST::$MODULE/$REMOTELOCK > /dev/null 2>&1
+
+    while [ $? -eq 0 ]; do
+	date -u >  $FULL_LOCAL_PATH/.waiting-for-mirror-complete
+        sleep 300;
+        rsync --timeout=30 $HOST::$MODULE/$REMOTELOCK > /dev/null 2>&1
+    done
+
+    rm -f $FULL_LOCAL_PATH/.waiting-for-mirror-complete
+}
+
+# -----------------------------------------------------------------------------------
+
+check4available()
+{
+    if [ -z "$HOST" ]; then
+        echo "rsync remote host is undefined. Abort..."
+        rm -f $LOCKFILE
+        exit 16
+    fi
+
+    nc -z $HOST $SYNC_REPO_PORT
+    if [[ "$?" -ne "0" ]]; then
+        sleep 30
+        nc -z $HOST $SYNC_REPO_PORT
+    fi
+    if [[ "$?" -ne "0" ]]; then
+        echo "$HOST not available"
+        echo "$DATE: $HOST not available" > $ERRORFILE
+        rm -f $LOCKFILE
+        exit 1
+    fi
+
+    if [ "$SYNC_REPO_PORT" == "80" -o "$SYNC_REPO_PORT" == "443" ]; then
+        if [ "$SYNC_REPO_PORT" == "80" ]; then
+            PROTOCOL="http://"
+        elif [ "$SYNC_REPO_PORT" == "443" ]; then
+            PROTOCOL="https://"
+        fi
+
+        if [ ! "$(curl -f -m5 -s $PROTOCOL$HOST )" ]; then
+            echo "$HOST host error"
+            echo "$DATE: $HOST host error" > $ERRORFILE
+            rm -f $LOCKFILE
+            exit 15
+        fi
+    else
+        if [ ! "$(rsync --timeout 10 --port=$SYNC_REPO_PORT $REPO_USER@$HOST::$MODULE )" ]; then
+            sleep 30
+        fi
+        if [ ! "$(rsync --timeout 10 --port=$SYNC_REPO_PORT $REPO_USER@$HOST::$MODULE )" ]; then
+            echo "$HOST::$MODULE module error"
+            echo "$DATE: $HOST::$MODULE module error" > $ERRORFILE
+            rm -f $LOCKFILE
+            exit 15
+        fi
+    fi
+
+    if [ ! -d $FULL_LOCAL_PATH ]; then
+        if [ "$CREATEDIRS" == "1" ]; then
+            mkdir -p $FULL_LOCAL_PATH
+        else
+            echo "$FULL_LOCAL_PATH does not exist. Abort..."
+            echo "$DATE: $FULL_LOCAL_PATH does not exist. Abort..." > $ERRORFILE
+            rm -f $LOCKFILE
+            exit 100
+        fi
+    fi
+
+    if [ -f $ERRORFILE ]; then
+        rm -f $ERRORFILE
+    fi
+}
+
+# -----------------------------------------------------------------------------------
+
+compresslog()
+{
+
+if [ -f $LOGFILE ]; then
+    xz -9 $LOGFILE
+fi
+
+rm -f $LOCKFILE
+
+}
+
+# -----------------------------------------------------------------------------------
+
+setstamp()
+{
+
+if [ "$(grep "Number of files transferred:" $LOGFILE | tail -n 1 | awk '{print $NF}')" != "0" ]; then
+    echo "$(date -u)" > $FULL_LOCAL_PATH$YA_TRACE
+elif [ ! -f $FULL_LOCAL_PATH$YA_TRACE ]; then
+    echo "$(date -u)" > $FULL_LOCAL_PATH$YA_TRACE
+fi
+
+}
+
+# -----------------------------------------------------------------------------------
+
+forcesetstamp()
+{
+
+echo "$(date -u)" > $FULL_LOCAL_PATH$YA_TRACE
+
+}
+
+# -----------------------------------------------------------------------------------
+
+push_sync()
+{
+
+if [ -f $FULL_LOCAL_PATH/.push ]; then
+    for host in $(echo $PUSH_HOSTS | sed "s@$HOSTNAME@@g"); do
+        false
+
+        while [ "$?" -ne "0" -a "$?" -ne "24" -a "$?" -ne 23 ]; do
+            sleep 3
+            $RSYNC --exclude=.push $FULL_LOCAL_PATH $host::push-full/$REL_LOCAL_PATH/ >> $LOGFILE 2>&1
+        done
+    done
+    
+    rm -f $FULL_LOCAL_PATH/.push
+fi
+
+}
+
+# -----------------------------------------------------------------------------------
+
+slave_sync()
+{
+
+if [ "$RUNSYNC" == "1" ]; then
+
+    if [ ! -d "$LOGDIR" ]; then
+        mkdir -p $LOGDIR
+    fi
+
+    echo "$(date -u)" > $FULL_LOCAL_PATH/.syncing
+
+    # while should get not 0
+    false
+
+    while [ "$?" -ne "0" -a "$?" -ne "24" -a "$?" -ne 23 ]; do
+	(time $RSYNC_OPT_NODEL --exclude=.mirror.yandex.ru --exclude=Packages* --exclude=Sources* \
+                --exclude=Release* --exclude=Archive-Update-in-Progress* --exclude=project/ \
+                --exclude=ls-lR* --exclude=Archive-Update-in-Progress* --exclude=repodata/ \
+                --exclude=media_info/ \
+		$REPO_USER@$RSYNC_REPO $FULL_LOCAL_PATH) >> $LOGFILE 2>&1
+    done
+
+    false
+
+    while [ "$?" -ne "0" -a "$?" -ne "24" -a "$?" -ne 23 ]; do
+        sleep 3
+        (time $RSYNC_OPT $REPO_USER@$RSYNC_REPO $FULL_LOCAL_PATH) >> $LOGFILE 2>&1
+    done
+
+
+    rm -f $FULL_LOCAL_PATH/.syncing
+
+    echo "$(date -u)" > $FULL_LOCAL_PATH/.lastsync
+fi
+
+}

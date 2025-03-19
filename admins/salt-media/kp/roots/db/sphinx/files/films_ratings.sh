@@ -1,0 +1,5 @@
+echo all_item $(echo "select count(*) from content where view = 'ok';" | mysql kinopoisk | tail -n1)
+echo item_with_votes $(echo "select count(*) from content where view = 'ok' and num_vote > 0;" | mysql kinopoisk | tail -n1)
+echo item_with_rating $(echo "select count(*) from content where view = 'ok' and rating_ready = 1;" | mysql kinopoisk | tail -n1)
+echo percent_with_votes $(echo "select sum(if(num_vote > 0, 1,0)) * 100 / count(*) from content where view = 'ok';" | mysql kinopoisk | tail -n1)
+echo percent_with_rating $(echo "select sum(if(rating_ready = 1,1,0)) * 100 / count(*) from content where view = 'ok' and num_vote > 0;" | mysql kinopoisk | tail -n1)

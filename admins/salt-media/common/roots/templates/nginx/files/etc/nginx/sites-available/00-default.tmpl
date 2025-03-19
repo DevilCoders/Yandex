@@ -1,0 +1,27 @@
+{%- from 'templates/nginx/files/conf.tmpl' import config -%}
+server {
+{%- for name, params in listens|dictsort -%}
+ {%- for port in params.ports -%}
+  {%- if params.get('enabled', True) -%}
+{%- if not params.get('ssl') or (def_cert.get('crt') and def_cert.get('key')) %}
+  listen {{ port }}{{ ' ssl' if params.get('ssl') else '' }} default_server;
+{%- endif %}
+  {%- endif -%}
+ {%- endfor -%}
+{% endfor %}
+
+{%- if def_cert.get('crt') and def_cert.get('key') -%}
+ {%- set ssl_params = {} -%}
+ {%- for name, params in listens|dictsort -%}
+  {%- if params.get('ssl') and not ssl_params -%}
+   {%- do ssl_params.update(params.ssl) -%}
+  {%- endif -%}
+ {%- endfor -%}
+ {% do ssl_params.update({'ssl_certificate': def_cert['crt'], 'ssl_certificate_key': def_cert['key']}) %}
+
+  {{ config(ssl_params)|indent(2) }}
+{%- endif %}
+
+  include locations/404-portal;
+  return 404;
+}

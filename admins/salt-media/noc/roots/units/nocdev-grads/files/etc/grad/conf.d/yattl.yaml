@@ -1,0 +1,132 @@
+credentials: !include ../credentials.yml
+variables:
+  yattl_indexer: &yattl_indexer
+    same_interval: false
+    interval: 900
+    timeout: 100
+  yattl_common_poller_params: &yattl_common_poller_params
+    timeout: 5
+    same_interval: true
+    max_interp: 60  # не интерполируем на старых данных
+    deadline: 25
+  yattl_common_params: &yattl_common_params
+    series: yattl
+    interval: 30
+    offset: 1  # NOCDEV-5587
+    job_types: ["indexer", "data"]
+
+# NOCDEV-1091
+series:
+  snmp_poller.yattl:
+    min_interval: 30
+
+pollers:
+  SNMP juniper yattl:  # NOCDEV-1721
+    poller: snmp
+    poller version: 2
+    <<: *yattl_common_params
+    poller params:
+      <<: *yattl_common_poller_params
+      skip_key_expr: {'name': '^(?!RETRANSMIT_.+)'}
+      counters:
+        - {oid: jnxFirewallCounterEntry.jnxFWCounterDisplayName, options: ["use_snmpbulkget"]}
+        - {oid: jnxFirewallCounterEntry.jnxFWCounterPacketCount, options: ["use_snmpget"]}
+        - {oid: jnxFirewallCounterEntry.jnxFWCounterByteCount, options: ["use_snmpget"]}
+      post_fn: [sum_d_yattl]
+      indexer:
+        *yattl_indexer
+    filter: "{Juniper} and [работает yattl]"
+
+#  SNMP huawei yattl:  # NOCDEV-1721
+#    poller: snmp
+#    poller version: 2
+#    poller params:
+#      max_bytes: 400
+#      timeout: 10
+#      deadline: 25
+#      max_interp: 60  # не интерполируем на старых данных
+#      skip_key_expr: {'name': '^(?!RETRANSMIT_.+)'}
+#      counters:
+#        - {oid: hwXQoSMIB.hwCBQoSMultiPolicyStatClassifierName, options: ["use_snmpbulkget"]}
+#        - {oid: hwXQoSMIB.hwCBQoSMultiPolicyStatClassifierMatchedPassPackets, options: ["use_snmpget"]}
+#        - {oid: hwXQoSMIB.hwCBQoSMultiPolicyStatClassifierMatchedPassBytes, options: ["use_snmpget"]}
+#      post_fn: [sum_d_yattl]
+#    filter: "{Huawei} and [работает yattl] and not {$cn_vla-6d3}"
+#    series: yattl
+#    interval: 30
+
+  SNMP huawei yattl:  # NOCDEV-1721
+    poller: snmp
+    poller version: 2
+    <<: *yattl_common_params
+    poller params:
+      <<: *yattl_common_poller_params
+      max_bytes: 600
+      max_job_parallel: 10
+      skip_key_expr: {'name': '^(?!RETRANSMIT_.+)'}
+      counters:
+        - {oid: hwXQoSMIB.hwCBQoSMultiPolicyStatClassifierName, options: ["use_snmpbulkget"]}
+        - {oid: hwXQoSMIB.hwCBQoSMultiPolicyStatClassifierMatchedPassPackets, options: ["use_snmpget"]}
+      post_fn: [[rearrange_partial_data, {values_filter: [packets_pass], max_duration: 90}], sum_d_yattl]
+      indexer:
+        *yattl_indexer
+    filter: "{Huawei} and [работает yattl]"
+
+  SNMP huawei yattl tor:  # NOCDEV-4951
+    poller: snmp
+    poller version: 2
+    <<: *yattl_common_params
+    poller params:
+      <<: *yattl_common_poller_params
+      max_bytes: 600
+      max_job_parallel: 10
+      skip_key_expr: {'name': '^(?!RETRANSMIT_.+)'}
+      counters:
+        - {oid: hwXQoSMIB.hwCBQoSMultiPolicyStatClassifierName, options: ["use_snmpbulkget"]}
+        - {oid: hwXQoSMIB.hwCBQoSMultiPolicyStatClassifierMatchedPassPackets, options: ["use_snmpget"]}
+      post_fn: [[rearrange_partial_data, {values_filter: [packets_pass], max_duration: 90}]]
+      indexer:
+        *yattl_indexer
+    filter: "{Huawei} and [работает yattl tor]"
+
+  SNMP arista yattl:  # NOCDEV-1721
+    poller: snmp
+    poller version: 2
+    <<: *yattl_common_params
+    job_types: ["unique"]
+    poller params:
+      <<: *yattl_common_poller_params
+      counters:
+        - {oid: arista-acl.aristaIpv6AclRuleStatsPktCount, options: ["use_snmpbulkget"]}
+      post_fn: [arista_prepare_acl, sum_d_yattl]
+    filter: "{Arista} and [работает yattl]"
+
+  SNMP swithdev yattl:  # NOCDEV-5173
+    poller: snmp
+    poller version: 2
+    <<: *yattl_common_params
+    job_types: ["unique"]
+    poller params:
+      <<: *yattl_common_poller_params
+      counters:
+        - {oid: switchdevTc.ifname, options: ["use_snmpbulkget"]}
+        - {oid: switchdevTc.bytes, options: ["use_snmpget"]}
+        - {oid: switchdevTc.packets, options: ["use_snmpget"]}
+        - {oid: LLDPMIB.lldpRemSysName, options: ["use_snmpbulkget"]}
+      post_fn: [switchdev_prepare_tc]
+    filter: "rt%{конюшня NOC} and [Switchdev] and [работает yattl]"
+
+  comocutor nexus yattl:
+    poller: comocutor
+    interval: 30
+    instance_group: main comocutor instance
+    series: snmp_poller.yattl
+    poller params:
+      getter: get_nexus_yattl
+      device: IosDevice
+      <<: *comocutor_credentials
+      ssh_identity:
+      fn:
+        packets_pass: [ [ "speed", { "resample": 30 } ] ]
+      post_fn: [ sum_d_yattl ]
+    filter: "({Nexus 3000} and ({spine1} or {spine2})) and [работает yattl]"

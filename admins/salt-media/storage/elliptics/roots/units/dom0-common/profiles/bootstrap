@@ -1,0 +1,74 @@
+# vim: ft=yaml
+name: {{ ctx.name }}
+config:
+  environment.LXD: 1
+  environment.LXD_CONTAINER_DOMAIN: {{ ctx.config.get('environment.LXD_CONTAINER_DOMAIN', '') }}
+  environment.LXD_MTN_RA_DISABLE: true
+  environment.LXD_CONDUCTOR_TOKEN: {{ pillar['yav']['lxd_conductor_token'] }}
+  environment.LXD_DNS_TOKEN: {{ pillar['yav']['lxd_dns_token'] }}
+  security.idmap.size: "524288"
+  user.network_mode: link-local
+  user.vendor-data: |
+    #cloud-config
+    unverified_modules:
+      - resolv_conf
+    cloud_init_modules:
+      - migrator
+      - ubuntu-init-switch
+      - seed_random
+      - resolv_conf
+      - set_hostname
+      - update_hostname
+      - update_etc_hosts
+      - ssh
+    cloud_final_modules:
+      - package-update-upgrade-install
+      - [scripts-vendor, always]
+      - scripts-per-once
+      - scripts-per-boot
+      - scripts-per-instance
+      - scripts-user
+    users: []
+    system_info:
+      apt_get_command:
+        - 'apt-get'
+        - '-y'
+        - '--force-yes'
+        - '--quiet'
+      package_mirrors:
+        - arches: [default]
+          failsafe:
+            primary: http://mirror.yandex.ru/ubuntu
+            security: http://mirror.yandex.ru/ubuntu
+    timezone: Europe/Moscow
+    manage_resolv_conf: true
+    resolv_conf:
+      nameservers: ['2a02:6b8:0:3400::5005', '2a02:6b8:0:3400::1023']
+      searchdomains:
+        - yandex.net
+        - yandex.ru
+      options:
+        timeout: 1
+        attempts: 1
+    apt_sources:
+      - source: |
+          deb http://dist.yandex.ru/storage-common stable/all/
+          deb http://system.dist.yandex.ru/system configs/all/
+          deb http://common.dist.yandex.ru/common stable/all/
+          deb http://common.dist.yandex.ru/common stable/amd64/
+          deb http://yandex-${RELEASE}.dist.yandex.ru/yandex-${RELEASE}/ stable/all/
+          deb http://yandex-${RELEASE}.dist.yandex.ru/yandex-${RELEASE}/ stable/amd64/
+        filename: yandex.list
+    packages:
+      - config-apt-allowunauth
+      - yandex-archive-keyring
+      - yandex-selfdns-client
+      - yandex-media-common-lxd-bootstrap
+      - syslog-ng
+      - syslog-ng-core
+      - config-storage-admins-public-keys
+description: base media profile
+devices:
+  {% if ctx.get('devices') %}
+  {{ ctx.devices | yaml(False) | indent(2) }}
+  {% endif %}

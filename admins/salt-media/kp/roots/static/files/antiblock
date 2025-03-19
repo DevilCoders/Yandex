@@ -1,0 +1,31 @@
+#!/bin/sh
+
+IS_COGENT=$(ip l | grep Cogent | wc -l)
+IS_TELIA=$(ip l | grep Telia | wc -l)
+DIG=$(which dig)
+GLOBAL_IP=$($DIG -t AAAA +short $(hostname -f))
+
+# Cogent
+if [ $IS_COGENT -eq 0 ]
+then
+    ip -6 tunnel add CogentTUN mode ipip6 remote 2a02:6b8:0:3400::bbba local $GLOBAL_IP
+    ip link set up dev CogentTUN
+    ip route add default dev CogentTUN table 0xffff mtu 1400 advmss 1360
+    ip rule add from 5.45.202.126/32 table 0xffff
+    ip addr add 5.45.202.126 dev lo
+    ip rule add from 5.45.202.127/32 table 0xffff
+    ip addr add 5.45.202.127 dev lo
+fi
+
+# Telia
+if [ $IS_TELIA -eq 0 ]
+then
+    ip -6 tunnel add TeliaTUN mode ipip6 remote 2a02:6b8:0:3400::bbbb local $GLOBAL_IP
+    ip link set up dev TeliaTUN
+    ip route add default dev TeliaTUN table 0xfffe mtu 1400 advmss 1360
+    ip rule add from 5.45.202.128/32 table 0xfffe
+    ip addr add 5.45.202.128 dev lo
+    ip rule add from 5.45.202.129/32 table 0xfffe
+    ip addr add 5.45.202.129 dev lo
+fi
+

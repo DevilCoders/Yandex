@@ -1,0 +1,36 @@
+upstream search_upstream {
+	 server 127.0.0.1:8081;
+	 server 127.0.0.1:8081;
+	 server 127.0.0.1:8081;
+}
+
+server {
+	server_name search search2;
+	listen 80;
+	listen 443;
+	location / {
+		rewrite ^(.*)$ http://search.yandex-team.ru$1 permanent;
+	}
+            location /_backend/api/v1/indexer/ {
+          return 503;
+         }
+}
+
+server {
+  listen 80;
+  listen 443;
+
+  server_name search.* search2.*;
+
+  location / {
+    proxy_connect_timeout   1000ms;
+    proxy_read_timeout 5000ms; 
+    proxy_next_upstream error timeout invalid_header;
+    proxy_pass http://search_upstream;
+    proxy_set_header Host                   $host;
+    proxy_set_header X-Real-IP              $remote_addr;
+  }
+   location /_backend/api/v1/indexer/ {
+      return 503;
+    }
+}

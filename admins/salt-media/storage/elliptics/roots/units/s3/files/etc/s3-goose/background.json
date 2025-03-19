@@ -1,0 +1,144 @@
+{%- set env = grains['yandex-environment'] -%}
+
+{%- if env == 'testing' -%}
+
+{%- set pg_rw_pwd = pillar['yav']['s3service-db-test'] -%}
+
+{%- else -%}
+
+{%- set pg_rw_pwd = pillar['yav']['s3service-db'] -%}
+
+{%- endif -%}
+
+{
+    "postgres": {
+        "rw_pool": {
+            "user": "s3service",
+            "password": "{{ pg_rw_pwd }}",
+            "max_open_conns": 1
+        },
+        "list_pool": {
+            "user": "s3service",
+            "password": "{{ pg_rw_pwd }}",
+            "max_open_conns": 5
+        },
+        "pgmeta": {
+          "force_replica_read": true
+        }
+    },
+    "system_app": {
+        "monitor_addr": ":4455",
+        "max_header_bytes": 8388608,
+        "read_header_timeout": 1,
+        "health_check_timeout_msec": 1000
+    },
+
+    "logging": {
+        "default": {
+            "level": "info",
+            "file_path": "logrotate+asyncskip:///var/log/s3/goose-background/main.log"
+        },
+        "filtered": [
+            {
+                "level": "info",
+                "name_prefix": "bg.listener.lifecycle",
+                "file_path": "logrotate+asyncskip:///var/log/s3/goose-background/listener-lc.log"
+            },
+            {
+                "level": "info",
+                "name_prefix": "bg.listener.background",
+                "file_path": "logrotate+asyncskip:///var/log/s3/goose-background/listener-bg.log"
+            },
+            {
+                "level": "info",
+                "name_prefix": "bg.scheduler",
+                "file_path": "logrotate+asyncskip:///var/log/s3/goose-background/scheduler.log"
+            },
+            {
+                "level": "info",
+                "name": "*.sys_pgx",
+                "file_path": "logrotate+asyncskip:///var/log/s3/goose-background/sysdb.log"
+            },
+            {
+                "level": "info",
+                "name": "*.pg.queries",
+                "file_path": "logrotate+asyncskip:///var/log/s3/goose-background/pg-access.log"
+            },
+            {
+                "level": "error",
+                "name": "*.alert",
+                "file_path": "logrotate+async:///var/log/s3/goose-background/alerts.log"
+            }
+        ]
+    },
+
+    "cron": {
+        "tasks": [
+            {
+                "event_name": "LifecycleScheduler",
+                "run_every": "2m",
+                "run_at_utc": "00:00"
+            },
+            {
+                "event_name": "BucketsDeleteRepair",
+                "run_every": "1h",
+                "run_immediate": true,
+                "parallel_count": 1
+            },
+            {
+                "event_name": "SyncABCRoles",
+                "run_every": "5m",
+                "run_immediate": true,
+                "parallel_count": 1
+            }
+        ],
+        "limit": 4
+    },
+
+    {% if env == "testing" -%}
+        {% set idm_system_slug = 's3-mds-test' -%}
+    {% else -%}
+        {% set idm_system_slug = 's3-mds' -%}
+    {% endif -%}
+    "idm": {
+        "base_url": "https://idm-api.yandex-team.ru/",
+        "system_slug": "{{ idm_system_slug }}"
+    },
+    "staff": {
+        "base_url": "https://staff-api.yandex-team.ru/v3/",
+        "oauth_token": "{{ pillar['yav']['s3-idm-staff-oauth-token'] }}",
+        "update_cache_sec": 1800
+    },
+
+    {% if env == "testing" -%}
+        {% set sqs_identificator = 'storage-test' -%}
+    {% else -%}
+        {% set sqs_identificator = 'storage' -%}
+    {% endif -%}
+    "sqs": {
+        "listeners": [
+            {
+                "handler": "lifecycle",
+                "queue_url": "http://sqs.yandex.net:8771/{{ sqs_identificator }}/s3-api-lf-expiration",
+                "batch_size": 2,
+                "parallel": 12,
+                "limit": 0,
+                "receive_timeout_sec": 20,
+                "visibility_timeout_sec": 1300
+            },
+            {
+                "handler": "background",
+                "queue_url": "http://sqs.yandex.net:8771/{{ sqs_identificator }}/s3-background",
+                "batch_size": 2,
+                "parallel": 8,
+                "limit": 0,
+                "receive_timeout_sec": 20,
+                "visibility_timeout_sec": 1300
+            }
+        ]
+    },
+
+    "adapters": {
+        "credentials": "postgres"
+    }
+}

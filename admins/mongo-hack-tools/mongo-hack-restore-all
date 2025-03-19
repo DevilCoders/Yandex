@@ -1,0 +1,86 @@
+#! /usr/bin/python
+
+from mongo_hack import *
+
+
+class RestoreController (BaseScript):
+
+    script_description  = 'Restore a sharded database from a rsync backup'
+    argument_names      = ['mongos_group', 'rsync_source', 'date', 'config_dir', 'shard_name+']
+
+    def gather_info(self):
+        self.mongos_hosts = group2hosts(self.args.mongos_group)
+        self.ctrl         = MongosController(self.mongos_hosts[0])
+
+        self.dirs         = sorted(self.args.shard_name)
+        self.hosts        = self.ctrl.get_shards()
+        self.cfg_hosts    = self.ctrl.config['CFGDB'].replace('"', '').split(',')
+
+        if len(self.dirs) != len(self.hosts):
+            raise RuntimeError('The source and destination shard counts do not match')
+
+        result = [
+            ('Rsync source', self.args.rsync_source),
+            ('Mongocfg dir', self.args.config_dir),
+            ('Date', self.args.date),
+            ('Mongos servers', ' '.join(self.mongos_hosts)),
+            ('Config servers', ' '.join(self.cfg_hosts)),
+        ]
+
+        for i in xrange(len(self.dirs)):
+            result.append(('Restore %s to' % self.dirs[i], '%s/%s' % (self.hosts[i][0], ','.join(self.hosts[i][1]))))
+
+        return result
+
+    @parallel
+    def restore_mongodb(self, ctrl, rsync_source):
+        ctrl.stop()
+        ctrl.clean_datadir()
+        ctrl.copy_from(rsync_source)
+
+    @parallel
+    def start_mongodb(self, ctrl):
+        ctrl.start()
+
+    @parallel
+    def process_shard(self, idx):
+        controls = [ MongodController(x) for x in self.hosts[idx][1] ]
+        self.restore_mongodb(controls, '%s/%s/%s/*/shard.dump.*.tar.gz' % (self.args.rsync_source, self.dirs[idx], self.args.date))
+
+        # sequential, because requirest stop-start
+        for ctrl in controls:
+            ctrl.init_rs(self.hosts[idx][1])
+
+        self.start_mongodb(controls)
+
+    @parallel
+    def process_mongoc(self, ctrl, rsync_source):
+        ctrl.copy_from(rsync_source)
+
+    @parallel
+    def restart_mongos(self, ctrl):
+        ctrl.restart()
+
+    def run(self):
+        # disable balancer
+        mongos_ctrls = [ MongosController(x) for x in self.mongos_hosts ]
+        mongos_ctrls[0].disable_balancer()
+
+        # process shards
+        self.process_shard(list(range(len(self.dirs))))
+
+        # process metainfo
+        controls = [ MongocController(x) for x in self.cfg_hosts ]
+        self.process_mongoc(controls, '%s/%s/%s/*/config/' % (self.args.rsync_source, self.args.config_dir, self.args.date))
+
+        # rename and restart
+        for i in range(len(self.dirs)):
+            if self.dirs[i] != self.hosts[i][0]:
+                mongos_ctrls[0].rename_rs(self.dirs[i], self.hosts[i][0], self.hosts[i][1])
+
+        self.restart_mongos(mongos_ctrls)
+        mongos_ctrls[0].connect()
+        mongos_ctrls[0].enable_balancer()
+
+if __name__ == '__main__':
+    RestoreController()

@@ -1,0 +1,69 @@
+name: disk_deploy_event_loader_stable-event_loader
+parsing:
+  groups: [disk_deploy_event_loader_stable]
+  metahost: disk_deploy_event-loader
+  DataFetcher:
+    logname: 'yandex/disk/event-loader-tskv.log'
+    timetail_url: '/timetail?pattern=disk_event_loader_log&type=java&log_ts='
+aggregate:
+  data:
+    event-loader-log:
+      type: "custom"
+      class: "Multimetrics"
+    event_loader:
+      type: "custom"
+      class: "Multimetrics"
+
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+    juggler_lag_timings_90perc: &juggler-conf
+      type: juggler
+      namespace: disk
+      Host: "disk_deploy_event-loader"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - ignition
+      Aggregator: logic_or
+      checkname: lag_timings_90perc
+      description: lag_timings_90perc
+      flaps: { stable_time: 300, critical_time: 3600 }
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      CRIT: [" ${event-loader-log}['event-loader_timings_lag'][1] > 1800 "]
+      tags:
+        - production
+
+
+---
+name: disk_deploy_event_loader_stable-requests_http
+parsing:
+  groups: [disk_deploy_event_loader_stable]
+  metahost: disk_deploy_event-loader
+  DataFetcher:
+    logname: 'yandex/disk/event-loader-tskv.log'
+    timetail_url: '/timetail?pattern=requests_http&type=java&timeout=60&log_ts='
+  Combainer:
+    MINIMUM_PERIOD: 60
+
+aggregate:
+  data:
+    requests_http:
+      type: "custom"
+      class: "Multimetrics"
+
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite

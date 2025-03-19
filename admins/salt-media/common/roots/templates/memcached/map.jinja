@@ -1,0 +1,24 @@
+{% load_yaml as memcached %}
+service: memcached
+packages:
+  - memcached
+  - config-monrun-memcached
+directories:
+  - /var/log/memcached
+  - /usr/lib/yandex-graphite-checks/enabled
+mcrouter_dirs:
+  - /var/spool/mcrouter
+  - /etc/mcrouter
+  - /var/log/mcrouter
+mcrouter_cfgname: mcrouter.conf
+legacy_os_repo: true
+{% endload %}
+
+{% set memcached = salt["pillar.get"]("memcached", memcached, merge=True) %}
+{% set restart = salt['pillar.get']('memcached:restart', False) %}
+{% do memcached.update( { "restart" : restart } ) %}
+
+{% if memcached.mcrouter is defined %}
+{% do memcached.packages.append('mcrouter')%}
+{% do memcached.directories.extend(memcached.mcrouter_dirs) %}
+{% endif %}

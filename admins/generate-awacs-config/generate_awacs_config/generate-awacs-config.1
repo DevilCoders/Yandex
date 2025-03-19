@@ -1,0 +1,265 @@
+.TH generate-awacs-config 1 "AWACS CONFIG GENERATOR"
+
+.SH NAME
+.B generate-awacs-config
+- generates configs suitable for the RTC AWACS
+
+.SH DESCRIPTION
+.B generate-awacs-config
+generates files based on the
+.B config.yaml
+file in the current directory. The
+.B config.yaml
+has several important sections described below.
+
+.SH GLOBAL SECTION
+The
+.B global
+section is required and has two required fields:
+.B name
+and
+.BR project .
+Other fields are also possible. All the options are described below:
+
+.IP \[bu] 4
+.B name
+specifies the balancer name as specified in DNS or L3TT;
+.IP \[bu]
+.B project
+specifies the default settings (different projects have different ones,
+like music and kp have different owners for example);
+.IP \[bu]
+.B sni
+(optional) specifies non-default certificate chains (a list of strings, or a name=>regexp dicts) present in the secrets that are available;
+.IP \[bu]
+.B default_cert
+(optional) specifies the default certificate name;
+.IP \[bu]
+.B listen
+specifies whether to listen to
+.B http
+and/or
+.B https
+requests in the corresponding boolean subsections;
+.IP \[bu]
+.B force
+(optional) specifies manual enforcements that override automatic behaviour, currently only
+.B l3
+section is supported which forces the gencfg group list determined from l3tt.
+
+.PP
+.B The global section example (with all optional options present):
+.PP
+    global:
+        name: music.yandex.ru
+        project: music
+        sni:
+          - music.yandex
+          - music-rtc.qa.yandex.ru: '(music-rtc.qa|music-rtc.mt).yandex.ru'
+        default_cert: _.music.yandex.net
+        listen:
+          http: 80
+          https: null
+        force:
+            l3: [MAN_MUSIC_BALANCER, SAS_MUSIC_BALANCER]
+
+.SH UPSTREAM SECTION
+The file can have several
+.B upstream
+sections each generating a separate upstream file. The upstream sections define parameters for the current upstream with defaults coming from the
+.B default
+section and from the
+.BR "project defaults" .
+The
+.B default
+section is a special name that defines defaults within
+.BR config.yaml .
+
+.IP \[bu] 4
+.B group
+specifies the conductor group name of the real servers;
+
+.IP \[bu]
+.B gencfg
+specifies the gencfg group of the real servers, it has three mandatory subparameters:
+.B name
+to specify the gencfg group postfix,
+.B tag
+to specify the gencfg tag and
+.B port
+to specify the gencfg port and
+.B dcs
+to specify the list of the datacenters;
+
+.IP \[bu]
+.B host
+specifies the regex for the section to match;
+
+.IP \[bu]
+.B order
+specifies the order of the section in the inclusion algorithm. It looks like a number but it
+.B must
+be a string;
+
+.IP \[bu]
+.B section
+specifies the section name for the report generation (graphs);
+
+.IP \[bu]
+.B external
+specifies whether to apply an equal datacenter distribution (required for external services only), boolean;
+
+.IP \[bu]
+.B ping
+specifies the chat message for the ping action with \\n's embedded;
+
+.IP \[bu]
+.B redirect
+specifies that the section must be a redirect to a specified url;
+
+.IP \[bu]
+.B admins
+specifies service admins, has
+.B users
+and
+.B groups
+subsections containing the corresponding lists;
+
+.IP \[bu]
+.B attempts
+defines
+.BR crossdc ,
+.B insidedc
+and
+.B connect
+number of attepts in the corresponding subsections;
+
+.IP \[bu]
+.B watermark
+defines the watermark thresholds in the
+.B hi
+and
+.B lo
+subsections;
+
+.IP \[bu]
+.B connection
+determines the connection configuration:
+.B max
+defines the maximum number of connections,
+.B port
+defines the connection port to the backends;
+
+.IP \[bu]
+.B active
+determines the active module paramters, currently only the
+.BR delay ;
+
+.IP \[bu]
+.B errors
+defines the error-handling strategy accepting possible states of
+.BR pass-through ", " ignore " and " static ;
+
+.IP \[bu]
+.B status_code_blacklist
+determines the status code list to be treated as errors;
+
+.IP \[bu]
+.B icookie
+enables the icookie support for the specified domains;
+
+.IP \[bu]
+.B threshold
+specifies POST-data threshold limits for the
+.B external
+domains, specifically the
+.B lo
+and
+.B hi
+limits.
+
+.IP \[bu]
+.B timeout
+specifies different timeouts in it's sections:
+.BR connect ", " request ", " on_error_request
+and two timeouts for the
+.BR threshold :
+the
+.B pass
+and the
+.B recv
+ones.
+
+.PP
+.B The upstream section example (with all optional options present):
+.PP
+    music.yandex.ru.yaml:
+        group: music-stable-xfront
+        gencfg:
+            name: LYRICS_PROXYWIZARD
+            tag: tags/stable-102-r89
+            dcs: [man, sas, vla]
+        host: 'radio.qa.yandex.(ru|ua|by|kz)'
+        order: '00000002'
+        section: yandex_redirect
+        external: true
+        ping: 'GET /ping HTTP/1.1\nHost: mus-web-balancer.rcmnd.yandex.net\n\n'
+        redirect: 'https://music.yandex.ru%{url}'
+        admins:
+            users: ['keepclean']
+            groups: ['svc_muz_administration']
+        attempts:
+            crossdc: 2
+            insidedc: 2
+            connect: '!f count_backends()'
+        watermark:
+            lo: 0.005
+            hi: 0.02
+        connection:
+            maxconn: 5000
+            port: 80
+        active:
+            delay: 10s
+        threshold:
+            lo: 102400
+            hi: 1024000
+        timeout:
+            connect: 100ms
+            request: 5s
+            on_error_request: 10s
+            threshold:
+                pass: 10s
+                recv: 1s
+        errors: pass-through
+        status_code_blacklist: ['3xx', '409']
+        icookie: ['.kinopoisk.ru']
+
+.SH DEFAULTS AND INHERITANCE
+Every parameter is defined according to the inheritance policy. First come the globals from the 
+.B defaults.yaml
+(bundled with
+.BR generate-awacs-config ),
+section
+.BR default .
+Then there are
+.B project-wide
+settings (bundled in the same file) that may override or add some settings.
+Next comes the
+.B default
+section in the
+.B upstream
+file and then the corresponding
+.B upstream
+section settings.
+
+.PP
+The merge strategy is simple:
+
+.IP \[bu] 4
+scalar values replace defaults;
+
+.IP \[bu]
+lists are concatenated with an exception of string values starting with ~: these items are removed (i.e. merge(['a', 'b'], ['~b', 'c']) renders ['a', 'c']);
+
+.IP \[bu]
+dicts merge as assumed: non-overlapping keys join, overlapping keys override.

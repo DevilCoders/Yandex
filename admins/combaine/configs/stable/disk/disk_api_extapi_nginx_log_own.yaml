@@ -1,0 +1,51 @@
+parsing:
+  groups: [disk_api]
+  metahost: cloud-api.yandex.net
+  DataFetcher:
+    timetail_port: 3333
+    logname: "nginx/access-tskv.log"
+    timetail_url: "/timetail?pattern=nginx_extapi_tskv&type=tskv&log_ts="
+  Combainer:
+    MINIMUM_PERIOD: 55
+
+aggregate:
+  data:
+    nginx-tskv:
+      type: "custom"
+      class: "Multimetrics"
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+    juggler_2xx_total:
+      type: juggler
+      namespace: disk
+      Host: "cloud-api.yandex.net"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - ignition
+      Aggregator: timed_more_than_limit_is_problem
+      checkname: valid_traffic_log_own
+      description: 2xx level is low
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits:
+          -
+            crit: 0
+            time_start: 2
+            time_end: 1
+            day_end: 7
+            day_start: 1
+      CRIT: [ "${nginx-tskv}['nginx_count_request_total_acode_2xx'] <= 60" ]
+      tags:
+        - disk_api
+        - production

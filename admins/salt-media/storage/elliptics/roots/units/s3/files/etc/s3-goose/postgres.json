@@ -1,0 +1,115 @@
+{%- set env = grains['yandex-environment'] -%}
+
+{%- if srv is not defined -%}
+{%- set srv = "common" -%}
+{%- endif -%}
+
+
+{%- if env == 'testing' -%}
+
+{%- set pgmeta_host = salt['conductor']['groups2hosts']('mail_pgtest_pgmeta') | join(',') -%}
+{%- set pg_host = "pgproxy-test.mail.yandex.net" -%}
+{%- set pgmeta_password = pillar['yav']['s3-goose-pgmeta-s3ro-test'] -%}
+{%- set s3api_ro_password = pillar['yav']['s3-idm-s3int-db-password-testing-ro'] -%}
+{%- set s3api_password = pillar['yav']['s3-idm-s3int-db-password-testing'] -%}
+{%- set s3api_list_password = pillar['yav']['s3-idm-s3int-db-password-testing-list'] -%}
+{%- set cipher_v1_path = "/etc/yandex/s3-secret/v1_cipher_key.testing" -%}
+{%- set ssl_root_cert = "/etc/yandex-certs/yandexCAs.pem" -%}
+{%- set presign_endpoint = "s3.mdst.yandex.net" -%}
+{%- set default_folder_size_quota = 1073741824 -%}
+{%- set chunk_cache_size = 25000 -%}
+{%- set chunk_cache_time = 600 -%}
+{%- set chunk_cache_whitelist = {} -%}
+{%- set stats_exclude_bucket_patterns = [] -%}
+
+{%- else -%}
+
+{%- set pgmeta_host = salt['conductor']['groups2hosts']('mdb_pgmeta_porto_prod') | join(',') -%}
+{%- set pg_host = "s3int.db.yandex.net" -%}
+{%- set pgmeta_password = pillar['yav']['s3-goose-pgmeta-s3ro-prod'] -%}
+{%- set s3api_ro_password = pillar['yav']['s3-idm-s3int-db-password-ro'] -%}
+{%- set s3api_password = pillar['yav']['s3-idm-s3int-db-password'] -%}
+{%- set s3api_list_password = pillar['yav']['s3-idm-s3int-db-password-list'] -%}
+{%- set cipher_v1_path = "/etc/yandex/s3-secret/v1_cipher_key.production" -%}
+{%- set ssl_root_cert = "/etc/yandex-certs/allCAs.pem" -%}
+{%- set presign_endpoint = "s3.mds.yandex.net" -%}
+{%- set default_folder_size_quota = 10737418240 -%}
+{%- set chunk_cache_size = 25000 -%}
+{%- set chunk_cache_time = 600 -%}
+{%- set chunk_cache_whitelist = { "storage-admin": true, "hotsauce-bench000000000000": true, "strm": true } -%}
+{%- set stats_exclude_bucket_patterns = [ "yandexcloud-dbaas%", "internal-dbaas%", "cloud-storage%" ] -%}
+
+{%- endif -%}
+
+{
+    "postgres": {
+        "presign_scheme": "https",
+        "presign_endpoint": "{{ presign_endpoint }}",
+        "pgmeta": {
+            "host": "{{ pgmeta_host }}",
+            "port": 6432,
+            "db_name": "s3db",
+            "user": "s3ro",
+            "password": "{{ pgmeta_password }}",
+            "cache_file_name": "/var/tmp/s3-goose-pgmetaCache.json",
+            "pgmeta_update_interval_sec": 100,
+            "pgmeta_update_timeout_sec": 20,
+            "chunk_cache_size": {{ chunk_cache_size }},
+            "chunk_cache_ttl_sec": {{ chunk_cache_time }},
+            "ssl_mode": "verify-full",
+            "ssl_root_cert": "{{ ssl_root_cert }}",
+            "clusters_update_interval_msec": 750,
+            "clusters_update_timeout_msec": 700,
+            "connect_errors_count_threshold": 3,
+            "ping_check_threshold": 3,
+            "ping_check_window": 3
+        },
+        "enable_driver_logging": true,
+        "db_name": "s3db",
+        "user": "s3api_ro",
+        "password": "{{ s3api_ro_password }}",
+        "ssl_mode": "verify-full",
+        "ssl_root_cert": "{{ ssl_root_cert }}",
+        "connect_timeout": 5,
+        "max_open_conns": 5,
+        "max_idle_conns": 0,
+        "conn_max_lifetime": 120,
+        "ro_pool": {
+            "user": "s3api_ro",
+            "password": "{{ s3api_ro_password }}",
+            "max_open_conns": 40
+        },
+        "rw_pool": {
+            "user": "s3api",
+            "password": "{{ s3api_password }}",
+            "max_open_conns": 20
+        },
+        "list_pool": {
+            "user": "s3api_list",
+            "password": "{{ s3api_list_password }}",
+            "max_open_conns": 20
+        },
+        "query_attempts": 7,
+        "base_retry_delay_msec": 200,
+        "max_retry_delay_msec": 5000,
+        "bucket_cache": {
+            "ttl": 10,
+            "size": 5000
+        },
+        "access_keys": {
+            "update_period": 60,
+            "cipher_v1_path": "{{ cipher_v1_path }}"
+        },
+        "stats_store": {
+            "update_period": 300,
+            "full_update_period": 3600,
+            "exclude_bucket_patterns": {{ stats_exclude_bucket_patterns | tojson() }}
+        },
+        "default_folder_size_quota": {{ default_folder_size_quota }},
+        "delete_chunk_size": 10,
+        "identity": {
+            "update_period": 60,
+            "expiration_interval": 300
+        }
+    }
+}

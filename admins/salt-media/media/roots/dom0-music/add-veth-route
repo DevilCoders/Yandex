@@ -1,0 +1,39 @@
+#!/bin/bash
+
+if [[ $ID_NET_DRIVER != "veth" ]]; then exit; fi
+if [[ $INTERFACE == "" ]]; then exit; fi
+
+VM_NAME=""
+for ((i = 10; i > 0; i--)); do
+    while read name; do
+        if /snap/bin/lxc info $name | grep -q "$INTERFACE"; then
+            VM_NAME="$name"
+        fi
+    done < <(/snap/bin/lxc ls --format=csv -cn)
+    if test -z "$VM_NAME"; then
+        echo "Wait container name for $INTERFACE ($i sec)" | systemd-cat -t lxd.veth -p info
+        sleep 1s
+    else
+        break
+    fi
+done
+
+if test -z "$VM_NAME"; then
+    echo "Failed to find container name for interface $INTERFACE" | systemd-cat -t lxd.veth -p info
+    exit
+fi
+
+echo "Interface $INTERFACE up for $VM_NAME" | systemd-cat -t lxd.veth -p info
+for ((i = 10; i > 0; i--)); do
+    ip="$(/snap/bin/lxc info $VM_NAME | awk "/2a02:6b8:.*$INTERFACE/{print \$(NF-1)}")"
+    if test -n "$ip"; then
+        echo "ip route add $ip/128 dev $INTERFACE" | systemd-cat -t lxd.veth -p info
+        /sbin/ip -6 route add $ip/128 dev $INTERFACE
+        /sbin/ip -6 addr add fe80::1 dev $INTERFACE
+        exit
+    else
+        echo "Wait veth $INTERFACE ip for $VM_NAME ($i sec)" | systemd-cat -t lxd.veth -p info
+        sleep 1s
+    fi
+done
+echo "Failed to wait veth $INTERFACE ip for $VM_NAME" | systemd-cat -t lxd.veth -p emerg

@@ -1,0 +1,2 @@
+yandex-ponydebugger:
+  pkg.installed

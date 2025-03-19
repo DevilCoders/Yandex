@@ -1,0 +1,47 @@
+#!/bin/sh
+
+dir="/root/.ssh"
+
+ec() {
+#    echo "$@" >&2
+    "$@"
+}
+
+evale() {
+#    echo "$@" >&2
+    eval "$@"
+}
+
+errExit() {
+    echo "$@" >&2
+    exit 1
+}
+
+case $1 in
+    remove|upgrade)
+        ak=$dir/authorized_keys
+        
+	for i in `ls -1 $dir/authorized_keys-from-package* | sed -r "s/.*(authorized_keys-from-package.*)/\1/"`; do
+	
+            cat "$dir/$i" | egrep -v '^ *(#|$)' | while read key; do
+	        keyu=$(echo $key | sed -r "s/.*= (.*)/\1/") 	
+	        echo "test key: $keyu"
+                if grep -q "$key" $ak; then
+                    evale "grep -v '$key' '$ak' > '$ak.tmp'"
+                    ec mv "$ak.tmp" "$ak"
+                    echo "key $keyu is removed"
+                else
+                    echo "key $keyu is not installed"
+                fi
+            done
+	done
+        ec chmod 700 $dir
+        ec chmod 600 $dir/authorized_keys
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+    *)
+        echo "prerm called with unknown argument \`$1'" >&2
+        ;;
+esac

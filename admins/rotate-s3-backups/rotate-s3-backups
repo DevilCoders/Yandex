@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+#pylint: disable=invalid-name
+"""
+Rotate s3 backups with configurable policy
+"""
+import os
+import logging
+
+from s3_rotate import load_config, parse_args, ZkCli, BackupMonitoring, BackupRotate
+
+
+def main():
+    """main"""
+
+    args = parse_args()
+    conf = load_config(args)
+    log = logging.getLogger(__name__)
+    if args.check:
+        worker = BackupMonitoring(conf)
+    else:
+        worker = BackupRotate(conf)
+    zk_cli = None
+    try:
+        zk_cli = ZkCli(conf)
+        if zk_cli.acquire_lock():
+            log.info("Zk lock acquired, do %s", worker.__class__.__name__)
+            worker.run(zk_cli)
+        else:
+            log.info("Failed to get zk lock, exiting")
+            if args.check:
+                print(worker.get_last_status(zk_cli))
+            os.sys.exit(0)
+    except Exception as exc:  # pylint: disable=broad-except
+        log.exception("Operation failed %s", worker.__class__.__name__)
+        if args.check:
+            print("2;Check failed: {}".format(exc))
+    finally:
+        if zk_cli:
+            zk_cli.stop()
+
+
+if __name__ == "__main__":
+    main()

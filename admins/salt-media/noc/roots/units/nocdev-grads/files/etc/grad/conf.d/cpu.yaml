@@ -1,0 +1,155 @@
+credentials: !include ../credentials.yml
+variables: !include variables.yaml
+
+series:
+  snmp_poller.cpu: &cpu
+    min_interval: 60
+  comocutor_poller.netconf_cpu: *cpu
+
+pollers:
+  SNMP cpu juniper:
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters:
+      - juniper.jnxOperatingDescr
+      - juniper.jnxContentsEntry_14
+      - oid: juniper.jnxOperating5MinLoadAvg
+        options: ["use_snmpget"]
+      - oid: juniper.jnxOperating1MinLoadAvg
+        options: ["use_snmpget"]
+      - oid: juniper.jnxOperatingHeap
+        options: ["use_snmpget"]
+      - oid: juniper.jnxOperatingBuffer
+        options: ["use_snmpget"]
+      - oid: juniper.jnxOperatingISR
+        options: ["use_snmpget"]
+      - {oid: juniper.jnxOperatingCPU, options: ["use_snmpget"]}
+      skip_key_expr: {'component': '^(?!Routing Engine|FPC)'}
+    filter: |
+      {Juniper} and {конюшня NOC} and [опрос SNMP] and
+      ({$attr_2_74584} or {Juniper})
+    series: cpu
+    interval: 60
+
+  SNMP cpu huawei:
+    poller: snmp
+    poller version: 2
+    poller params:
+      bulk_max_repetitions: 2
+      post_fn: [huawei_rename_cpu]
+      counters:
+        - vrp_cpu.hwAvgDuty5min
+        - vrp_cpu.hwAvgDuty1min
+    filter: "{Huawei} and not {Huawei NE40E} and [опрос SNMP]"
+    series: cpu
+    interval: 60
+    scattering_percent: 90
+
+  SNMP cpu cisco:
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters:
+        - { oid: cisco-process.cpmCPUTotal5minRev, options: [ use_snmpbulkget, add_index ] }
+        - { oid: cisco-process.cpmCPUTotal1minRev, options: [ use_snmpbulkget, add_index ] }
+      post_fn: [ [ rename_keys, { filter: { index: component } } ] ]
+    filter: ["rt%{Cisco} and not ({сервер видеоконференций} or {Cisco MCS} or {Cisco SRW} or {Cisco UCS} or
+    {Cisco Video Endpoint} or {Cisco WiFi controller} or {TelePresence Conductor}) and [опрос SNMP]", *exVezet_cisco_filter]
+    series: cpu
+    interval: 60
+
+  SNMP cpu system stats:
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters:
+        - systemStats.index
+        - systemStats.CpuUser
+        - systemStats.CpuSystem
+        - systemStats.CpuIdle
+    filter: "({Linux} or {FreeBSD} or {Accton} or {Mellanox}) and [опрос SNMP]"
+    series: cpu
+    interval: 60
+
+  SNMP host resources:
+    poller: snmp
+    poller version: 2
+    poller params:
+      dups_ok: true
+      counters:
+        - {oid: host-resources.hrDeviceDescr, options: ["use_snmpbulkget"]}
+        - {oid: host-resources.hrProcessorLoad, options: ["use_snmpget"]}
+    filter: ["rt%({Arista} or ({гипервизор} and {телефонный сервер})) and [опрос SNMP]",
+             "rt_taxi_mon%{taxi_lavka_base}", *exVezet_mikrotik_filter]
+    series: cpu
+    interval: 60
+
+  SNMP cpu aruba:
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters:
+        - {oid: aruba-ap.aiAPName, options: ["use_snmpbulkget"]}
+        - {oid: aruba-ap.aiAPCPUUtilization, options: ["use_snmpbulkget"]}
+      index_to_seq: True  # так как в ключах mac-адрес
+      skip_key_expr: {ap_name: '^(?!{var_host}$)'}
+      post_fn: [ [ drop_data, { drop_keys: [ ap_name ] } ], [ rename_keys, { filter: { index: component } } ] ]
+    filter: "{Aruba} and [опрос SNMP]"
+    series: cpu
+    interval: 300
+
+  SNMP cpu aruba wlc ap:
+    poller: snmp
+    poller version: 3
+    poller params:
+      counters:
+        - WLSX-SWITCH-MIB.sysXProcessorDescr
+        - WLSX-SWITCH-MIB.sysXProcessorLoad
+    filter: "rt%{Aruba WiFi controller} and [работает SNMP]"
+    series: cpu
+    interval: 60
+
+  netconf huawei cpu:
+    poller: comocutor
+    poller params:
+      getter: get_huawei_devm_cpu
+      device: NetconfDevice
+      <<: *comocutor_credentials
+    series: comocutor_poller.netconf_cpu
+    interval: 30
+    instance_group: main netconf instance
+    filter: "{Huawei NE40E} and [опрос comocutor]"
+
+  comocutor netconf huawei cpu: # NOCDEV-4269
+    poller: comocutor
+    poller params:
+      getter: get_huawei_devm_cpu
+      device: NetconfDevice
+      <<: *comocutor_credentials
+    series: comocutor_poller.netconf_cpu
+    interval: 30
+    instance_group: main netconf instance
+    filter: *huawei_test_hosts
+
+  comocutor netconf juniper cpu:
+    poller: comocutor
+    poller params:
+      getter: get_netconf_juniper_cpu
+      device: NetconfDevice
+      <<: *comocutor_credentials
+    series: comocutor_poller.netconf_cpu
+    interval: 30
+    instance_group: main netconf instance
+    filter: *juniper_test_hosts
+
+  SNMP Nokia CPU:
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters:
+        - {oid: TIMETRA-SYSTEM-MIB.sgiCpuUsage, options: ["use_snmpbulkget", "add_index", ["alias", "utilization"]]}
+    filter: "{Nokia} and [опрос SNMP]"
+    series: cpu
+    interval: 30
+

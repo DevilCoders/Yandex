@@ -1,0 +1,75 @@
+#!/usr/bin/env python
+
+import json
+import argparse
+import signal as sig
+import sys
+import socket
+import requests
+from kazoo.client import KazooClient
+from kazoo import exceptions as kze
+from BaseHTTPServer import HTTPServer
+from SimpleHTTPServer import SimpleHTTPRequestHandler
+
+
+class ipv6_server(HTTPServer):
+    address_family = socket.AF_INET6
+
+
+class get_response(SimpleHTTPRequestHandler):
+
+    def do_GET(self):
+        self.send_response(200, "OK")
+        self.end_headers()
+        metrics = []
+        url = 'http://%s:%d/' % (conf['clickhouse']['slb-host'], conf['clickhouse']['http_port'])
+        for i in conf['metrics-queries']:
+            try:
+                response = requests.get(url,
+                                        params={'query': i['query']},
+                                        auth=(conf['clickhouse']['user'], conf['clickhouse']['password']),
+                                        timeout=i['timeout_sec'])
+                if 200 == response.status_code:
+                    metrics.append((i['metric'], int(response.text.strip())))
+            except Exception:
+                pass
+        if len(metrics) > 0:
+            self.wfile.write('%s\n' % json.dumps(metrics))
+
+
+def signal_handler(signal, frame):
+    print 'Ctrl+C'
+    sys.exit(0)
+
+
+a = argparse.ArgumentParser()
+a.add_argument("--conf", type=str, default='clickhouse-custom-metrics.conf', help="path to JSON configuration file")
+a.add_argument("--debug", action='store_true', help="guess what?")
+argv = a.parse_args()
+conf = json.load(open(argv.conf))
+hosts = ','.join(conf['zookeeper']['hosts'])
+
+sig.signal(sig.SIGINT, signal_handler)
+zk = KazooClient(hosts=hosts)
+timeout = conf['zookeeper']['lock_wait_timeout_sec']
+if timeout:
+    assert isinstance(timeout, (int, float))
+assert isinstance(conf['clickhouse']['http_port'], int)
+assert isinstance(conf['http_server']['port'], int)
+try:
+    zk.start()
+    if argv.debug:
+        print zk.state
+    lock = zk.Lock(conf['zookeeper']['path_prefix'], conf['zookeeper']['lock_name'])
+    lock.acquire(timeout=timeout)
+except kze.LockTimeout:
+    print 'lock acquired by another node, exiting'
+    exit(0)
+else:
+    if argv.debug:
+        print 'lock acquired'
+    server = ipv6_server((conf['http_server']['listen_address'], conf['http_server']['port']), get_response)
+    server.serve_forever()
+finally:
+    lock.release()
+    zk.stop()

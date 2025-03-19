@@ -1,0 +1,179 @@
+---
+name: disk_qloud_uploader_zip-stable-zip_speed_by_count
+parsing:
+  groups: [disk_qloud_uploader_zip-stable]
+  metahost: zipper.qloud.disk.yandex.net
+  DataFetcher:
+    logname: 'yandex/disk/uploader-tskv.log'
+    timetail_url: '/timetail?pattern=zip_speed_by_count&type=java&log_ts='
+aggregate:
+  data:
+    zip_speed_by_count:
+      type: "custom"
+      class: "Multimetrics"
+      values: [50, 75, 90, 99]
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+      Fields: ["50_prc", "75_prc", "90_prc", "99_prc"]
+---
+name: disk_qloud_uploader_zip-stable-zip_speed_by_avg_size
+parsing:
+  groups: [disk_qloud_uploader_zip-stable]
+  metahost: zipper.qloud.disk.yandex.net
+  DataFetcher:
+    logname: 'yandex/disk/uploader-tskv.log'
+    timetail_url: '/timetail?pattern=zip_speed_by_avg_size&type=java&log_ts='
+aggregate:
+  data:
+    zip_speed_by_avg_size:
+      type: "custom"
+      class: "Multimetrics"
+      values: [50, 75, 90, 99]
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+      Fields: ["50_prc", "75_prc", "90_prc", "99_prc"]
+---
+name: disk_qloud_uploader_zip-stable-mulca_stream_timings
+parsing:
+  groups: [disk_qloud_uploader_zip-stable]
+  metahost: zipper.qloud.disk.yandex.net
+  DataFetcher:
+    logname: 'yandex/disk/uploader-tskv.log'
+    timetail_url: '/timetail?pattern=mulca_stream_timings&type=java&log_ts='
+aggregate:
+  data:
+    mulca_stream_timings:
+      type: "custom"
+      class: "Multimetrics"
+      values: [50, 75, 90, 99]
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+      Fields: ["50_prc", "75_prc", "90_prc", "99_prc"]
+---
+name: disk_qloud_uploader_zip-stable-mulca_connection_timings
+parsing:
+  groups: [disk_qloud_uploader_zip-stable]
+  metahost: zipper.qloud.disk.yandex.net
+  DataFetcher:
+    logname: 'yandex/disk/uploader-tskv.log'
+    timetail_url: '/timetail?pattern=mulca_connection_timings&type=java&log_ts='
+aggregate:
+  data:
+    mulca_connection_timings:
+      type: "custom"
+      class: Multimetrics
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+---
+name: disk_qloud_uploader_zip-stable-uploader_access
+parsing:
+  groups: [disk_qloud_uploader_zip-stable]
+  metahost: zipper.qloud.disk.yandex.net
+  DataFetcher:
+    logname: 'yandex/disk/uploader-access.log'
+    timetail_url: '/timetail?pattern=disk_uploader_access&type=java&log_ts='
+aggregate:
+  data:
+    uploader-access:
+      type: "custom"
+      class: Multimetrics
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+    juggler_4xx_total: &juggler-conf
+      type: juggler
+      namespace: disk
+      Host: "zipper.qloud.disk.yandex.net"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - ignition
+      Aggregator: logic_or
+      checkname: uploader-access_4xx_total
+      description: codes total 4xx
+      flaps:
+        stable_time: 120
+        critical_time: 300
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      CRIT: [ "${uploader-access}['uploader_count_request_total_code_4xx'] > 3" ]
+      tags:
+        - production
+
+    juggler_5xx_total:
+      << : *juggler-conf
+      checkname: uploader-access_5xx_total
+      description: codes total 5xx
+      CRIT: [ "${uploader-access}['uploader_count_request_total_code_5xx'] > 5" ]
+      tags:
+        - disk_kladun
+        - disk_admin_critical
+        - disk_zipper
+        - production
+
+---
+name: disk_qloud_uploader_zip-stable-uploader_events
+parsing:
+  groups: [disk_qloud_uploader_zip-stable]
+  metahost: zipper.qloud.disk.yandex.net
+  DataFetcher:
+    logname: 'yandex/disk/uploader-events.log'
+    timetail_url: '/timetail?pattern=disk_uploader_events&type=java&log_ts='
+aggregate:
+  data:
+    uploader-events:
+      type: "custom"
+      class: Multimetrics
+      perHost: yes
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+  
+    juggler_4xx_total: &juggler-conf
+      type: juggler
+      namespace: disk
+      Host: "zipper.qloud.disk.yandex.net"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - ignition
+      Aggregator: logic_or
+      checkname: zipper-unknown
+      description: zipper-unknown
+      flaps:
+        stable_time: 120
+        critical_time: 300
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      CRIT: [ "${uploader-events}['uploader_count_type_zipfolder_unknown'] > 100" ]
+      tags:
+        - production
+        - disk_zipper
+

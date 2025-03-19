@@ -1,0 +1,187 @@
+#!/usr/bin/python
+
+import sys
+import os
+import time
+import stat
+# AS-43
+from bson.json_util import dumps as bson_json_dumps
+
+sys.path.append("/usr/lib")
+from mongodb_health.basecheck import *
+
+instance = sys.argv[1]
+param = sys.argv[2]
+threshold = sys.argv[3]
+db_name = None
+
+port = find_port(instance)
+__MONGO_MONITOR = "/etc/mongo-monitor.conf"
+if instance == "mongodb":
+    STATE_FILE = "/var/spool/monrun/mongodb-health.state"
+elif instance == "mongos":
+    STATE_FILE = "/var/spool/monrun/mongos-health.state"
+INDEXCFG_DIR = "/etc/monitoring/mongodb_indexes/conf.d/"
+#STATE_MAXAGE = 300
+STATE_MAXAGE = 20
+
+user = None
+password = None
+if os.path.exists(__MONGO_MONITOR):
+    filestat = os.stat(__MONGO_MONITOR)
+    if stat.S_IMODE(filestat.st_mode) == 384 and filestat.st_gid == 0 and filestat.st_uid == 0:
+        monitor_conf = open(__MONGO_MONITOR)
+        user = monitor_conf.readline().strip()
+        password = monitor_conf.readline().strip()
+    else:
+        print "2;Failed;set root:root ownership and 600 permissions to file /etc/mongo-monitor.conf"
+        exit()
+if not port:
+    print "0;Ok;" + instance + " is not configured"
+    exit(0)
+
+current = None
+prev = None
+serverStatus = {}
+
+if threshold == 'off':
+    print "0;OK;check disabled"
+    exit(0)
+
+if param == 'rs_indexes_consistency':
+    import mongodb_health.indexes
+    result = mongodb_health.indexes.check(databases=threshold,
+                                          port=port,
+                                          user=user,
+                                          password=password)
+    if result != None:
+        print result
+    exit(0)
+
+if param == 'verify_indexes':
+    import mongodb_health.verify_indexes
+    result = mongodb_health.verify_indexes.verify_indexes(port=port,
+                                                          user=user,
+                                                          password=password,
+                                                          code=threshold,
+                                                          jsondir=INDEXCFG_DIR)
+    if result != None:
+        print result
+    exit(0)
+
+if param == 'rs_secondary_alive':
+    import mongodb_health.replicaset
+    secondary_alive_conf = 1
+    try:
+        secondary_alive_conf = int(sys.argv[3])
+    except:
+        pass
+
+    result = mongodb_health.replicaset.rs_secondary_alive(port=port,
+                                                          user=user,
+                                                          password=password,
+                                                          secondary_alive_conf=secondary_alive_conf)
+    if result != None:
+        print result
+    exit(0)
+
+if param == 'rs_secondary_fresh':
+    import mongodb_health.replicaset
+    secondary_fresh_conf = 1
+    secondary_lag_conf = 15
+    try:
+        secondary_fresh_conf = int(sys.argv[3])
+        secondary_lag_conf = int(sys.argv[4])
+    except:
+        pass
+
+    result = mongodb_health.replicaset.rs_secondary_fresh(port=port,
+                                                          user=user,
+                                                          password=password,
+                                                          secondary_fresh_conf=secondary_fresh_conf,
+                                                          secondary_lag_conf=secondary_lag_conf)
+    if result != None:
+        print result
+    exit(0)
+
+
+if param == 'disk_read' or param == 'disk_write':
+    # we don't need to store it in serverStatus JSON
+    import mongodb_health.disk_usage
+    window = 1
+    try:
+        window = int(sys.argv[4])
+    except:
+        pass
+
+    (read, write, error) = mongodb_health.disk_usage.get_disk_usage(avg_window=window)
+    if read != None and write != None:
+        if param == 'disk_read':
+            outputResult('disk_read', read, read, threshold)
+        if param == 'disk_write':
+            outputResult('disk_write', write, write, threshold)
+    else:
+        print "1;Cannot get data: {0}".format(error)
+
+    exit(0)
+
+# as far as monrun cannot get several checks from one script and we do not want to jack off mongo
+# we're calling serverStatus only once during STATE_MAXAGE seconds and saving interesting values
+# to state file so subsequent calls of this script will use cached values from file
+if len(sys.argv) > 4:
+    if sys.argv[4] == 'refresh' and os.path.exists(STATE_FILE):
+        os.unlink(STATE_FILE)
+
+if os.path.exists(STATE_FILE) and time.time() - os.path.getctime(STATE_FILE) < STATE_MAXAGE:
+    serverStatus = loadServerStatus(STATE_FILE)
+    if not serverStatus:
+        serverStatus = flushServerStatus(port, user, password, instance, STATE_FILE)
+
+else:
+    if not os.path.exists(STATE_FILE):
+        serverStatus = flushServerStatus(port, user, password, instance, STATE_FILE)
+
+    elif time.time() - os.path.getctime(STATE_FILE) >= STATE_MAXAGE:
+        serverStatus = loadServerStatus(STATE_FILE)
+        if not serverStatus:
+            serverStatus = flushServerStatus(port, user, password, instance, STATE_FILE)
+        else:
+            serverStatus['prev'] = serverStatus['current']
+            serverStatus['current'] = getServerStatus(host='localhost',
+                                                      port=port,
+                                                      user=user,
+                                                      password=password,
+                                                      instance=instance)
+
+    f = open(STATE_FILE, 'w')
+    f.write(bson_json_dumps(serverStatus))
+    f.flush()
+    os.fsync(f.fileno())
+    f.close()
+
+critical = True
+if param.startswith('globalLock'):
+    if len(sys.argv) > 4:
+        if sys.argv[4] == 'primary':
+            critical = serverStatus['current']['is_master']
+
+try:
+    current = serverStatus['current'][param]
+    prev = serverStatus['prev'][param]
+except KeyError:
+    print "1;Failed;Unknown parameter {0}".format(param)
+    exit(0)
+except:
+    serverStatus = flushServerStatus(port, user, password, instance, STATE_FILE)
+    current = serverStatus['current'][param]
+    prev = serverStatus['prev'][param]
+
+if current == 'n/a':
+    print "1;Failed;{0} parameter is unavailable".format(param)
+    exit(0)
+
+if param == 'asserts_user':
+    current = (float(current-prev))/60
+
+outputResult(param, current, prev, threshold, critical=critical)
+

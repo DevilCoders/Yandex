@@ -1,0 +1,35 @@
+upstream agave_upstream {
+	server agave01g.tools.yandex.net max_fails=1 fail_timeout=20s;
+	server agave01f.tools.yandex.net backup;
+}
+
+server {
+	listen 80;
+	listen 443;
+	
+	server_name agave;
+	access_log /var/log/nginx/agave.access.log main;
+
+	location / {
+		rewrite ^(.*) $scheme://agave.yandex-team.ru$1 permanent;
+	}
+}
+
+
+server {
+	listen 80;
+	listen 443;
+
+	server_name agave.yandex-team.ru agave.*;
+	access_log /var/log/nginx/agave.access.log main;
+
+	location / {
+		proxy_pass           http://agave_upstream;
+		proxy_set_header     Host      $host;
+		proxy_set_header     X-Real-IP $remote_addr;
+		if ($scheme = https) {
+			set $SSL  on;
+		}
+		proxy_set_header  X-HTTPS  $SSL;
+	}
+}

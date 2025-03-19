@@ -1,0 +1,104 @@
+#!/usr/bin/env python
+
+from optparse import OptionParser
+import ConfigParser
+import socket
+import time
+import sys
+import logging
+
+GRAPHITE_HOST = 'localhost'
+GRAPHITE_PORT = 42000
+CONF = "/etc/agave/agave-graphite-adapter.conf"
+LOG = "/var/log/agave/agave-adapter.log"
+
+logging.basicConfig(filename=LOG, format='[%(asctime)s] %(levelname)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+log = logging.getLogger('main')
+
+def die(msg):
+  log.error(msg)
+  print msg
+  exit(1)
+  
+def configure(configfile):
+  c = ConfigParser.ConfigParser()
+  
+  try:
+    c.read(configfile)
+    level = c.get('main', 'loglevel').lower()
+  except Exception, e:
+    log.error('Can not read config file %s: %s, setting default loglevel [WARN]' % (configfile, repr(e)))
+    log.setLevel(logging.WARNING)
+    return
+  
+  if level == 'error':
+    log.setLevel(logging.ERROR)
+  elif level == 'warn' or level == 'warning':
+    log.setLevel(logging.WARNING)
+  elif  level == 'info':
+    log.setLevel(logging.INFO)
+  elif level == 'debug':
+    log.setLevel(logging.DEBUG)
+  
+
+def main():
+  configure(CONF)
+
+  log.debug(" ".join(sys.argv))
+  
+  parser = OptionParser()
+  parser.add_option("-H", "--hostname", dest="hostname", default=socket.gethostname(), type="string")
+  parser.add_option("-f", "--fieldset", "--graph", dest="fieldset", type="string")
+  parser.add_option("-g", "--group", dest="group", type="string", default="from_agave")
+  parser.add_option("-v", "--values", dest="values", type="string")
+  parser.add_option("-d", "--debug", dest="debug", action='store_true', default=False)
+  
+  # compatibility options
+  parser.add_option("-t", "--template", dest="template", default="default_template")
+  parser.add_option("-s", "--step", dest="step", default="300")
+  parser.add_option("-T", "--title", dest="title", default="default_title")
+  (options, args) = parser.parse_args()
+  
+  if options.fieldset is None:
+    die("Option --fieldset required")
+  if options.values is None:
+    die("Option --values required")
+    
+  hostname = options.hostname.replace(".", "_")
+  fieldset = options.fieldset.replace(".", "_")
+  group = options.group.replace(".", "_")
+  debug = options.debug
+
+  dataset = {}
+  
+  try:
+    for value in options.values.replace('=',':').split(","):
+      (k,v) = value.split(":")
+      dataset[k] = v
+  except Exception, e:
+    die("Error parsing values: " + repr(e))
+
+  data = ''
+  for item, value in dataset.items():
+    metric_name = "%s.%s.%s.%s" % (group, hostname, fieldset, item)
+    try:
+      value = int(value)
+    except Exception, e:
+      log.error('Error parsing value %s=%s: %s' % (item, value, repr(e)))
+      continue
+    line = "%s %d %d\n" % (metric_name, value, int(time.time()))
+    if debug: print line.strip()
+    log.debug("Sending '" + line.strip() + "'")
+    data += line
+  
+  try:
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((GRAPHITE_HOST, GRAPHITE_PORT))
+    s.sendall(data)
+    s.close()
+  except Exception, e:
+    log.error("Can't send data to graphite-sender: %s" % repr(e))
+    
+
+if __name__ == '__main__':
+  main()

@@ -1,0 +1,82 @@
+{% load_yaml as cassandra %}
+stock: False
+keyspaces: []
+cassandra.backup.keyspaces: []
+mx4j:
+  tmpl: |
+    [{name}]
+    execution_interval={interval}
+    command=/usr/bin/cassandra-check-mx4j.pl {conf}
+    type=cassandra
+  checks:
+    read:
+      name:  Attribute,99thPercentile,value
+      title: Read 99thPercentile
+      uri:   ReadLatency
+      type:  99thpercentile
+    write:
+      name:  Attribute,99thPercentile,value
+      title: Write 99thPercentile
+      uri:   WriteLatency
+      type:  99thpercentile
+    mccount:
+      name:  Attribute,value
+      title: Hints memtable columns count
+      uri:   MemtableColumnsCount
+      type:
+backup:
+  enabled: 0
+logrotate_enabled: True
+pkgs:
+  backup: yandex-media-common-cassandra-backup
+  monrun: config-monrun-cassandra
+graphite:
+  conf: salt://templates/cassandra/etc/yabs-graphite-client/graphite-client.cfg
+  patterns:
+    - "^org.apache.cassandra.metrics.+"
+monrun:
+  ntstatus:
+    owns: '"6" warn=0 crit=1'
+    state: '"LJM" warn=0 crit=1'
+    status: '"D" warn=0 crit=1'
+  nttpstats:
+    drops:
+      - 'msg "default" "Dropped" 1 crit'
+    threadpools:
+      - 'pool "default" "Active" 10 crit'
+      - 'pool "default" "Pending" 10 crit'
+      - 'pool "default" "Blocked" 10 crit'
+      - 'pool "default" "All time blocked" 10 crit'
+{% endload %}
+
+{% set cassandra = salt["pillar.get"]("cassandra", cassandra, merge=True) %}
+
+{% set mx4j, keyspaces_for_ntstatus = ({}, {}) %}
+
+{%- for ks_data in cassandra.keyspaces %}
+  {% if ks_data is mapping %}
+    {% set ksp = ks_data.keys()[0] %}
+
+    {% if ks_data[ksp] is mapping %}
+        {% set replication_strategy = ks_data[ksp].pop("replication_strategy", "default_replication_strategy") %}
+    {% else %}
+        {% set replication_strategy = "default_replication_strategy" %}
+    {% endif %}
+
+    {% if replication_strategy not in keyspaces_for_ntstatus %}
+        {# need only one keyspace for every replication strategy see st/CADMIN-5304 #}
+        {% do keyspaces_for_ntstatus.update({replication_strategy: ksp}) %}
+    {% endif %}
+    {% do mx4j.update({ksp: ks_data[ksp]}) %}
+  {% else %}
+    {% if not keyspaces_for_ntstatus.get("default_replication_strategy", None) %}
+        {# need only one keyspace for every replication strategy see st/CADMIN-5304 #}
+        {% do keyspaces_for_ntstatus.update({"default_replication_strategy": ks_data}) %}
+    {% endif %}
+  {% endif %}
+{% endfor %}
+
+{% set keyspaces_for_ntstatus = keyspaces_for_ntstatus.values()|join(" ") %}
+
+{% import_yaml slspath + "/default_configs/main.yaml" as main_conf %}
+{% set cassandra_config = salt["pillar.get"]("cassandra:config", main_conf, merge=True) %}

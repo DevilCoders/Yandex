@@ -1,0 +1,31 @@
+{% set p = grains.conductor.project %}
+{% set g = grains.conductor.group.replace(
+    "-prestable-","-").replace("-stable-","-").replace("-prod-","-") %}
+
+{% load_yaml as tls_tickets %}
+destdir: /etc/nginx/ssl/tls/
+srcdir: media/tls_tickets/{{p}}
+keyname: {{g}}.key
+on_success: reload_nginx
+cron:
+  name: secdist-get-tls_tickets
+  time: '7 * * * *'
+robot:
+  name: robot-media-salt
+  key: robot-media-salt_tls.id_rsa
+  srckeydir: {{grains.conductor.group}}
+  ssh_key: ''
+monitoring:
+  threshold_age: '28 hours ago'
+  execution_interval: 60
+  execution_timeout: 30
+  name: tls-tickets
+{% endload %}
+
+{% set tls_tickets = salt["pillar.get"]("tls_tickets", tls_tickets, merge=True) %}
+
+{% if tls_tickets.has_key("srcpath") %}
+{% do tls_tickets.update({"keyname": tls_tickets.srcpath.split("/")[-1]}) %}
+{% else %}
+{% do tls_tickets.update({"srcpath": "/".join([tls_tickets.srcdir, tls_tickets.keyname])}) %}
+{% endif %}

@@ -1,0 +1,45 @@
+#!/bin/bash
+
+export LC_ALL=en_US.UTF-8
+export LANG=en_US.UTF-8
+export LANGUAGE=en_US.UTF-8
+
+exec 2>&1
+ulimit -c unlimited
+sleep 1
+
+FQDN=$(hostname -f)
+
+if (( ${#FQDN} < 3 ))
+then
+  exit 191
+fi
+
+mkdir /etc/elliptics/parsed/ 1> /dev/null 2>/dev/null || true
+mkdir /etc/elliptics/ssl/ 1> /dev/null 2>/dev/null || true
+cp -v -p /place/db/iss3/instances/*/ell_ssl/ell_ssl /etc/elliptics/ell_ssl.tar.gz
+tar -xzf /etc/elliptics/ell_ssl.tar.gz -C /etc/elliptics/
+
+rtc-helper.py gen-ell-conf
+if (( $? ))
+then
+  exit 3
+fi
+
+sleep 1
+rtc-helper.py gen-ell-conf || exit 1
+ln -sf /etc/elliptics/elliptics-rtc.conf /etc/elliptics/parsed/elliptics-node-1.parsed
+
+if [ ! -h /var/log/elliptics ]
+then
+  mv /var/log/elliptics /var/log/elliptics.tmp.$(date +%s)
+  if [ ! -d /place/db/www/logs/$FQDN/elliptics/ ]
+  then
+    mkdir -p /place/db/www/logs/$FQDN/elliptics/
+  fi
+  ln -sf /place/db/www/logs/$FQDN/elliptics /var/log/
+fi
+
+sleep 1
+exec /usr/bin/dnet_ioserv -c /etc/elliptics/elliptics-rtc.conf
+

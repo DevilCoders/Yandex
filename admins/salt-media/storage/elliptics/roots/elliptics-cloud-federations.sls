@@ -1,0 +1,15 @@
+include:
+  - units.mastermind
+  - units.mastermind-monrun
+  - units.mastermind-namespace-space-check
+  - units.federation
+  - units.iface-ip-conf
+  - units.mds-logbackup
+  - units.get_kz_mongo
+  - units.wd-mastermind-stat
+  - units.ttl-cleanup
+  - templates.certificates
+  - templates.yasmagentnew
+  - templates.elliptics-tls
+  - templates.mds-distributed-flock
+  - templates.karl

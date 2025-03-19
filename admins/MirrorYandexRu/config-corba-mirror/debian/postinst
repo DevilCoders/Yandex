@@ -1,0 +1,47 @@
+#!/bin/bash
+
+# configuring juggler:
+regenerate-monrun-tasks
+
+# configuring FTP:
+touch /etc/vsftpd.banner
+echo "Welcome to Yandex Mirror FTP service. Your served by: $(hostname -f)" > /etc/vsftpd.banner
+
+# configuring rsyncd:
+sed -i 's/RSYNC_ENABLE=false/RSYNC_ENABLE=true/' /etc/default/rsync
+
+# change hostname in nginx header
+HOSTNAME=$(hostname -f)
+sed -i "s/spreader.yandex.net/$HOSTNAME/" /etc/nginx/includes/mirror-header
+
+# some functions: 
+divert () {
+    CONFIG="${1}"
+    CONFIG_RENAMED="${2}"
+    rm -f ${CONFIG_RENAMED}
+    dpkg-divert --package config-corba-mirror --divert ${CONFIG_RENAMED} --rename ${CONFIG}
+}
+
+# diverting configs: 
+case "$1" in
+    configure)
+	divert "/etc/sysctl.d/99-mirror.conf" "/etc/sysctl.d/99-mirror.conf.orig"
+	mv "/etc/sysctl.d/99-mirror.conf.mirror" "/etc/sysctl.d/99-mirror.conf"
+	divert "/etc/vsftpd.conf" "/etc/vsftpd.conf.orig"
+	cp "/etc/vsftpd.conf.mirror" "/etc/vsftpd.conf"
+	divert "/etc/nginx/nginx.conf" "/etc/nginx/nginx.conf.orig"
+	cp "/etc/nginx/nginx.conf.mirror" "/etc/nginx/nginx.conf"
+	divert "/etc/logrotate.d/vsftpd" "/etc/logrotate-vsftpd.orig"
+	usermod -d /mirror ftp
+	sysctl -e -p /etc/sysctl.d/99-mirror.conf
+    ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+    ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+    ;;
+esac
+

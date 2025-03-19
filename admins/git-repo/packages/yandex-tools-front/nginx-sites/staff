@@ -1,0 +1,70 @@
+upstream staff_upstream {
+#        server newstaff01d.tools.yandex.net max_fails=1 fail_timeout=10s;
+#        server newstaff01g.tools.yandex.net max_fails=1 fail_timeout=10s;
+	 server localhost:8081;
+}
+
+server {
+        listen 80;
+        listen 86;
+        listen 443 ssl;
+        listen 446 ssl;
+
+        server_name staff staff.yandex.ru;
+
+#        location =/ping { return 200 ok; }
+
+        location ~ ^/tb/ { return 301 http://staff.yandex-team.ru/ ; }
+
+        location ~ ^/staff/(staff(-former)?.(txt|xml)|jiragroups.txt|services.xml) {
+		 return 301 http://staff.yandex-team.ru/ ;
+        }
+
+        location /staff/all.xhtml {
+                rewrite ^(.*) $scheme://staff.yandex-team.ru/me permanent;
+        }
+
+        location / {
+                rewrite ^(.*) $scheme://staff.yandex-team.ru$1 permanent;
+        }
+
+        ssl_protocols SSLv3 TLSv1;
+        ssl_certificate /etc/nginx/ssl/wc.yandex-team.ru.crt;
+        ssl_certificate_key /etc/nginx/ssl/wc.yandex-team.ru.key;
+}
+
+server {
+        listen 80;
+        listen 86;
+        listen 443 ssl;
+        listen 446 ssl;
+
+        server_name  staff.*;
+
+        access_log /var/log/nginx/staff.access.log main;
+
+        location /lego/ { return 301 http://staff.yandex-team.ru/ ; }
+
+        location /staff/ { return 301 http://staff.yandex-team.ru/ ; }
+
+	rewrite ^/scheme/.* $scheme://staff.yandex-team.ru/map/ permanent;
+
+        location / {
+                proxy_pass http://staff_upstream;
+                proxy_read_timeout                      180s;
+                proxy_set_header Host                   staff.yandex-team.ru;
+                proxy_set_header X-Real-IP              $remote_addr;
+        }
+        location /admin {
+		if ( $scheme = http ) { rewrite ^/(.*) https://staff.yandex-team.ru/$1 permanent; }
+                proxy_pass http://staff_upstream;
+                proxy_read_timeout                      180s;
+                proxy_set_header Host                   staff.yandex-team.ru;
+                proxy_set_header X-Real-IP              $remote_addr;
+        }
+
+        ssl_protocols SSLv3 TLSv1;
+        ssl_certificate /etc/nginx/ssl/wc.yandex-team.ru.crt;
+        ssl_certificate_key /etc/nginx/ssl/wc.yandex-team.ru.key;
+}
+

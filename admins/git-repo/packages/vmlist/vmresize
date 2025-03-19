@@ -1,0 +1,25 @@
+#!/bin/bash
+
+space=$1
+vm=$2
+
+if [[ $vm == "" || $space == "" ]]; then
+    echo "Use me like this: $0 10G vmname"; exit 1
+fi
+
+lvresize -L +${space} vg00/${vm}
+resize2fs /dev/mapper/vg00-$(echo ${vm} | sed 's/-/--/g') 
+newsize=$(LANG=C df -hP /var/lxc/root/${vm} | grep -v "Filesystem.*Size.*Used" | awk '{print $2}')
+sed -i "s/rootsz: .*/rootsz: ${newsize}/" /etc/lxctl/${vm}.yaml
+
+echo -e "new sizes are: 
+
+at df: 
+$(LANG=C df -hP /var/lxc/root/${vm}) 
+
+at config: 
+$(cat /etc/lxctl/${vm}.yaml | grep "rootsz:")
+
+check if it OK."
+
+

@@ -1,0 +1,342 @@
+# vim: ft=yaml
+cgroup: "{{ host }}"
+children: ["CGROUP%{{ cgroup }}"]
+jcheck_mark: "{{ host }}"
+
+common_checks:
+  - cron # проверка, что cron запущен.
+  - dns_local # живость локального unbound.
+  - ntp_stratum # проверка синхронизации времени. Актуально для хост систем.
+  - raid # проверка рейда. Актуально для хост систем.
+  - service: unispace # проверка места на сервере. По умолчанию crit - 7%.
+    aggregator_kwargs:
+      nodata_mode: "{{ nodata_mode | default('skip') }}"
+      limits:
+        - time_start: 0
+          time_end: 23
+          day_start: 1
+          day_end: 7
+          crit: "0%"
+          warn: 0
+  - buggy_nic # проверка сетевой карты. Была карта broadcom, которая глючила и для того, чтобы выявить, сделали мониторинг.
+  - mtu_diff # проверка mtu на серверах. По умолчанию должен быть 8910.
+  - runlevel # до 16.04 должен быть runlevel 2. С появлением systemd в 16.04, поведение поменялось.
+  - root-password # проверяет, что hash пароля совпадает с тем, которые приезжает в пакете yandex-conf-root-password. На виртуалках пароль для root'a отключается.
+  - syslog-ng # проверка, что syslog-ng запущен.
+  - swap # проверка, что swap выключен. с текущим количеством памяти, он не нужен.
+  - graphite # проверка, что graphite sender запущен.
+  - postfix # проверка, что postfix запущен.
+  - postfix-queue # проверяет очередь для postfix'a. Конфиг должен лежать в /etc/monitoring. Если его нет, то всегда горит OK.
+  - reboot # проверка, что за последний час, сервер перезагружался менее 5 раз.
+  - retransmit-check # проверка на retransmit. Данные берутся из /proc/net/snmp.
+  - autov6here # проверка на наличие автосгенеренных IPv6 адресов. Актуально, когда RA выключен.
+  - oom # проверка на oom. Используется dmesg, чтобы получать информацию.
+  - check-iface-route # проверка, что есть маршрут внутри своего дц.
+  - watchdog # проверка на то, что процесс жрет cpu.
+  - hw_errs # проверка на ошибки железа. Используется dmesg, чтобы получить информацию.
+  - ncq_enable # проверка, что на железных машинах, для дисков включен режим ncq. ru.wikipedia.org/wiki/NCQ.
+  - logrotate # проверка logrotate на наличие ошибок.
+  - coredump # проверка, которая показывает, есть ли корки или нет.
+  - load_average # проверка на load_average.
+  - yandex-cauth-cache # проверка того, что sssd cache работает успешно.
+  - cpu-check # проверка нагрузки на cpu, использует /proc/stat, лежит в пакете config-monrun-cpu-check
+  - service: jumbo_check_neighbours # проверка jumbo-связности между хостами
+    ttl: 21900  # эта проверка запускается раз в 21600 c таймаутом в 120 сек
+
+notifications_disaster:
+- template: golem
+
+notifications_critical:
+- template: golem
+
+notifications_warning:
+- template: golem
+
+statuses_critical:
+- CRIT
+- from: CRIT
+  to: OK
+
+statuses_warning:
+- WARN
+- from: WARN
+  to: OK
+
+# notifications_st:
+# - template: startrek
+#   queue: CADMIN
+#   status:
+#   - WARN
+#   - CRIT
+
+# notifications_st_warn:
+# - template: startrek
+#   queue: CADMIN
+#   status:
+#   - WARN
+
+notifications: "{{ notifications_critical }}"
+
+default_check:
+  host: "{{ host }}"
+  children: "{{ children | unique }}"
+  tags: "{{ host_tags | default([]) + [project] | union(service_tags | default([])) | unique }}"
+  namespace: "{{ namespace }}"
+  jcheck_mark: "{{ jcheck_mark }}"
+  responsible: "{{ resps | default(['yandex_mnt_person_media']) }}"
+  notifications: "{{ notifications }}"
+  aggregator: logic_or
+  aggregator_kwargs:
+    nodata_mode: "{{ nodata_mode | default('force_crit') }}"
+  flap: "{{ custom_flap | default(False) }}"
+  ttl: "{{ ttl | default('960') }}"
+  refresh_time: "{{ rtime | default('60') }}"
+
+# https://wiki.yandex-team.ru/sm/juggler/ActiveChecks/
+active_check:
+  ttl: "{{ ttl | default('120') }}"
+  refresh_time: "{{ rtime | default('60') }}"
+  active: "{{ active_scheme | default('https') }}"
+  active_kwargs: "{{ akwargs | default(akwargs_default)}}"
+
+akwargs_default:
+  ok_codes: [200]
+  timeout: 10
+  allow_self_signed: True
+
+unreach_service:
+- check: ":UNREACHABLE"
+
+unreach_ok:
+  aggregator_kwargs:
+    unreach_mode: force_ok
+    unreach_service: "{{ unreach_service }}"
+unreach_skip:
+  aggregator_kwargs:
+    unreach_mode: skip
+    unreach_service: "{{ unreach_service }}"
+
+ignore_nodata_24x7:
+  aggregator: timed_more_than_limit_is_problem
+  aggregator_kwargs:
+    nodata_mode: skip
+    limits:
+      - time_start: 0
+        time_end: 23
+        day_start: 1
+        day_end: 7
+        crit: 0
+        warn: 0
+
+only_daytime:
+  aggregator: timed_more_than_limit_is_problem
+  aggregator_kwargs:
+    limits:
+      - time_start: 12
+        time_end: 20
+        day_start: 1
+        day_end: 7
+        crit: 0
+        warn: 0
+      - time_start: 21
+        time_end: 11
+        day_start: 1
+        day_end: 7
+        crit: "101%"
+        warn: 0
+
+only_day_workdays:
+  aggregator: timed_more_than_limit_is_problem
+  aggregator_kwargs:
+    limits:
+      - time_start: 12
+        time_end: 18
+        day_start: 1
+        day_end: 5
+        crit: 0
+        warn: 0
+      - time_start: 19
+        time_end: 11
+        day_start: 1
+        day_end: 5
+        crit: "101%"
+        warn: 0
+      - time_start: 0
+        time_end: 23
+        day_start: 6
+        day_end: 7
+        crit: "101%"
+        warn: 0
+
+only_workdays:
+  aggregator: timed_more_than_limit_is_problem
+  aggregator_kwargs:
+    limits:
+      - time_start: 0
+        time_end: 23
+        day_start: 1
+        day_end: 5
+        crit: 0
+        warn: 0
+      - time_start: 0
+        time_end: 23
+        day_start: 6
+        day_end: 7
+        crit: "101%"
+        warn: 0
+
+warning:
+  namespace: "{{ namespace }}"
+  aggregator: timed_more_than_limit_is_problem
+  aggregator_kwargs:
+    limits:
+      - time_start: 0
+        time_end: 23
+        day_start: 1
+        day_end: 7
+        crit: "101%"
+        warn: 0
+
+group_critical:
+  aggregator: timed_more_than_limit_is_problem
+  aggregator_kwargs:
+    limits:
+      - time_start: 10
+        time_end: 21
+        day_start: 1
+        day_end: 7
+        crit: "{{ percent | default('0%') }}"
+        warn: 0
+      - time_start: 22
+        time_end: 9
+        day_start: 1
+        day_end: 7
+        crit: "{{ night_percent | default('30%') }}"
+        warn: 0
+
+group_critical_ignore_nodata:
+  aggregator: timed_more_than_limit_is_problem
+  aggregator_kwargs:
+    nodata_mode: skip
+    limits:
+      - time_start: 0
+        time_end: 23
+        day_start: 1
+        day_end: 7
+        crit: "30%"
+        warn: 0
+
+production_default_media:
+  flap: "{{ custom_flap | default(False) }}"
+  ttl: "{{ ttl | default('960') }}"
+  refresh_time: "{{ rtime | default('60') }}"
+  aggregator: timed_more_than_limit_is_problem
+  namespace: "{{ namespace }}"
+  aggregator_kwargs:
+    nodata_mode: "{{ nodata_mode | default('skip') }}"
+    limits:
+      - time_start: 12
+        time_end: 18
+        day_start: 1
+        day_end: 7
+        crit: "{{ percent | default('30%') }}"
+        warn: 0
+      - time_start: 19
+        time_end: 11
+        day_start: 1
+        day_end: 7
+        crit: "{{ night_percent | default('30%') }}"
+        warn: 0
+
+production_default_nonmedia:
+  flap: "{{ custom_flap | default(False) }}"
+  ttl: "{{ ttl | default('960') }}"
+  refresh_time: "{{ rtime | default('60') }}"
+  aggregator: timed_more_than_limit_is_problem
+  namespace: "{{ namespace }}"
+  aggregator_kwargs:
+    nodata_mode: "{{ nodata_mode | default('skip') }}"
+    limits:
+      - time_start: 12
+        time_end: 18
+        day_start: 1
+        day_end: 5
+        crit: "{{ percent | default('0%') }}"
+        warn: 0
+      - time_start: 19
+        time_end: 11
+        day_start: 1
+        day_end: 5
+        crit: "{{ night_percent | default('30%') }}"
+        warn: 0
+      - time_start: 0
+        time_end: 23
+        day_start: 6
+        day_end: 7
+        crit: "{{ night_percent | default('30%') }}"
+        warn: 0
+
+testing_default_media:
+  flap: "{{ custom_flap | default(False) }}"
+  ttl: "{{ ttl | default('960') }}"
+  refresh_time: "{{ rtime | default('60') }}"
+  aggregator: timed_more_than_limit_is_problem
+  namespace: "{{ namespace }}"
+  aggregator_kwargs:
+    nodata_mode: "{{ nodata_mode | default('skip') }}"
+    limits:
+      - time_start: 0
+        time_end: 23
+        day_start: 1
+        day_end: 7
+        crit: "{{ percent | default('101%') }}"
+        warn: 0
+
+testing_default_nonmedia:
+  flap: "{{ custom_flap | default(False) }}"
+  ttl: "{{ ttl | default('960') }}"
+  refresh_time: "{{ rtime | default('60') }}"
+  aggregator: timed_more_than_limit_is_problem
+  namespace: "{{ namespace }}"
+  aggregator_kwargs:
+    nodata_mode: "{{ nodata_mode | default('skip') }}"
+    limits:
+      - time_start: 12
+        time_end: 18
+        day_start: 1
+        day_end: 5
+        crit: "{{ percent | default('0%') }}"
+        warn: 0
+      - time_start: 19
+        time_end: 11
+        day_start: 1
+        day_end: 5
+        crit: "{{ night_percent | default('101%') }}"
+        warn: 0
+      - time_start: 0
+        time_end: 23
+        day_start: 6
+        day_end: 7
+        crit: "{{ night_percent | default('101%') }}"
+        warn: 0
+
+
+
+#
+jserver_api: http://jmon01g.media.yandex.net:8998/api
+jserver_search_api: http://juggler-api.search.yandex.net:8998/api-slb
+iptruler: True
+pkgver: True
+type: production
+production: True
+testing: False
+call_on_weekend: False
+do_unreachable: False
+do_cluster_unreachable: False
+always_warning: False
+cluster_critical: False
+ignore_nodata_cluster_critical: False
+ignore_nodata_always_critical: False
+unreach_check: {}
+
+__force__ : True

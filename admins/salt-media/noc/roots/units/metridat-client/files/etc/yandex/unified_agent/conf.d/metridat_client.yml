@@ -1,0 +1,33 @@
+storages:
+  - name: metrics_storage
+    plugin: fs
+    config:
+      directory: /var/lib/yandex/unified_agent/storage/metrics
+      max_partition_size: 500mb
+
+routes:
+{%- for service in ["client", "client_logbroker", "client_logbroker_reader", "client_solomon", "client_app"] %}
+  - input:
+      plugin: metrics_pull
+      config:
+        format:
+          solomon_json: {}
+        url: http://localhost:12345/metrics/{{ service }}
+        project: metridat
+        service: {{ service }}
+        poll_period: 15s
+        metric_name_label: sensor
+    channel:
+      channel_ref:
+        name: solomon_output
+{%- endfor %}
+channels:
+  - name: solomon_output
+    channel:
+      pipe:
+        - storage_ref:
+            name: metrics_storage
+      output:
+        plugin: metrics_pull
+        config:
+          port: 11003

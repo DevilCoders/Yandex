@@ -1,0 +1,100 @@
+#! /usr/bin/perl
+
+use strict;
+use warnings;
+use Getopt::Long;
+
+my $local_run;
+my $options;
+my $rename_br0;
+GetOptions(
+    'l|local_run' => \$local_run,
+    'o|options=s' => \$options,
+    'r|rename_br0=s' => \$rename_br0,
+) or pod2usage(2);
+pod2usage(2) if @ARGV;
+
+my $prefix = "/etc/sysconfig/network-scripts";
+if ($local_run) {
+    $prefix = './tmp';
+}
+
+my $file;
+my $openfilename = '';
+
+sub xopen {
+    my $filename = shift;
+    return if ($openfilename eq $filename);
+
+    close($file) if ($file);
+    $openfilename = $filename;
+    print("\n\t") if ($filename =~ /^ifcfg/);
+    print("$filename ");
+    open($file, ">>$prefix/$filename");
+}
+
+my $python;
+my $device;
+print("Fetching data from conductor\n");
+my $pycommand = '/usr/lib/yandex/python-netconfig/generate_interfaces.py --format=redhat --balancers --no-lo ';
+if ($local_run) {
+    $pycommand = './src/generate_interfaces.py --format=redhat --balancers --no-lo ';
+}
+if ($options) {
+    $pycommand .= "$options ";
+}
+$pycommand .= '|';
+open($python, $pycommand) or open($python, $pycommand) or die ("Execution failed: $pycommand");
+print("Removing old {ifcfg-,rule,route}*\n");
+system ("/bin/bash -c \"/bin/mv -f $prefix/{ifcfg-,rule,route}* /tmp\"");
+print("Writing: ");
+while (<$python>) {
+    chomp;
+
+    # bridge kostil'
+    if (/^DEVICE=(.*)/) {
+        if ($rename_br0) {
+            if ($1 eq 'br0') {
+                $device = $rename_br0
+            } else {
+                $device = $1;
+            }
+        } else {
+            $device = $1;
+        }
+        xopen("ifcfg-$device");
+        $device =~ s/:.*//;
+    }
+
+    if (/^default/ or / via /) {
+        if (/:/) {
+            xopen("route6-$device");
+        } else {
+            xopen("route-$device");
+        }
+    }
+
+    if (/^from/) {
+        if (/:/) {
+            xopen("rule6-$device");
+        } else {
+            xopen("rule-$device");
+        }
+    }
+
+    print $file "$_\n" if ($_ and $file);
+}
+close ($python);
+
+xopen ("ifcfg-lo");
+print $file <<EOD ;
+DEVICE=lo
+IPADDR=127.0.0.1
+NETMASK=255.0.0.0
+NETWORK=127.0.0.0
+BROADCAST=127.255.255.255
+ONBOOT=yes
+NAME=loopback
+EOD
+close ($file);
+print ("\nEverything should be OK\n");

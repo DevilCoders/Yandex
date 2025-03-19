@@ -1,0 +1,81 @@
+{% set common_list = [
+      'rsync', 'curl', 'dstat', 'file', 'links', 'lynx', 'strace', 'lsof',
+      'telnet', 'wget', 'vim-tiny', 'bash-completion', 'screen', 'tcpdump', 'traceroute',
+      'config-apt-allowunauth', 'yandex-conf-hostname-long', 'silversearcher-ag',
+      'logrotate-hourly', 'config-ssh-strictno', 'config-disable-checkarray',
+      'updatedb-exclude-srv', 'yandex-watchdog', 'yandex-dash2bash',
+      'config-iosched', 'yandex-coredump-config', 'yandex-coredump-monitoring',
+      'yandex-ubic-watchdog-counter', 'yandex-media-config-sysctl', 'yandex-conf-root-password',
+      'yandex-autodetect-root-email', 'config-monitoring-common', 'config-juggler-client-media',
+      'juggler-client', 'yandex-archive-keyring', 'config-monitoring-media',
+      'config-yandex-friendly-bash', 'config-media-admins-public-keys', 'syslog-ng-include',
+      'yandex-timetail', 'yandex-locales', 'config-yabs-ntp', 'corba-postfix-fixer',
+      'config-autodetect-active-eth', 'config-postfix-media', 'config-caching-dns',
+      'shelf-utils', 'config-init-disable-ra', 'conductor-agent', 'yandex-cauth',
+      'config-interfaces', 'config-media-graphite', 'iptruler',
+      'syslog-ng-watchdog', 'tzdata',  'openssl', 'bash', 'libc6',
+] %}
+{% set packages_common = salt.ldmerge.run(common_list, salt['grains.filter_by']({
+      'lucid':   [ 'libssl0.9.8', ],
+      'default': [ 'libssl1.0.0', ],
+    }, grain='oscodename')
+) %}
+
+{% set packages_filtered = [] %}
+
+{% set packages = {} %}
+
+{% if salt.pillar.get('packages:common', True) %}
+  {% if salt.pillar.get('packages:common_rewrite') %}
+    {% do packages.update({
+      "common": salt.pillar.get('packages:common')
+    }) %}
+  {% else %}
+    {% do packages.update({
+      "common": salt.ldmerge.run(salt.pillar.get('packages:common', []), packages_common)
+    }) %}
+  {% endif %}
+{% else %}
+  {% do packages.update({
+    "common": []
+    }) %}
+{% endif %}
+
+{% if salt.pillar.get('packages:filtered', True) %}
+  {% if salt.pillar.get('packages:filtered_rewrite') %}
+    {% do packages.update({
+      "filtered" : salt.pillar.get('packages:filtered')
+    }) %}
+  {% else %}
+    {% do packages.update({
+      "filtered": salt.ldmerge.run(salt.pillar.get('packages:filtered', []), packages_filtered)
+    }) %}
+  {% endif %}
+{% else %}
+  {% do packages.update({
+    "filtered": []
+    }) %}
+{% endif %}
+
+{% do packages.update({
+  "project": salt.pillar.get('packages:project', []),
+  "cluster": salt.pillar.get('packages:cluster', []),
+  "autoclean": salt.pillar.get('packages:autoclean', False),
+}) %}
+
+{# START saltbuilder state see: https://st.yandex-team.ru/MDADM-3442 #}
+{% set saltbuilder_data_file = "/var/tmp/saltbuilder.yml" %}
+{% set saltbuilder_data = [] %}
+
+{% if salt.file.file_exists(saltbuilder_data_file) %}
+{% import_yaml saltbuilder_data_file as saltbuilder_yml %}
+
+{% if saltbuilder_yml %}
+    {%for k,v in saltbuilder_yml.items() %}
+        {% do saltbuilder_data.append({k:v}) %}
+    {%endfor%}
+{% endif %}
+{% endif %}
+
+{% do packages.update({"saltbuilder": saltbuilder_data}) %}
+{# END saltbuilder state see: https://st.yandex-team.ru/MDADM-3442 #}

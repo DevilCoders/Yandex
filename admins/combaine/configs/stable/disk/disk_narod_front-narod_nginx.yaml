@@ -1,0 +1,47 @@
+parsing:
+  groups: [disk_narod_front]
+  metahost: disk_narod_front
+  DataFetcher:
+    logname: "nginx/access-tskv.log"
+    timetail_url: "/timetail?pattern=narod_nginx&type=tskv&log_ts="
+
+aggregate:
+  data:
+    narod_nginx:
+      type: "custom"
+      class: "Multimetrics"
+      factor: 1000
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+    juggler_valid_traffic: &juggler-conf
+      type: juggler
+      namespace: disk
+      host: "disk_narod_front"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - ignition
+      Aggregator: logic_or
+      checkname: valid_traffic
+      description: valid_traffic
+      flaps: { stable_time: 120, critical_time: 300 }
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      variables:
+        trigger_n0_d1: "iftimeofday(22, 10, 0, 0.5)"
+      CRIT: [" ${narod_nginx}['3xx'] < trigger_n0_d1 "]
+      config:
+          type: metahost
+      tags:
+        - production

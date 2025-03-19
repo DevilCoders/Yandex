@@ -1,0 +1,512 @@
+{%- set env = grains['yandex-environment'] -%}
+{%- set dc = grains['conductor']['root_datacenter'] -%}
+{%- set fqdn = grains['conductor']['fqdn'] -%}
+{%- set conductor_group = grains['conductor']['group'] -%}
+
+{
+    "http": {
+        "addr": "/var/run/s3-goose/main.sock",
+        "read_header_timeout": {{ 1 if env == 'testing' else 120 }},
+        "max_header_bytes": 8388608,
+        "access_log": true
+    },
+
+    "system_app": {
+        "monitor_addr": ":3355",
+        "max_header_bytes": 8388608,
+        "read_header_timeout": 1,
+        "health_check_timeout_msec": 1000
+    },
+
+    "application": {
+        "buffering_limit_mb": 5,
+        "drain_body_limit_mb": 20,
+        "default_bucket_location": "",
+        "cors_white_list_hosts": [
+            "*.yandex-team.ru"
+        ],
+        "base_s3_hosts": [
+            {% if env == "testing" -%}
+            "s3.mdst.yandex.net",
+            "s3.mdst.yandex.net:80",
+            "s3.mdst.yandex.net:443",
+            "s3-private.mdst.yandex.net"
+            {%- else %}
+            "s3.mds.yandex.net",
+            "s3.mds.yandex.net:80",
+            "s3.mds.yandex.net:443",
+            "vla-s3.mds.yandex.net",
+            "sas-s3.mds.yandex.net",
+            "msk-s3.mds.yandex.net",
+            "man-s3.mds.yandex.net",
+            "s3.yandex.net",
+            "s3.yandex.net:443",
+            "s3-staff.mds.yandex.net",
+            "s3-staff.mds.yandex.net:80",
+            "s3-staff.mds.yandex.net:443",
+            "s3-zen.mds.yandex.net",
+            "s3-zen.mds.yandex.net:80",
+            "s3-zen.mds.yandex.net:443",
+            "s3-private.mds.yandex.net",
+            "s3-private.mds.yandex.net:443"
+            {%- endif %}
+        ],
+        "connection_idle_timeout_sec": 60,
+        "read_action_timeout_sec": 0
+    },
+
+    "websites": {
+        "addr": ":8081",
+        "base_s3_hosts": [
+            {% if env == "testing" -%}
+            "s3-website.mdst.yandex.net",
+            "s3-website.mdst.yandex.net:8081"
+            {%- else %}
+            "s3-website.mds.yandex.net",
+            "s3-website.mds.yandex.net:8081"
+            {%- endif %}
+        ],
+        "buffering_limit_mb": 5,
+        "read_action_timeout_sec": 0
+    },
+    {%- if env == 'testing' %}
+
+    "cloud_events": {
+        "event_file": "/var/log/s3/goose/cloud_events.log",
+        "buffer_size": 4096,
+        "flush_period_sec": 5
+    },
+    {%- endif %}
+
+    "error_booster": {
+        "dc": "{{ dc }}",
+        "project": "s3-goose",
+        "engine": "persqueue",
+        "persqueue": {
+            "endpoints": [
+                { "host": "man.logbroker.yandex.net", "port": 2135, "dc": "MAN" },
+                { "host": "myt.logbroker.yandex.net", "port": 2135, "dc": "MYT" },
+                { "host": "sas.logbroker.yandex.net", "port": 2135, "dc": "SAS" },
+                { "host": "vla.logbroker.yandex.net", "port": 2135, "dc": "VLA" },
+                { "host": "iva.logbroker.yandex.net", "port": 2135, "dc": "IVA" }
+            ],
+            "topic": "{{ pillar['s3']['errorbooster-topic'] }}",
+            "auth_method": "tvm2",
+            "source_id": "s3-goose-proxy-{{ conductor_group }}-{{ fqdn }}",
+            "data_format": "json",
+            "mode": "non-blocking",
+            "queue_size_messages": 100,
+            "batch_buffer_size_bytes": 8192,
+            "retry_on_failure": true
+        }
+    },
+
+    "notifications": {
+        "engine": "persqueue",
+        "persqueue": {
+            "endpoints": [
+                { "host": "man.logbroker.yandex.net", "port": 2135, "dc": "MAN" },
+                { "host": "myt.logbroker.yandex.net", "port": 2135, "dc": "MYT" },
+                { "host": "sas.logbroker.yandex.net", "port": 2135, "dc": "SAS" },
+                { "host": "vla.logbroker.yandex.net", "port": 2135, "dc": "VLA" },
+                { "host": "iva.logbroker.yandex.net", "port": 2135, "dc": "IVA" }
+            ],
+            "source_id": "s3-goose-proxy-{{ conductor_group }}-{{ fqdn }}",
+            "auth_method": "tvm2",
+            "topic": "{{ pillar['s3']['notifications-topic'] }}",
+            "mode": "non-blocking",
+            "queue_size_messages": 100,
+            "batch_buffer_size_bytes": 8192,
+            "retry_on_failure": true
+        }
+    },
+
+    "logging": {
+        "default": {
+            "level": "info",
+            "file_path": "logrotate+asyncskip:///var/log/s3/goose/main.log"
+        },
+        "filtered": [
+            {
+                "level": "info",
+                "name": "api.access_log",
+                "file_path": "logrotate+async:///var/log/s3/goose/access.log"
+            },
+            {
+                "level": "error",
+                "name_prefix": "api.healthcheck",
+                "file_path": "logrotate+asyncskip:///var/log/s3/goose/healthcheck.log"
+            },
+            {
+                "level": "info",
+                "name_prefix": "api.pg.pgmetaManager",
+                "file_path": "logrotate+asyncskip:///var/log/s3/goose/pgmeta.log"
+            },
+            {
+                "level": "info",
+                "name": "*.sys_pgx",
+                "file_path": "logrotate+asyncskip:///var/log/s3/goose/sysdb.log"
+            },
+            {
+                "level": "info",
+                "name": "api.mds.access",
+                "file_path": "logrotate+async:///var/log/s3/goose/libmds-json-access.log"
+            },
+            {
+                "level": "info",
+                "name": "api.ydb.access",
+                "file_path": "logrotate+asyncskip:///var/log/s3/goose/ydb-access.log"
+            },
+            {
+                "level": "info",
+                "name": "*.pg.queries",
+                "file_path": "logrotate+asyncskip:///var/log/s3/goose/pg-access.log"
+            },
+            {
+                "level": "error",
+                "name": "*.alert",
+                "file_path": "logrotate+async:///var/log/s3/goose/alerts.log"
+            },
+            {
+                "level": "debug",
+                "name_prefix": "api.http_errors",
+                "file_path": "logrotate+asyncskip:///var/log/s3/goose/debug-http.log"
+            },
+            {
+                "level": "debug",
+                "name_prefix": "api.cache.requests",
+                "file_path": "logrotate+asyncskip:///var/log/s3/goose/cache-requests.log"
+            },
+            {
+                "level": "info",
+                "name_prefix": "api.yc.requests",
+                "file_path": "logrotate+asyncskip:///var/log/s3/goose/yc-requests.log"
+            }
+        ]
+    },
+
+    "cache": {
+        "log_level": "error",
+        "enabled": true,
+        "remotes": "/etc/s3-mds-backend/cache-remotes.json",
+        "elliptics": {
+            "wait_timeout_sec": 1,
+            "check_timeout_sec": 3,
+            "flags": 12,
+            "io_threads": 1,
+            "nonblocking_io_threads": 1,
+            "net_threads": 1
+        },
+        "executor_threads": 4,
+        "buckets": {
+            {% if env == 'testing' -%}
+            "boto-test": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 500,
+                "expiration_sec": 86400
+            },
+            {%- else %}
+            "adfox-content": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 5000,
+                "expiration_sec": 86400
+            },
+            "bs-dummy": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 5000,
+                "expiration_sec": 1800
+            },
+            "contractor-status-history": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 500,
+                "expiration_sec": 86400
+            },
+            "edadeal-public-static": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 500,
+                "expiration_sec": 86400
+            },
+            "edadeal-push-public": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 5000,
+                "expiration_sec": 1800
+            },
+            "front-maps-static": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 800,
+                "expiration_sec": 86400
+            },
+            "home": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 800,
+                "expiration_sec": 10800
+            },
+            "islands": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 800,
+                "expiration_sec": 1800
+            },
+            "kinopoisk-frontend": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 500,
+                "expiration_sec": 1800
+            },
+            "kinopoisk-stories": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 5000,
+                "expiration_sec": 1800
+            },
+            "maps-sat": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 500,
+                "expiration_sec": 36000
+            },
+            "mapsapi-v3": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 500,
+                "expiration_sec": 60
+            },
+            "music-stories": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 5000,
+                "expiration_sec": 1800
+            },
+            "ott-dataset-hollow-snapshots": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 100,
+                "expiration_sec": 60
+            },
+            "pano": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 50,
+                "expiration_sec": 86400
+            },
+            "quasar": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 300,
+                "write_timeout_sec": 3,
+                "file_size_limit_kb": 15000,
+                "expiration_sec": 10800
+            },
+            "sandbox-ui": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 800,
+                "expiration_sec": 10800
+            },
+            "share2": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 800,
+                "expiration_sec": 1800
+            },
+            "tanker": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 5000,
+                "expiration_sec": 300
+            },
+            "tap": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 5000,
+                "expiration_sec": 1800
+            },
+            "taxi-promotions": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 8000,
+                "expiration_sec": 10800
+            },
+            "vanadium": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 1024,
+                "expiration_sec": 1800
+            },
+            "vh-adfox-converted": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 5000,
+                "expiration_sec": 600
+            },
+            "vh-adfox-test-converted": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 5000,
+                "expiration_sec": 600
+            },
+            "video-preview": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 2,
+                "file_size_limit_kb": 1000000,
+                "expiration_sec": 10800
+            },
+            "video-translation": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 2,
+                "file_size_limit_kb": 10000,
+                "expiration_sec": 300
+            },
+            "weathermaps": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 500,
+                "expiration_sec": 120
+            },
+            "web4static": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 500,
+                "expiration_sec": 86400
+            },
+            "yastatic": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 500,
+                "expiration_sec": 1200
+            },
+            "zen-lib": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 500,
+                "expiration_sec": 86400
+            },
+            {%- endif %}
+            "mediabilling": {
+                "group": "/etc/s3-mds-backend/cache-dc-group.json",
+                "read_timeout_msec": 100,
+                "write_timeout_sec": 1,
+                "file_size_limit_kb": 5000,
+                "expiration_sec": 3600
+            }
+        }
+    },
+    "buckets_cache": {
+        "buckets_defaults": {
+            "group": "/etc/s3-mds-backend/cache-dc-group.json",
+            "read_timeout_msec": 100,
+            "write_timeout_sec": 1,
+            "file_size_limit_kb": 1024,
+            "expiration_sec": 3600
+        },
+        {% if env in ["testing"] -%}
+        "objects": ["mediabilling", "boto-test"],
+        "enabled": ["*"],
+        "disabled": ["mediabilling", "boto-test"]
+        {% elif env in ["prestable", "production"] -%}
+        "objects": [
+            "adfox-content",
+            "bs-dummy",
+            "contractor-status-history",
+            "edadeal-public-static",
+            "edadeal-push-public",
+            "front-maps-static",
+            "home",
+            "islands",
+            "kinopoisk-frontend",
+            "kinopoisk-stories",
+            "maps-sat",
+            "mapsapi-v3",
+            "mediabilling",
+            "music-stories",
+            "pano",
+            "quasar",
+            "sandbox-ui",
+            "share2",
+            "tanker",
+            "tap",
+            "taxi-promotions",
+            "vanadium",
+            "vh-adfox-converted",
+            "vh-adfox-test-converted",
+            "video-preview",
+            "video-translation",
+            "weathermaps",
+            "web4static",
+            "yastatic",
+            "zen-lib"
+        ],
+        "enabled": ["*"],
+        "disabled": [
+            "adfox-content",
+            "bs-dummy",
+            "contractor-status-history",
+            "edadeal-public-static",
+            "edadeal-push-public",
+            "front-maps-static",
+            "home",
+            "islands",
+            "kinopoisk-frontend",
+            "kinopoisk-stories",
+            "maps-sat",
+            "mapsapi-v3",
+            "mediabilling",
+            "music-stories",
+            "ott-dataset-hollow-snapshots",
+            "pano",
+            "quasar",
+            "sandbox-ui",
+            "share2",
+            "tanker",
+            "tap",
+            "taxi-promotions",
+            "vanadium",
+            "vh-adfox-converted",
+            "vh-adfox-test-converted",
+            "video-preview",
+            "video-translation",
+            "weathermaps",
+            "web4static",
+            "yastatic",
+            "zen-lib"
+        ]
+        {%- endif %}
+    }
+}

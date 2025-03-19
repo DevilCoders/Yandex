@@ -1,0 +1,8 @@
+echo item_priority $(echo "SELECT count(*) FROM shop.parser_stack p WHERE p.status='' AND p.type='item' AND p.ext_id NOT LIKE 'XX%' AND p.priority=1;" | mysql kinopoisk | tail -n1)
+echo people_priority $(echo "SELECT count(*) FROM shop.parser_stack p WHERE p.status='' AND p.type='people' AND p.ext_id NOT LIKE 'XX%' AND p.priority=1;" | mysql kinopoisk | tail -n1)
+echo item $(echo "SELECT count(*) FROM shop.parser_stack p WHERE p.status='' AND p.type='item' AND p.ext_id NOT LIKE 'XX%' AND p.priority!=1;" | mysql kinopoisk | tail -n1)
+echo people $(echo "SELECT count(*) FROM shop.parser_stack p WHERE p.status='' AND p.type='people' AND p.ext_id NOT LIKE 'XX%' AND p.priority!=1;" | mysql kinopoisk | tail -n1)
+echo film_priority $(echo "SELECT count(*) FROM shop.parser_stack p LEFT JOIN content ko ON (p.ext_id=ko.id_content) WHERE p.status='' AND p.type='item' AND p.ext_id NOT LIKE 'XX%' AND p.priority=1 AND ko.type NOT IN ('serial', 'mini');" | mysql kinopoisk | tail -n1)
+echo serial_priority $(echo "SELECT count(*) FROM shop.parser_stack p LEFT JOIN content ko ON (p.ext_id=ko.id_content) WHERE p.status='' AND p.type='item' AND p.ext_id NOT LIKE 'XX%' AND p.priority=1 AND ko.type IN ('serial', 'mini');" | mysql kinopoisk | tail -n1)
+echo film $(echo "SELECT count(*) FROM shop.parser_stack p LEFT JOIN content ko ON (p.ext_id=ko.id_content) WHERE p.status='' AND p.type='item' AND p.ext_id NOT LIKE 'XX%' AND p.priority!=1 AND ko.type NOT IN ('serial', 'mini');" | mysql kinopoisk | tail -n1)
+echo serial $(echo "SELECT count(*) FROM shop.parser_stack p LEFT JOIN content ko ON (p.ext_id=ko.id_content) WHERE p.status='' AND p.type='item' AND p.ext_id NOT LIKE 'XX%' AND p.priority!=1 AND ko.type IN ('serial', 'mini');" | mysql kinopoisk | tail -n1)

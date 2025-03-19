@@ -1,0 +1,232 @@
+# Logging settings.
+logging:
+  # Logging level.
+  # Possible values are: "debug", "info", "warn", "error".
+  level: debug
+  # Where to log.
+  sinks:
+    - stdout
+  # How to log.
+  encoding: console
+
+# Election describes master election settings.
+election:
+  # ZooKeeper settings.
+  zk:
+    # List of ZooKeeper hosts to connect to.
+    hosts: ['vla-zk01.net.yandex.net:2181', 'myt-zk01.net.yandex.net:2181', 'iva-zk01.net.yandex.net:2181']
+    # Uniform node prefix.
+    prefix: /topka/run
+    # Session timeout sets the amount of time for which a session is
+    # considered valid after losing connection to a server.
+    timeout: 2s
+
+# Snapshot forging settings.
+forge:
+  # CVSRoot points at CVS root.
+  cvs_root: tree.yandex.ru:/opt/CVSROOT
+  # CVSDir is a directory where CVS will be checked out.
+  #
+  # Empty value means current directory.
+  cvs_dir: /var/spool/packfw-cvs
+  # CommitPuncherSections describes whether the forge should commit pseudo
+  # puncher sections.
+  commit_puncher_sections: false
+  # Restart balancers and BSD firewalls through the Racktables API
+  restart_fws: true
+  # Path on filesystem where diff tool is located.
+  diff_tool_path: /usr/bin/parse-fw-diff.py
+  # If set the packer will not stop even if the diff is empty.
+  force: false
+  # Interval specifies interval of periodic snapshot forging.
+  interval: 120s
+  # VCS checkout timeout
+  checkout_timeout: 5m
+  # Path where to output created archives.
+  #
+  # Optional. It's useful for debugging but nothing more since archives are
+  # pushed to the storage.
+  out_dir: /var/spool/packfw-out
+
+# Snapshot settings.
+snapshot:
+  # Time to wait for validator verdict (and not to accept new shapshots)
+  validator_timeout: 30m
+  # Interval to push the next valid revision to DC
+  push_to_dc_interval: 2m
+  username: robot-topka
+  # Number of last obsolete snapshots that cause juggler alert
+  obsolete_alert_limit: 2
+
+# S3 storage access params
+s3:
+  endpoint: s3.mds.yandex.net
+  bucket: topka
+  region: US
+  access_key_id: {{pillar['sec']['s3_id']}}
+  secret_key: {{pillar['sec']['s3_key']}}
+  disable_ssl: false
+
+# SQL DB access params
+db:
+  pg_conn_string: "
+    host=c-mdb9lcq7utb1s23to3ag.rw.db.yandex.net
+    port=6432
+    dbname=packfw
+    user=packfw
+    password={{pillar['sec']['postgresql_password']}}
+    sslmode=verify-full
+  "
+  migrations_dir: migrations
+
+# Drills settings
+drills:
+  # Max training duration
+  max_duration: 24h
+  # Max trainings overlap
+  overlap_window: 1h
+  # Max users on macro
+  users_limit: 50
+  # Trainings are always disabled on these macros
+  macro_blacklist:
+    - _SEARCHNETS_,
+    - _SEARCHPRODNETS_
+    - _GENCFG_SEARCHPRODNETS_ROOT_
+    - _YANDEXNETS4_
+    - _YANDEXNETS6_
+    - _YANDEX_ANNOUNCED_NETS_
+    - _MTN_BACKBONENETS_
+    - _HBFPROJECTSNETS_
+    - _PLATFORMNETS_
+    - _SKYNETCLIENTS
+  # Default exclude list
+  default_exclude_list: ["_HBF_EXCLUDE_CLOUD_", "_THERMODENETS_", "_C_TAXI_DMP_GPDB6_", "_C_TAXI_ES_LOGS_DATA_"]
+  # Trainings on these projects can be of any duration
+  projects_any_drill_duration: ["_YANDEXNETS_"]
+
+# Infra client
+infra:
+  # Infra base url
+  base_url: https://infra-api.yandex-team.ru
+  # OAuth token for authorization.
+  oauth_token: OAuthToken
+
+# DC snapshot deploy settings
+dc:
+  # Deploy window duration
+  window_duration: 25m
+  # Duration of the gap between windows
+  gap_duration: 5m
+  # DCs to be changed in cycle every (window_duration + gap_duration)
+  dcs_queue: ['iva', 'sas', 'vla', 'myt', 'sas', 'man']
+
+# Emergency monitor.
+emergency:
+  # Juggler emergency monitor settings.
+  juggler:
+    # Juggle client settings.
+    client:
+      # Juggle URL.
+      host: https://juggler-api.search.yandex.net
+    # Juggler push client settings.
+    push_client:
+      # Juggler push URL.
+      host: http://juggler-push.search.yandex.net
+      # Host for events (must be documented in RT to appear in Heat)
+      event_host: topka-prod
+      # Event source (for Juggler API)
+      event_source: topka
+      # HTTP request timeout
+      timeout: 10s
+      # Tags for every event
+      base_tags: ["noc_heat"]
+      # Interval for sending heartbeats
+      heartbeat_interval: 5m
+    # Interested statuses.
+    statuses: ["CRIT"]
+    # Interested filters.
+    filters:
+      - host: hbf.drops.hcount.*
+    # Poll interval.
+    interval: 10s
+
+staff:
+  base_url: https://staff-api.yandex-team.ru
+  oauth_token: {{pillar['sec']['staff_oauth']}}
+
+# HTTP server settings.
+server:
+  # Addr describes bind address for this HTTP server.
+  addr: "[::]:8080"
+  # Debug activates debug mode in HTTP server.
+  #
+  # With this mode internal server errors will be shown in response body.
+  #
+  # Do not use in production, because sensitive information can be
+  # accidentally leaked.
+  debug: false
+  # Authentication settings.
+  authentication:
+    # Available authentication methods.
+    methods:
+      # None method that allows every request.
+      none: {}
+      # Blackbox authentication method settings.
+      blackbox:
+        tvm:
+          # Our client ID.
+          self_id: 2021257
+          # Passport service ID.
+          #
+          # 223 stands for intranet.
+          service_id: 223
+          # Our client secret.
+          secret: {{pillar['sec']['blackbox_secret']}}
+        scope: rt:access
+    # Permission manager settings.
+  protection:
+    update_interval: 5m
+  permissions:
+    update_interval: 5m
+
+# Diff tool settings
+diff:
+  # Diff type: "go" or "external"
+  type: external
+  # Patterns (substrings) in paths to exclude from diff
+  excludes: ['CVS']
+
+# Racktables client settings
+racktables:
+  # Base URL.
+  base_url: https://racktables.yandex-team.ru
+  # OAuth token for authorization.
+  oauth_token: {{pillar['sec']['racktables_oauth']}}
+  # HTTP request timeout
+  timeout: 60s
+
+# Metrics settings
+metrics:
+  pull:
+    # If set to true, creates http handler to collect metrics
+    enabled: true
+  push:
+    # If set to true, periodically pushes metrics to storage
+    enabled: false
+    # OAuth token
+    oauth_token: {{pillar['sec']['solomon_oauth']}}
+    # Push interval
+    interval: 15s
+    # Solomon project name
+    project_name: topka
+    # Solomon cluster name
+    cluster_name: all
+
+# Debug server settings.
+#
+# Optional. If unspecified the debug server will not run.
+debug:
+  # Port specifies port where pprof server will be listen on.
+  #
+  # We explicitly do not allow to specify address for security reasons.
+  port: 6060

@@ -1,0 +1,51 @@
+#! /usr/bin/env bash
+
+eval env=$(cat /etc/yandex/environment.type)
+conf="/etc/lsyncd/lsyncd.conf.lua"
+
+if [[ $env == "testing" ]]; then
+    back_hosts=$(curl -s 'https://c.yandex-team.ru/api/groups2hosts/root_back-testing' | perl -pe 's/\n/ /')
+    vpn_hosts=$(curl -s 'https://c.yandex-team.ru/api/groups2hosts/root_vpn-testing' | perl -pe 's/\n/ /')
+    hosts=$(echo ${back_hosts[@]} ${vpn_hosts[@]})
+elif [[ $env == "production" ]]; then
+    back_hosts=$(curl -s 'https://c.yandex-team.ru/api/groups2hosts/root_back' | perl -pe 's/\n/ /')
+    vpn_hosts=$(curl -s 'https://c.yandex-team.ru/api/groups2hosts/root_vpn' | perl -pe 's/\n/ /')
+    hosts=$(echo ${back_hosts[@]} ${vpn_hosts[@]})
+else
+    echo "ERROR: Environment not detected!"
+    exit 1
+fi
+
+cat > $conf <<EOF
+settings = {
+    logfile    = "/var/log/lsyncd/lsyncd.log",
+    statusFile = "/var/log/lsyncd/lsyncd.status",
+    statusInterval = 1,
+}
+
+EOF
+
+for h in $hosts; do
+    if [[ $h == $(hostname -f) ]]; then
+        continue
+    fi
+
+    cat >> $conf <<EOF
+sync {
+    default.rsyncssh,
+    source = "/srv/certs/",
+    host = "$h",
+    targetdir = "/srv/certs/",
+    exclude = {"serial", "serial.old", "serial.new", "index.txt", "index.txt.attr", "index.txt.attr.old", "index.txt.old"},
+    rsyncOps = {"-ausS", "--temp-dir=/tmp"},
+    delay = 3,
+}
+EOF
+done
+
+if ! id corba; then
+    useradd -d /home/corba -m -r -u 990 corba
+fi
+chmod 600 /root/.ssh/authorized_keys2
+chmod 600 /home/corba/.ssh/authorized_keys2
+chown -R corba:corba /srv/certs /home/corba

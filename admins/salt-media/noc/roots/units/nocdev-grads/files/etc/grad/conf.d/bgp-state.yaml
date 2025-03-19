@@ -1,0 +1,215 @@
+credentials: !include ../credentials.yml
+variables: !include variables.yaml
+
+variable:
+  common_comocutor_bgp_state_params: &common_comocutor_bgp_state_params
+    poller: comocutor
+    interval: 30
+    series: snmp_poller.bgp_peers
+    scattering_percent: 100
+series:
+  snmp_poller.bgp_state:
+    min_interval: 60  # enables data interpolation if min_interval < interval
+    client:
+      test: {}
+  snmp_poller.bgp_peers:
+    min_interval: 30
+
+pollers:
+  SNMP BGP Huawei Peers:
+    poller: snmp
+    poller version: 2
+    poller params:
+      max_interp: 60  # max interpolation window
+      indexer:
+        interval: 900
+        timeout: 100
+      counters:
+        - {oid: hwBgpPeerTable.hwBgpPeerVrfName, options: ["use_snmpbulkget", "add_index"]}
+        - {oid: hwBgpPeerTable.hwBgpPeerRemoteAs, options: ["use_snmpbulkget", "add_index"]}
+        - {oid: hwBgpPeerTable.hwBgpPeerRemoteAddr, options: ["use_snmpbulkget", "add_index"]}
+        - {oid: hwBgpPeerTable.hwBgpPeerState, options: ["use_snmpbulkget", "add_index"]}
+        - {oid: hwBgpPeerTable.hwBgpPeerFsmEstablishedCounter, options: ["use_snmpbulkget", "add_index"]}
+        - {oid: hwBgpPeerTable.hwBgpPeerFsmEstablishedTime, options: ["use_snmpbulkget", "add_index"]}
+      post_fn: [bgp_huawei_remote_addr]
+    scattering_percent: 100
+    filter: >-
+      [опрос SNMP]
+      and (
+        {многодэшка} or {spine1} or {spine2}
+      )
+      and {Huawei}
+      and not (
+        {тестовый свич}
+        or {лаборатория Владимир}
+        or {в оффлайне}
+      )
+# and {$id_24797} #  limit sas-67d4 for testing
+    series: snmp_poller.bgp_state
+    interval: 60
+
+  SNMP BGP Arista Peers:
+    poller: snmp
+    poller version: 2
+    poller params:
+      max_interp: 60  # max interpolation window
+      indexer:
+        interval: 900
+        timeout: 100
+      counters:
+        - {oid: aristaBgp4V2PeerTable.aristaBgp4V2PeerRemoteIdentifier, options: ["use_snmpbulkget", "add_index"]}
+        - {oid: aristaBgp4V2PeerTable.aristaBgp4V2PeerRemoteAs, options: ["use_snmpbulkget", "add_index"]}
+        # Presented in MIB, but missing in our Arista's. We reconstruct remote_addr in bgp_arista_remote_addr post_fn
+        # If we left it as is it will lead to other OID's not to be collected. See NOCDEV-3963
+        #- {oid: aristaBgp4V2PeerTable.aristaBgp4V2PeerRemoteAddr, options: ["use_snmpbulkget", "add_index"]}
+        - {oid: aristaBgp4V2PeerTable.aristaBgp4V2PeerLocalIdentifier, options: ["use_snmpbulkget", "add_index"]}
+        - {oid: aristaBgp4V2PeerTable.aristaBgp4V2PeerLocalAs, options: ["use_snmpbulkget", "add_index"]}
+        - {oid: aristaBgp4V2PeerTable.aristaBgp4V2PeerLocalAddr, options: ["use_snmpbulkget", "add_index"]}
+        - {oid: aristaBgp4V2PeerTable.aristaBgp4V2PeerState, options: ["use_snmpbulkget", "add_index"]}
+      post_fn: [bgp_arista_remote_addr]
+    scattering_percent: 100
+    filter: >-
+      [опрос SNMP]
+      and (
+        {многодэшка} or {spine1} or {spine2}
+      )
+      and {Arista}
+      and not (
+        {тестовый свич}
+        or {лаборатория Владимир}
+        or {в оффлайне}
+      )
+# and {$id_33277} #  limit vla-32d3 for testing
+# and {$id_33238} #  limit vla-10x8 for testing
+    series: snmp_poller.bgp_state
+    interval: 60
+
+  SNMP BGP Juniper Peers:
+    poller: snmp
+    poller version: 2
+    poller params:
+      max_interp: 60  # max interpolation window
+      indexer:
+        interval: 900
+        timeout: 100
+      counters:
+        - {oid: jnxBgpM2PeerTable.jnxBgpM2PeerIdentifier, options: ["use_snmpbulkget"]}
+        - {oid: jnxBgpM2PeerTable.jnxBgpM2PeerRemoteAs, options: ["use_snmpbulkget"]}
+        - {oid: jnxBgpM2PeerTable.jnxBgpM2PeerRemoteAddr, options: ["use_snmpbulkget"]}
+        - {oid: jnxBgpM2PeerTable.jnxBgpM2PeerLocalAs, options: ["use_snmpbulkget"]}
+        - {oid: jnxBgpM2PeerTable.jnxBgpM2PeerLocalAddr, options: ["use_snmpbulkget"]}
+        - {oid: jnxBgpM2PeerTable.jnxBgpM2PeerState, options: ["use_snmpbulkget"]}
+    scattering_percent: 100
+    # and {$id_26177}  # limit vla-6d1 for testing
+    filter: >-
+      [опрос SNMP]
+      and (
+        {многодэшка} or {spine1} or {spine2}
+      )
+      and {Juniper}
+      and not (
+        {тестовый свич}
+        or {лаборатория Владимир}
+        or {в оффлайне}
+      )
+    series: snmp_poller.bgp_state
+    interval: 60
+
+  SNMP BGP Nokia:  # NOCDEV-3703
+    poller: snmp
+    poller version: 3
+    poller params:
+      counters:
+        - {oid: TIMETRA-BGP-MIB.tBgpPeerNgConnState, options: ["use_snmpbulkget", "add_index"]}
+        - {oid: TIMETRA-BGP-MIB.tBgpPeerNgLastChanged, options: ["use_snmpbulkget", "add_index"]}
+        - {oid: TIMETRA-BGP-MIB.tBgpPeerNgPeerGroup, options: ["use_snmpbulkget", "add_index"]}
+        - {oid: TIMETRA-SERV-MIB.svcNameId, options: ["use_snmpbulkget", "add_index"]}
+      post_fn: [bgp_nokia]
+    scattering_percent: 100
+    filter: "rt%{Nokia} and [опрос SNMP]"
+    series: snmp_poller.bgp_peers
+    interval: 30
+
+  SNMP BGP All Huawei Peers:
+    poller: snmp
+    poller version: 2
+    poller params:
+      max_interp: 120
+      indexer:
+        interval: 900
+        timeout: 100
+      counters:
+        - { oid: hwBgpPeerTable.hwBgpPeerVrfName, options: [ "use_snmpbulkget",  [ "alias", "vrf" ] ] }
+        - { oid: hwBgpPeerTable.hwBgpPeerRemoteAddr, options: [ "use_snmpbulkget",  [ "alias", "peer" ] ] }
+        - { oid: hwBgpPeerTable.hwBgpPeerState, options: [ "use_snmpbulkget",  [ "alias", "state" ] ] }
+        - { oid: hwBgpPeerTable.hwBgpPeerFsmEstablishedCounter, options: [ "use_snmpbulkget",  [ "alias", "flap" ] ] }
+        - { oid: hwBgpPeerTable.hwBgpPeerFsmEstablishedTime, options: [ "use_snmpbulkget",  [ "alias", "uptime" ] ] }
+        - { oid: hwBgpPeerTable.hwBgpPeerRemoteAs, options: [ "use_snmpbulkget",  [ "alias", "peer_AS" ] ] }
+    scattering_percent: 100
+    filter: "rt%{Huawei} and [опрос SNMP] and not ({Huawei} and [опрос comocutor netconf])"
+    # {Huawei} and [опрос comocutor netconf] - с них собирает netconf поллер
+    series: snmp_poller.bgp_peers
+    interval: 30
+    instances: 7
+
+  comocutor bgp cisco nexus:
+    poller: comocutor
+    interval: 30
+    instance_group: main comocutor instance
+    series: snmp_poller.bgp_peers
+    poller params:
+      getter: get_nexus_bgp
+      device: IosDevice
+      <<: *comocutor_credentials
+    # sas1-d3 - there is no BGP, and it throws '% Invalid command at'
+    filter: "rt%{Nexus} and [опрос comocutor] and not {$cn_sas1-d3}"
+
+  comocutor bgp arista:
+    poller: comocutor
+    interval: 30
+    instance_group: main comocutor instance
+    series: snmp_poller.bgp_peers
+    poller params:
+      getter: get_arista_bgp
+      device: IosDevice
+      <<: *comocutor_credentials
+    filter: "rt%{Arista} and [опрос comocutor] and not {$attr_2_1726}"
+    scattering_percent: 100
+
+  comocutor bgp cisco xr:
+    poller: comocutor
+    interval: 30
+    instance_group: main comocutor instance
+    series: snmp_poller.bgp_peers
+    poller params:
+      getter: get_xr_bgp
+      device: NetconfDevice
+      <<: *comocutor_credentials
+    filter: "rt%{Cisco XRv} and [опрос comocutor]"
+
+  comocutor bgp netconf juniper:
+    <<: *common_comocutor_bgp_state_params
+    instance_group: main netconf instance
+    poller params:
+      getter: get_jnx_netconf_bgp
+      device: NetconfDevice
+      <<: *comocutor_credentials
+    filter: *netconf_juniper_filter
+
+  comocutor bgp netconf huawei:
+    <<: *common_comocutor_bgp_state_params
+    instance_group: main netconf instance
+    poller params:
+      getter: get_vrp_netconf_bgp
+      device: NetconfDevice
+      <<: *comocutor_credentials
+      post_fn: [ [ "uptime_reset_count", { "keys": [ "flap" ] } ] ]
+    filter: *netconf_huawei_filter
+  comocutor frr bgp:
+    <<: *common_comocutor_bgp_state_params
+    instance_group: main comocutor instance
+    poller params:
+      getter: get_frr_peers
+      device: PCDevice
+      <<: *comocutor_credentials_nocauth
+    filter: "rt%([Cumulus] or [Switchdev]) and [опрос comocutor]"

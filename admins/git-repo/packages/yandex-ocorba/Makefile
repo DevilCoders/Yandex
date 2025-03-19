@@ -1,0 +1,22 @@
+install:
+	install -m 755 -d $(DESTDIR)//usr/local/www5/common/docbook/
+	install -m 644 docbook_default_clear.xsl $(DESTDIR)//usr/local/www5/common/docbook/docbook_default_clear.xsl
+	install -m 755 -d $(DESTDIR)//etc/xscript-multiple/conf-available/xscript/
+	install -m 644 etc.xscript-multiple.conf-available.xscript.xscript.conf $(DESTDIR)//etc/xscript-multiple/conf-available/xscript/xscript.conf
+	install -m 755 -d $(DESTDIR)//etc/yandex/graphs/
+	install -m 644 etc.yandex.graphs.sendmeta.cfg $(DESTDIR)//etc/yandex/graphs/sendmeta.cfg
+	install -m 755 -d $(DESTDIR)//etc/logrotate.d/
+	install -m 644 logrotate.d/xscript-multiple $(DESTDIR)//etc/logrotate.d/xscript-multiple
+	install -m 755 -d $(DESTDIR)//etc/yandex/statbox-push-client/
+	install -m 644 push-client.yaml $(DESTDIR)//etc/yandex/statbox-push-client/push-client.yaml
+	install -m 755 -d $(DESTDIR)//etc/syslog-ng/conf-available/xscript/
+	install -m 644 syslog-ng/default.conf $(DESTDIR)//etc/syslog-ng/conf-available/xscript/default.conf
+	install -m 755 -d $(DESTDIR)//usr/local/www5/common/error-handlers/
+	install -m 644 www5.error-handlers.503.html $(DESTDIR)//usr/local/www5/common/error-handlers/503.html
+	install -m 755 -d $(DESTDIR)//etc/xscript-multiple/conf-available/xscript-default/
+	install -m 644 xscript-default/offline.conf $(DESTDIR)//etc/xscript-multiple/conf-available/xscript-default/offline.conf
+	install -m 644 xscript-default/omniORB.cfg $(DESTDIR)//etc/xscript-multiple/conf-available/xscript-default/omniORB.cfg
+	install -m 644 xscript-default/run_settings $(DESTDIR)//etc/xscript-multiple/conf-available/xscript-default/run_settings
+	install -m 644 xscript-default/xscript-corba.conf $(DESTDIR)//etc/xscript-multiple/conf-available/xscript-default/xscript-corba.conf
+	install -m 644 xscript-default/xscript-ulimits.conf $(DESTDIR)//etc/xscript-multiple/conf-available/xscript-default/xscript-ulimits.conf
+	install -m 644 xscript-default/xscript.conf $(DESTDIR)//etc/xscript-multiple/conf-available/xscript-default/xscript.conf

@@ -1,0 +1,82 @@
+- hosts: localhost
+  gather_facts: False
+  vars:
+    host: wrf-stable-admin
+    type: production
+    host_tags:
+      - stable
+
+  pre_tasks:
+    - juggler_facts: jserver_api={{ jserver_search_api }}
+    - include_vars: "vars"
+  post_tasks:
+    - juggler_cleanup: #jcheck_mark={{ host }} # commented for clean up all checks made with playbook
+
+  tasks:
+    - include: tasks/unreachable.yml
+    - include: tasks/common-check.yml
+    - include: tasks/specific-check.yml
+      vars:
+        checks:
+          - iptables_reject
+          - push-client-status
+          - cert_expires
+    - include: tasks/specific-check.yml
+      vars:
+        checks:
+          - nginx-50x
+        night_percent: "0%"
+        notifications:
+          - template: golem
+          - template: on_status_change
+            golem_responsible: yes
+    - include: tasks/specific-check.yml
+      vars:
+        checks:
+          - wrf_running_tasks_check
+        night_percent: "0%"
+    - include: tasks/specific-check.yml
+      vars:
+        checks:
+          - admin.wrf.yandex.net-https
+        night_percent: "101%"
+    - include: tasks/specific-check.yml
+      vars:
+        checks:
+          - nowcast_climate
+        night_percent: "0%"
+        notifications:
+          - template: on_status_change
+            golem_responsible: no
+            method: [telegram]
+            login: [weather_fubar]
+            status: "{{ statuses_critical }}"
+    - include: tasks/specific-check.yml
+      vars:
+        checks:
+          - lag-check-radars
+        night_percent: "101%"
+        notifications:
+          - template: golem
+          - template: on_desc_change
+            golem_responsible: no
+            method: [telegram]
+            login: [weather_snafu]
+            status: "{{ statuses_critical }}"
+    - include: tasks/specific-check.yml
+      vars:
+        checks:
+          - satellite-download
+        night_percent: "0%"
+        notifications:
+          - template: golem
+          - template: on_status_change
+            golem_responsible: no
+            method: [telegram]
+            login: [weather_fubar]
+            status: "{{ statuses_critical }}"
+          - template: on_status_change
+            golem_responsible: no
+            method: [telegram]
+            login: [weather_snafu]
+            status: "{{ statuses_warning }}"

@@ -1,0 +1,213 @@
+---
+name: mediapers_unstable_kp_web_execution_rtc
+parsing:
+  groups: [mediapers_unstable_kp_web]
+  HostFetcher:
+    type: "rtc"
+    geo: ["man"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+  metahost: mediapers_unstable_kp_web
+  DataFetcher:
+    logname : "ichwill/kp-web/execution.log"
+    timetail_url: "/timetail?pattern=execution&type=tskv&log_ts="
+aggregate:
+  data:
+    nginx:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+      values: [50, 75, 90, 95, 99, 100]
+      perHost: YES
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.mediapers.kp.unstable
+      Fields: [ "50_prc", "75_prc", "90_prc", "95_prc", "99_prc", "100_prc" ]
+---
+name: mediapers_unstable_kp_web_nginx_handlers_rtc
+parsing:
+  groups: [mediapers_unstable_kp_web]
+  HostFetcher:
+    type: "rtc"
+    geo: ["man"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+  metahost: mediapers_unstable_kp_web
+  DataFetcher:
+    timetail_url: "/timetail?pattern=handles&type=tskv&log_ts="
+aggregate:
+  data:
+    nginx:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+      values: [50, 75, 90, 95, 99, 100]
+      perHost: YES
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.mediapers.kp.unstable
+      Fields: [ "50_prc", "75_prc", "90_prc", "95_prc", "99_prc", "100_prc" ]
+    upstream_timings: &picker-conf
+        type: juggler
+        namespace: mediapers
+        notifications:
+            - template_name: on_status_change
+              template_kwargs:
+                  delay: 300 # seconds
+                  status:
+                    - {from: OK, to: CRIT}
+                    - {from: WARN, to: CRIT}
+                  method: [telegram, email]
+                  login:  [mediapers-monitoring, burlada]
+        plugin: picker
+        Host: "mediapers_unstable_kp_web"
+        Aggregator: timed_more_than_limit_is_problem
+        checkname: rback_http_error
+        description: rback_http_error
+        ttl: 90
+        tags: ['kp', 'rtc']
+        aggregator_kwargs:
+            nodata_mode: force_ok
+            limits: [{day_start: 1, day_end: 7, time_start: 0, time_end: 23, warn: 0, crit: 101%}]
+        config:
+            type: metahost
+            query: "handles.api%-v1%.(.+total_upstream_timings(/[4]))$"
+            limits:
+                "get-ott-recommendations.total_upstream_timings/4": [2000, "95prc"]
+                default: [5000, default_ok]
+    http_status:
+        << : *picker-conf
+        config:
+            type: metahost
+            as_percent: true
+            query: "handles.api%-v1.(.+([45]xx))$"
+            limits:
+                "get-ott-recommendations.5xx": 1
+                "get-ott-recommendations.4xx": 0.33
+                "default": 1
+---
+name: mediapers_unstable_kp_web_nginx_rtc
+parsing:
+  groups: [mediapers_unstable_kp_web]
+  HostFetcher:
+    type: "rtc"
+    geo: ["man"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+  metahost: mediapers_unstable_kp_web
+  DataFetcher:
+    timetail_url: "/timetail?pattern=web&type=tskv&log_ts="
+aggregate:
+  data:
+    nginx:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+      values: [50, 75, 90, 95, 99, 100]
+      perHost: YES
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.mediapers.kp.unstable
+      Fields: [ "50_prc", "75_prc", "90_prc", "95_prc", "99_prc", "100_prc" ]
+    5xx: &picker-conf
+      type: juggler
+      namespace: mediapers
+      notifications:
+      - template_name: on_status_change
+        template_kwargs:
+          delay: 300 # seconds
+          status:
+          - {from: OK, to: CRIT}
+          - {from: WARN, to: CRIT}
+          method: [telegram, email]
+          login:  [mediapers-monitoring, burlada]
+      plugin: picker
+      Host: "mediapers_unstable_kp_web"
+      Aggregator: timed_more_than_limit_is_problem
+      ttl: 90
+      tags: ['kp', 'rtc']
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{day_start: 1, day_end: 7, time_start: 0, time_end: 23, warn: 0, crit: 101%}]
+
+      checkname: 5xx
+      description: 5xx
+      config:
+        history: 3
+        type: metahost
+      CRIT: ["${nginx}['5xx']>0.35"]
+    4xx:
+      << : *picker-conf
+      checkname: 4xx
+      description: 4xx
+      config:
+        history: 3
+        type: metahost
+      CRIT: ["${nginx}['4xx']>0.1"]
+---
+name: mediapers_unstable_kp_web_java_rtc
+parsing:
+  groups: [mediapers_unstable_kp_web]
+  HostFetcher:
+    type: "rtc"
+    geo: ["man"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+  metahost: mediapers_unstable_kp_web
+  DataFetcher:
+    logname : "ichwill/kp-web/ichwill.log"
+    timetail_url: "/timetail?&pattern=java&type=java&log_ts="
+aggregate:
+  data:
+    java:
+      type: custom
+      class: Multimetrics
+      perHost: YES
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.mediapers.kp.unstable
+---
+name: mediapers_unstable_kp_web_no_log_stats_rtc
+parsing:
+  groups: [mediapers_unstable_kp_web]
+  HostFetcher:
+    type: "rtc"
+    geo: ["man"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+  metahost: mediapers_unstable_kp_web
+  DataFetcher:
+    timetail_url: "/exec_pattern?pattern=no_log_stats&log_ts="
+aggregate:
+  data:
+    no_log_stats:
+      type: custom
+      class: Multimetrics
+      rps: "no"
+      perHost: YES
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.mediapers.kp.unstable
+---
+name: mediapers_unstable_kp_web_java_non_request_rtc
+parsing:
+  groups: [mediapers_unstable_kp_web]
+  HostFetcher:
+    type: "rtc"
+    geo: ["man"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+  metahost: mediapers_unstable_kp_web
+  DataFetcher:
+    logname : "ichwill/music-web/ichwill.log"
+    timetail_url: "/timetail?&pattern=java_non_request&type=java&log_ts="
+aggregate:
+  data:
+    java_non_request:
+      type: custom
+      class: Multimetrics
+      rps: "no"
+      perHost: NO
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.mediapers.kp.unstable

@@ -1,0 +1,38 @@
+#!/bin/bash
+
+case $1 in
+	configure)
+            # save old shadow file http://clubs.at.yandex-team.ru/sysadmin/4531
+	    TS=`/bin/date +%s`
+	    F=/etc/shadow
+	    cp $F $F.$TS && chmod 600 $F.$TS
+	
+            # force set root password
+	    . /usr/local/sbin/changepasswd.sh
+
+            #
+            # autoadd/change
+            # PermitRootLogin without-password 
+            # http://clubs.at.yandex-team.ru/sysadmin/4545
+            SSHD_CONFIG=/etc/ssh/sshd_config
+            if [ ! -z "$(grep -iE ".*PermitRootLogin" $SSHD_CONFIG)" ]; then
+                sed -r "s/(.*PermitRootLogin.*)/#\1/i" -i $SSHD_CONFIG
+            fi
+            echo "PermitRootLogin without-password" >> $SSHD_CONFIG
+
+	    #
+	    #enable logging fingerprints
+            #
+            if [ ! -z "$(grep -iE ".*LogLevel" $SSHD_CONFIG)" ]; then
+                sed -r "s/(.*LogLevel.*)/#\1/i" -i $SSHD_CONFIG
+            fi
+            echo "LogLevel VERBOSE" >> $SSHD_CONFIG
+
+            invoke-rc.d ssh restart
+	;;
+
+	*)
+		echo "postinst called with unknown argument \`$1'" >&2
+	;;
+esac
+

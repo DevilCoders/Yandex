@@ -1,0 +1,52 @@
+series:
+  telemetry.network:
+    min_interval: 10
+
+  telemetry.jnx_fw:
+    min_interval: 10
+
+  telemetry.juniper_linecard_counters:
+    min_interval: 20
+
+  telemetry.juniper_fabric_counters:
+    min_interval: 20
+
+
+pollers:
+  JnxDialOutTelemetryPoller:
+    poller: JnxDialOutTelemetryPoller
+    filter: ["stub"]
+    interval: 20
+    series: "telemetry.network"  # stub
+    poller params:
+      fn:
+        telemetry.network: {rx_broadcast: ["delta", "resampler_repeat_right_{sample_period}", "hold_30"],
+                            tx_broadcast: ["delta", "resampler_repeat_right_{sample_period}", "hold_30"],
+                            rx: ["delta", "resampler_repeat_right_{sample_period}", "multiplier_8", "hold_30"],
+                            tx: ["delta", "resampler_repeat_right_{sample_period}", "multiplier_8", "hold_30"],
+                            rx_multicast: ["delta", "resampler_repeat_right_{sample_period}", "hold_30"],
+                            tx_multicast: ["delta", "resampler_repeat_right_{sample_period}", "hold_30"],
+                            tx_unicast: ["delta", "resampler_repeat_right_{sample_period}", "hold_30"],
+                            rx_packets: ["delta", "resampler_repeat_right_{sample_period}", "hold_30"],
+                            tx_packets: ["delta", "resampler_repeat_right_{sample_period}", "hold_30"],
+                            rx_unicast: ["delta", "resampler_repeat_right_{sample_period}", "hold_30"],
+                            tx_errs: ["delta", "resampler_repeat_right_{sample_period}", "hold_30"],
+                            rx_errs: ["delta", "resampler_repeat_right_{sample_period}", "hold_30"],
+        }
+        telemetry.jnx_fw: {packets: ["delta", "resampler_repeat_right_{sample_period}", "hold_40"],
+                           traff: ["delta", "multiplier_8", "resampler_repeat_right_{sample_period}", "hold_40"],
+        }
+        telemetry.juniper_linecard_counters: {packets: ["delta", "resampler_repeat_right_{sample_period}"],
+                                              traff: ["delta", "multiplier_8", "resampler_repeat_right_{sample_period}"],
+        }
+        telemetry.juniper_fabric_counters: {packets: ["delta", "resampler_repeat_right_{sample_period}"],
+                                            drop_packets: ["delta", "resampler_repeat_right_{sample_period}"],
+                                            error_packets: ["delta", "resampler_repeat_right_{sample_period}"],
+                                            traff: ["delta", "multiplier_8", "resampler_repeat_right_{sample_period}"],
+                                            drop_traff: ["delta", "multiplier_8", "resampler_repeat_right_{sample_period}"],
+                                            queue_depth_current:  ["resampler_repeat_right_{sample_period}"],
+        }
+      post_fn:
+        # данные с логических интерфейсов приходят с разных карт в разных пакетах. Надо суммировать
+        telemetry.jnx_fw: [["sum_all_values", {drop_keys: "card"}]]
+        telemetry.network: [["sum_all_values", {drop_keys: "card"}]]

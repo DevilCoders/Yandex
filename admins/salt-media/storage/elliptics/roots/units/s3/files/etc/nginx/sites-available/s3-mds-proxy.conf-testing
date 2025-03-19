@@ -1,0 +1,331 @@
+{%- set dc_hosts = salt['conductor']['groups2hosts'](grains['conductor']['group']) -%}
+
+{#- Used error_code numbers:      #}
+{#- 555 caching for 30 min        #}
+{#- 556 caching for 30 min per all data-centers #}
+{#- 558 caching for 24 hours      #}
+{#- 560 listingObjects limit      #}
+{#- 566 taxi-ml -#}
+
+proxy_cache_path  /var/cache/nginx/cache/s3 levels=1:1:2   keys_zone=s3:256m inactive=1h  max_size=50G;
+
+upstream s3-website {
+    server [::]:8081;
+}
+
+upstream s3-goose-monitoring {
+    server 127.0.0.1:3355;
+}
+
+upstream s3-goose {
+    server unix:/var/run/s3-goose/main.sock max_fails=0;
+}
+
+map "$local_upstream" $s3_upstream {
+    default s3-goose;
+    "s3-website" s3-website;
+}
+
+map "$http_host" $time_threshold {
+    default 0.010;
+}
+
+include include/s3/shared_dicts.conf;
+
+server {
+    server_name
+        s3.mds.yandex.net
+        s3.mdst.yandex.net
+        *.s3.mds.yandex.net
+        *.s3.mdst.yandex.net;
+
+    listen 4080;
+    listen [::]:4080;
+
+    listen 127.0.0.1:80;
+    listen [::1]:80;
+
+    listen 127.0.0.1:443 ssl;
+    listen [::1]:443 ssl;
+
+    listen 4480 ssl;
+    listen [::]:4480 ssl;
+
+    listen 213.180.205.69:80;
+    listen [2a02:6b8:0:3400::40f]:80;
+
+    listen 213.180.205.69:443 ssl http2;
+    listen [2a02:6b8:0:3400::40f]:443 ssl http2;
+
+
+    tskv_log /var/log/nginx/s3-tskv.log s3-access-log;
+
+    ssl_certificate     /etc/yandex-certs/s3.mdst.yandex.net.pem;
+    ssl_certificate_key /etc/yandex-certs/s3.mdst.yandex.net.key;
+    ssl_prefer_server_ciphers on;
+    ssl_protocols TLSv1.1 TLSv1.2 TLSv1.3;
+    ssl_ciphers TLS_AES_128_GCM_SHA256:TLS_CHACHA20_POLY1305_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-CHACHA20-POLY1305:kEECDH+AESGCM+AES128:kEECDH+AESGCM+AES256:kRSA+AESGCM+AES128:kEECDH+AES128:kRSA+AES128:!aNULL:!eNULL:!MD5:!EXPORT:!LOW:!SEED:!CAMELLIA:!IDEA:!PSK:!SRP:!SSLv2:!RC4:!3DES:!DSS;
+    ssl_session_cache    shared:S3_SSL_CACHE:128m;
+    ssl_session_timeout  28h;
+
+    # ssl_stapling on;
+    # ssl_stapling_verify on;
+    ssl_trusted_certificate /etc/nginx/ssl/certuml4.pem;
+
+    # forward proxy for CONNECT request
+    resolver                       127.0.0.1;
+    proxy_connect;
+    proxy_connect_allow            443;
+    proxy_connect_connect_timeout  300s;
+    proxy_connect_read_timeout     7200s;
+    proxy_connect_send_timeout     600s;
+    proxy_connect_address          213.180.205.69;
+
+    set $http_endpoint_type "";
+    set $local_upstream "s3-goose";
+
+    include include/s3/values.conf;
+    include s3/aws_error_pages.conf;
+    include s3/compression_options.conf;
+    include s3/proxy_options.conf;
+
+    request_id_from_header on;
+    request_id_header_name X-Request-Id;
+
+    client_max_body_size 5g;
+
+    underscores_in_headers on;
+
+    if ($arg_delimiter)                { return 560; }
+    if ($http_x_s3_internal_cache = 1) { return 555; }
+
+    proxy_intercept_errors on;
+    error_page 555 = @cached_30m;
+    error_page 560 = @listing_ratelimit;
+
+    {# Cache DC location #}
+    location @cached_30m {
+        add_header X-Nginx-Request-Id $request_id;
+        include s3/proxy_cache_options_30m.conf;
+    }
+
+    location @listing_ratelimit {
+        proxy_set_header Host $http_host;
+        include s3/base_location_options_s3lib.conf;
+
+        access_by_lua_block {
+            local tools = require "s3.tools"
+            local function check_ratelimit ()
+                local host = ngx.var.host
+                if host == 's3.mdst.yandex.net' and ngx.var.request_uri ~= '/' then
+                    uri_bucket = string.match(ngx.var.request_uri, "^/+([^/?]+)")
+                elseif string.find(host, 's3.mdst.yandex.net') then
+                    uri_bucket = string.gsub(host, '.s3.mdst.yandex.net$', '')
+                end
+
+                local plugin = require("yarl/yarl-go")
+                plugin.limit_by_hierarchical_name({"s3_LIST_common_testing", "s3_LIST_" .. uri_bucket .. "_testing"}, 1)
+            end
+            tools.measure_time(check_ratelimit, "s3.mdst.yandex.net/listing_ratelimit")
+        }
+    }
+
+    location = /hostname {
+        add_header "Content-Type" "text/plain";
+        return 200 $hostname;
+
+        log_by_lua_block {
+            increment_metric("s3mds_stat_system_dmmm", 1, true)
+        }
+    }
+
+    location / {
+        rewrite_by_lua_block {
+            local tools = require "s3.tools"
+            local function route ()
+                local S3Lib = require "s3.lib"
+                S3Lib.init()
+                S3Lib.route()
+            end
+            tools.measure_time(route, "s3.mdst.yandex.net/rewrite")
+        }
+
+        access_by_lua_block {
+            local tools = require "s3.tools"
+            local function check_ratelimit ()
+                local S3Lib = require "s3.lib"
+                S3Lib.init()
+                S3Lib.limitBucketRate()
+            end
+            tools.measure_time(check_ratelimit, "s3.mdst.yandex.net/access")
+        }
+
+        proxy_set_header Host $http_host;
+
+        include s3/base_location_options_s3lib.conf;
+    }
+
+    location @error503 {
+        return 503;
+    }
+
+    include s3/ping.conf;
+
+    log_by_lua_file /etc/nginx/include/s3-metrics.lua;
+}
+
+server {
+    server_name
+        s3-private.mds.yandex.net
+        s3-private.mdst.yandex.net
+        *.s3-private.mdst.yandex.net
+        *.s3-private.mds.yandex.net;
+
+    listen 4280;
+    listen [::]:4280;
+
+    listen 127.0.0.1:80;
+    listen [::1]:80;
+
+    listen 127.0.0.1:443 ssl;
+    listen [::1]:443 ssl;
+
+    listen 4443 ssl;
+    listen [::]:4443 ssl;
+
+    listen 80;
+    listen [::]:80;
+    listen 443 ssl;
+    listen [::]:443 ssl;
+
+    tskv_log /var/log/nginx/s3-tskv.log s3-access-log;
+
+    ssl_certificate     /etc/yandex-certs/s3-private.mdst.yandex.net.pem;
+    ssl_certificate_key /etc/yandex-certs/s3-private.mdst.yandex.net.key;
+    ssl_prefer_server_ciphers on;
+    ssl_protocols TLSv1.1 TLSv1.2 TLSv1.3;
+    ssl_ciphers TLS_AES_128_GCM_SHA256:TLS_CHACHA20_POLY1305_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-CHACHA20-POLY1305:kEECDH+AESGCM+AES128:kEECDH+AESGCM+AES256:kRSA+AESGCM+AES128:kEECDH+AES128:kRSA+AES128:!aNULL:!eNULL:!MD5:!EXPORT:!LOW:!SEED:!CAMELLIA:!IDEA:!PSK:!SRP:!SSLv2:!RC4:!3DES:!DSS;
+    ssl_session_cache    shared:S3_PRIVATE_SSL_CACHE:128m;
+    ssl_session_timeout  28h;
+
+    # ssl_stapling on;
+    # ssl_stapling_verify on;
+    ssl_trusted_certificate /etc/nginx/ssl/certuml4.pem;
+
+    set $http_endpoint_type "private";
+
+    include include/s3/values.conf;
+    include s3/aws_error_pages.conf;
+    include s3/compression_options.conf;
+    include s3/proxy_options.conf;
+
+    request_id_from_header on;
+    request_id_header_name X-Request-Id;
+
+    client_max_body_size 5g;
+
+    underscores_in_headers on;
+
+    location / {
+        rewrite_by_lua_block {
+            local tools = require "s3.tools"
+            local function route ()
+                local S3Lib = require "s3.lib"
+                S3Lib.init()
+                S3Lib.route()
+            end
+            tools.measure_time(route, "s3-private.mdst.yandex.net/rewrite")
+        }
+
+        access_by_lua_block {
+            local tools = require "s3.tools"
+            local function check_ratelimit ()
+                local S3Lib = require "s3.lib"
+                S3Lib.init()
+                S3Lib.checkPrivateAccessAllowed()
+                S3Lib.limitBucketRate()
+            end
+            tools.measure_time(check_ratelimit, "s3-private.mdst.yandex.net/access")
+        }
+
+        proxy_set_header Host $http_host;
+
+        include s3/base_location_options_s3lib.conf;
+    }
+
+    location @error503 {
+        return 503;
+    }
+
+    include s3/ping.conf;
+
+    log_by_lua_file /etc/nginx/include/s3-metrics.lua;
+}
+
+server {
+    server_name s3-website.mdst.yandex.net
+                *.s3-website.mdst.yandex.net;
+
+    listen 80 default_server backlog=4096 reuseport;
+    listen [::]:80 ipv6only=on default_server backlog=4096 reuseport;
+
+    listen 443 ssl http2 default_server backlog=4096 reuseport;
+    listen [::]:443 ssl http2 ipv6only=on default_server backlog=4096 reuseport;
+
+    http2_max_requests 32768;
+    http2_max_concurrent_streams 6;
+    http2_idle_timeout 1m;
+
+    ssl_certificate     /etc/yandex-certs/s3-website.mdst.yandex.net.pem;
+    ssl_certificate_key /etc/yandex-certs/s3-website.mdst.yandex.net.key;
+    ssl_prefer_server_ciphers on;
+    ssl_protocols TLSv1.1 TLSv1.2 TLSv1.3;
+    ssl_ciphers TLS_AES_128_GCM_SHA256:TLS_CHACHA20_POLY1305_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-CHACHA20-POLY1305:kEECDH+AESGCM+AES128:kEECDH+AESGCM+AES256:kRSA+AESGCM+AES128:kEECDH+AES128:kRSA+AES128:!aNULL:!eNULL:!MD5:!EXPORT:!LOW:!SEED:!CAMELLIA:!IDEA:!PSK:!SRP:!SSLv2:!RC4:!3DES:!DSS;
+    ssl_session_cache    shared:S3_WEBSITE_SSL_CACHE:128m;
+    ssl_session_timeout  28h;
+
+    tskv_log /var/log/nginx/s3-tskv.log s3-access-log;
+
+    include include/s3/values.conf;
+    include s3/aws_error_pages.conf;
+    include s3/compression_options.conf;
+
+    request_id_from_header on;
+    request_id_header_name X-Request-Id;
+
+    client_max_body_size 5g;
+
+    underscores_in_headers on;
+    set $local_upstream "s3-website";
+
+    location / {
+        rewrite_by_lua_block {
+            local tools = require "s3.tools"
+            local function route ()
+                local S3Lib = require "s3.lib"
+                S3Lib.init()
+                S3Lib.route()
+            end
+            tools.measure_time(route, "s3-website.mdst.yandex.net/rewrite")
+        }
+
+        access_by_lua_block {
+            local tools = require "s3.tools"
+            local function check_ratelimit ()
+                local S3Lib = require "s3.lib"
+                S3Lib.init()
+                S3Lib.limitBucketRate()
+            end
+            tools.measure_time(check_ratelimit, "s3-website.mdst.yandex.net/access")
+        }
+
+        proxy_set_header Host                   $http_host;
+
+        include s3/proxy_options.conf;
+        include s3/base_location_options_s3lib.conf;
+    }
+
+    include s3/ping.conf;
+
+    log_by_lua_file /etc/nginx/include/s3-metrics.lua;
+}

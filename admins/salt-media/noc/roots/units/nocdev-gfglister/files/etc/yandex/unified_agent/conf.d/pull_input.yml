@@ -1,0 +1,40 @@
+{%- set services = [ "channel", "gfglister", "config_per_host", "config", "svn", "external", "configgetter" ] %}
+{%- set project = "gfglister" %}
+storages:
+  - name: metrics_storage
+    plugin: fs
+    config:
+      directory: /var/lib/yandex/unified_agent/storage/metrics
+      max_partition_size: 500mb
+
+routes:
+  {%- for service in services %}
+  - input:
+      plugin: metrics_pull
+      config:
+        format:
+          solomon_json: {}
+        url: http://localhost:80/metrics/{{ service }}
+        project: {{ project }}
+        service: {{ service }}
+        cluster: all
+        poll_period: 15s
+        metric_name_label: sensor
+    channel:
+      channel_ref:
+        name: solomon_output
+  {%- endfor %}
+channels:
+  - name: solomon_output
+    channel:
+      pipe:
+        - storage_ref:
+            name: metrics_storage
+      output:
+        plugin: metrics
+        config:
+          tvm:
+            client_id: 2036374  # gfglister
+            destination_id: solomon
+            secret:
+              file: /etc/yandex/unified_agent/secrets/tvm

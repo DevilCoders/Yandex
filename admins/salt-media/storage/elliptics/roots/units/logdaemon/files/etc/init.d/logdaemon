@@ -1,0 +1,71 @@
+#!/bin/sh
+
+### BEGIN INIT INFO
+# Provides:          logdaemon
+# Required-Start:    $network $remote_fs $syslog
+# Required-Stop:     $network $remote_fs $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+### END INIT INFO
+
+NAME="logdaemon"
+DESC="Nginx error log parser"
+DAEMON="/usr/local/bin/logdaemon.py"
+PIDFILE="/run/logdaemon.pid"
+
+test -x $DAEMON || exit 0
+
+# shellcheck disable=SC1091
+. /lib/lsb/init-functions
+
+# Override this variable by editing or creating /etc/default/unbound.
+DAEMON_OPTS="-c /etc/logdaemon/config.yaml"
+
+if [ -f /etc/default/logdaemon ]; then
+    # shellcheck disable=SC1091
+    . /etc/default/logdaemon
+fi
+
+case "$1" in
+    start)
+        log_daemon_msg "Starting $DESC" "$NAME"
+        if start-stop-daemon --start --quiet --oknodo --pidfile $PIDFILE --name $NAME --startas $DAEMON -- $DAEMON_OPTS; then
+            log_end_msg 0
+        else
+            log_end_msg 1
+        fi
+        ;;
+
+    stop)
+        log_daemon_msg "Stopping $DESC" "$NAME"
+        if kill -9 "$(cat $PIDFILE)"; then
+            rm $PIDFILE
+            log_end_msg 0
+        else
+            log_end_msg 1
+        fi
+        ;;
+
+    restart|force-reload)
+        log_daemon_msg "Restarting $DESC" "$NAME"
+        kill -9 "$(cat $PIDFILE)" > /dev/null 2>&1
+        rm $PIDFILE > /dev/null 2>&1
+        if start-stop-daemon --start --quiet --oknodo --pidfile $PIDFILE --name $NAME --startas $DAEMON -- $DAEMON_OPTS; then
+            log_end_msg 0
+        else
+            log_end_msg 1
+        fi
+        ;;
+
+    status)
+        status_of_proc -p $PIDFILE $DAEMON $NAME && exit 0 || exit $?
+        ;;
+
+    *)
+        N=/etc/init.d/$NAME
+        echo "Usage: $N {start|stop|restart|status|force-reload}" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

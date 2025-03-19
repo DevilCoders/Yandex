@@ -1,0 +1,41 @@
+#! /bin/bash
+
+set -e
+
+# Check command line arguments
+if [ "x$1" = "x" ]; then
+    echo "USAGE: $0 <filename>"
+    echo
+    echo "    The command uses \$LC_USER and \$LC_CACHED if set"
+    echo "    E.g.: $0 ugc/.test"
+    exit -1
+fi
+
+# The cached name
+REMOTE_NAME="$1"
+CACHED_NAME=`echo $REMOTE_NAME | sed 's%/%~%g'`
+
+if [ "x$LC_CACHED" = "x" ]; then
+
+    # Determine the username
+    if [ "x$LC_USER" != "x" ]; then
+        USER="$LC_USER"
+    else
+        echo -n "Please enter your login (or set $LC_USER to skip this message): " 1>&2
+        read USER
+    fi
+
+    # Get new
+    scp -q \
+        -S ssh-noquiet \
+        -o "User=$USER" \
+        -o "BatchMode=yes" \
+        -o "StrictHostKeyChecking=no" \
+        -o "UserKnownHostsFile=/dev/null" \
+        "secdist.yandex.net:/repo/projects/$REMOTE_NAME" \
+        "/var/cache/yandex-secget/$CACHED_NAME" \
+        2> >(fgrep -v 'Permanently added' 1>&2)
+fi
+
+# Show the cache
+cat /var/cache/yandex-secget/$CACHED_NAME

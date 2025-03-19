@@ -1,0 +1,37 @@
+#!/bin/bash
+
+# Add diversion for access.tskv.log format
+
+pkg=config-jkp-front-statbox
+diversion_added_version=1.3
+this_version=1.3
+
+HOST=`hostname -f`
+GROUP=`curl -fs "http://c.yandex-team.ru/api/hosts/$HOST?format=yaml" | grep 'group' | awk '{print $NF}'`
+
+if [ -f "/etc/yandex/environment.type" ]; then
+        ENVIR=`cat /etc/yandex/environment.type`
+else
+        echo 'No /etc/yandex/environment.type, trying detect env by conductor group'
+        preenvir=`echo $GROUP | awk -F\- '{print $NF}'`
+        if [[ "$preenvir" == "testing" ]] || [[ "$preenvir" == "prestable" ]]; then
+                ENVIR=`echo $preenvir`
+        else
+                ENVIR="production"
+        fi
+fi
+
+mkdir -p /usr/share/yandex-configs/$pkg
+
+if
+    test "$1" = install || 
+    dpkg --compare-versions "$2" lt "$diversion_added_version" ||
+    dpkg --compare-versions "$this_version" lt "$2"
+then
+    if [ -f /usr/share/yandex-configs/$pkg/02-accesslog.tskv.conf.$ENVIR ]; then 
+	echo "Diverting /usr/share/yandex-configs/$pkg/02-accesslog.tskv.conf"
+	dpkg-divert --package "$pkg" --add --rename \
+    	    --divert "/usr/share/yandex-configs/$pkg/02-accesslog.tskv.conf.divert" /etc/nginx/conf.d/02-accesslog.tskv.conf
+    fi
+fi
+

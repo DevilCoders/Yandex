@@ -1,0 +1,11 @@
+include:
+  - templates.nginx
+  - templates.loggiver
+  - templates.disable_rp_filter
+  - templates.conductor-agent
+  - templates.certificates
+  - templates.push-client
+  - templates.memcached
+  - .monrun
+  - external_config
+  - .logrotate

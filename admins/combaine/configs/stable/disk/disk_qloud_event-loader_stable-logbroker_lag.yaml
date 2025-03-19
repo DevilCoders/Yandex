@@ -1,0 +1,82 @@
+parsing:
+  groups: [disk_deploy_event_loader_stable]
+  metahost: disk_deploy_event-loader
+  DataFetcher:
+    type: http
+    port: 3132
+    uri: "/exec_pattern?pattern=logbroker_lag&timeout=100"
+  Combainer:
+    MINIMUM_PERIOD: 55
+aggregate:
+  data:
+    logbroker_lag:
+      type: "custom"
+      class: "Max"
+      rps: no
+
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+    juggler_logbroker_pull_lag_sas: &juggler-conf
+      type: juggler
+      namespace: disk-devops
+      Host: "disk_deploy_event-loader"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-java-mntr
+                - shirankov
+                - akinfold
+                - kis8ya
+                - sanya2013
+                - yak-dmitriy
+                - friendlyevil
+                - c4et4uk
+                - derovi
+      Aggregator: logic_or
+      checkname: logbroker_pull_lag_sas
+      description: logbroker_pull_lag_sas
+      meta:
+        urls:
+          - title: Documentation
+            url: https://wiki.yandex-team.ru/disk/java/watch/event-loader/#logbrokerpulllagdc
+            type: wiki
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      flaps: { stable_time: 120, critical_time: 180 }
+      CRIT: [ "${logbroker_lag}['sas_sas']  > 150000" ]
+      tags:
+        - production
+
+    juggler_logbroker_lag_myt:
+      << : *juggler-conf
+      checkname: logbroker_pull_lag_myt
+      description: logbroker_pull_lag_myt
+      CRIT: [ "${logbroker_lag}['myt_myt']  > 150000" ]
+
+    juggler_logbroker_lag_iva:
+      << : *juggler-conf
+      checkname: logbroker_pull_lag_iva
+      description: logbroker_pull_lag_iva
+      CRIT: [ "${logbroker_lag}['iva_iva']  > 150000" ]
+
+    juggler_logbroker_lag_man:
+      << : *juggler-conf
+      checkname: logbroker_pull_lag_man
+      description: logbroker_pull_lag_man
+      CRIT: [ "${logbroker_lag}['man_man']  > 150000" ]
+
+    juggler_logbroker_lag_vla:
+      << : *juggler-conf
+      checkname: logbroker_pull_lag_vla
+      description: logbroker_pull_lag_vla
+      CRIT: [ "${logbroker_lag}['vla_vla']  > 150000" ]
+
+
+

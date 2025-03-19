@@ -1,0 +1,22 @@
+php=/usr/local/bin/php2loggiver-ext.pl
+
+php-levels=awk {' print $4 '} | sort  | uniq -c | egrep 'kinopoisk_db|kinopoisk_ext|kinopoisk_main' | awk '{ print $2" "$1 }' | sed 's/://g'
+
+mail_sent=grep "status=sent (250.*Ok" |wc -l |awk '{print "mail_ok " $1}'
+
+nginx_tskv=tskv  -h ".kinopoisk.ru" --timings-code-filter ^2 -y -s -t req -z
+
+php_services_latency=/usr/local/bin/services_latency.py
+
+ext_auth_stat=/usr/local/bin/ext_auth_stat.py
+
+# KP-9590
+nginx_recommend=grep method=getFolderContent | grep folderID=recommend | grep dataType=film | tskv -t req,up -z -s
+
+### /var/log/php/php-hs.log
+hs_error=awk '{ sub(":","",$4); count[$4]++ }END{ for (x in count) print x, count[x]}'
+### CADMIN-7087
+php_log=awk '{ gsub(":","",$4); gsub(":","",$5); metric=$4"."$5; if (metric ~ /\[/) { gsub("(\\[|\\])","",metric); count[metric]++ } else if (metric !~ /\[/) { gsub("\\/\\*","long",metric); count[metric]++ }} END { for (x in count) print tolower(x)".count " count[x] }'
+
+kinopoisk_metrics_log=egrep -o '\[[A-Z]+\].*"time":"[.0-9]+ms"' | awk -F ":" '{ print $1" "$NF }' | sed -r 's/("|\[|\]|ms)//g' | awk {' print $1" "$3 '} | awk '{ types[$1][$2]++; count[$1]++ } END { {for (type in types) { printf "@kinopoisk_metrics.%s.request_timings ", tolower(type); for (timings in types[type]) printf "%s@%s ", timings, types[type][timings]; printf "\n" }} { for (x in count) print "kinopoisk_metrics."tolower(x)".count " count[x] }}'
+

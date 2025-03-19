@@ -1,0 +1,120 @@
+#! /usr/bin/perl
+
+use strict;
+use Date::Parse;
+use Time::Local;
+use Getopt::Std;
+use File::TimeSearch;
+use TimeUtils;
+use TimeTail;
+
+$Getopt::Std::OUTPUT_HELP_VERSION = 0;
+
+my $me = $0;
+
+my $deltatime = 300; # five minutes default
+my $max_junk = 500;
+my $fromtime = 0;
+
+sub usage {
+  print STDERR "Usage: $me [-n <secs>] [-b <date> ] [-t <timestamp type> | -r <timestamp regexp>] <log file>\n";
+  print STDERR "\t-n - Seconds count from now() to look at from the end of the <log file> (default: 300)\n";
+  print STDERR "\t-b - From which datetime start to operate seconds of the <log file> (default: undef)\n";
+  print STDERR "\t-t - Timestamp type (default: common) \n";
+  print STDERR "\t-r - Regexp to pick timestamp from string (\$1 must select timestamp)\n";
+  print STDERR "\t-j - Max number of junk lines to read\n";
+  print STDERR "\t-d - debug mode\n";
+  exit 0;
+}
+
+sub HELP_MESSAGE {
+    usage;
+}
+
+my %opts;
+usage unless getopts('dn:b:t:r:j:', \%opts);
+
+usage unless (scalar @ARGV);
+
+
+#my $logfile = shift(@ARGV);
+
+if (defined $opts{"n"}) {
+	$deltatime = $opts{"n"};
+	unless ($deltatime =~ /^\d+$/ and $deltatime > 0) {
+		print STDERR "Wrong number: $deltatime\n";
+		exit 2;
+	}
+}
+
+if (defined $opts{"b"}) {
+        $fromtime = $opts{"b"};
+        unless ($fromtime =~ /^\d+$/ and $fromtime > 0) {
+                print STDERR "Wrong number: $fromtime\n";
+                exit 2;
+        }
+}
+
+if (defined $opts{"j"}) {
+	$max_junk = $opts{"j"};
+	unless ($max_junk =~ /^\d+$/ and $max_junk > 0) {
+		print STDERR "Wrong number: $max_junk\n";
+		exit 2;
+	}
+}
+
+if (defined($opts{"t"}) and defined($opts{"r"})) {
+    print STDERR "You should specify either -t or -r, but not both\n";
+    exit 2;
+}
+
+my $timere;
+
+if (defined($opts{"r"})) {
+    $timere = $opts{"r"};
+} elsif (defined $opts{"t"}) {
+   	unless ($timere = TimeUtils::get_regexp($opts{"t"})) {
+		print STDERR "Wrong log type: " . $opts{"t"} . "\nValid types are: " . join(" ", TimeUtils::valid_types) . "\n";
+		exit 2;
+	}
+} else {
+    $timere = TimeUtils::default_regexp;
+}
+
+
+my %found_pos;
+my $size;
+
+sub debug($) {
+	my $message = shift;
+	print STDERR $message . "\n" if $opts{"d"};
+}
+
+sub print_part($$$) {
+	my ($fh, $s, $e) = @_;
+	my $portion = 128*1024;
+
+	seek($fh, $s, 0);
+	my $remain = $e - $s;
+	my $buf;
+	while ($remain) {
+ 	       $portion = $remain if $portion > $remain;
+	        my $rc = read($fh, $buf, $portion);
+	        $remain -= $rc;
+	        print $buf;
+	}
+}
+
+my $logfile = shift(@ARGV);
+
+while ($logfile){
+
+    my @stat = stat($logfile);
+    my $size = $stat[7];
+
+    if ( $size ){
+        TimeTail::Timetail($logfile, $fromtime, $deltatime, $timere, $max_junk, $opts{"d"});
+    }
+
+    $logfile = shift(@ARGV);
+}

@@ -1,0 +1,55 @@
+#!/usr/bin/env python
+
+import logging
+
+from tornado import gen
+from tornado import ioloop
+from cocaine.tools.actions import group
+from cocaine.services import Service
+
+logger = logging.getLogger("cocaine.admin")
+logger.addHandler(logging.StreamHandler())
+logger.setLevel(logging.INFO)
+
+
+ENDPOINTS = [("localhost", 10053)]
+
+@gen.coroutine
+def spawn_worker(name, node):
+    # logger.debug("spawning a worker for %s", name)
+    try:
+        chan = yield node.info(name,0x04|0x01)
+        node_info = yield chan.rx.get()
+        if node_info["pool"]["capacity"] > 0:
+            concurrency = node_info["pool"]["capacity"]
+        else:
+            concurrency = 4
+        app = Service(name, endpoints=ENDPOINTS)
+        chan = yield app.control()
+        yield chan.tx.write(concurrency)
+        yield gen.sleep(1)
+        chan = yield app.info()
+        info = yield chan.rx.get()
+        if len(info["pool"]["slaves"]) >= 4:
+            logger.info("%s has been started", name)
+    except Exception as err:
+        logger.error("unable to spawn a %s: %s", name, err)
+        raise gen.Return(str(err))
+    raise gen.Return("OK")
+
+@gen.coroutine
+def spawn_workers(apps):
+    node = Service("node", endpoints=ENDPOINTS)
+    for name in apps:
+        res = yield spawn_worker(name, node)
+        # logger.info("%s: %s", name, res)
+        yield gen.sleep(0.1)
+
+@gen.coroutine
+def main():
+    apps = ['mastermind2.26']
+    yield spawn_workers(apps)
+
+if __name__ == "__main__":
+    ioloop.IOLoop.current().run_sync(main, timeout=300)
+

@@ -1,0 +1,61 @@
+{% set yaenv = grains['yandex-environment'] -%}
+{% if yaenv == 'production' -%}
+{% set qhost = 'new.pda.tv.yandex.$tld' -%}
+{% elif yaenv == 'prestable' %}
+{% set qhost = 'new.pda.beta.tv.yandex.$tld' -%}
+{% else -%}
+{% set qhost = 'new.pda.'+yaenv+'.tv.yandex.$tld' -%}
+{% endif -%}
+include sites-available/set-yandex-l7;
+
+server {
+    include listen;
+    resolver [::1] ipv6=only;
+
+    server_name ~^pda\.(testing\.|beta\.|prestable\.)?tv\.yandex\.(?<tld>ru|ua|by|kz|uz|com|com\.tr|uz)$;
+
+    set $proxy_qloud_host {{qhost}};
+
+    set $do_not_redirect "${is_ping}${ya_l7}";
+
+    if ($do_not_redirect = "" ) {
+       return 301 https://$host$request_uri;
+    }
+
+    set_real_ip_from     2a02:6b8::/32;
+    set_real_ip_from     2620:10f:d000::/44;
+    real_ip_header       X-Forwarded-For-Y;
+
+    location / {
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Request-Id $request_id;
+        proxy_set_header Host $proxy_qloud_host;
+        proxy_set_header X-Upstream-Host $host;
+        proxy_set_header X-NginX-Proxy true;
+
+        # need for keepalive
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+
+        proxy_pass https://pda_tv_front$request_uri;
+        proxy_intercept_errors off;
+        proxy_redirect off;
+    }
+}
+
+# redirect www.<sub>.tv.yandex.tld --> <sub>.tv.yandex.tld
+server {
+    include listen;
+
+    {% if yaenv == 'production' -%}
+    server_name ~^www\.(?<sub>pda\.tv)\.yandex\.(?<tld>ru|ua|by|kz|com|com\.tr|uz)$; # production
+    {% elif yaenv in ['testing', 'load', 'prestable'] -%}
+    server_name ~^www\.(?<sub>pda\.(?:beta|testing|load)\.tv)\.yandex\.(?<tld>ru|ua|by|kz|com|com\.tr|uz)$; # testing | beta | load
+    {% else -%}
+    server_name ~^www\.(?<sub>pda\.(?<user>\w+)\.dev[\d]+\.tv)\.yandex\.(?<tld>ru|ua|by|kz|com|com\.tr|uz)$; # dev
+    server_name ~^www\.(?<sub>pda\.(?<branch>.+)\.unstable\.tv)\.yandex\.(ru|ua|by|kz|com|com\.tr|uz)$; # unstable
+    {% endif %}
+
+    rewrite ^/(.*) https://$sub.yandex.$tld/$1 permanent;
+}

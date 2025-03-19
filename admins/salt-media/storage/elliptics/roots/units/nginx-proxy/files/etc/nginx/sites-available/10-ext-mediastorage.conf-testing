@@ -1,0 +1,67 @@
+include include/upstream.conf;
+
+# external use only: visible from internet
+server {
+    #localhost - 80
+    listen 127.0.0.1:80;
+    listen [::1]:80;
+
+    #localhost - 443
+    listen 127.0.0.1:443 ssl;
+    listen [::1]:443 ssl;
+
+    listen 1080 backlog=4096;
+    listen [::]:1080 ipv6only=on backlog=4096;
+
+    # Comment now, if nobody comes - can be removed
+    # listen 1443 ssl http2 backlog=4096;
+    # listen [::]:1443 ssl http2 ipv6only=on backlog=4096;
+
+    #storage.mdst.yandex.net - HTTP
+    listen 93.158.157.165:80;
+    listen [2a02:6b8:0:3400::2:165]:80;
+
+    #storage.mdst.yandex.net - SSL
+    listen 93.158.157.165:443 ssl;
+    listen [2a02:6b8:0:3400::2:165]:443 ssl;
+
+    server_name storage.mds.yandex.net
+                storage.mdst.yandex.net
+                *.storage.mds.yandex.net;
+
+    tskv_log /var/log/nginx/tskv.log mds-access-log;
+
+    include include/proxy_options.conf;
+
+    #Потому что при чтении больших файлов, мы чексуммим файл в сторадже полностью. Файл может быть несколько гигабайт.
+    #прежде чем начать отдавать файл - ждём проверки чексумм
+    #в будущем нужно будет убрать этот костылик, либо наоборот залить в бетон
+    proxy_read_timeout 3600s;
+
+    #https://st.yandex-team.ru/MDS-849
+    include crossdomain/crossdomain-xml;
+    include ssl/https.conf;
+
+    #https://st.yandex-team.ru/MDS-54 - НЕ УБИРАТЬ НИКОГДА
+    proxy_set_header X-MDS-SECURITY "{{ pillar['yav']['x_mds_security'] }}";
+    proxy_set_header X-Request-Id    $request_id;
+
+    #https://st.yandex-team.ru/MDS-7737
+    proxy_set_header X-MDS-NGINX-URI $uri;
+
+    set $port 80;
+    if ($scheme = https) {
+            set $port 443;
+    }
+
+    include include/namespace-ext.conf;
+
+    # https://st.yandex-team.ru/MDS-4809
+    set $unistat_cluster_type "mdsproxy";
+    header_filter_by_lua_block {
+        increment_metric("stat_monitor_dmmm", 1)
+    }
+    # MDS-15314
+    set $unistat_prior '';
+    access_by_lua_file /etc/nginx/include/mds_yarl.lua;
+}

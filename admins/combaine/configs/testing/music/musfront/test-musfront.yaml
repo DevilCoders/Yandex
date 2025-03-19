@@ -1,0 +1,197 @@
+name: music_test_musfront_status
+parsing:
+  groups: [music_test_musfront]
+  metahost: music_test_musfront
+  DataFetcher:
+    timetail_url: "/timetail?pattern=xfront-status&type=tskv&log_ts="
+  HostFetcher:
+    type: "rtc"
+    geo: ["sas", "man", "vla"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+aggregate:
+  data:
+    rtc.nginx:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+      timings_is: _time
+      perHost: YES
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.music
+    4xx: &juggler-conf
+      type: juggler
+      Host: "music.mt.yandex.ru"
+      Method: Juggler
+      Aggregator: timed_more_than_limit_is_problem
+      config:
+          type: metahost
+      checkname: 4xx
+      description: 4xx
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{day_start: 1, day_end: 7, time_start: 0, time_end: 23, crit: 146%, warn: 0}]
+      CRIT: ["${rtc.nginx}['4xx']>30"]
+    5xx:
+      << : *juggler-conf
+      checkname: 5xx
+      description: 5xx
+      CRIT: ["${rtc.nginx}['5xx']>5"]
+    timings:
+      << : *juggler-conf
+      checkname: nginx_timings
+      description: nginx_timings
+      flaps: { stable_time: 60, critical_time: 90 }
+      variables:
+        trigger_n800_d600: "iftimeofday(1, 4, 800, 600)"
+      CRIT: ["${rtc.nginx}['total_upstream_timings'][4] > trigger_n800_d600"]
+---
+name: music_test_musfront_xscript
+parsing:
+  groups: [music_test_musfront]
+  metahost: music_test_musfront
+  DataFetcher:
+    logname: "xscript/default.log"
+    timetail_url: "/timetail?pattern=xfront-xscript-status&log_ts="
+  HostFetcher:
+    type: "rtc"
+    geo: ["sas", "man", "vla"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+aggregate:
+  data:
+    rtc.xscript:
+      type: custom
+      class: Multimetrics
+      perHost: YES
+      logHostResult: true
+      logGroupResult: true
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.music
+    xscript:
+      type: juggler
+      Host: "music.mt.yandex.ru"
+      Method: Juggler
+      Aggregator: timed_more_than_limit_is_problem
+      checkname: xscript_err
+      description: xscript_err
+      flaps: { stable_time: 60, critical_time: 90 }
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{day_start: 1, day_end: 7, time_start: 0, time_end: 23, crit: 146%, warn: 0}]
+      CRIT: ["${rtc.xscript}['err']>2"]
+---
+name: music_test_musfront_nodejs
+parsing:
+  groups: [music_test_musfront]
+  metahost: music_test_musfront
+  DataFetcher:
+    logname: "node-init-cluster/yandex-music-re/yandex-music-nodejs.log"
+    timetail_url: "/timetail?pattern=music-nodejs&type=tskv&log_ts="
+  HostFetcher:
+    type: "rtc"
+    geo: ["sas", "man", "vla"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+aggregate:
+  data:
+    rtc.nodejs:
+      type: custom
+      class: Multimetrics
+      perHost: YES
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.music
+---
+name: music_test_musfront-msie-status
+parsing:
+  groups: [music_test_musfront]
+  metahost: music_test_musfront
+  DataFetcher:
+    timetail_url: "/timetail?pattern=xfront-msie-status&type=tskv&log_ts="
+  HostFetcher:
+    type: "rtc"
+    geo: ["sas", "man", "vla"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+aggregate:
+  data:
+    rtc.msie:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+      perHost: YES
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.music
+---
+name: music_test_musfront-non-msie-status
+parsing:
+  groups: [music_test_musfront]
+  metahost: music_test_musfront
+  DataFetcher:
+    timetail_url: "/timetail?pattern=xfront-non-msie-status&type=tskv&log_ts="
+  HostFetcher:
+    type: "rtc"
+    geo: ["sas", "man", "vla"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+aggregate:
+  data:
+    rtc.non_msie:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+      perHost: YES
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.music
+---
+name: music_test_musfront-stats
+parsing:
+  groups: [music_test_musfront]
+  metahost: music_test_musfront
+  DataFetcher:
+    logname: "node-init-cluster/yandex-music-re/yandex-music-nodejs.log /var/log/node-init-cluster/yandex-music-re/yandex-music-nodejs.log.1"
+    timetail_url: "/timetail?pattern=tskv-aggr&type=tskv&log_ts="
+  HostFetcher:
+    type: "rtc"
+    geo: ["sas", "man", "vla"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+aggregate:
+  data:
+    rtc.stats:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+      perHost: YES
+      timings_is: 'duration'
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.music
+---
+name: music_test_musfront-nginx
+parsing:
+  groups: [music_test_musfront]
+  metahost: music_test_musfront
+  DataFetcher:
+    timetail_url: "/timetail?pattern=front-nginx&type=tskv&log_ts="
+  HostFetcher:
+    type: "rtc"
+    geo: ["sas", "man", "vla"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+aggregate:
+  data:
+    rtc.nginx:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+      perHost: YES
+      timings_is: 'duration'
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.music

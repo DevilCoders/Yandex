@@ -1,0 +1,75 @@
+#!/usr/bin/env python
+
+import sys
+import yenv
+import json
+import yaml
+import socket
+import logging
+import argparse
+import requests
+
+from redis import StrictRedis
+from redis.sentinel import Sentinel
+
+def resolve_host(fqdn):
+    addr = socket.getaddrinfo(fqdn, None, socket.AF_INET6, socket.SOCK_STREAM)
+    if not addr:
+        logging.error('Error looking for ipv6 address of {}'.format(fqdn))
+        return None
+
+    return addr[0][4][0]
+
+def resolve_group(name):
+    req = requests.get('http://c.yandex-team.ru/api-cached/groups2hosts/{}?format=json'.format(name))
+    req.raise_for_status()
+
+    return map(lambda x: x['fqdn'], req.json())
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--config', '-c',
+    default='/etc/yandex/redis-slave-watcher.yaml', type=argparse.FileType('r'))
+
+args = parser.parse_args()
+
+config = yaml.safe_load(args.config)
+
+myconf = config.get('{}-{}'.format(yenv.type, yenv.name)) or \
+        config.get('{}'.format(yenv.type)) or \
+        config.get('default')
+
+if myconf is None:
+    sys.exit(0)
+
+all_slaves = set()
+for item in myconf.get('slave-hosts', []):
+    if not item.startswith('%'):
+        all_slaves.add(resolve_host(item))
+        continue
+
+    for host in resolve_group(item[1:]):
+        all_slaves.add(resolve_host(host))
+
+sentinel = Sentinel([('localhost', 26379)], socket_timeout=5)
+
+active_slaves = sentinel.discover_slaves(myconf.get('sentinel-name'))
+active_slaves = set([host for (host, port) in active_slaves])
+
+if not all_slaves - active_slaves:
+    sys.exit(0)
+
+(master_host, master_port) = sentinel.discover_master(myconf.get('sentinel-name'))
+for new_slave in all_slaves - active_slaves:
+    if new_slave is None:
+        continue
+
+    client = StrictRedis(new_slave, 6379, socket_timeout=5)
+    try:
+        client.ping()
+    except:
+        logging.error('Error connecting to Redis on {}'.format(new_slave))
+        continue
+    if not client.slaveof(master_host, master_port):
+        logging.error('Error executing SLAVEOF on {}'.format(new_slave))
+    if not client.execute_command('CONFIG', 'REWRITE', parse='REWRITE'):
+        logging.error('Error executing CONFIG REWRITE on {}'.format(new_slave))

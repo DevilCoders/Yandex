@@ -1,0 +1,84 @@
+#! /usr/bin/python
+
+from mongo_hack import *
+from json import dumps, load, JSONEncoder
+
+
+class Enc(JSONEncoder):
+    def default(self, x):
+        if isinstance(x, set):
+            return list(x)
+        else:
+            return JSONEncoder.default(self, x)
+
+
+class CheckIndicesScript (BaseScript):
+
+    script_description  = 'Check that indexes across all shards are the same'
+    argument_names      = ['mongos_group']
+
+    def gather_info(self):
+        self.mongos_hosts = group2hosts(self.args.mongos_group)
+        self.ctrl         = MongosController(self.mongos_hosts[0])
+
+        return (
+            ('Via',  ' '.join(self.mongos_hosts)),
+        )
+
+    def extract_common_part(self, xtractor, type, formator):
+        '''
+        Extract common part and print diffs
+        '''
+
+        common = set()
+        shard_info = {}
+
+        # unite everything
+        for shard in self.info:
+            shard_info[shard] = set(xtractor(shard))
+            common = common.union(shard_info[shard])
+
+        # get common
+        for shard in self.info:
+            common = common.intersection(shard_info[shard])
+
+        # print bad
+        for shard in self.info:
+            extras = shard_info[shard].difference(common)
+            for x in extras:
+                print '[!]   %s: extra %s   %s' % (shard, type, formator(x))
+
+        return common
+
+    def extract_info(self):
+        shards = self.ctrl.get_shards()
+        hosts = {}
+        for shard in shards:
+            print 'Will be using %s as a representative for shard %s' % (shard[1][0], shard[0])
+            hosts[shard[0]] = MongodController(shard[1][0])
+
+        self.info = {}
+        for shard in hosts:
+            self.info[shard] = {}
+            for db in hosts[shard].mongo.database_names():
+                self.info[shard][db] = {}
+                for coll in hosts[shard].mongo[db].collection_names(False):
+                    self.info[shard][db][coll] = hosts[shard].mongo[db][coll].index_information()
+
+    def find_common_parts(self):
+        common_db_names = self.extract_common_part(lambda x: self.info[x].keys(), 'db  ', lambda x: x)
+
+        for db in common_db_names:
+            common_coll_names = self.extract_common_part(lambda x: self.info[x][db].keys(), 'coll', lambda x: '%s.%s' % (db, x))
+
+            for coll in common_coll_names:
+                self.extract_common_part(lambda x: self.info[x][db][coll].keys(), 'idx ', lambda x: '%s.%s -> %s' % (db, coll, x))
+
+
+    def run(self):
+        self.extract_info()
+        self.find_common_parts()
+
+
+if __name__ == '__main__':
+    CheckIndicesScript()

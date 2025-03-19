@@ -1,0 +1,35 @@
+{% set services = {"ssh": 6688, "tacacs": 6689, "idm":6690} %}
+
+storages:
+  - name: metrics_storage
+    plugin: fs
+    config:
+      directory: /var/lib/yandex/unified_agent/storage/metrics
+      max_partition_size: 500mb
+
+routes:
+  {%- for name in services %}
+  - input:
+      plugin: metrics_pull
+      config:
+        format:
+          solomon_json: {}
+        url: http://localhost:{{ services[name] }}/metrics
+        project: noc
+        service: nocauth-{{ name }}
+        poll_period: 15s
+        metric_name_label: sensor
+    channel:
+      channel_ref:
+        name: solomon_output
+  {%- endfor%}
+channels:
+  - name: solomon_output
+    channel:
+      pipe:
+        - storage_ref:
+            name: metrics_storage
+      output:
+        plugin: metrics_pull
+        config:
+          port: 11003

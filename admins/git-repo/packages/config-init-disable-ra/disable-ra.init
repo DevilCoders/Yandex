@@ -1,0 +1,158 @@
+#!/bin/bash -e
+
+### BEGIN INIT INFO
+# Provides:          disable-ra
+# Required-Start:    $local_fs $remote_fs $network
+# Required-Stop:     $local_fs $remote_fs $network
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: disables accept_ra for all network interfaces if RA tag not present in conductor
+# Description:       disables accept_ra for all network interfaces if RA tag not present in conductor
+### END INIT INFO
+
+export LANG=C
+
+MY_TAGS=""
+CONDUCTOR_TAGS_CACHE="/var/lib/config-init-disable-ra/conductor_tags"
+ENABLE_RA_TAG_RE=' RA '
+DOCKER_TAG_RE=' docker '
+SYSCTL_DISABLED_RA="
+net.ipv6.conf.default.accept_ra = 0
+net.ipv6.conf.default.autoconf = 0
+net.ipv6.conf.all.autoconf = 0
+net.ipv6.conf.all.accept_ra = 0
+"
+
+source /usr/local/sbin/autodetect_environment
+
+
+function get_interfaces_names() {
+    # skip lines 1,2 is headers, lo, tunnels and ifaces with ':'
+    netstat -i|awk 'NR>2 && $1 !~ /(:|^(lo|ip6tnl|4to6tun|tunl))/{print $1}'
+}
+
+function conductor() {
+   # conductor <method> <conductor_entity(host,group i.e)> format
+   local api="http://c.yandex-team.ru/api-cached" _r=0
+   until curl -sf "$api/$1/$2${3:+?format=}$3"; do
+      if ((_r+=1, _r >= ${MAX_CURL_RETRIES:=3})); then
+         echo "Failed to curl conductor #${MAX_CURL_RETRIES} times, exit!" >&2
+         exit 1
+      fi
+   done
+}
+
+function do_disable () {
+    echo "$SYSCTL_DISABLED_RA" > /etc/sysctl.d/60-disable-ra.conf
+
+    sysctl "net.ipv6.conf.all.accept_ra=0"
+    sysctl "net.ipv6.conf.all.autoconf=0"
+    sysctl "net.ipv6.conf.default.accept_ra=0"
+    sysctl "net.ipv6.conf.default.autoconf=0"
+
+    for iface in $(get_interfaces_names); do
+        iface_for_sysctl=${iface//.//}
+        sysctl "net.ipv6.conf.${iface_for_sysctl}.accept_ra=0" ||: # ignore
+        sysctl "net.ipv6.conf.${iface_for_sysctl}.autoconf=0"  ||: # errors
+
+        # autodetect and remove autoconfigured v6 addresses from ifaces
+        addr=$(
+            ip -o -6 addr show dev $iface scope global dynamic 2>/dev/null|\
+                awk '{print $4}'
+        )
+        if [ ! -z "$addr" ] ; then
+            echo "remove autoRA IPv6 addr $addr from interface $iface"
+            for ip in $addr ; do
+                ip addr del $ip dev $iface
+            done
+        fi
+    done
+}
+
+function do_enable () {
+    local tags="$1"
+    rm -f /etc/sysctl.d/60-disable-ra.conf
+    rm -f /etc/sysctl.d/disable-ra.conf # legacy
+
+    sysctl "net.ipv6.conf.all.accept_ra=1"
+    sysctl "net.ipv6.conf.all.autoconf=1"
+    sysctl "net.ipv6.conf.default.accept_ra=1"
+    sysctl "net.ipv6.conf.default.autoconf=1"
+
+    for iface in $(get_interfaces_names); do
+        iface_for_sysctl=${iface//.//}
+
+        if ((is_dom0_host && is_lxc_host)) && [[ "$iface" =~ "." ]]; then
+            # Do not enable RA on vlan bridges,
+            # no need in ip address on bridges for containers
+            # ignore posible errors here
+            sysctl "net.ipv6.conf.${iface_for_sysctl}.accept_ra=0" ||:
+            sysctl "net.ipv6.conf.${iface_for_sysctl}.autoconf=0" ||:
+        else
+            if [[ " $tags " =~ $DOCKER_TAG_RE && "$iface" =~ ^eth[0-9]+$ ]] ; then
+                echo "Docker here, preserve forwarding for $iface"
+                sysctl "net.ipv6.conf.${iface_for_sysctl}.accept_ra=2" ||:
+            else
+                sysctl "net.ipv6.conf.${iface_for_sysctl}.accept_ra=1" ||:
+            fi
+            sysctl "net.ipv6.conf.${iface_for_sysctl}.autoconf=1" ||:
+        fi
+    done
+}
+
+function get_tags () {
+    if MY_TAGS="$(conductor get_host_tags $(hostname -f))"; then
+        echo "$MY_TAGS" > $CONDUCTOR_TAGS_CACHE ||: # don't merge with next step
+        echo $MY_TAGS
+    else
+        echo $(<$CONDUCTOR_TAGS_CACHE)
+    fi
+}
+
+function die (){
+    echo "$@"
+    exit 0
+}
+
+function monrun () {
+    local tags="$1"
+
+    if [ ! -f "$CONDUCTOR_TAGS_CACHE" ]; then
+        die "2;No $CONDUCTOR_TAGS_CACHE, couldnt check RA tag"
+    fi
+
+    if ip -o -6 addr show scope global dynamic|grep -q dynamic; then
+        if [[ ! " $tags " =~ $ENABLE_RA_TAG_RE ]]; then
+            die "2;Found autocreated address (RA tag not present)"
+        fi
+    else
+        if [[ " $tags " =~ $ENABLE_RA_TAG_RE ]]; then
+            die "2;Not found autocreated address (RA tag present)"
+        fi
+    fi
+    die "0;OK"
+}
+
+case "$1" in
+    start|restart|stop)
+        echo "Check if RA must be disabled or enabled..."
+        MY_TAGS=$(get_tags)
+        if [[ " $MY_TAGS " =~ $ENABLE_RA_TAG_RE ]]; then
+            echo "RA tag present. Enabling ra"
+            do_enable "$MY_TAGS"
+        else
+            echo "RA tag not present. Disabling ra";
+            do_disable
+        fi
+        ;;
+    monrun)
+        MY_TAGS=$(get_tags 2>/dev/null)
+        monrun "$MY_TAGS"
+        ;;
+    *)
+        echo "2;Use $0 start or $0 restart or $0 stop to check"\
+        " if ra must be enabled or disabled and do it";
+        ;;
+esac
+
+exit 0

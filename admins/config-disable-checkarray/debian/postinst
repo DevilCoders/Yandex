@@ -1,0 +1,107 @@
+#! /bin/sh
+
+set -e 
+
+pkg=config-disable-checkarray
+conf="/etc/cron.d/mdadm"
+conf2="/etc/cron.daily/mdadm"
+pkg_dir="/usr/share/config-disable-checkarray"
+diverted_conf="${pkg_dir}/mdadm.orig"
+diverted_conf2="${pkg_dir}/mdadm.daily.orig"
+
+add_diversion() {
+  dpkg-divert --package $pkg --add --rename --divert "$2" "$1"
+}
+rm_diversion() {
+  dpkg-divert --package $pkg  --rename --remove "$1"
+}
+
+
+
+case "$1" in
+    configure)
+      if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        if [ "$VERSION_CODENAME" = "focal" ]; then
+          systemctl stop mdcheck_continue.timer mdcheck_start.timer mdmonitor-oneshot.timer 2>/dev/null || :
+          systemctl disable mdcheck_continue.timer mdcheck_start.timer mdmonitor-oneshot.timer 2>/dev/null || :
+          exit 0
+        fi
+      fi
+      if [ ! -e $pkg_dir ] ; then
+        mkdir -p $pkg_dir
+      fi
+
+      # CleanUp
+      if dpkg-divert --list | grep -qE "$conf .* $pkg"; then
+        if [ -e $conf ] ;then
+          rm $conf
+        fi
+        rm_diversion $conf
+      fi
+      if dpkg-divert --list | grep -qE "$conf2 .* $pkg"; then
+        if [ -e $conf2 ] ;then
+          rm $conf2
+        fi
+        rm_diversion $conf2
+      fi
+      mv -vf ${conf}.backup $conf 2>/dev/null || true
+      rm -vf /etc/cron.d/mdadm.*
+
+      # START Workaround for upgrade from version 1.0.0-0
+      version=`dpkg --status mdadm 2>/dev/null|awk '/Version:/ {print $2}' || true`
+      if [ -n "$version" ]; then
+        mdadm_pkg=`ls -1 /var/cache/apt/archives/mdadm_${version}*.deb 2>/dev/null|tail -1 || true`
+        tmp=`mktemp -d`
+        if [ -n "$mdadm_pkg" ] && [ -e "$mdadm_pkg" ]; then
+          md5_installed=`[ -e $conf ] && md5sum $conf|cut -d' ' -f1 || true`
+          md5_origin=`dpkg --status mdadm 2>/dev/null|grep $conf|awk '{print $2}'||true`
+          if [ -n "$md5_installed" -a "x$md5_installed" = "x$md5_origin" ]; then
+            echo "Configuration has not been changed. OK!"
+          else
+            dpkg --extract $mdadm_pkg $tmp
+            echo "Configuration is changed, restore the original"
+            if [ -e ${tmp}/${conf} ]; then
+              echo "Do 'cp -a ${tmp}/${conf} ${conf}'"
+              cp -a ${tmp}/${conf} ${conf}
+            else
+              echo "File $conf not found in mdadm_pkg, cannot restore the original"
+            fi
+          fi
+        fi
+        rm -rf ${tmp}
+      else
+        if [ -e $conf ] ;then
+          rm $conf
+        fi
+      fi
+      # END Workaround for upgrade from version 1.0.0-0
+
+      # Add diversions for any non-upgrade operation.
+      if ! dpkg-divert --list | grep -qE "$conf .* $pkg"; then
+        add_diversion $conf $diverted_conf
+      fi
+      if ! dpkg-divert --list | grep -qE "$conf2 .* $pkg"; then
+        add_diversion $conf2 $diverted_conf2
+      fi 
+
+      . /usr/local/sbin/autodetect_environment
+      if [ "$is_virtual_host" -eq 1 ] && [ "$is_kvm_host" -ne 1 ] && [ -e "/etc/init.d/mdadm" ]; then
+        echo "virtual CT, disable /etc/init.d/mdadm"
+        update-rc.d mdadm disable
+      fi
+ 
+
+    ;;
+    abort-upgrade|abort-remove|abort-deconfigure)
+
+    ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+    ;;
+esac
+
+exit 0
+

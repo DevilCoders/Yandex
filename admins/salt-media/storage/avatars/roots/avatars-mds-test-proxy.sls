@@ -1,0 +1,16 @@
+include:
+  - templates.parsers
+  - templates.yasmagent
+  - templates.ipvs_tun
+  - templates.certificates
+  - templates.push-client
+  - templates.lepton
+  - templates.unistat-lua
+  - templates.elliptics-tls
+  - templates.mavrodi-tls
+  - templates.karl-tls
+  - units.secrets
+  - units.yarl
+  - units.nscfg
+  - units.nginx
+  - units.mds-logbackup

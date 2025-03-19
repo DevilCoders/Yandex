@@ -1,0 +1,55 @@
+pipelines:
+  telemetry_jnx_interface:
+    - { pattern: "^(in|out)-octets", functions: [ { name: speed, argument: { multiplier: 8 } } ] }
+    - { pattern: "^(in|out).*", functions: [ { name: speed } ] }
+    - { pattern: "^(carrier-transitions|high-speed)", functions: [   ] }
+    - { pattern: ".*", functions: [ { name: drop } ] }
+  telemetry_jnx_queue:
+    - { pattern: "^.*bytes$", functions: [ { name: speed, argument: { multiplier: 8 } } ] }
+    - { pattern: "^.*pkts$", functions: [ { name: speed } ] }
+    - { pattern: "^((peak|cur|avg)-buffer-occupancy|allocated-buffer-size)$", functions: [ { name: speed } ] }
+
+pollers:
+  GNMI:
+    gnmi interfaces:
+      filter: [ "lab-vla-32z3.yndx.net" ]
+      port: 50051
+      username: "{{pillar['sec']['gnmi_password']}}"
+      password: "{{pillar['sec']['gnmi_login']}}"
+      encoding: "proto"
+      transform:
+        "/interfaces/interface":
+          series: telemetry_jnx_interface
+          values:
+            - { pattern: "^/interfaces/interface/state/(high[-_]speed)$", repl: "$1" }
+            - { pattern: "^/interfaces/interface/state/counters/(.+)$", repl: "$1" }
+            - { pattern: "^/interfaces/interface/init[-_]time$", drop: true }
+            - { pattern: "^/interfaces/interface/state/parent[-_]ae[-_]name$", drop: true }
+            - { pattern: "^/interfaces/interface/state/description$", to_tag: true }
+          tags:
+            - { pattern: "^/interfaces/interface/(name)$", repl: "ifname" }
+            - { pattern: "^/interfaces/interface/state/ifindex$" , drop: true }
+      subscriptions:
+        - path: /interfaces/interface/state/counters
+          subscription_mode: "sample"
+          sample_interval: "5s"
+    gnmi interfaces queue:
+      filter: [ "lab-vla-32z3.yndx.net" ]
+      port: 50051
+      username: "{{pillar['sec']['gnmi_password']}}"
+      password: "{{pillar['sec']['gnmi_login']}}"
+      encoding: "proto"
+      transform:
+        "/interfaces/interface":
+          series: telemetry_jnx_queue
+          values:
+            - { pattern: "/interfaces/interface/state/counters/out-queue/(.+)$", repl: "$1" }
+            - { pattern: "/interfaces/interface/init-time$", drop: true }
+            - { pattern: "/interfaces/interface/state/parent-ae-name$", drop: true }
+          tags:
+            - { pattern: "^/state/counters/out-queue/queue-number$", repl: "queue" }
+            - { pattern: "^/interfaces/interface/name$" , repl: "ifname" }
+      subscriptions:
+        - path: /junos/system/linecard/interface/queue/
+          subscription_mode: "sample"
+          sample_interval: "5s"

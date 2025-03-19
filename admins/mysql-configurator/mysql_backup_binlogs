@@ -1,0 +1,150 @@
+#!/usr/bin/env python2
+# -*- coding: utf-8 -*-
+#pylint: disable=invalid-name
+"""
+mysql backup binlogs script
+"""
+
+import io
+import shutil
+import os
+import sys
+import argparse
+import logging
+import subprocess
+from collections import defaultdict
+from setproctitle import setproctitle  # pylint: disable=no-name-in-module, import-error
+import mysql_configurator.backup.utils as utils
+from mysql_configurator.backup.constants import LOCK_FLAG
+from mysql_configurator import load_config, log2file
+from mysql_configurator.mysql import MySQL, MySQLError
+from mysql_configurator.backup import S3Pusher, FTPPusher, check_output
+
+
+def get_local_logs():
+    """Query mysql about master logs"""
+    log = logging.getLogger("get_local_logs")
+    mysql = MySQL()
+    if not mysql.connect():
+        log.error("Failed to connec mysql")
+        sys.exit(1)
+    master_logs = {}
+    try:
+        master_logs = mysql.query("show master logs", as_dict=True)
+    except MySQLError:
+        log.exception("Failed to get master logs")
+    return master_logs
+
+
+def get_remote_logs(pusher):
+    """Check remote logs and partial uploads"""
+    log = logging.getLogger("get_remote_logs")
+
+    remote_logs = defaultdict(int)
+    for name, size in pusher.list("binlogs").iteritems():
+        try:
+            if '-from-' in name and '-to-' in name:
+                name, _, from2to = name.partition('-from-')
+                _, _, s_to = from2to.partition('-to-')
+                s_to = int(s_to)
+                size = s_to
+            if remote_logs[name] < size:
+                remote_logs[name] = size
+        except ValueError:
+            log.debug("Skip name %s", name)
+    return remote_logs
+
+
+def get_binlog_directory():
+    """Query mysqld about binlog directory path"""
+
+    stdout = check_output(subprocess.Popen(
+        ["/usr/sbin/mysqld --help --verbose|awk '/^log-bin/{print $NF}'"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        shell=True,
+    ), "Could not determine binlog directory")
+    if not stdout:
+        sys.exit(1)
+    return stdout.rsplit("/", 1)[0]
+
+
+def binlogs(conf):
+    """Backup binary logs"""
+    log = logging.getLogger("binlogs")
+
+    if conf.backup.transport == "s3cmd":
+        log.debug("Use transport s3cmd")
+        pusher = S3Pusher(conf.backup)
+    else:
+        log.debug("Use transport ftp (python ftplib)")
+        pusher = FTPPusher(conf.backup)
+        pusher.ensure_path("binlogs")
+
+    binlog_directory = get_binlog_directory()
+    log.debug("Use binlog directory %s", binlog_directory)
+    os.chdir(binlog_directory)
+    remote_logs = get_remote_logs(pusher)
+    log.debug("Remote logs %s", dict(remote_logs))
+
+    master_logs = get_local_logs()
+    if not master_logs:
+        log.warn("Could not get log list, exit")
+        sys.exit(1)
+    log.debug("Master logs: %s", master_logs)
+
+    for name in master_logs:
+        suffix = ""
+        position = remote_logs[name]
+        local_size = master_logs[name]
+        if not pusher.appendable and position > 0:
+            suffix = '-from-{}-to-{}'.format(position, local_size)
+        if position >= local_size:
+            continue
+        log.debug("Copying %s (from position %s)", name, position)
+        logfile = open(os.path.join(binlog_directory, name), "rb")
+        logfile.seek(position, io.SEEK_SET)
+
+        name = "{0}{1}".format(name, suffix)
+        pusher.reset(os.path.join("binlogs", name), pusher.appendable)
+        shutil.copyfileobj(logfile, pusher.stdin)
+
+    log.debug("Stop pusher")
+    pusher.stop()
+
+
+def zk_lock_exists(conf):
+    """Check zklock existence"""
+    if conf.backup.enabled:
+        return utils.is_exists_and_younger_than(LOCK_FLAG, "23.9h")
+    return False
+
+
+def main():
+    """main"""
+    setproctitle("mysql-backup-binlogs (4 series)")
+    parser = argparse.ArgumentParser(description='Mysql Backup Binlogs')
+    parser.add_argument('--force', help="Don't check zk lock", action='store_true')
+    args = parser.parse_args()
+    conf = utils.render_backup_config(load_config())
+
+    if not sys.stdout.isatty():
+        log2file("/var/log/mysql-backup-binlogs.log")
+
+    log = logging.getLogger("main")
+    if conf.backup.disable_backup_binlogs:
+        if not sys.stdin.isatty():
+            log.info("Backup binlogs disabled")
+            sys.exit(0)
+        log.warn("Launched from console, ignore 'disable_backup_binlogs' config")
+
+    if args.force or zk_lock_exists(conf):
+        binlogs(conf)
+    else:
+        log.info("The backup lock doesn't exist, skipping backups")
+
+    log.info("Backup binlogs completed")
+
+
+if __name__ == "__main__":
+    main()

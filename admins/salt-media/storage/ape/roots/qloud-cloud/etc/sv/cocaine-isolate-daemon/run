@@ -1,0 +1,46 @@
+#!/bin/bash
+
+export LC_ALL=en_US.UTF-8
+export LANG=en_US.UTF-8
+export LANGUAGE=en_US.UTF-8
+
+ulimit -c unlimited
+ulimit -n 65535
+
+sleep 5
+exec 2>&1
+if [ ! -f /var/tmp/isolate_daemon_conf_ok ]
+then
+    echo "INFORMATION: portoctl limits"
+    portoctl get self
+    touch /var/tmp/isolate_daemon_conf_ok
+fi
+while [ ! -f /var/tmp/ephemeral_ok ]
+do
+    sleep 60
+done
+DOM0=$(/usr/local/bin/get_qloud_data.py dom0_hostname)
+sed -i "s/__DOM0__/$DOM0/g" /etc/cocaine-isolate-daemon/cocaine-isolate-daemon.conf
+if [ $? != 0 ]
+then
+    echo "ERROR: cant change __DOM0__ in cocaine config"
+    exit 1
+fi
+RESOLV=$(perl -pe 's/\n/;/g' /etc/resolv.conf)
+sed -i "s/__RESOLV__/$RESOLV/g" /etc/cocaine-isolate-daemon/cocaine-isolate-daemon.conf
+if [ $? != 0 ]
+then
+    echo "ERROR: cant change __RESOLV__ in cocaine config"
+    exit 1
+fi
+
+# START https://st.yandex-team.ru/COCAINE-2836
+portoctl create addrs_annonce
+portoctl set addrs_annonce net "L3 veth"
+portoctl set addrs_annonce ip "veth 2a02:6b8:c01:715:0:4327:118:1111;veth 2a02:6b8:c01:715:0:4328:118:1111;veth 2a02:6b8:c01:715:0:40b8:118:1111;veth 2a02:6b8:c01:715:0:42df:118:1111;veth 2a02:6b8:c01:715:0:4134:118:1111;veth 2a02:6b8:c01:715:0:42e0:118:1111;"
+# END
+
+touch /var/tmp/isolate_daemon_ok
+
+exec /usr/bin/cocaine-isolate-daemon --config=/etc/cocaine-isolate-daemon/cocaine-isolate-daemon.conf
+

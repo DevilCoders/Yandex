@@ -1,0 +1,54 @@
+---
+name: video_moderator_status
+parsing:
+  groups: [video-moderator]
+  metahost: video-prod-moderator
+  DataFetcher:
+    timetail_url: "/timetail?pattern=video_moderator_nosql&type=tskv&log_ts="
+  Combainer:
+      MINIMUM_PERIOD: 55
+aggregate:
+  data:
+    nginx:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.video
+    juggler_nginx_5xx:
+      type: juggler
+      namespace: video
+      Host: "moderator.video.yandex.net"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 300
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - bpsavelev
+                - ignition
+      Aggregator: timed_more_than_limit_is_problem
+      checkname: nginx_5xx
+      description: nginx_5xx
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 2,time_end: 1,day_end: 7,day_start: 1}]
+      CRIT: ["${nginx}['5xx']>1"]
+      tags:
+        - production
+---
+name: video_moderator_java
+parsing:
+  groups: [video-moderator]
+  metahost: video-prod-moderator
+  agg_configs: [video_java_agg]
+  DataFetcher:
+    logname : "yandex/video/moderator.log"
+    timetail_url: "/timetail?pattern=java_nosql&type=java&log_ts="

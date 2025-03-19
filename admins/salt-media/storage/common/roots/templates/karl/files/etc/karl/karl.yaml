@@ -1,0 +1,484 @@
+{%- set config = vars -%}
+
+# https://a.yandex-team.ru/arc/trunk/arcadia/mds/karl/cmd/karl/server.yaml
+# app server config. App curently only responses on Ping messages, checking status of all the modules.
+app:
+  grpc_endpoint: ":17895"
+  secure_grpc: true
+# modules to enable in karl.
+# all of them have the same fields:
+# * grpc_endpoint to bind onto. For discovery instead empty hostname gethostname() will be called
+# * secure_grpc. whether to enable tls.
+# * http_endpoint. Endpoint to serve http if the module have such ability.
+# * secure_http. Whether to use https or not. Doesn't work right now.
+# * http_prefix. Routing prefix. On this prefix the module will serve it's handlers.
+# NB: if some modules have same grpc_endpoint or http_endpoint they will be serving on the same endpoint, but
+# security option (secure_grpc or secure_http) should be equal.
+modules:
+  {% if config.is_control -%}
+  # module, which provides DB controlling operations, such as assigning couple to shard, etc.
+  control:
+    grpc_endpoint: ":17896"
+    secure_grpc: true
+  # module for yarl endpoint
+  yarl:
+    grpc_endpoint: ":17900"
+    secure_grpc: true
+  {%- else -%}
+  # module, which serves storage operations (write, remove, read).
+  karl:
+    grpc_endpoint: ":17895"
+    secure_grpc: true
+  # job module, which is responsible to run periodic jobs
+  job:
+    grpc_endpoint: ":17898"
+    secure_grpc: true
+  # module, which implements gossip based discovery, disabled by default
+  # tattler:
+  #   grpc_endpoint: ":17901"
+  #   secure_grpc: true
+  {%- endif %}
+  # module for http pprof endpoint
+  pprof:
+    http_endpoint: "[::1]:17899"
+    secure_http: false
+    http_prefix: "/debug/pprof/"
+  # unistat module. Serves unistat handle on http
+  unistat:
+    http_endpoint: ":17897"
+    secure_http: false
+
+# server logging parameters
+log:
+  # common logging
+  common:
+    # minimum verbosity of the logger, one of "trace", "debug", "info", "warn", "error", "fatal"
+    level: info
+    # encoding of log message, one of "tskv", "json", "console", "cli", "kv"
+    encoding: tskv
+    # an array of "sinks" (output facilities), several can be specified - in this case everything will be duplicated
+    sinks:
+      - logrotate+async:///var/log/karl/karl.log
+
+  # access logger is configured the same way as common logger, server writes single log record
+  # into access log for every handled remote call with extra fields like status, timings, etc
+  access:
+    level: info
+    encoding: tskv
+    sinks:
+      - logrotate+async:///var/log/karl/access.log
+
+# datacenter which Karl is deployed in
+# Possible values: VLA, MYT, IVA, MAN, SAS, UNKNOWN
+dc: "{{ grains['conductor']['root_datacenter'] | upper }}"
+
+# federation which Karl belongs to
+# # Positive non-zero
+federation_id: {{ config.federation }}
+
+# Section defines TLS config for GRPC server
+tls:
+  # Enable or disable TLS
+  enabled: {{ config.tls|lower }}
+  # Path to certificate
+  cert_path: "/etc/karl/ssl/karl.crt"
+  # Path to private key
+  key_path: "/etc/karl/ssl/karl.key"
+  # Paths to CA certificates
+  ca_paths: ["/etc/karl/ssl/ca.crt"]
+  # Verify client's certificates (default=true)
+  verify: true
+
+grpc_keepalive:
+  # If a client pings more than once every MinTime seconds, terminate the connection
+  min_time: 5s
+  # Allow pings even when there are no active streams
+  permit_without_stream: true
+
+# Karl discovery settings. Karl uses zookeeper to be discovered by Karl clients.
+discovery:
+  {% if config.is_control -%}
+  enabled: false
+  {%- endif %}
+  # Zookeeper session timeout - sets ping frequency (and ephemeral node lifetime)
+  timeout: 30s
+  # Retry delay when connecting to zookeeper
+  connect_retry_delay: 10s
+  # Retry delay when announcing node to zookeeper
+  announce_retry_delay_min: 10ms
+  announce_retry_delay_max: 10s
+  # Zookeeper hosts to connect to
+  hosts:
+    {%- for host in config.zk.hosts %}
+    - "{{ host }}"
+    {%- endfor %}
+  # Discovery prefix. Can be used for namespacing several different group of Karls
+  prefix: "{{ config.discovery_prefix }}"
+
+tattler:
+  #port should have the same value for all instance
+  port: 17902
+  seed_addresses:
+    {%- for remote in config.elliptics_remotes %}
+    - "{{ remote }}"
+    {%- endfor %}
+
+  enable_compression: true
+  enable_encryption: true
+  randomized_node_id: false
+  enable_rejoin: true
+
+# contains setting to get know about emergency mode
+red_button:
+  # if enable Karl will watch for mode change otherwise Kar works in normal way
+  enabled: {{ config.red_button_enabled|lower }}
+  zk_endpoints:
+    {%- for host in config.zk.hosts %}
+    - "{{ host }}"
+    {%- endfor %}
+  # The provided session timeout sets the amount of time for which a session is considered valid after losing connection to a server.
+  connect_timeout: 10s
+  # timeout for waiting to init RedButton
+  init_timeout: 5s
+  # time to try get mode from zk before give up
+  retry_elapsed_time: 24h
+  prefix: "/{{ config.red_button_prefix }}"
+  # log to store operations in emergency mode
+  log:
+    level: debug
+    encoding: tskv
+    # array of sinks; to disable logging pass '/dev/null'
+    sinks:
+      - logrotate:///var/log/karl/red-log.log
+
+# Initial elliptics remotes to start connection to elliptics cloud.
+# They act as seed to gather info about all storage nodes and establish connection to each one.
+# TODO: Right now those addresses are being resolved and go returns ip4 addresses for hostnames.
+elliptics:
+  remotes:
+    {%- for remote in config.elliptics_remotes %}
+    - "[{{ salt['dnsutil.AAAA'](remote)[0] }}]:1025"
+    {%- endfor %}
+  die_limit: {{ config.die_limit|int }}
+  node:
+    # Logger defines config for logger which will be used by elliptics node
+    # Field "level" defines minimum verbosity of the logger. If map contains "path",
+    # the value will be used to configure simple logging as path to log file,
+    # otherwise "core" and "access" sections will be used as blackhole configs
+    logger:
+      # Path where logger should write its logs (default: logging disabled)
+      # path: /var/log/karl/elliptics.log
+      # Level defines level of logger verbosity, one of the "debug", "notice", "info", "warning", "error" (default=error)
+      level: error
+      access:
+          [{
+              "sinks": [{
+                  "type": "asynchronous",
+                  "sink": {
+                      "type": "file",
+                      "path": "/var/log/karl/elliptics.log",
+                      "flush": 100
+                  },
+                  "factor": 16,
+                  "overflow": "wait"
+              }],
+              "formatter": {
+                  "mutate" : {
+                     "timestamp" : {
+                        "gmtime" : false,
+                        "strftime" : "%Y-%m-%dT%H:%M:%S.%f"
+                     }
+                  },
+                  "type": "tskv",
+                  "remove": [
+                      "severity",
+                      "message"
+                  ]
+              }
+      }]
+      core:
+          [{
+              "formatter": {
+                  "type": "string",
+                  "sevmap": ["DEBUG", "INFO", "WARN", "ERROR"],
+                  "pattern": "{timestamp:l} {trace_id:{0:default}0>16} {thread:d}/{process:d} {severity}: {message}, attrs: [{...}]"
+              },
+              "sinks": [
+                  {
+                      "type": "asynchronous",
+                      "factor": 16,
+                      "overflow": "wait",
+                      "sink": {
+                          "type": "file",
+                          "path": "/var/log/karl/node-1.log",
+                          "flush": 100
+                      }
+                  }
+              ]
+      }]
+    # TLS defines config for TLS
+    tls:
+      # Support defines level of TLS support: "disabled", "allowed", "required" (default=disabled)
+      support: allowed
+      # CertificatePath defines path to certificate
+      cert_path: "/etc/elliptics/ssl/storage.crt"
+      # PrivateKeyPath defines path to private key
+      key_path: "/etc/elliptics/ssl/storage.key"
+      # CAPath defines path ot ca directory
+      ca_path: "/etc/elliptics/ssl/"
+      # VerifyCertificates defines whether certificates should be verified (default=true)
+      verify: true
+
+    # IOThreads defines number of IO threads in elliptics node (default=1)
+    io_thread_num: 4
+    # NonBlockingIOThreads defines number of nonblocking IO threads in elliptics node (default=1)
+    nonblocking_io_thread_num: 6
+    # NetThreads defines number of net threads in elliptics node (default=1)
+    net_thread_num: 4
+    # WaitTimeout defines default timeout in seconds for further operations (default=5)
+    wait_timeout: 20
+    # CheckTimeout defines timeout in seconds with with check thread should be waked up (default=60)
+    check_timeout: 60
+    # Flags defines elliptics config flags
+    flags: 0
+    # StallCount defines number of timed-out operations in a row after which
+    # connection to problem node will be checked (default=3)
+    stall_count: 3
+    # EllipticsFeatures defines which experimental features should be enabled
+    features:
+      # Forcing to enable the feature_a
+      independent_protocol: true
+
+# This section controls settings of the sharding metabase, which stores info about federations, shards, couple mapping etc
+mdb:
+  # federation to assign Karl to.
+  federation: "{{ config.mdb.federation }}"
+  # Sharding DB hosts and ports
+
+  meta_addresses:
+    {%- for mdb_host in config.mdb.hosts %}
+    - "{{ mdb_host }}:6432"
+    {%- endfor %}
+
+  # Timeout for updating the list of couples
+  update_timeout: "{{ config.mdb.update_timeout }}"
+
+  # Shard DB settings
+  shard:
+    # Credentials and database to connect
+    user: "karl"
+    password: "{{ config.mdb.pass }}"
+    dbname: "karl"
+    # SSL mode choices=[disable, allow, prefer, require, verify-ca, verify-full] (default="allow")
+    ssl_mode: "verify-full"
+    # The cert is used to connect to shards stored in shard DB (default="")
+    ssl_root_cert: "/etc/karl/{{ config.mdb.sslrootcert }}"
+    # Maximum number of idle connections to DB.
+    # if number of idle connections is greater than this setting driver will lazily close them.
+    # Greater amount can help to avoid vzdrizhne
+    max_idle_conns: {{ config.mdb.max_idle_conns }}
+    # Maximum number of open connections to DB.
+    # Can help to avoid db connection overwhelming.
+    # Default is 0, which means no limit
+    max_open_conns: 0
+    # Maximum lifetime of a connection.
+    # 0 means that a connection is reused forever, which seems ok
+    max_conn_lifetime: 0s
+    # Timeout for waiting of master
+    # If the timeout ends, the connection will be closed
+    wait_master_timeout: 5s
+    # log level for all db operations.
+    # NB: it doesn't support text unmarshalling as it is driver provided log level
+    # 6 - trace, 5 - debug, 4 - info, 3 - warn, 2 - error, 1 - none
+    # default is 3 (warn)
+    log_level: 3
+    connection_gc_period: {{ config.mdb.connection_gc_period }}
+    # interval to check for master in PG cluster
+    update_interval: 5s
+    # timeout to check for master. If the node do not respond during this time it is considered dead.
+    update_timeout: 1s
+    # log all cluster events under the hood
+    log_cluster_events: false
+
+  # provider for cache of couple mapping either "mdb" or "grpc"
+  # "mdb" uses direct access to postgres, using "meta" section parameters.
+  # This is quite heavy for DB if we have many karl nodes
+  # "grpc" accesses couple mapping via caching grpc server (control module)
+  meta_cache_provider: {{ config.mdb.meta_cache_provider }}
+  # config section for "grpc" cache provider
+  meta_grpc:
+    upstreams:
+      - host: "{{ config.meta_grpc_host }}"
+        secure: true
+    connect_timeout: 5s
+
+  # Meta DB settings. Settings are the same as in shard section below
+  meta:
+    user: "karl"
+    password: "{{ config.mdb.pass }}"
+    dbname: "{{ config.mdb.db }}"
+    ssl_mode: "verify-full"
+    ssl_root_cert: "/etc/karl/{{ config.mdb.sslrootcert }}"
+    max_idle_conns: {{ config.mdb.max_idle_conns }}
+    max_open_conns: 0
+    max_conn_lifetime: 0s
+    log_level: 3
+
+# This section holds parameters to control elliptics operations fine tuning such as timeouts,
+# checksumming rate, etc.
+operation:
+  # Chunk write timeout
+  write_timeout: 5s
+  # Key remove timeout
+  remove_timeout: 20s
+  # Heuristic timeout addition on write retry. See libmds for detailes.
+  scale_group_retry_timeout_mutiplier: 2.0
+  # Checksum rate. Used to calculate heuristic write timeout addition for last chunk write in order to calculate data checksum
+  checksum_rate: 10000000
+  # Retry count for writing chunk in case error can be retried.
+  write_retry_cnt: 5
+  commit_queue:
+    # Size of queue per couple
+    size: 100
+    # Size of batch for mdb updates
+    batch_size: 20
+    # If batch size is not reached records will be flushed after this delay
+    delay: 10s
+    # Stop checking the queue after this timeout of idle time
+    clear_after: 1h
+    # Retry with exponential backoff from min to max timeout. Next timeout = 2 * current timeout
+    retry_timeout_min: 1000ms
+    retry_timeout_max: 5s
+
+  validator:
+    read:
+      enabled: {{ config.validator.enabled|lower }}
+      max_sample_size: 10000
+      batch_size: 1000
+      batch_max_delay: 10s
+      n_workers: 4
+      fallback_limiter:
+        rate: 10.0
+        burst: 10
+
+nscfg:
+  endpoint: "http://{{ config.nscfg_host }}:9532"
+  cache_path: "/var/cache/karl/nscfg-cache.json"
+  update_interval: 1m
+  load_timeout: 10s
+
+job:
+  artifacts_dir: "/var/log/karl/jobs"
+  log:
+    level: info
+    encoding: tskv
+    # array of sinks, use <artifacts_dir> and <karl_job_id> as tokens for replacing
+    sinks:
+      - async://<artifacts_dir>/<karl_job_id>/job.log
+  # uses elliptics BulkLookup instead of multiple Lookup commands if set to true
+  bulk_lookup_enabled: true
+  # issues lookup_concurrency lookups simultaneously if bulk lookup is disabled
+  lookup_concurrency: 8
+  # job status notification settings (primary used to notify mm about job status change)
+  notification:
+    # whether to use tls
+    secure: false
+    # tls config(if applicable)
+    tls: {}
+    # retry policy - max amount of time to try to notify
+    max_overall_time: 48h
+    # retry policy - min interval to retry notification
+    min_retry_interval: 1s
+    # retry policy - max interval to retry notification
+    max_retry_interval: 1h
+    # retry policy - timeout to connect to notification service.
+    notify_connect_timeout: 4s
+    # retry policy - timeout to perform notification request.
+    notify_timeout: 4s
+    # hosts of the notification service. If no hosts are provided - NullNotifier is used
+    hosts:
+      {%- for host in config.mm.notification_hosts %}
+      - "{{ host }}:9010"
+      {%- endfor %}
+  # mds14881 specific settings
+  mds14881:
+    partial_quorum_threshold: 100500
+
+# Path to original pgmigrate tool
+pgmigrate: "/usr/bin/karl-pgmigrate"
+
+mmcache:
+  endpoints:
+    {%- for host in config.mm.drooz %}
+    - http://{{ host }}:8383
+    {%- endfor %}
+  cache_path: "/var/cache/mastermind/karl"
+  update_interval: {{ config.mm.update_interval }}
+  updates_per_change_endpoint: 10
+  cache_max_lifetime: 24h
+
+{% if config.yarl.upstreams -%}
+# yarl limiter settings (limiter config chapter in yarl for aggregator)
+yarl:
+  quota_spaces:
+    # maximum number of retries to do initial load
+    # zero means infinitely
+    max_load_retries_time: 0
+    names:
+      - karl
+
+  # How often we need to check for new quotas, default is 1s.
+  quota_update_period: 1s
+  # How often to sync counters, it's recommended to stick to default 1s value.
+  counters_update_period: 1s
+  # How often do we need to purge stale downstreams' counters data
+  gc_interval: 10m
+  # correction ratio
+  correction: 0.8
+  # fetch concurrency
+  quota_fetch_concurrency: 1
+  # default behaviour when quota is not found "pass" or "reject"
+  default_behaviour: "pass"
+  quota_updater:
+    # empty for yarl to be disabled
+    upstreams:
+      {%- for upstream in config.yarl.upstreams %}
+      - type: grpc
+        endpoint: "{{ upstream }}:14589"
+        grpc:
+          timeout: 1m
+          limit: 10000
+      {%- endfor %}
+  # Counters sync settings
+  counters_updater:
+    # timeout for upstream when more than half of them are ready
+    soft_timeout: 500ms
+    # timeout for upstream when less than half of them are ready
+    hard_timeout: 5s
+    # time to freeze upstream when we failed to sync with
+    freeze_time: 10s
+    # upstreams to sync with, only endpoint
+    # If no endpoints are present YARL works in master-server mode, topping up all the buckets with
+    # lower bound values
+    # empty for yarl to be disabled
+    upstreams:
+      {%- for upstream in config.yarl.upstreams %}
+      - endpoint: "{{ upstream }}:14589"
+      {%- endfor %}
+{%- endif %}
+
+# YT settings
+yt:
+  endpoint: {{ config.yt.endpoint }}
+  cluster: hahn
+  oauth_token: {{ config.yt.token }}
+  # timeout specifies timeout to YT in seconds
+  timeout: 7200
+  # tx_timeout specifies timeout of YT transaction in seconds
+  tx_timeout: 1800
+  # tx_ping_period specifies period of pings for YT transactions in seconds
+  tx_ping_period: 5
+   # count of rows in one batch to inert into YT table, should be less than 100000
+  rows_batch_size: 90000
+  # nuber of attempts of inserting data to yt
+  attempts: 3

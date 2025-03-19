@@ -1,0 +1,14 @@
+include:
+  - units.rsyslog
+  - units.valve.rsyslog-config
+  - units.juggler-checks.common
+  - units.juggler-checks.valve
+  - units.juggler-checks.valve-ping
+  - units.juggler-checks.valve-panic
+  - units.postgres
+  - templates.certificates
+  - templates.unistat-lua-base
+  - units.unified-agent
+  - units.valve.unified-agent-config
+  - units.unified-agent.monitoring
+  - units.valve

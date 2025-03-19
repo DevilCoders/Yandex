@@ -1,0 +1,62 @@
+---
+name: mediabilling-prod-billing-nginx
+parsing:
+  groups: [mediabilling-prod-billing]
+  DataFetcher:
+    timetail_url: "/timetail?pattern=nginx-status&type=tskv&log_ts="
+aggregate:
+  data:
+    nginx:
+      type: custom
+      class: Multimetrics
+      factor: 1000
+      perHost: YES
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.mediabilling
+    http_codes:
+      type: juggler
+      plugin: picker
+      Host: "mediabilling-prod-billing"
+      Aggregator: timed_more_than_limit_is_problem
+      checkname: "nginx_status_code"
+      description: "nginx status code errors"
+      ttl: 90
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            delay: 900 # seconds
+            logins:
+              - '@svc_musicbackend:music-infra'
+              - stepanar
+              - skacheev
+              - paulus
+      tags: ['mediabilling']
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 2,time_end: 1,day_end: 7,day_start: 1}]
+      variables:
+        # с 19 до 8 утра первый порог (предпоследний параметр), в остальное время последний
+        night_limit_rps: "iftimeofday(19, 8, 10, 2)"  # MUSIC-15439#1511200358000
+      config:
+        history: 3
+        type: metahost
+        # двойные скобки заставляют плагин вытаскивать имя сервиса (первые скобки)
+        # и описание проверки (вторые скобки) как одну и ту же подстроку
+        # это нужно для указания лимитов
+        query: "^(([45][0-9x][0-9x]))$"
+        # префикс, который появится в имени проверки в juggler
+        prefix: "nginx_"
+        limits:
+          # если имя проверки не соотвестует описанию (смотри описание query)
+          # то описание лимитов будет таким {limits: {"serviceName":{"desc": <limit>}}}
+          # новый формат делает описание лимитов более плоским.
+          # limits: {<serviceName or desc>: <limit>}
+          # где <limit> может быть
+          # - простым числом (N)
+          # - списком из [<N or variable>, <description>]
+          # - диктом из {limit: <N or variable>, explain: <description>}
+          "500": [0.05, "combainer. too many 500 status code. See /var/log/nginx/access.log"]
+          "404": [0.05, "combainer. too many 404 status code. See /var/log/nginx/access.log"]
+          "default": [0.2, "combainer. too many [45]xx status code. See /var/log/nginx/access.log"]

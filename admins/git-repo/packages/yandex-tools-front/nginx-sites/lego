@@ -1,0 +1,41 @@
+upstream lego_upstream {
+        server lego01e.tools.yandex.net max_fails=1 fail_timeout=20s;
+}
+
+server {
+  listen 80;
+  listen 443;
+
+  server_name lego.*;
+
+  access_log /var/log/nginx/lego.access.log main;
+
+  location / {
+    if ($scheme = "https") {
+      rewrite ^/(.*)$ http://lego.yandex-team.ru/$1 redirect;
+    }
+			
+    proxy_pass http://lego_upstream;
+    proxy_set_header Host                   lego.yandex-team.ru;
+    proxy_set_header X-Real-IP              $remote_addr;
+  }
+}
+
+server {
+  listen 80;
+  listen 443;
+
+  server_name ~^(?<sub>[^\.]+)\.lego\..*$;
+  access_log /var/log/nginx/lego.access.log main;
+
+  location / {
+    if ($scheme = "https") {
+      rewrite ^/(.*)$ http://$sub.lego.yandex-team.ru/$1 redirect;
+    }
+
+    proxy_pass http://lego_upstream;
+    proxy_set_header Host                   $sub.lego.yandex-team.ru;
+    proxy_set_header X-Real-IP              $remote_addr;
+  }
+}
+

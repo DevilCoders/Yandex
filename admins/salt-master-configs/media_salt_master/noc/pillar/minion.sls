@@ -1,0 +1,2 @@
+minion:
+  managed: False

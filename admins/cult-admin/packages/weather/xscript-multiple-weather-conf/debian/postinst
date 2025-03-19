@@ -1,0 +1,48 @@
+#!/bin/bash
+## Variables
+PKGNAME="xscript-multiple-weather-conf"
+WORKDIR="/usr/share/yandex-configs/$PKGNAME"
+
+# Get host information
+HOST=`hostname -f`
+GROUP=`curl -fs "http://c.yandex-team.ru/api/hosts/$HOST?format=yaml" | grep 'group' | awk '{print $NF}'`
+PROJECT=`curl -fs "http://c.yandex-team.ru/api/groups2projects/$GROUP?format=yaml" | grep 'name' | awk '{print $NF}'`
+CORE_DC_VLAN=`ip ro | grep default | awk '{print $3}'`
+
+## Helpers
+# Get environment type
+if [ -f "/etc/yandex/environment.type" ]; then
+        ENVIR=`cat /etc/yandex/environment.type`
+else
+        echo 'No /etc/yandex/environment.type, trying detect env by conductor group'
+        preenvir=`echo $GROUP | awk -F\- '{print $NF}'`
+        if [[ "$preenvir" == "testing" ]] || [[ "$preenvir" == "prestable" ]]; then
+                ENVIR=`echo $preenvir`
+        else
+                ENVIR="production"
+        fi
+fi
+
+# Function to make symlinks
+function create_symlink {
+        src=$1
+        dst=$2
+        if [ ! -L $dst ]; then
+                if [ ! -f $dst ]; then
+                        ln -s $src $dst
+                else
+                        echo "File exists, removing $dst and making symlink on $src"
+                        rm -f $dst
+                        ln -s $src $dst
+                fi
+        else
+                echo "Symlink already exists. Rewriting"
+		ln -f -s $src $dst
+        fi
+}
+
+create_symlink /etc/xscript-multiple/conf-enabled/xscript-weather/xscript-${ENVIR}.conf /etc/xscript-multiple/conf-enabled/xscript-weather/xscript.conf
+mkdir -p /var/cache/libdps/ var/log/xscript-multiple /var/cache/xscript-multiple
+chown -R www-data:www-data /var/log/xscript-multiple /var/cache/xscript-multiple /var/cache/libdps/
+if [ ! $(nameclt resolve Yandex/Auth/Factory.id 2>/dev/null)  ]; then nameclt  bind_new_context Yandex; nameclt  bind_new_context Yandex/Auth;   nameclt  bind  Yandex/Auth/Factory.id IOR:010000001b00000049444c3a59616e6465782f41757468466163746f72793a312e30000001000000000000006c0000000101020016000000617574682e636f7262612e79616e6465782e6e65740012720d000000ff6175746800466163746f72790000000200000000000000080000000100000000545441010000001c00000001000000e30402100100000001000105090101000100000009010100; fi
+echo -n "$HOST configured with $PKGNAME"

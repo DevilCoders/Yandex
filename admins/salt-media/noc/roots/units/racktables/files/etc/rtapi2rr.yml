@@ -1,0 +1,52 @@
+rrtcp:
+  {%- if salt['file.directory_exists' ]('/usr/share/rtapi2rr/rtapi') %}
+  command:  "php rtapi/rtapi2rr.php"
+  {%- else %}
+  command:  "php rtapi2rr.php"
+  {%- endif %}
+  statsd:
+    service: rtapi2rr
+    tags:
+      _db: racktables
+      api: rtapi2rr
+      {%- if grains['yandex-environment'] != 'production' %}
+      instance: rtapi2rr-{{grains['yandex-environment']}}
+      _cluster: {{ grains['yandex-environment'] }}
+      {%- else %}
+      instance: rtapi2rr
+      {%- endif %}
+  listen: 0.0.0.0:8036
+  idleTimeout: 10s
+  ssl:
+    key: /home/racktables/racktables.crt
+    cert: /home/racktables/racktables.crt
+  accessLog:
+    mode: production
+    file_logger_options:
+      log_output: /var/log/rtapi2rr/access.log
+  poolConfig:
+    numWorkers: 48
+    allocateTimeout: 120s
+    limits:
+      max_worker_memory: 1512
+      {%- if grains['yandex-environment'] != 'production' %}
+      ttl: 30s
+      {%- else %}
+      ttl: 60s
+      {%- endif %}
+      idle_ttl: 0
+      exec_ttl: 0
+server:
+  relay: pipes
+rpc:
+  listen: tcp://127.0.0.1:6001
+logs:
+  {%- if grains['yandex-environment'] != 'production' %}
+  mode: development
+  level: debug
+  {%- else %}
+  mode: production
+  {%- endif %}
+  encoding: console
+syslog:
+  tag: "rtapi2rr"

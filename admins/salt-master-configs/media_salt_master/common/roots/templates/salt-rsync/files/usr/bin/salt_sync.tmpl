@@ -1,0 +1,18 @@
+#!/bin/bash
+HOSTNAME=$(hostname -f)
+HOSTS='{{ hosts_allow }}'
+DATE=`date`
+BACKUP_LOG='{{ sync_log }}'
+
+for machine in $HOSTS; do
+  echo "Start: $DATE" >> $BACKUP_LOG
+  if [[ "$machine" != "$HOSTNAME" ]]; then
+    echo "sync salt keys to $machine" >> $BACKUP_LOG
+    rsync -azvv "/etc/salt/pki/master/" "rsync://$machine/keys" >> $BACKUP_LOG
+    echo "sync local roots state to $machine" >> $BACKUP_LOG
+    rsync -azvv "/srv/salt/roots/" "rsync://$machine/roots" >> $BACKUP_LOG
+    echo "sync local gpgkeys to $machine" >> $BACKUP_LOG
+    rsync -azvv "/etc/salt/gpgkeys/" "rsync://$machine/gpgkeys" >> $BACKUP_LOG
+    echo -e "FINISH\n" >> $BACKUP_LOG
+  fi
+done

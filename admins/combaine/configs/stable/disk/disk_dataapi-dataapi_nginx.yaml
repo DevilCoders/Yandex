@@ -1,0 +1,131 @@
+parsing:
+  groups: [disk_dataapi]
+  metahost: dataapi.disk.yandex.net
+  DataFetcher:
+    logname: "nginx/access-tskv.log"
+    timetail_url: "/timetail?pattern=dataapi_nginx&type=tskv&log_ts="
+aggregate:
+  data:
+    dataapi_nginx:
+      type: "custom"
+      class: "Multimetrics"
+      values: [75, 90, 93, 94, 95, 96, 97, 98, 99, 99.5, 99.8, 99.9]
+      factor: 1000
+      perHost: YES
+
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+      Fields: ["75_prc", "90_prc", "93_prc", "94_prc", "95_prc", "96_prc", "97_prc", "98_prc", "99_prc", "99_5_prc", "99_8_prc", "99_9_prc"]
+
+    juggler_dataapi_nginx_status_5xx: &juggler-conf
+      type: juggler
+      namespace: disk
+      host: "dataapi.disk.yandex.net"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-java-mntr
+                - shirankov
+                - akinfold
+                - kis8ya
+                - sanya2013
+                - yak-dmitriy
+                - friendlyevil
+                - c4et4uk
+                - derovi
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - ignition
+      Aggregator: logic_or
+      checkname: dataapi_nginx_status_5xx
+      description: dataapi_nginx_status_5xx
+      flaps: { stable_time: 120, critical_time: 300 }
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        unreach_checks: ["dataapi.disk.yandex.net:dataapi_status_5xx"]
+      CRIT: [" ${dataapi_nginx}['5xx'] > 10 "]
+      tags:
+        - disk_dataapi
+        - production
+
+    juggler_valid_traffic:
+      << : *juggler-conf
+      checkname: valid_traffic
+      description: valid_traffic
+      CRIT: [" ${dataapi_nginx}['2xx'] <= 51 "]
+      config:
+          type: metahost
+      tags:
+        - disk_dataapi
+        - disk_admin_critical
+        - production
+
+    juggler_datacenter_valid_traffic:
+      << : *juggler-conf
+      checkname: datacenter_valid_traffic
+      description: datacenter_valid_traffic
+      config:
+          type: datacenter
+      CRIT: [" ${dataapi_nginx}['2xx'] < 10 "]
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        unreach_checks: ["dataapi.disk.yandex.net:valid_traffic"]
+
+    juggler_dataapi_timings_95perc:
+      << : *juggler-conf
+      checkname: dataapi_nginx_timings_95perc
+      description: dataapi_nginx_timings_95perc
+      CRIT: [" ${dataapi_nginx}['request_timings'][5] > 200" ]
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        unreach_checks: ["dataapi.disk.yandex.net:dataapi_timings_95perc"]
+      tags:
+        - disk_dataapi
+        - disk_timings
+        - disk_admin_critical
+        - production
+
+    juggler_dataapi_nginx_status_403:
+      << : *juggler-conf
+      checkname: dataapi_nginx_nginx_status_403
+      description: dataapi_nginx_nginx_status_403
+      # поднял с 10 до 20 на время разборок тикета st.yandex-team.ru/MOBNAVI-20186
+      CRIT: [" ${dataapi_nginx}['403'] > 20 "]
+      tags:
+        - disk_dataapi
+        - disk_admin_critical
+        - production
+
+    juggler_low_traffic:
+      <<: *juggler-conf
+      checkname: low_traffic
+      description: low_traffic
+      config:
+          type: metahost
+      variables:
+        trigger_n1500_d5000: "iftimeofday(21, 11, 1500, 5000)"
+      CRIT: [" ${dataapi_nginx}['2xx'] < trigger_n1500_d5000 "]
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        unreach_checks: [":valid_traffic"]
+
+    juggler_datacenter_low_traffic:
+      << : *juggler-conf
+      checkname: datacenter_low_traffic
+      description: datacenter_low_traffic
+      config:
+          type: datacenter
+      variables:
+        trigger_n10_d300: "iftimeofday(21, 11, 10, 300)"
+      CRIT: [" ${dataapi_nginx}['2xx'] < trigger_n10_d300 "]
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        unreach_checks: [":datacenter_valid_traffic"]

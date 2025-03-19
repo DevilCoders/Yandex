@@ -1,0 +1,36 @@
+#!/bin/bash
+
+# Get host information
+HOST=`hostname -f`
+GROUP=`curl -fs "http://c.yandex-team.ru/api/hosts/$HOST?format=yaml" | grep 'group' | awk '{print $NF}'`
+GROUP_HOSTS="/tmp/groups2hosts"
+CORE_DC_VLAN=`ip ro | grep default | awk '{print $3}'`
+
+## Helpers
+# Get environment type
+if [ -f "/etc/yandex/environment.type" ]; then
+        ENVIR=`cat /etc/yandex/environment.type`
+else
+        echo 'No /etc/yandex/environment.type, trying detect env by conductor group'
+        preenvir=`echo $GROUP | awk -F\- '{print $NF}'`
+        if [[ "$preenvir" == "testing" ]] || [[ "$preenvir" == "prestable" ]]; then
+                ENVIR=`echo $preenvir`
+        else
+                ENVIR="production"
+        fi
+fi
+
+
+# removing old symlink for conf: 
+unlink  /etc/zookeeper/conf
+
+
+# creating new symlink for conf: 
+ln -s /etc/zookeeper/conf_weather_${ENVIR} /etc/zookeeper/conf
+
+# creating symlink for myid: 
+cp /etc/zookeeper/conf_weather/myid.$(hostname -f) /etc/zookeeper/conf_weather/myid
+
+# diverting files: 
+dpkg-divert --package config-corba-zookeeper --add /etc/zookeeper/conf_weather/myid
+dpkg-divert --package config-corba-zookeeper --add /etc/zookeeper/conf

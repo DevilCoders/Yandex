@@ -1,0 +1,50 @@
+{%- set config = vars -%}
+log:
+  level: info
+  sinks:
+    - logrotate:///var/log/yarl/yarl.log
+
+debug:
+  enabled: true
+  endpoint: "localhost:4445"
+  uri: "/debug/pprof"
+
+grpc_endpoint: ":14589"
+rest_endpoint: ":14588"
+limiter:
+  gc_interval: 10m
+  {% if config.quota_spaces -%}
+  quota_spaces:
+    names:
+      {% for name in config.quota_spaces -%}
+      - {{ name }}
+      {%- endfor %}
+  {%- endif %}
+  quota_fetch_concurrency: 1
+  quota_updater:
+    # Type dependant endpoint
+    upstreams:
+      {%- for upstream in config.master.upstreams %}
+      - type: grpc
+        endpoint: "{{ upstream }}:{{ config.master.port }}"
+        grpc:
+          timeout: 1m
+          limit: 10000
+      {%- endfor %}
+
+  counters_updater:
+    # timeout for upstream when more than half of them are ready
+    soft_timeout: 500ms
+    # timeout for upstream when less than half of them are ready
+    hard_timeout: 5s
+    # time to freeze upstream when we failed to sync with
+    freeze_time: 10s
+    upstreams:
+      {%- for upstream in config.master.upstreams %}
+      - endpoint: "{{ upstream }}:{{ config.master.port }}"
+      {%- endfor %}
+
+monitor:
+  enabled: true
+  aggregate:
+    reverse_grpc_endpoint: "localhost:14590"

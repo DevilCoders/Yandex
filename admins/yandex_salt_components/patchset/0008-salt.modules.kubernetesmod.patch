@@ -1,0 +1,97 @@
+diff --git salt/modules/kubernetesmod.py salt/modules/kubernetesmod.py
+index 87d09fb..b41d886 100644
+--- salt/modules/kubernetesmod.py
++++ salt/modules/kubernetesmod.py
+@@ -68,8 +68,8 @@ try:
+     # pylint: disable=no-name-in-module
+     try:
+         # There is an API change in Kubernetes >= 2.0.0.
+-        from kubernetes.client import V1beta1Deployment as AppsV1beta1Deployment
+-        from kubernetes.client import V1beta1DeploymentSpec as AppsV1beta1DeploymentSpec
++        from kubernetes.client import V1Deployment as AppsV1beta1Deployment
++        from kubernetes.client import V1DeploymentSpec as AppsV1beta1DeploymentSpec
+     except ImportError:
+         from kubernetes.client import AppsV1beta1Deployment
+         from kubernetes.client import AppsV1beta1DeploymentSpec
+@@ -207,7 +207,7 @@ def _setup_conn(**kwargs):
+             kcfg.write(base64.b64decode(kubeconfig_data))
+             kubeconfig = kcfg.name
+ 
+-    if not (kubeconfig and context):
++    if not (kubeconfig):
+         if kwargs.get("api_url") or __salt__["config.option"]("kubernetes.api_url"):
+             try:
+                 return _setup_conn_old(**kwargs)
+@@ -221,7 +221,10 @@ def _setup_conn(**kwargs):
+                 "Invalid kubernetes configuration. Parameter 'kubeconfig' and 'context'"
+                 " are required."
+             )
+-    kubernetes.config.load_kube_config(config_file=kubeconfig, context=context)
++    if context:
++        kubernetes.config.load_kube_config(config_file=kubeconfig, context=context)
++    else:
++        kubernetes.config.load_kube_config(config_file=kubeconfig)
+ 
+     # The return makes unit testing easier
+     return {"kubeconfig": kubeconfig, "context": context}
+@@ -726,7 +729,13 @@ def show_secret(name, namespace="default", decode=False, **kwargs):
+         if api_response.data and (decode or decode == "True"):
+             for key in api_response.data:
+                 value = api_response.data[key]
+-                api_response.data[key] = base64.b64decode(value)
++                # https://github.com/saltstack/salt/pull/60084/files
++                if sys.version_info < (3, 5):
++                    api_response.data[key] = base64.b64decode(value)
++                else:
++                    api_response.data[key] = base64.b64decode(
++                        value.encode("ascii")
++                    ).decode("utf-8")
+ 
+         return api_response.to_dict()
+     except (ApiException, HTTPError) as exc:
+@@ -1118,13 +1127,21 @@ def create_secret(
+     data = __enforce_only_strings_dict(data)
+ 
+     # encode the secrets using base64 as required by kubernetes
++    # https://github.com/saltstack/salt/pull/60084/files
+     for key in data:
+-        data[key] = base64.b64encode(data[key])
++        if sys.version_info < (3, 5):
++            data[key] = base64.b64encode(data[key])
++        else:
++            data[key] = base64.b64encode(data[key].encode("utf-8")).decode("ascii")
+ 
+     body = kubernetes.client.V1Secret(
+         metadata=__dict_to_object_meta(name, namespace, {}), data=data
+     )
+ 
++    # for secret type support by borislitv
++    if kwargs["secret_type"]:
++        body.type = kwargs["secret_type"]
++
+     cfg = _setup_conn(**kwargs)
+ 
+     try:
+@@ -1344,13 +1361,21 @@ def replace_secret(
+     data = __enforce_only_strings_dict(data)
+ 
+     # encode the secrets using base64 as required by kubernetes
++    # https://github.com/saltstack/salt/pull/60084/files
+     for key in data:
+-        data[key] = base64.b64encode(data[key])
++         if sys.version_info < (3, 5):
++             data[key] = base64.b64encode(data[key])
++         else:
++             data[key] = base64.b64encode(data[key].encode("utf-8")).decode("ascii")
+ 
+     body = kubernetes.client.V1Secret(
+         metadata=__dict_to_object_meta(name, namespace, {}), data=data
+     )
+ 
++    # for secret type support by borislitv
++    if kwargs["secret_type"]:
++        body.type = kwargs["secret_type"]
++
+     cfg = _setup_conn(**kwargs)
+ 
+     try:

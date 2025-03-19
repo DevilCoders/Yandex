@@ -1,0 +1,87 @@
+---
+name: kp-front-graphdata-rtc
+parsing:
+  groups: [kp-front-stable]
+  metahost: kp-front-stable
+  DataFetcher:
+    logname: "nginx/access.log /var/log/nginx/access.log.1"
+    timetail_url: "/timetail?pattern=graphdata&type=tskv&log_ts="
+  HostFetcher:
+    type: "rtc"
+    geo: ["sas", "vla", "iva"]
+    BasicUrl: "http://nanny.yandex-team.ru/v2/services/%s/current_state/instances/"
+    Delimiter: "-"
+  Combainer:
+    MINIMUM_PERIOD: 60
+aggregate:
+  data:
+    www.rtc:
+      type: custom
+      class: Multimetrics
+      perHost: YES
+  senders:
+    graphite:
+      type: graphite
+      cluster: media.kp
+    http_codes:
+      type: juggler
+      plugin: picker
+      Host: "kp-front"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            delay: 600
+            logins:
+                - '@svc_sre_kinopoiskotttv:sre_kptvott'
+                - etruntaev
+                - coldmind
+                - gibzer
+                - sergeyv
+                - vyacheslav
+      Aggregator: timed_more_than_limit_is_problem
+      checkname: "kp-graphdata"
+      description: "kp graphdata codes"
+      ttl: 90
+      tags: ['kp-front']
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 2,time_end: 1,day_end: 7,day_start: 1}]
+      config:
+        history: 3
+        type: metahost
+        query: "(([45][0-9x][0-9x]))$"
+        prefix: "graphdata_codes_"
+        limits:
+          "404": [5, "too many 404 status codes"]
+          "default": [0.1, "too many [45]xx status codes"]
+    timings:
+      type: juggler
+      plugin: picker
+      Host: "kp-front"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            delay: 600
+            logins:
+                - '@svc_sre_kinopoiskotttv:sre_kptvott'
+                - etruntaev
+                - coldmind
+                - gibzer
+                - sergeyv
+                - vyacheslav
+      Aggregator: timed_more_than_limit_is_problem
+      checkname: "graphdata_timings"
+      description: "kp graphdata timings"
+      ttl: 90
+      tags: ['kp-front']
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        limits: [{crit: 0,time_start: 2,time_end: 1,day_end: 7,day_start: 1}]
+      config:
+        history: 3
+        type: metahost
+        query: "(gd_timings(/[5789]))$"
+        prefix: "graphdata_"
+        limits:
+          "graphdata_timings/9": [1.5, "99prc too high timings"]
+          "default": 1

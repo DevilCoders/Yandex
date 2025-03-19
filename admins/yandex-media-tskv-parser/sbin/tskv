@@ -1,0 +1,156 @@
+#!/bin/bash
+
+# этот экспорт заставляет help от media_tskv_parser печатать tskv как имя cmd
+export MEDIA_TSKV_PARSER_NAME=$0
+PARSER="/usr/sbin/media_tskv_parser.awk"
+
+# handy options, 'a' enable /var/log/nginx/access.log as input file
+if [[ "$1" =~ ^a$ ]];then file_names="/var/log/nginx/access.log"; shift; fi
+
+in_args=("$@")
+#echo "in_args: ${in_args[@]}"
+out_args=()
+
+num_items=60 # use 1 min or 60 lines as default
+
+# проверяем, что при режимах tail-а в конце указаны файлы, и тайлим их все
+# в режиме tailf всегда берем только последний файл, такова сэляви
+args_count=${#in_args[@]}
+for ((i=0;i < args_count; i++)) do
+    opt=${in_args[i]}
+    if [[ "$opt" =~ ^(-n|--num)$ ]]; then
+        # grab next number and skip it on next for step
+        # if next number is not a number then exit with err
+        if test -z "${in_args[++i]##[0-9]*}" ;then
+            num_items=${in_args[i]}
+        else
+            echo "Invalid number for '${in_args[i-1]}'" > /dev/stderr
+            exit 1
+        fi
+    elif [[ "$opt" =~ ^(-m|--mode)$ ]]; then
+        op_mode="${in_args[++i]}"
+        if ! [[ "$op_mode" =~ (cat|tail|tailf|timetail) ]];then
+            echo "Invalid mode '$op_mode' for '${in_args[i-1]}'" > /dev/stderr
+            exit 1
+        fi
+    # НИЖЕ РЕЖИМ СОВМЕСТИМОСТИ, который будет удален в будущих версиях
+    # тайминги:
+    # разбираем -t -rt -ht --timings --reqtimings --handshake-timings;
+    # и конвертируем в -t up,req,ssl
+    elif [[ "$opt" =~ ^--?([rh]?t)((eqt|andshake-t)?imings)?$ ]]; then
+        case ${BASH_REMATCH[1]:0:1} in
+            t)
+                timings_types+=",up"
+                # если юзер передал типы таймингов в -t, то используем их
+                users_type="${in_args[++i]}"
+                if [[ "$users_type" =~ ^[ursd][a-z-]*(,[ursd][a-z-]*)*$ ]]; then
+                    timings_types="$users_type"
+                else
+                    let i--
+                fi
+                ;;
+            r) timings_types+=",req";;
+            h) timings_types+=",ssl";;
+        esac
+    # выпрямляем опцию -sc 're' в -s 're'
+    elif [[ "$opt" =~ ^(-sc|--status-code)$ ]]; then
+        filter_codes="${in_args[++i]}"
+    # выпрямляем опцию -pi 100,99,98 в -p 100,99,98
+    elif [[ "$opt" =~ ^(-pi|--percentiles-idx)$ ]]; then
+        percentiles_indexes="${in_args[++i]}"
+    # опции --ssl-upstream и --req-upstream слиты в одну --upstream
+    elif [[ "$opt" =~ ^(-[rs]u|--(req|ssl)-upstream)$ ]]; then
+        timings_with_upstream="-u"
+    # переименовываем опцию про кэш
+    elif [[ "$opt" =~ ^(-cs|--cache-status)$ ]]; then
+        out_args[out_args_index++]="--cache"
+    # переименовываем короткую опцию про ssl протоколы
+    elif [[ "$opt" =~ ^-sp$ ]]; then
+        out_args[out_args_index++]="--ssl-protocol"
+    # переименовываем короткую опцию про ssl cipher
+    elif [[ "$opt" =~ ^-C$ ]]; then
+        out_args[out_args_index++]="--ssl-cipher"
+    # переименовываем опцию про cbb
+    elif [[ "$opt" =~ ^-c$ ]]; then
+        out_args[out_args_index++]="--cbb"
+    # переименовываем опцию про ip
+    elif [[ "$opt" =~ ^-i$ ]]; then
+        out_args[out_args_index++]="--ip"
+    else
+        out_args[out_args_index++]="${in_args[i]}"
+    fi
+done
+
+# вставляем сконвертированные опции про тайминги
+if test -n "$timings_types"; then
+    out_args[out_args_index++]="-t"
+    out_args[out_args_index++]="${timings_types#,}"
+fi
+# приводим фильтр статус кодов к новому формату
+if test -n "$filter_codes"; then
+    for ((idx=0;idx<out_args_index;idx++)) do
+        if [[ "${out_args[idx]}" =~ ^(-s|--status)$ ]]; then
+            unset out_args[idx]
+        fi
+    done
+    out_args[out_args_index++]="-s"
+    out_args[out_args_index++]="$filter_codes"
+fi
+# приводим индексы перцентилей таймингов к новому формату
+if test -n "$percentiles_indexes"; then
+    for ((idx=0;idx<out_args_index;idx++)) do
+        if [[ "${out_args[idx]}" =~ ^(-p|--percentiles)$ ]]; then
+            unset out_args[idx]
+        fi
+    done
+    out_args[out_args_index++]="-p"
+    out_args[out_args_index++]="$percentiles_indexes"
+fi
+if test -n "$timings_with_upstream"; then
+    out_args[out_args_index++]="-u"
+fi
+
+# grab file names
+if ((out_args_index > 0)); then
+    while ((--out_args_index >= 0)); do
+        if test -f "${out_args[out_args_index]}"; then
+            file_names="${out_args[out_args_index]}${file_names:+" "}$file_names"
+            unset out_args[out_args_index]
+        fi
+    done
+fi
+
+if [[ "${out_args[@]}" =~ (-[?]|--help) ]];then
+    $PARSER -- --help
+    echo "     -n, --num  ARG                 - кол-во строк или время для tail режимов"
+    echo "     -m, --mode ARG                 - режим tail-а по умолчанию timetail, доступные режимы cat,tail,tailf,timetail"
+    echo
+    echo "  Для режима tailf берется последний (один) файл из аргументов."
+    exit 0;
+fi
+
+
+# default log name only if in tail mode and if logfile exists
+if test -z "$file_names"; then
+    op_mode="cat"
+fi
+# дефолтный режим - это timetail
+op_mode="${op_mode:-timetail}"
+
+#echo "out_args before grab file names: ${out_args[@]}"
+
+if [[ "$op_mode" == "timetail" ]]; then
+    timetail -n$num_items -t tskv $file_names|$PARSER -- "${out_args[@]}"
+elif [[ "$op_mode" == "tail" ]]; then
+    tail -n$num_items $file_names|$PARSER -- "${out_args[@]}"
+elif [[ "$op_mode" == "tailf" ]]; then
+    tail -f ${file_names##* }|$PARSER -- "${out_args[@]}"
+elif [[ "$op_mode" == "cat" ]]; then
+    cat $file_names|$PARSER -- "${out_args[@]}"
+else
+    echo "Unexpected mode: $op_mode"
+    exit 1
+fi
+
+#echo "out_args after all: ${out_args[@]}"
+# vim: ts=4 et sts=4 sw=4

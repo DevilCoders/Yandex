@@ -1,0 +1,69 @@
+{%- set config = vars -%}
+log:
+  level: info
+  sinks:
+    - logrotate:///var/log/yarl/yarl.log
+
+debug:
+  enabled: true
+  endpoint: "localhost:4445"
+  uri: "/debug/pprof"
+
+grpc_endpoint: ":14589"
+rest_endpoint: ":14588"
+limiter:
+  correction: 0
+  gc_interval: 1m
+  quota_fetch_concurrency: 1
+  quota_updater:
+    upstreams:
+      - &qu
+        {% if config.use_pg -%}
+        endpoint: "{{ config.pg.endpoint }}"
+        type: pg
+        pg:
+          cluster:
+            user: "yarl"
+            password: "{{ config.pg.password }}"
+            dbname: "yarl"
+            ssl_mode: "verify-full"
+            ssl_root_cert: "/etc/yarl/allCAs.pem"
+            wait_master_timeout: 5s
+            update_timeout: 1s
+            update_interval: 5s
+        {%- else -%}
+        endpoint: "{{ config.ydb.endpoint }}"
+        type: ydb
+        ydb:
+          auth_token: "{{ config.ydb.auth_token }}"
+          db: "/eu/s3/stable/yarl"
+          prefix: "main"
+          dial_timeout: 10s
+          request_timeout: 5s
+          stream_timeout: 5s
+        {%- endif %}
+
+control:
+  enabled: true
+  quota_updater: *qu
+  log:
+    level: info
+    encoding: tskv
+    sinks:
+      - logrotate:///var/log/yarl/yarl-control.log
+
+monitor:
+  enabled: true
+
+unistat:
+  enabled: true
+  # prefix for service:
+  prefix: /unistat
+  # update interval for statistics
+  # check time.ParseDuration docs for formats
+  # default value if not specified here in config: 1s
+  update_interval: 1s
+
+metrics:
+  enabled: true
+  low_threshold: 4

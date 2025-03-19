@@ -1,0 +1,320 @@
+{% set production_s3_id_to_mds_ns = {
+                '2':    's3-default',
+                '318':  's3-default',
+                '407':  's3-default',
+                '2173': 's3-default',
+                '3463': 's3-default',
+                '5909': 's3-default',
+                '1358': 's3-default-smart',
+                '1558': 's3-default-smart',
+                '94':   's3-default-cold',
+                '102':  's3-default-cold',
+                '105':  's3-ringbuffer',
+                '675':  's3-ringbuffer',
+                '188':  's3-default-cold',
+                '315':  's3-default-cold',
+                '469':  's3-ringbuffer',
+                '622':  's3-default-cold',
+                '700':  's3-ringbuffer',
+                '737':  's3-default-cold',
+                '741':  's3-default-cold',
+                '961':  's3-default-cold',
+                '969':  's3-default-cold',
+                '1068': 's3-default-cold',
+                '1170': 's3-default-cold',
+                '1265': 's3-default-cold',
+                '1332': 's3-default-cold',
+                '1334': 's3-default-cold',
+                '1373': 's3-default-cold',
+                '2660': 's3-default-cold',
+                '1487': 's3-default-cold',
+                '1488': 's3-ringbuffer',
+                '1666': 's3-default-cold',
+                '1891': 's3-default-cold',
+                '1949': 's3-default-cold',
+                '1971': 's3-satellite-factory',
+                '2026': 's3-default-cold',
+                '2541': 's3-ringbuffer',
+                '3940': 's3-default-cold',
+                '5807': 's3-default-cold',
+                '1984': 's3-panoramas',
+                '1986': 's3-panoramas-backoffice',
+                '4090': 's3-panoramas-backoffice',
+                '4947': 's3-panoramas-backoffice',
+                '4948': 's3-panoramas-backoffice',
+                '4949': 's3-panoramas-backoffice',
+                '5134': 's3-panoramas-backoffice',
+                '5135': 's3-panoramas-backoffice',
+                '7727': 's3-panoramas-backoffice',
+                '7728': 's3-panoramas-backoffice',
+                '7729': 's3-panoramas-backoffice',
+                '7730': 's3-panoramas-backoffice',
+                '7731': 's3-panoramas-backoffice',
+                '7732': 's3-panoramas-backoffice',
+                '7733': 's3-panoramas-backoffice',
+                '7734': 's3-panoramas-backoffice'
+            }
+%}
+{% set mm_vars = salt['grains.filter_by']({
+    'base': {
+        'env': grains['yandex-environment'],
+        'federation': pillar['mds_federation'],
+        'token': pillar['yav']['robot_storage_duty_yt_token'],
+        'zk': {
+            'hosts':  pillar['federations'][pillar['mds_federation']]['zk']['hosts']|join(","),
+            'lock_path_prefix': pillar['federations'][pillar['mds_federation']]['lock_path_prefix'],
+            'timeout': 150
+        },
+        'mongo': {
+            'global_metadata_db_prefix': 'mastermind',
+            'metadata_db_prefix': 'mastermind' + pillar['federations'][pillar['mds_federation']]['metadata_db_prefix'],
+            'mdb_url_template': pillar['federations'][pillar['mds_federation']].get('mongo', {}).get('mdb_url_template', ''),
+            'all_federations_mdb_url_template': pillar['federations'][pillar['mds_federation']].get('mongo', {}).get('all_federations_mdb_url_template', ''),
+            'mdb_password': pillar['yav'].get('mongo_mdb_password', ''),
+            'mdb_user': 'mastermind',
+            'mdb_user_ro': 'mastermind-ro'
+        },
+        'nscfg': {
+            'url': 'http://nscfg.mds.yandex.net:9532'
+        },
+        'keys_listing_mega_job': {
+            'yt': {
+                'endpoint': '//home/mds/keys_listing/production'
+            }
+        },
+        'resource_provider': {
+            'self_tvm_id': 2028822,
+            'mds_id': '0b7e877e-5305-444d-bc26-7e7872b937ba',
+            'avatars_id': '10de0b70-f460-48a8-aeaa-edecf840844a',
+            'cert_name': 'd.mds.yandex.net',
+            'min_space_gib': 5120,
+            's3_idm_url': 'https://s3-idm.mds.yandex.net/stats/services',
+            's3_default_namespace': 's3-default',
+            's3_id_to_mds_ns': {}
+        },
+        'karl': {
+            'url': pillar['federations'][pillar['mds_federation']]['karl']['control_host']
+        },
+        'collector': {
+            'addresses': pillar['federations'][pillar['mds_federation']]['collector']['hosts']|join(":50057,") + ':50057',
+            'timeout': 1000,
+            'hosts': pillar['federations'][pillar['mds_federation']]['collector']['hosts'],
+            'lost_couple_support': true,
+            'mongo_driver_version': 3,
+            'mongo_tls': '&tls=true',
+            'ignore_empty_snapshot': pillar['federations'][pillar['mds_federation']]['collector']['ignore_empty_snapshot'],
+            'node_stats': {
+                'use_grpc': true,
+                'tls_support': true,
+                'grpc_port': 7819
+            },
+            'groups_meta': {
+                'use_grpc': true
+            },
+            'resizer_addresses': pillar['federations'][pillar['mds_federation']]['mm_hosts']|join(":8095,") + ':8095'
+        },
+        'minions': {
+            'authkey': pillar['yav']['minion_auth_key']
+        },
+
+        'elliptics': {
+            'nodes': pillar['federations'][pillar['mds_federation']]['remotes'],
+            'wait_timeout': 10
+        },
+        'inventory': {
+            'federation_conductor_groups': pillar['federations'][pillar['mds_federation']]['federation_conductor_groups'],
+            'allowed_to_set_host_federations': pillar['federations'][pillar['mds_federation']]['allowed_to_set_host_federations']
+        },
+
+        'lepton': {
+            'address': 'http://localhost:7070'
+        },
+
+        'resizer': {
+            'enable': true,
+            'enable_logs_aggregator': true,
+            'enable_load_analyzer': true,
+            'enable_cluster_topology_changer': false,
+            'enable_new_expected_load_table_format': true,
+            'loop_delay': 300,
+            'yt': {
+                'resizer_cluster': 'stable',
+                'elliptics_logs_dir': '//logs/mds-elliptics-small-record-log-prod/1d'
+            },
+            "topology_changer": {
+                "load_reserve": 2.0,
+                "disk_avg_util_read_estimate": 0.07,
+                "disk_avg_util_write_estimate": 0.2,
+                "replicas_reduce": {
+                    "enabled": true,
+                    "max_pending_job_requests": 20
+                },
+                "lrc_convert": {
+                    "enabled": true,
+                    "max_pending_job_requests": 20,
+                    "max_lrc_groupset_iops": 30,
+                    "max_x2_groupset_iops": 1
+                }
+            },
+            "replicas_reduce": [
+                {
+                    "ns": "avatars-disk",
+                    "min_couple_age_sec": 5184000
+                },
+                {
+                    "ns": "s3-videohosting",
+                    "min_couple_age_sec": 5184000
+                },
+                {
+                    "ns": "s3-ott",
+                    "min_couple_age_sec": 5184000
+                },
+                {
+                    "ns": "mail",
+                    "min_couple_age_sec": 10368000
+                }
+            ],
+            "lrc_convert": [
+                {
+                    "ns": "disk",
+                    "min_couple_age_sec": 31104000
+                }
+            ]
+        },
+
+        "stat_reporter": {
+            "tvm_secret": pillar['stat-reporter-tvm-secret'],
+            "dispenser": {
+                "oauth_token": pillar['yav']['stat-reporter_dispenser_oauth_token']
+            },
+            "billing": {
+                "reports_dump_path": "/var/tmp/stat-reporter"
+            }
+        },
+
+        'drooz_v2': {
+            'http_port': 8387,
+            'grpc_port': 8388,
+            'defaults': {
+                'success': {
+                    'update_period': 60,
+                    'stale_timeout': 1800
+                },
+                'error': {
+                    'update_period': 20,
+                    'stale_timeout': 1800
+                },
+                'upstream_request_timeout': 10
+            },
+            'upstream_hosts': 'localhost:9014',
+            'upstream_client_class': 'TornadoStateBuilderClient'
+        },
+        "state_builder": {
+            "enable_load_cache_update": pillar['federations'][pillar['mds_federation']]['state_builder']['enable_load_cache_update']
+        },
+        "monolith": {
+            "enable_load_cache_update": pillar['federations'][pillar['mds_federation']]['monolith']['enable_load_cache_update']
+        },
+        'scheduler': {
+            'move_starter': {
+                'distribute_load_phase_enable': pillar['federations'][pillar['mds_federation']]['scheduler']['move_starter'].get('distribute_load_phase_enable', False)
+            },
+            'enable_load_cache_update': pillar['federations'][pillar['mds_federation']]['scheduler'].get('enable_load_cache_update', False)
+        }
+    },
+    'unstable': {
+    },
+    'testing': {
+        'token': pillar['yav']['robot_storage_duty_yt_token'],
+        'mongo': {
+            'global_metadata_db_prefix': 'mastermind_test',
+            'metadata_db_prefix': 'mastermind_test' + pillar['federations'][pillar['mds_federation']]['metadata_db_prefix'],
+            'mdb_password': pillar['yav'].get('mongo_mdb_password_testing', ''),
+            'mdb_user': 'mastermind-testing',
+            'mdb_user_ro': 'mastermind-testing-ro'
+        },
+        'nscfg': {
+            'url': 'http://nscfg.mdst.yandex.net:9532'
+        },
+        'keys_listing_mega_job': {
+            'yt': {
+                'endpoint': '//home/mds/keys_listing/testing'
+            }
+        }, 
+        'resource_provider': {
+            'self_tvm_id': 2029098,
+            'mds_id': '124aa935-06ed-400f-aec0-09e8430ae62a',
+            'avatars_id': '56a9c5a6-2611-4198-8143-fab728190bbb',
+            'cert_name': 'd.mdst.yandex.net',
+            'min_space_gib': 2048,
+            's3_idm_url': 'https://s3-idm.mdst.yandex.net/stats/services',
+            's3_default_namespace': 's3-dev',
+            's3_id_to_mds_ns': {
+                '895': 's3-dev',
+                '36108': 's3-dev-x3'
+            }
+        },
+        'collector': {
+            'timeout': 100
+        },
+
+        'lepton': {
+            'address': 'http://localhost:7070'
+        },
+
+        'resizer': {
+            'enable_new_expected_load_table_format': true,
+            'loop_delay': 1800,
+            'yt': {
+                'resizer_cluster': 'test',
+                'elliptics_logs_dir': '//logs/mds-elliptics-small-record-log/1d'
+            },
+            "topology_changer": {
+                "load_reserve": 2.0,
+                "disk_avg_util_read_estimate": 0.02,
+                "disk_avg_util_write_estimate": 0.04,
+                "lrc_convert": {
+                    "enabled": true,
+                    "max_pending_job_requests": 5,
+                }
+            },
+            "replicas_reduce": [
+                {
+                    "ns": "avatars-disk",
+                    "min_couple_age_sec": 5184000
+                }
+            ]
+        },
+
+        'drooz_v2': {
+            'defaults': {
+                'success': {
+                    'update_period': 60,
+                    'stale_timeout': 300
+                },
+                'error': {
+                    'update_period': 20,
+                    'stale_timeout': 300
+                }
+            }
+        }
+    },
+    'prestable': {
+        'collector': {
+            'addresses': pillar['federations'][pillar['mds_federation']]['collector']['hosts_with_prestable']|join(":50057,") + ':50057',
+            'hosts': [
+            ]
+        },
+        "monolith": {
+            "enable_load_cache_update": pillar['federations'][pillar['mds_federation']]['monolith']['enable_load_cache_update_prestable']
+        },
+        'resource_provider': {
+            's3_id_to_mds_ns': production_s3_id_to_mds_ns
+         }
+    },
+    'production': {
+        'resource_provider': {
+            's3_id_to_mds_ns': production_s3_id_to_mds_ns
+         }
+    },
+}, grain='yandex-environment', merge=salt['pillar.get']('mm_vars'), default='production', base='base') %}

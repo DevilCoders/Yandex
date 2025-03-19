@@ -1,0 +1,251 @@
+{% set cgroup = grains['conductor']['group'] %}
+{%- set env = grains['yandex-environment'] -%}
+{%- if env == 'testing' -%}
+{%- set nscfg_host = 'nscfg.mdst.yandex.net' -%}
+{%- set banned_urls_host = 's3.mdst.yandex.net' -%}
+{%- set tvm_client_id = 2000272 -%}
+{%- else -%}
+{%- set nscfg_host = 'nscfg.mds.yandex.net' -%}
+{%- set banned_urls_host = 's3.mds.yandex.net' -%}
+{%- set tvm_client_id = 2000273 -%}
+{%- endif -%}
+{
+    "version": 4,
+    "logging": {
+        "loggers" : {
+            "core": [
+                {
+                    "formatter": {
+                        "type": "tskv",
+                        "create": {
+                            "tskv_format": "cocaine-log",
+                            "type": "cocaine-backend"
+                        },
+                        "mutate": {
+                            "unixtime_microsec_utc": {"strftime": "%s.%f", "gmtime": false},
+                            "timestamp": {"strftime": "%Y-%m-%dT%H:%M:%S"},
+                            "timezone": {"strftime": "%z"}
+                        }
+                    },
+                    "sinks": [
+                        {
+                            "type": "file",
+                            "path": "/var/log/cocaine-core/cocaine-tskv.log"
+                        }
+                    ]
+                }
+            ]
+        },
+        "severity": "debug"
+    },
+
+    "network": {
+        "pinned": {
+            "locator": 10071,
+            "unistorage": 10077,
+            "tvm2": 10078
+        },
+    	"shared":[32223,32723]
+    },
+
+    "authorizations": {
+    },
+
+
+    "paths": {
+        "plugins": [
+            "/usr/lib/cocaine"
+        ],
+        "runtime": "/var/run/cocaine"
+    },
+
+    "services": {
+
+        "metrics": {
+            "type": "metrics"
+        },
+
+        "tvm2": {
+            "type": "tvm2",
+            "args": {
+                "base_url": "https://tvm-api.yandex.net",
+                "client_id": 92,
+                "client_secret": "{{ pillar['yav']['tvm_92_client_secret'] }}"
+            }
+        },
+
+        "unistorage": {
+            "type": "unistorage",
+            "args": {
+{% if env in 'testing' %}
+                "authentication_backend": "mds",
+{% endif %}
+                "backends" : ["disk-singular-zero", "libmds", "mulcagate"],
+                "keyring_path": "/etc/cocaine/auth.keys"
+            }
+        },
+    
+        "locator": {
+            "type": "locator",
+            "args": {
+            },
+            "restrict": ["logging"],
+        }
+    },
+
+    "authentications": {
+{% if env in 'testing' %}
+        "mds": {
+            "type": "tvm",
+            "args": {
+                "allow_anonymous": true,
+                "client_id": 2000272,
+                "client_secret": "{{ pillar['yav']['storage-testing_tvm_secret'] }}",
+                "secure_storage": "core",
+                "base_url": "https://tvm-api.yandex.net"
+            }
+        },
+{% endif %}
+        "core": {
+            "type": "tvm",
+            "args": {
+                "allow_anonymous": true,
+                "client_id": 92,
+                "client_secret": "{{ pillar['yav']['tvm_92_client_secret'] }}",
+                "secure_storage": "core",
+                "base_url": "https://tvm-api.yandex.net",
+                "keyring_path": "/etc/cocaine/auth.keys"
+                }
+        }
+    },
+
+    "storages": {
+        "core": {
+            "type": "files",
+            "args": {
+                "path": "/var/lib/cocaine"
+            }
+        }
+    },
+
+    "unistorage_backends": {
+        "disk-singular-zero": {
+            "type": "disk-singular-zero"
+        },
+        "libmds": {
+            "type": "libmds",
+            "args": {
+                "adapter_verbosity": 0,
+                "data_flow_rate": 10,
+                "default_chunk_size": 4194304,
+                "debug_mode": false,
+                "check_timeout": 30,
+                "lookup_timeout": 6,
+                "read_timeout": 15,
+                "wait_timeout": 8,
+                "recovery_timeout": 30,
+                "mastermind_remotes" : [["[::]", 8383]],
+                "mastermind_app_name" : "mastermind-drooz-http",
+                "mastermind_cache_path": "/var/cache/mastermind/unistorage/unistorage.cache",
+                "mastermind_update_period": 60,
+                "mastermind_warning_time": 3600,
+                "mastermind_expire_time": 86400000,
+                "mastermind_enqueue_timeout_ms": 50000,
+                "mastermind_reconnect_timeout_ms": 5000,
+                "maximum_chunk_size": 67108864,
+                "minimal_chunk_size": 1048576,
+                "use_elliptics_proxy": false,
+                {%- if 'lepton' in config %}
+                "enable_lepton": {{config.lepton.enable | json}},
+                "enable_lepton_comparison": {{config.lepton.comparison | json}},
+                "lepton_address": {{config.lepton.address | json}},
+                "local_lepton_address": {{config.lepton.local_address | default("http://[::1]:8090/") |json}},
+                {%- endif %}
+                "acl": {
+                    "enable": true,
+                    "http_source": "http://{{ banned_urls_host }}/mds-service/banned_urls",
+                    "cache_path": "/var/cache/cocaine/cache",
+                    "update_interval_sec": 60,
+                    "http_request_timeout_msec": 2000
+                },
+                {%- if config.mavrodi.enabled %}
+                "meta-mastermind" : {
+                        "max-history-depth" : 2,
+                        "max-snapshot-age-sec": 86400,
+                        "snapshots-dir" : "/var/cache/mastermind/unistorage",
+                        "grpc-endpoints": [
+                            {%- for r in config.mavrodi.remotes %}
+                            "{{ r }}:{{ config.mavrodi.port }}"{{ "," if not loop.last else "" }}
+                            {%- endfor %}
+                        ],
+                        "grpc-calls-before-endpoint-switch" : 6,
+                        "grpc-call-timeout-sec" : 20,
+                        "snapshot-update-interval-sec" : 60,
+                        "tls": {
+                         "enabled": true,
+                         "cert_path": "/etc/mavrodi/ssl/mavrodi.crt",
+                         "key_path": "/etc/mavrodi/ssl/mavrodi.key",
+                         "ca_paths": ["/etc/mavrodi/ssl/ca.crt"]
+                       }
+                },
+                {%- endif %}
+                "karl": {
+                   "enabled": {{ config.karl.enabled|lower }},
+                   "use_federations": true,
+                   "use_locality": true,
+                   "default_federation": 1,
+                   "discovery": {
+                       "connection_string": "{{ config.karl.connection_string }}",
+                       "prefix": "{{ config.karl.prefix }}",
+                       "snapshot_filename" : "/var/cache/cocaine/karl_discovery.snapshot"
+                   },
+                    "tls": {
+                       "enabled": true,
+                       "cert_path": "/etc/karl/ssl/karl.crt",
+                       "key_path": "/etc/karl/ssl/karl.key",
+                       "ca_paths": ["/etc/karl/ssl/ca.crt"]
+                   }
+                },
+                "nscfg": {
+                    "enabled": true,
+                    "http_source": "http://{{ nscfg_host }}:9532/all",
+                    "warning_time_sec": 1200,
+                    "cache_path": "/var/cache/cocaine/unistorage-nscfg-settings.cache",
+                    "update_interval_sec": 60,
+                    "http_request_timeout_msec": 10000
+                },
+                "tls": {
+                    "support": 1,
+                    "cert_path": "/etc/elliptics/ssl/storage.crt",
+                    "key_path": "/etc/elliptics/ssl/storage.key",
+                    "ca_path": "/etc/elliptics/ssl/"
+                },
+                "elliptics_features": {
+                    "independent_protocol": true
+                },
+                "auth": {
+                    "enabled": true,
+                    "tvm": {
+                        "client_id": {{ tvm_client_id }},
+                        "keys_cache_dir": "/var/cache/cocaine/tvm"
+                    }
+                }
+            }
+        },
+        "mulcagate": {
+             "type":"mulcagate",
+             "args":{
+                {% if 'elliptics-proxy' in cgroup %}
+                "base_uri" : "http://storage.mail.yandex.net:8080",
+                "read_uri" : "/gate/get/tvm/",
+                {% elif cgroup == 'elliptics-test-proxies' %}
+                "base_uri" : "http://storage.stm.yandex.net:10010",
+                "read_uri" : "/gate/get/",
+                {% endif %}
+                "read_timeout_ms" : 5000000,
+                "size_header" : "X-Data-Size"
+            }
+        } 
+    }
+}
+

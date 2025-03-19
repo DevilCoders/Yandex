@@ -1,0 +1,69 @@
+#!/bin/bash
+
+# include parser
+. /usr/lib/shflags/src/shflags
+
+# define arguments
+DEFINE_string 'maxsleeptime' '14400' 'Max time to sleep in seconds, if sleep activated' 'm'
+DEFINE_boolean 'sleep' false 'Sleeps random amount of time before executing. Max time to sleep set by --maxsleeptime/-m' 's'
+
+# parse variables
+FLAGS "$@" || exit 1
+eval set -- "${FLAGS_ARGV}"
+
+# running code
+. /usr/lib/yabackupper/procedures.sh
+
+if [[ ${FLAGS_sleep} == 0 ]]; then 
+    timetosleep=$((RANDOM%${FLAGS_maxsleeptime}))
+    echo "[INFO] As i am run with --sleep, now i will sleep ${timetosleep} seconds." | logger
+    sleep ${timetosleep}
+elif [[ ${FLAGS_sleep} == 1 ]]; then
+    echo "[INFO] Not sleeping now." | logger
+else 
+    echo "[ERROR] strange error at to_sleep_or_not_to_sleep(). Exiting now" | logger
+    exit 1
+fi
+
+execute_config () {
+    config=$1
+    clear_vars
+    . ${config}
+    if [[ $method == "" ]]; then 
+	echo "[ERROR] Empty method at ${config}" | logger
+    else 
+	if [ -f $method ]; then
+	    echo "[INFO] starting backup with method ${method} with config ${config}" | logger
+	    ${method} ${config} 2>&1 | logger
+	elif [ ! -f $method ]; then
+	    wrong_method $method
+	else 
+	    echo "[ERROR] Strange error at execute_config()" | logger
+        fi
+    fi
+}    
+
+choose_config () {
+    config=""
+    group=$1
+    config=$(cat /etc/yabackupper/groups.conf | grep "^${group} " | awk '{print $NF}')
+    if [[ $config == "" ]]; then 
+	echo "[INFO] There are no config set for %${group}" | logger
+    else 
+	if [ -f $config ]; then
+	    execute_config ${config}
+	elif [ ! -f $config ]; then
+	    echo "[ERROR] Sorry, but you forgot to place config ${config} for %${group}" | logger
+	else 
+	    echo "[ERROR] Strange error at choose_config()" | logger
+        fi
+    fi
+}
+
+reading_groups.conf () {
+    for i in `curl -s http://c.yandex-team.ru/api-cached/hosts2groups/$(hostname -f)`; do 
+	choose_config $i; 
+    done
+}
+
+reading_groups.conf

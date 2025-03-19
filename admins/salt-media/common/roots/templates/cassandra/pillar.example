@@ -1,0 +1,76 @@
+# vim: ft=sls
+# NOTE:
+#  https://st.yandex-team.ru/CADMIN-5304
+#  If all keyspaces use same replication strategy,
+#  there no reason run nodetool status for each separatelly.
+#  Therefore we get first non 'system' keyspace and run nodetool for it.
+#  If replication strategy on some keyspace differ, run nodetool status
+#  for this keyspace individually.
+
+
+cassandra:
+  keyspaces:
+    - video_history:
+        replication_strategy: strategy  # repl strategy or any unique string see NOTE.
+        history:                        # scope, enable mx4j monitoring
+          read:  [ 1000, 10000 ]        #
+          write: [ 2000, 20000, 60 ]    # write [ warn, crit, interval ]
+    - video_feed:
+        queries:                        # scope, ...
+          read:  [ 100, 1000 ]          # read [ warn, crit ]
+          write:
+            warn:     1000              # crit warn via dict
+            crit:     100000
+            interval: 300
+    - video_radio                       # just string without mx4j monitoring
+    - video_feed:                       # another keyspace
+        clips:
+          read: { warn: 1, crit: 10, interval: 60 }  # crit warn interval via dict
+          write: [ 20, 200 ]            # warn, crit
+  backup:
+    status: 1
+    rsync_user  : video
+    rsync_pass  : meda_hard_password
+    rsync_share : backup-cassandra
+    rsync_server: backup01d.video.yandex.net
+    keyspaces:
+      - fotki_stats
+  config:
+    main:
+      cluster_name: "'photo-test-cass cluster'"
+      authenticator: 'PasswordAuthenticator'
+      authorizer: 'CassandraAuthorizer'
+      permissions_validity_in_ms: 300000
+      batch_size_warn_threshold_in_kb: 10
+      data_file_directories:
+        - /opt/cassandra/data
+      commitlog_directory: '/opt/cassandra/commitlog'
+      seed_provider:
+        - class_name: 'org.apache.cassandra.locator.SimpleSeedProvider'
+          parameters:
+            - seeds: '2a02:6b8:b010:2005::1fc,2a02:6b8:0:f34::16a,2a02:6b8:0:1a71::24c3,2a02:6b8:b010:2005::1fd,2a02:6b8:0:f34::16b,2a02:6b8:0:1a71::24c4'
+      listen_address: ' '
+      rpc_address: ' '
+      rpc_min_threads: 16
+      rpc_max_threads: 2048
+      endpoint_snitch: 'PropertyFileSnitch'
+    topology:
+      - 2a02\:6b8\:b010\:2005\:\:1fc=UGR:RACK1
+      - 2a02\:6b8\:b010\:2005\:\:1fd=UGR:RACK1
+      - 2a02\:6b8\:0\:1a71\:\:24c3=SAS:RACK1
+      - 2a02\:6b8\:0\:1a71\:\:24c4=SAS:RACK1
+      - 2a02\:6b8\:0\:f34\:\:16a=FOL:RACK1
+      - 2a02\:6b8\:0\:f34\:\:16b=FOL:RACK1
+      - default=FOL:RACK1
+    env:
+      max_heap_size: 'MAX_HEAP_SIZE="4G"'
+      heap_newsize: 'HEAP_NEWSIZE="800M"'
+      enable_ipv4_prefer: 'JVM_OPTS="$JVM_OPTS -Djava.net.preferIPv4Stack=true"'
+      extra_opts:
+        - "-Dcassandra.metricsReporterConfigFile=/etc/cassandra/report.yaml"
+        - "-Xloggc:/var/log/cassandra/gc.log"
+  pkgs:
+    - cassandra
+    - config-cassandra-grants
+    - config-monrun-cassandra
+    - yandex-media-common-cassandra-backup

@@ -1,0 +1,83 @@
+host: {{ host|default(group|replace("CGROUP%", "")) }}
+namespace: kino
+tags: {{_context.macro.add_env_tags_by_group(group, and_add=["sre"])}}
+ttl: 120
+refresh_time: 60
+aggregator: timed_more_than_limit_is_problem
+aggregator_kwargs:
+    nodata_mode: force_ok
+    unreach_mode: force_ok
+    unreach_service: [{check: ":UNREACHABLE"}, {check: ":unispace"}]
+    limits:
+        - time_start: 11
+          time_end: 19
+          day_start: 1
+          day_end: 5
+        {% if 'small-group' in tags %}
+          warn: 0
+          crit: 34%
+        {% else %}
+          warn: 0
+          crit: 33%
+        {% endif %}
+        - time_start: 11
+          time_end: 19
+          day_start: 6
+          day_end: 7
+        {% if 'small-group' in tags %}
+          warn: 0
+          crit: 34%
+        {% else %}
+          warn: 0
+          crit: 33%
+        {% endif %}
+        - time_start: 20
+          time_end: 10
+          day_start: 1
+          day_end: 7
+        {% if 'small-group' in tags %}
+          warn: 0
+          crit: 34%
+        {% else %}
+          warn: 0
+          crit: 33%
+        {% endif %}
+notifications:
+    - template_name: phone_escalation
+      template_kwargs:
+          repeat: 2
+          delay: 300
+          logins:
+              - '@svc_sre_kinopoiskotttv:sre_kptvott'
+              - etruntaev
+              - coldmind
+              - gibzer
+              - sergeyv
+              - vyacheslav
+          on_success_next_call_delay: 300
+
+# not part of the juggler check specification (jupy extension)
+# only matters for the metahost level template
+unreach_checks:
+  __jupy_merge_mode: skip
+  checks:
+      - service: UNREACHABLE
+        ttl: 180
+        active: icmpping
+        active_kwargs:
+            fail_threshold: 2
+        aggregator_kwargs:
+            __jupy_merge_mode: skip
+            nodata_mode: skip
+            limits:
+                - time_start: 0
+                  time_end: 23
+                  day_start: 1
+                  day_end: 7
+                {% if 'small-group' in tags %}
+                  warn: 0
+                  crit: 34%
+                {% else %}
+                  warn: 0
+                  crit: 33%
+                {% endif %}

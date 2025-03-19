@@ -1,0 +1,29 @@
+pipelines:
+  sr_policies:
+    - { pattern: "traff", functions: [ { name: speed } ] }
+    - { pattern: "packets", functions: [ { name: speed, argument: { multiplier: 8 } } ] }
+
+pollers:
+  GNMI:
+    sr_policies gnmi poller:
+      filter: [ "lab-vla-32z3.yndx.net" ]
+      port: 50051
+      username: "{{pillar['sec']['gnmi_password']}}"
+      password: "{{pillar['sec']['gnmi_login']}}"
+      encoding: "json"
+      transform:
+        "/mpls/signalling-protocols/segment-routing/sr-te-ip-policies/sr-te-ip-policy/state/counters":
+          series: sr_policies
+          values:
+            - { pattern: "^/mpls/signalling-protocols/segment-routing/sr-te-ip-policies/sr-te-ip-policy/state/counters/packets$", repl: "packets" }
+            - { pattern: "^/mpls/signalling-protocols/segment-routing/sr-te-ip-policies/sr-te-ip-policy/state/counters/bytes$", repl: "traff" }
+            - { pattern: "^/mpls/signalling-protocols/segment-routing/sr-te-ip-policies/sr-te-ip-policy/to-address$", to_tag: true }
+            - { pattern: "^/mpls/signalling-protocols/segment-routing/sr-te-ip-policies/sr-te-ip-policy/color$", to_tag: true }
+          tags:
+            - { pattern: "^/mpls/signalling-protocols/segment-routing/sr-te-ip-policies/sr-te-ip-policy/state/counters/name$", drop: true }
+            - { pattern: "^/mpls/signalling-protocols/segment-routing/sr-te-ip-policies/sr-te-ip-policy/color$", repl: "color" }
+            - { pattern: "^/mpls/signalling-protocols/segment-routing/sr-te-ip-policies/sr-te-ip-policy/to-address$", repl: "endpoint" }
+      subscriptions:
+        - path: "/junos/services/segment-routing/traffic-engineering/ingress/usage/"
+          subscription_mode: "sample"
+          sample_interval: "5s"

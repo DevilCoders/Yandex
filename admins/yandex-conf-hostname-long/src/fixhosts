@@ -1,0 +1,103 @@
+#!/bin/bash
+### BEGIN INIT INFO
+# Provides:          fixhosts
+# Required-Start:    $local_fs $network
+# Required-Stop:     
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Fix /etc/hosts and /etc/hostname
+# Description:       Fix /etc/hosts and /etc/hostname (hostname must be in long form)
+### END INIT INFO
+F="/etc/hosts"
+H="/etc/hostname"
+LO_RECORD="127.0.0.1 localhost.localdomain localhost"
+LO_IPV6_RECORD="::1 localhost ip6-localhost ip6-loopback\nfe00::0 ip6-localnet\nff00::0 ip6-mcastprefix\nff02::1 ip6-allnodes\nff02::2 ip6-allrouters\nff02::3 ip6-allhosts\n"
+
+REWRITE_CONFIGS=0
+
+MSG="#don't edit this file, edit /etc/hosts.manual instead (add own lines to it)"
+
+#
+# fix /etc/hosts and /etc/hostname (hostname must be in long form)
+#
+ . /usr/local/sbin/autodetect_active_eth
+
+if [ -z $default_route_iface ]; then
+    echo "autodetect_active_eth did not return \$default_route_iface"
+    exit 1
+fi
+
+HOST=$(hostname -s)
+ADDR=$(ip -4 -o addr show $default_route_iface scope global | awk '{print $4}' | grep -v ^10\. | cut -d/ -f1)
+ADDR6=$(ip -6 -o addr show $default_route_iface scope global | awk '{print $4}' | cut -d/ -f1 | while read ADDRESS; do if [ -n "`dig -6 -x $ADDRESS +short`" ]; then echo $ADDRESS; fi; done)
+if [ -z "$ADDR" ]; then
+	ADDR=$ADDR6
+	unset ADDR6
+fi
+if [ -z "$ADDR" ]; then
+	ADDR=$(ip addr show | awk '$1 == "inet" && $NF == "venet0:0" { print $2 }' | cut -d/ -f1)
+fi
+PTR=$(dig -x $ADDR +short | grep -v "in-addr.arpa\.$")
+if [ -z "$PTR" ]; then
+	PTR=$(dig -6 -x $ADDR +short)
+fi
+
+if ! echo ${PTR%.}  | egrep "^[a-z0-9\-]+\.[a-z0-9\.\-]+$" >/dev/null ; then
+#        echo -e "invalid answer from DIG, do nothing, PTR is:\n$PTR"
+        exit
+fi
+
+
+if [ -z "$PTR" -o "$HOST" != "$(echo $PTR | cut -d. -f1)" ]; then
+	#echo "PTR not found(ip: $ADDR) or hostname mismatch" | sendmail root
+	echo "PTR not found(ip: $ADDR) or hostname mismatch"
+	exit
+fi
+if [ -n "$ADDR6" ]; then
+	if ! cat $F | egrep "^$ADDR6 ${PTR%.} $HOST" >/dev/null ; then
+        	echo "rewriting $F: ('$ADDR6 ${PTR%.} $HOST' do not match in $F)"
+        	echo -e "old $F:\n`cat $F`"
+        	REWRITE_CONFIGS=1
+	fi
+fi
+if ! cat $F | egrep "^$ADDR ${PTR%.} $HOST" >/dev/null ; then
+	echo "rewriting $F: ('$ADDR ${PTR%.} $HOST' do not match in $F)"
+	echo -e "old $F:\n`cat $F`"
+	REWRITE_CONFIGS=1
+fi
+
+if ! cat $F | egrep "^$LO_RECORD" >/dev/null ; then
+        echo "rewriting $F: ('$LO_RECORD' do not match in $F)"
+	echo -e "old $F:\n`cat $F`"
+        REWRITE_CONFIGS=1
+fi
+
+if ! cat $F | grep "$MSG" >/dev/null ; then
+        echo "rewriting $F: ('$MSG' do not match in $F)"
+	echo -e "old $F:\n`cat $F`"
+        REWRITE_CONFIGS=1
+fi
+
+
+if ! cat $H | egrep "^${PTR%.}$" >/dev/null ; then
+        echo "rewriting $H: (hostname '${PTR%.}' do not match '`cat $H`' in $H)"
+        REWRITE_CONFIGS=1
+fi
+
+
+if [ $REWRITE_CONFIGS -eq 1 ] || [ x$1 == xstart ] ; then
+	echo "rewriting $F and $H at `date`"
+
+	#rewrite /etc/hosts
+	echo "$LO_RECORD" > $F.tmp
+	echo -e "$LO_IPV6_RECORD" >>$F.tmp
+
+	echo -e "\n#\n$MSG\n#\n" >> $F.tmp
+        [ -s $F.manual ] && cat $F.manual >> $F.tmp
+	if [ -n "$ADDR6" ]; then
+		echo "$ADDR6 ${PTR%.} $HOST" >> $F.tmp
+	fi
+	echo "$ADDR ${PTR%.} $HOST" >> $F.tmp && mv $F.tmp $F
+	#rewrite /etc/hostname
+	echo -n ${PTR%.} > $H.tmp && mv $H.tmp $H && hostname ${PTR%.}
+fi

@@ -1,0 +1,51 @@
+#!/usr/bin/env lua
+-- load common
+do local _c, _e = loadfile("common.test"); if _e then print(_e); os.exit(1) else _c() end end
+-- end common
+
+local os = require("os")
+local log = require("log")
+
+-- XXX globals for module
+payload = {
+  {Tags = {type = "metahost", name = "host1", metahost = "host1"},
+    Result = {
+      ["2xx"] = 3600.0, ["3xx"] = 336.1, ["4xx"] = 46.2, ["5xx"] = 1006.3,
+      total_upstream_timings = {1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9},
+      backend = {
+        ["2xx"] = 20, ["3xx"] = 33.1, ["4xx"] = 46.2, ["5xx"] = 56.3,
+        total_upstream_timings = {0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9}},
+      ext = {
+        backend = {["2xx"] = 70, ["3xx"] = 73.1, ["4xx"] = 76.2, ["5xx"] = 76.3,
+        total_upstream_timings = {7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8, 7.9}}},
+   }},
+  {Tags = {type = "host", name = "host2", metahost = "host1 with default"},
+    Result = {
+      ["2xx"] = 600.0, ["3xx"] = 36.1, ["4xx"] = 6.2, ["5xx"] = 1000.3,
+      total_upstream_timings = {1.01, 1.02, 1.03, 1.04, 1.05, 1.06, 1.07, 1.08, 1.09},
+      backend = {
+        ["2xx"] = 200, ["3xx"] = 330.1, ["4xx"] = 460.2, ["5xx"] = 5.3,
+        total_upstream_timings = {0.11, 0.22, 0.33, 0.44, 0.55, 0.66, 0.77, 0.88, 0.99}},
+   }},
+}
+variables = {}
+config = {
+  mode = "sum",
+  limits = {CRIT=3000, default="OK"},
+}
+-- XXX end globals
+
+loadPlugin("sum.lua")
+
+-- global function from module
+checkName = "SumTestCheck .*"
+print("Result :", tprint(run()))
+
+config.query = "2xx$"
+checkName = "SumTestCheck 2xx$"
+print("Result :", tprint(run()))
+
+config.query = "^backend.*5xx$"
+config.limits.CRIT = 50
+checkName = "SumTestCheck ^backend.*5xx$"
+print("Result :", tprint(run()))

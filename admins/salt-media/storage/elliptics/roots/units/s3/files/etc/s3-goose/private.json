@@ -1,0 +1,164 @@
+{%- set env = grains['yandex-environment'] -%}
+{%- set fqdn = grains['conductor']['fqdn'] -%}
+{%- set conductor_group = grains['conductor']['group'] -%}
+{%- if env == 'testing' -%}
+{%- set abcd_provider_id = "cd41d307-4547-47af-a77c-d0e5f9ea36e0" -%}
+{%- set domain = "s3-idm.mdst.yandex.net" -%}
+{%- else -%}
+{%- set abcd_provider_id = "eeada81a-d111-47fe-8d5c-cb8f18b534a8" -%}
+{%- set domain = "s3-idm.mds.yandex.net" -%}
+{%- endif -%}
+
+{
+    "init_timeout_sec": 45,
+
+    "http": {
+        "addr": ":3388",
+        "read_header_timeout": 1,
+        "max_header_bytes": 8388608,
+        "access_log": true
+    },
+
+    "grpc": {
+        "addr": ":3366",
+        "tls": {
+            "certificate_path": "/etc/yandex-certs/{{ domain }}.pem",
+            "private_key_path": "/etc/yandex-certs/{{ domain }}.key"
+        }
+    },
+
+    "http_idm": {
+        "addr": ":3377"
+    },
+
+    "system_app": {
+        "monitor_addr": ":3399",
+        "max_header_bytes": 8388608,
+        "read_header_timeout": 1,
+        "health_check_timeout_msec": 1000
+    },
+
+    "application": {
+        "enable_team_integration": true,
+        "max_buckets_security_limit": 501,
+        "max_size_security_limit": 3377699720527872,
+        "buckets_aggregation": {"1373": ["yandexcloud-dbaas", "internal-dbaas", "cloud-storage"], "5330": ["buttload"]}
+    },
+
+    "staff": {
+        "base_url": "https://staff-api.yandex-team.ru/v3/",
+        "oauth_token": "{{ pillar['yav']['s3-idm-staff-oauth-token'] }}",
+        "cache_file_path": "/var/tmp/s3-goose-staffCache.json",
+        "cache_file_valid_lifetime_hours": 24,
+        "update_cache_sec": 1800
+    },
+
+    "logging": {
+        "default": {
+            "level": "info",
+            "file_path": "logrotate+asyncskip:///var/log/s3/goose-private/main.log"
+        },
+        "filtered": [
+            {
+                "level": "info",
+                "name": "private.yc.requests",
+                "file_path": "logrotate+asyncskip:///var/log/s3/goose-private/yc-access.log"
+            },
+            {
+                "level": "error",
+                "name_prefix": "private.healthcheck",
+                "file_path": "logrotate+asyncskip:///var/log/s3/goose-private/healthcheck.log"
+            },
+            {
+                "level": "info",
+                "name_prefix": "idm",
+                "file_path": "logrotate+asyncskip:///var/log/s3/goose-private/idm.log"
+            },
+            {
+                "level": "info",
+                "name_prefix": "private",
+                "file_path": "logrotate+asyncskip:///var/log/s3/goose-private/api.log"
+            },
+            {
+                "level": "info",
+                "name_prefix": "private.access_log",
+                "file_path": "logrotate+async:///var/log/s3/goose-private/access.log"
+            },
+            {
+                "level": "info",
+                "name_prefix": "private.api.pg",
+                "file_path": "logrotate+asyncskip:///var/log/s3/goose-private/pg.log"
+            },
+            {
+                "level": "info",
+                "name_prefix": "private.pg.pgmetaManager",
+                "file_path": "logrotate+asyncskip:///var/log/s3/goose-private/pgmeta.log"
+            },
+            {
+                "level": "info",
+                "name_prefix": "private.api.background",
+                "file_path": "logrotate+asyncskip:///var/log/s3/goose-private/bg.log"
+            },
+            {
+                "level": "info",
+                "name": "*.sys_pgx",
+                "file_path": "logrotate+asyncskip:///var/log/s3/goose-private/sysdb.log"
+            },
+            {
+                "level": "info",
+                "name": "*.pg.queries",
+                "file_path": "logrotate+asyncskip:///var/log/s3/goose-private/pg-access.log"
+            },
+            {
+                "level": "info",
+                "name": "*.alert",
+                "file_path": "logrotate+async:///var/log/s3/goose-private/alerts.log"
+            }
+        ]
+    },
+    "notifications": {
+        "engine": "persqueue",
+        "persqueue": {
+            "endpoints": [
+                { "host": "man.logbroker.yandex.net", "port": 2135, "dc": "MAN" },
+                { "host": "myt.logbroker.yandex.net", "port": 2135, "dc": "MYT" },
+                { "host": "sas.logbroker.yandex.net", "port": 2135, "dc": "SAS" },
+                { "host": "vla.logbroker.yandex.net", "port": 2135, "dc": "VLA" },
+                { "host": "iva.logbroker.yandex.net", "port": 2135, "dc": "IVA" }
+            ],
+            "source_id": "s3-goose-private-{{ conductor_group }}-{{ fqdn }}",
+            "endpoint": "logbroker.yandex.net",
+            "auth_method": "tvm2",
+            "topic": "{{ pillar['s3']['notifications-topic'] }}",
+            "mode": "non-blocking",
+            "queue_size_messages": 100,
+            "batch_buffer_size_bytes": 8192,
+            "retry_on_failure": true
+        }
+    },
+    "cloud_events": {
+        "event_file": "/var/log/s3/goose-private/cloud_events.log",
+        "buffer_size": 4096,
+        "flush_period_sec": 5
+    },
+    "permission_backends": [
+        "intranet",
+        "postgres"
+    ],
+    "auth_backends": [
+        "yc",
+        "intranet",
+        "tvm2"
+    ],
+    "features": {
+        "bucket_roles_enabled": true,
+        "credentials_enabled": true,
+        "disable_anonymous_read_db_superposition": true,
+        "anonymous_flags_db_storage_enabled": true
+    },
+    "adapters": {
+        "auth_control": "postgres",
+        "credentials": "postgres"
+    },
+    "abcd_provider_id": "{{ abcd_provider_id }}"
+}

@@ -1,0 +1,82 @@
+upstream at_upstream {
+        server xfront01g.tools.yandex.net max_fails=1 fail_timeout=5s;
+        server xfront02g.tools.yandex.net max_fails=1 fail_timeout=5s;
+
+        server xfront01e5.tools.yandex.net max_fails=1 fail_timeout=5s;
+        server xfront02e5.tools.yandex.net max_fails=1 fail_timeout=5s;
+
+#        server xfront01f.tools.yandex.net max_fails=1 fail_timeout=5s;
+#        server xfront02f.tools.yandex.net max_fails=1 fail_timeout=5s;
+}
+
+upstream at_upstream_ssl {
+        server xfront01g.tools.yandex.net:443 max_fails=1 fail_timeout=5s;
+        server xfront02g.tools.yandex.net:443 max_fails=1 fail_timeout=5s;
+
+        server xfront01e5.tools.yandex.net:443 max_fails=1 fail_timeout=5s;
+        server xfront02e5.tools.yandex.net:443 max_fails=1 fail_timeout=5s;
+
+#        server xfront01f.tools.yandex.net:443 max_fails=1 fail_timeout=5s;
+#        server xfront02f.tools.yandex.net:443 max_fails=1 fail_timeout=5s;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+  server_name .at.yandex-team.ru;
+  server_name mag.ya.ru;	
+  access_log /var/log/nginx/at.access.log main;
+
+   location / {
+       return 301 https://$host$request_uri;
+   }
+
+#  location / {
+#    proxy_pass http://at_upstream;
+#    proxy_set_header Host                   $host;
+#    proxy_set_header X-Real-IP              $remote_addr;
+#    proxy_set_header X-Forwarded-Proto $scheme;
+#  }
+}
+server {
+    listen 443;
+    listen [::]:443;
+  ssl_protocols SSLv3 TLSv1;
+  ssl_certificate /etc/nginx/ssl/at.yandex-team.ru.crt;
+  ssl_certificate_key /etc/nginx/ssl/at.yandex-team.ru.key;
+
+  server_name .at.yandex-team.ru;
+  access_log /var/log/nginx/at.access.log main;
+  add_header Strict-Transport-Security "max-age=315360000";
+
+  location / {
+    proxy_pass https://at_upstream_ssl;
+    proxy_set_header Host                   $host;
+    proxy_set_header X-Real-IP              $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+  }
+}
+
+server {
+    listen 443;
+    listen [::]:443;
+
+  ssl_protocols SSLv3 TLSv1;
+  ssl_certificate /etc/nginx/ssl/mag.ya.ru.crt;
+  ssl_certificate_key /etc/nginx/ssl/mag.ya.ru.key;
+
+  server_name mag.ya.ru; 
+  server_name mag.yandex-team.ru;
+  access_log /var/log/nginx/at.access.log main;
+  add_header Strict-Transport-Security "max-age=315360000";
+
+  location / {
+    proxy_pass https://at_upstream_ssl;
+    proxy_set_header Host                   $host;
+    proxy_set_header X-Real-IP              $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+  }
+}
+

@@ -1,0 +1,59 @@
+#!/usr/bin/env glua
+-- load common
+do local _c, _e = loadfile("common.test"); if _e then print(_e); os.exit(1) else _c() end end
+-- end common
+
+local os = require("os")
+local log = require("log")
+
+-- XXX globals for module
+payload = {{
+  Tags = {type = "metahost", name = "host1", metahost = "host1"},
+  Result = {
+    backend = {
+      ["2xx"] = 3600.0, ["3xx"] = 336.1, ["4xx"] = 46.2, ["5xx"] = 1006.3,
+      total_rps = 4988.6,
+      int = {
+        ["2xx"] = 20, ["3xx"] = 33.1, ["4xx"] = 46.2, ["5xx"] = 56.3,
+        total_rps = 155.6},
+      ext = {
+        api = {
+          ["2xx"] = 70, ["3xx"] = 73.1, ["4xx"] = 76.2, ["5xx"] = 76.3,
+          total_rps = 295.6}},
+    },
+  }},
+  {
+  Tags = {type = "host", name = "host2", metahost = "host1 with default"},
+  Result = {
+    ["2xx"] = 600.0, ["3xx"] = 36.4, ["4xx"] = 6.2, ["5xx"] = 10.3,
+    total_rps = 652.9,
+    backend = {
+      ["2xx"] = 200, ["3xx"] = 330.1, ["4xx"] = 460.2, ["5xx"] = 50.3,
+      total_rps = 1040.6},
+    ["backend.simple"] = {
+      ["2xx"] = 300, ["3xx"] = 330.1, ["4xx"] = 460.2, ["5xx"] = 50.3,
+      total_rps = 1140.6},
+    ["backend.mega"] = {
+      ["2xx"] = 900, ["3xx"] = 330.1, ["4xx"] = 460.2, ["5xx"] = 50.3,
+      total_rps = 1740.6},
+    ["mega.service"] = {
+      ["2xx"] = 200, ["3xx"] = 330.1, ["4xx"] = 460.2, ["5xx"] = 600.3,
+      total_rps = 1590.6},
+ }},
+}
+variables = {}
+config = {
+  type = "host",
+  pattern = "^(backend%.[^%.]+)%.",
+  name = "[45]xx",
+  divider = "total_rps",
+  limits = {
+    ["5xx"] = {CRIT=0.02, WARN=0.01},
+    default = {CRIT=0.30, WARN=0.20},
+  },
+}
+-- XXX end globals
+
+loadPlugin("rate.lua")
+
+print("Result :", tprint(run()))

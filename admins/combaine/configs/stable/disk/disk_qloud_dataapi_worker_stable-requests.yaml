@@ -1,0 +1,72 @@
+---
+name: disk_qloud_dataapi_worker_stable-requests_http
+parsing:
+  groups: [disk_qloud_dataapi_worker_stable]
+  metahost: dataapi-worker.qloud.disk.yandex.net
+  DataFetcher:
+    logname: 'yandex/dataapi/dataapi-worker-tskv.log'
+    timetail_url: '/timetail?pattern=requests_http&type=java&timeout=60&log_ts='
+  Combainer:
+    MINIMUM_PERIOD: 60
+
+aggregate:
+  data:
+    requests_http:
+      type: "custom"
+      class: "Multimetrics"
+
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+---
+name: disk_qloud_dataapi_worker_stable-requests_pg
+parsing:
+  groups: [disk_qloud_dataapi_worker_stable]
+  metahost: dataapi-worker.qloud.disk.yandex.net
+  DataFetcher:
+    logname: 'yandex/dataapi/dataapi-worker-tskv.log'
+    timetail_url: '/timetail?pattern=requests_pg&type=java&timeout=60&log_ts='
+  Combainer:
+    MINIMUM_PERIOD: 60
+
+aggregate:
+  data:
+    requests_pg:
+      type: "custom"
+      class: "Multimetrics"
+
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+    requests_postgres_failed:
+      type: juggler
+      namespace: disk
+      Host: "dataapi-worker.qloud.disk.yandex.net"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - ignition
+      Aggregator: logic_or
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      flaps: { stable_time: 120, critical_time: 300 }
+      plugin: picker
+      config:
+        type: metahost
+        query: "^(query_status)_([^_]+)_total_.*_failed$"
+        limits:
+          default: 5
+      tags:
+        - production

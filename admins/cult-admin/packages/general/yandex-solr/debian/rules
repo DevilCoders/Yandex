@@ -1,0 +1,31 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+# Sample debian/rules that uses debhelper.
+# This file was originally written by Joey Hess and Craig Small.
+# As a special exception, when this file is copied by dh-make into a
+# dh-make output file, you may use that output file without restriction.
+# This special exception was added by Craig Small in version 0.37 of dh-make.
+
+# Uncomment this to turn on verbose mode.
+export DH_VERBOSE=1
+
+PKD  = $(abspath $(dir $(MAKEFILE_LIST)))
+PKG  = $(word 2,$(shell dpkg-parsechangelog -l$(PKD)/changelog | grep ^Source))
+VER ?= $(shell dpkg-parsechangelog -l$(PKD)/changelog | perl -ne 'print $$1 if m{^Version:\s+(?:\d+:)?(\d.*)(?:\-\d+.*)};')
+current_dir ?= $(shell basename `pwd`)
+
+.PHONY: get-orig-source
+## http://wiki.debian.org/onlyjob/get-orig-source
+get-orig-source:  $(info I: $(PKG)_$(VER))
+	$(info I: CURDIR: $(current_dir))
+	@echo "# Downloading..."
+	uscan --noconf --verbose --rename --destdir=.. --check-dirname-level=0 --force-download --download-version $(VER) $(PKD)
+	@echo "# Extracting..."
+	tar -xf ../$(PKG)_$(VER).orig.tar.* --directory ../yandex-solr --strip-components 1
+%:
+	dh $@ 
+
+override_dh_install:
+	dh_install
+	sed -i s/\<Set\ name=\"tempDirectory\"\>\<Property\ name=\"jetty.home\"\ default=\".\"\\/\>\\/solr-webapp\<\\/Set\>/\<Set\ name=\"tempDirectory\"\>\<Property\ name\=\"jetty.home\"\ default=\"\\/\"\\/\>\\/var\\/tmp\\/solr-webapp\<\\/Set\>/ debian/yandex-solr/usr/lib/yandex-solr/jetty/contexts/solr-jetty-context.xml
+

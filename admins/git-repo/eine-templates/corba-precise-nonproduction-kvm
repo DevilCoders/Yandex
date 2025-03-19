@@ -1,0 +1,66 @@
+%r:pxe-switch! -p eine
+%discovery smart=relax mem=relax
+%^setup 
+
+clearpart --all
+
+sed 's,pvcreate "/dev,pvcreate -y -ff "/dev,' -i /usr/share/einstellung/ks/.raid/mdadm
+
+part raid.01 -d disk:0 -s 30G
+part raid.02 -d disk:0 --grow
+
+part raid.11 -d disk:1 -s 30G
+part raid.12 -d disk:1 --grow
+
+part raid.21 -d disk:2 -s 30G
+part raid.22 -d disk:2 --grow
+
+part raid.31 -d disk:3 -s 30G
+part raid.32 -d disk:3 --grow
+
+raid / -d md0 -l 1 -t ext4 raid.01 raid.11 raid.21 raid.31
+raid pv -d md1 -e 1.2 -l 10 -a "-c 64" raid.02 raid.12 raid.22 raid.32 
+volgroup vg00 md1
+
+install -d tmpfs p2p://ubuntu/12.04-x86_64
+repo -l precise mirror/ubuntu
+repo dist/system configs/all/
+repo dist/system precise/all/
+repo dist/system precise/amd64/
+repo dist/common stable/all/
+repo dist/common stable/amd64/
+repo dist/yandex-precise stable/all/
+repo dist/yandex-precise stable/amd64/
+
+mv /target/sbin/initctl /target/sbin/initctl.orig
+ln -s /bin/true /target/sbin/initctl
+
+packages bridge-utils vlan ethtool ntpdate ntp apt irqbalance syslog-ng bind9 vim strace less sudo file atop ssh netcat tcpdump traceroute host screen lvm2 curl dstat yandex-archive-keyring rsync tcpdump postfix whois host screen yandex-logrotate yandex-dash2bash syslog-ng grub2 linux-image-3.8.0-22-na config-media-admins-public-keys config-juggler-client-media mailutils config-yabs-ntp config-ssh-banner
+packages --reinstall openssh-server
+
+rm -f /target/sbin/initctl
+mv /target/sbin/initctl.orig /target/sbin/initctl
+
+rm -f /target/etc/init/plymouth*
+sed -i "s/quiet splash/panic=30/" /target/etc/default/grub
+network -s conductor
+resolv --search yandex.net --domain yandex.net
+resolv -4 --dns ns-cache.yandex.ru  
+resolv -4 --dns localhost
+resolv -6 --dns ns-cache.yandex.ru
+resolv -6 --dns localhost
+
+chroot /target/ sh -c 'apt-get update && apt-get -y upgrade'
+
+rm -f /target/etc/init/plymouth*
+sed -i "s/ro quiet/ro verbose --verbose panic=30/" /target/boot/grub/grub.cfg
+network -s conductor
+resolv --dns localhost --search yandex.net --domain yandex.net
+resolv --search yandex.net --domain yandex.net
+
+password -u root --plain qwerty
+bootloader
+cleanup
+
+
+%reboot 

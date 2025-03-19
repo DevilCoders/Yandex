@@ -1,0 +1,154 @@
+#! /usr/bin/perl
+
+use strict;
+use Date::Parse;
+use Time::Local;
+
+$SIG{'PIPE'} = "CATCH_PIPE";
+
+my $me = $0;
+
+my $logfile;
+my $interval = 300; # five minutes default
+
+my %types = (
+		'common', '(?:^|\s)\[([^\]]+)\]',
+		'java', '(\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d)',
+		'syslog', '(\w+\s+\d+\s+\d+:\d+:\d+)',
+		'lighttpd', ' - \[([^\]]+)\]',
+		'baida', '(\d+\/\w+\/\d{4}:\d\d:\d\d:\d\d\s[^\s]+)',
+                'squid', '^(\d+)\.',
+                'phantom', '^\d+\s+(\d+-\d+-\d+\s+\d+:\d+:\d+)',
+		'clck-error', '\tts=(\d+)\t',
+                'alertlog', '^([STMWF][uoehra][neduit].*\s+\d\d\d\d)$',
+                'statbox', '^\[(.+? \d\d:\d\d:\d\d)',
+	    );
+
+sub usage {
+  print STDERR "Usage: $me [-i <secs>] [-t <timestamp type>] [-p <file_prefix> ] [-d <output dir>] <log file>\n";
+  print STDERR "\t-i - split interval (default: 300)\n";
+  print STDERR "\t-d - dirname (default: ./)\n";
+  print STDERR "\t-n - postfix = date +%F_%T (default: date +%s)\n";
+  print STDERR "\t-p - file prefix (default: split)\n";
+  print STDERR "\t-t - Timestamp type (default: common)\n";
+  print STDERR "\t-r - Replace matched time with unixtime\n";
+  my $valid;
+  foreach (keys %types) {
+      $valid .= " $_";
+  }
+  exit 0;
+}
+
+my $type = 'common';
+my $replace_flag = 0;
+my $name_flag = 0;
+my $prefix = 'split';
+my $dirname = './';
+
+usage unless (scalar @ARGV);
+
+while (my $param = shift(@ARGV)) {
+    usage if ($param eq '-h' or $param eq '--help');
+    if ($param eq '-i') {
+	my $num = shift(@ARGV);
+        unless ($num =~ /\d+/) {
+	    print STDERR "Wrong number: $num\n";
+	    exit 2;
+	}
+	$interval = $num;
+        next;
+    }
+    if ($param eq '-t') {
+	my $str = shift(@ARGV);
+        unless ($types{$str}) {
+	    my $valid;
+	    foreach (keys %types) {
+		$valid .= " $_";
+	    }
+	    print STDERR "Wrong log type: $str\nValid types are:" . $valid . "\n";
+	    exit 2;
+	}
+	$type = $str;
+        next;
+    }
+    if ($param eq '-r') {
+    	$replace_flag = 1;
+	next;
+    }
+    if ($param eq '-n') {
+    	$name_flag = 1;
+	next;
+    }
+    if ($param eq '-d') {
+        $dirname = shift(@ARGV);
+        if ( ! -d $dirname ) {
+            print STDERR "Directory: $dirname doesn't exist \n";
+            exit 2;
+        }
+        next;
+    }
+    if ($param eq '-p') {
+        $prefix = shift(@ARGV);
+        next;
+    }
+    if (not $param =~ /^-/ and not $logfile) {
+	$logfile = $param;
+	next;
+    }
+    usage;
+}
+
+usage unless ($logfile);
+
+my $timeborder;
+
+sub line2time($) {
+    my ($line) = @_;
+    if ($line =~ m/$types{$type}/) {
+        my $time = $1;
+        chomp($time);
+        return $time if $time =~ /^\d{9,11}$/;
+        my $timelocal =  str2time($time);
+        return $timelocal;
+    } else {
+        return undef;
+    }
+}
+
+open (LOG, "cat $logfile |");
+my $skip;
+my $filename;
+my $postfix;
+my $init = 1;
+while (my $line = <LOG>) {
+    my $timelocal = line2time($line);
+    if ( defined($timelocal)) {
+	if ( defined($timelocal) and ( $timelocal >= $timeborder ) and ( $init == 0 )) {
+	    close(SPLIT);
+	    $init = 1;
+	}
+	if ( ($init == 1) and defined($timelocal)) {
+	    $postfix = $timelocal;
+	    if ( $name_flag == 1 ) {
+		my $cmd = "date --date @" . $timelocal . " +%F_%T";
+		$postfix = `$cmd`;
+	    }
+	    $timeborder = $timelocal + $interval;
+	    $filename = "$dirname/$prefix.$postfix";
+#	    print $filename, "\n";
+	    open(SPLIT, ">$filename");
+	    $init = 0;
+	}
+    }
+# for debug    
+#    print "$init:$timelocal:$interval:$timeborder\n";
+    if ( $replace_flag == 1) { 
+    	$line =~ s/$types{$type}/$timelocal/;
+    }
+    if ($init == 0) {
+	print SPLIT $line;
+    }
+}
+
+close (LOG);
+exit 0;

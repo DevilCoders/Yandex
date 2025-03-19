@@ -1,0 +1,7 @@
+include:
+  - units.hbf
+
+prestable_pkgs:
+  pkg.installed:
+    - pkgs:
+      - yandex-environment-production

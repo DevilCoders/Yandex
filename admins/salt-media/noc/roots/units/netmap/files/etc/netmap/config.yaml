@@ -1,0 +1,91 @@
+application:
+  log_dir: 'cmlogs'
+  cpu_usage: 100.0
+  credentials:
+    ssh_key:
+      login: robot-netmap
+      identity_path: "/home/robot-netmap/.ssh/id_rsa"
+    aruba:
+      login: {{ pillar['sec_rt_yandex']['yandex_aruba_iap_terminal_login'] }}
+      passwords:
+        - "{{ pillar['sec_rt_yandex']['yandex_aruba_iap_terminal_password'] }}"
+    default:
+      login: {{ pillar['racktables_creds']['user'] }}
+      passwords:
+        # new pass should be first, since most of the devices use it
+        - "{{ pillar['racktables_creds']['password'] }}"
+        - "{{ pillar['racktables_password_old'] }}"
+
+zookeeper:
+  hosts:
+    {% if grains['yandex-environment'] != 'testing' -%}
+    - iva-zk01.net.yandex.net
+    - myt-zk01.net.yandex.net
+    - sas-zk01.net.yandex.net
+    - vla-zk01.net.yandex.net
+    {%- else -%}
+    - man-test-zk01.net.yandex.net
+    - sas-test-zk01.net.yandex.net
+    - vla-test-zk01.net.yandex.net
+    {%- endif %}
+  prefix: "/netmap"
+  master_node_name: master
+
+
+tvm:
+  id: 2032990
+  secret: "{{ pillar['tmv_secret'] }}"
+  inv_api_id: 2020198
+
+invapi:
+  client:
+    oauth: "{{ pillar['invapi_oath_token'] }}"
+    url: "https://ro.racktables.yandex-team.ru/api"
+
+go_logging:
+  # TODO: change level to info
+  level: debug
+  encoding: json
+
+health:
+  metrics:
+    pull:
+      enabled: true
+
+logging:
+  version: 1
+  asyncssh_debug_level: 2
+  # Very important flag, otherwise most of library loggers will be disabled.
+  disable_existing_loggers: False
+  formatters:
+    default:
+      format: '%(asctime)s - %(process)d - %(name)s - %(levelname)s - %(message)s'
+  handlers:
+    default:
+      class: logging.StreamHandler
+      formatter: default
+      level: DEBUG
+      stream: ext://sys.stdout
+  loggers:
+    "":
+      handlers: ['default']
+      level: DEBUG
+      propagate: False
+    comocutor:
+      handlers: ['default']
+      # Note: on debug level secrets can be leaked to log
+      # TODO: fix it!
+      level: WARNING
+      propagate: False
+    noc.pahom.sgqlc.endpoint.http:
+      level: INFO
+    rtapi:
+      level: INFO
+    TVM:
+      level: WARNING
+    asyncssh:
+      level: WARNING
+    asyncio:
+      level: INFO
+    aiortapi:
+      level: INFO

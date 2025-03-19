@@ -1,0 +1,43 @@
+- hosts: localhost
+  gather_facts: False
+  vars:
+    host: weather-stable-tile
+    type: production
+    host_tags:
+      - stable
+
+  pre_tasks:
+    - juggler_facts: jserver_api={{ jserver_search_api }}
+    - include_vars: "vars"
+  post_tasks:
+    - juggler_cleanup: #jcheck_mark={{ host }} # commented for clean up all checks made with playbook
+
+  tasks:
+    - include: tasks/yasm.yml
+      vars:
+        service_tags:
+          - specific
+        checks:
+          weather.alerts.prod.s3.weathermaps.status.2xx: s3_2xx
+          weather.alerts.prod.s3.weathermaps.status.4xx: s3_4xx
+          weather.alerts.prod.s3.weathermaps.status.5xx: s3_5xx
+          weather.alerts.prod.s3.weathermaps.timings.read.97: s3_read_97_prc
+        custom_flap:
+          stable: 30
+          critical: 150
+    - include: tasks/yasm.yml
+      vars:
+        service_tags:
+          - specific
+        checks:
+          weather.alerts.prod.s3.weathermaps.status.404: s3_404
+        notifications:
+          - template: golem
+          - template: on_status_change
+            golem_responsible: no
+            method: [telegram]
+            login: [weather_snafu]
+            status: "{{ statuses_critical }}"
+        custom_flap:
+          stable: 30
+          critical: 150

@@ -1,0 +1,41 @@
+#! /usr/bin/env bash
+
+server_conf="/etc/openvpn/server.conf"
+keys_dir="/etc/openvpn/keys"
+cert_dir="/srv/certs"
+
+ipv4=$(ip -4 a sh dev eth0 | egrep inet | awk '{ print $2 }' | egrep -v "10.10.10.10" | awk -F"/" "{ print \$1}")
+ipv6=$(ip -6 a sh dev eth0 | egrep inet6 | egrep -v "scope link" | awk "{ print \$2 }" | awk -F"/" "{ print \$1}")
+
+sed -i "s/^cert.*$/cert keys\/$(hostname -f).crt/" $server_conf
+sed -i "s/^key.*$/key keys\/$(hostname -f).key/" $server_conf
+
+ln -sf $cert_dir/RootCA.crt $keys_dir/
+ln -sf $cert_dir/RootCA.crl $keys_dir/
+ln -sf $cert_dir/vpn-keys/$(hostname -f).crt $keys_dir/
+ln -sf $cert_dir/vpn-keys/$(hostname -f).key $keys_dir/
+ln -sf $cert_dir/dh2048.pem $keys_dir/
+ln -sf $cert_dir/ta.key $keys_dir/
+
+if [[ `hostname -f` =~ ^[a-z]+[0-9]{2}d.root.yandex.net$ ]]; then
+    sed -i 's/^server 10.0.0.0 255.255.0.0$/server 10.0.16.0 255.255.240.0/' $server_conf
+elif [[ `hostname -f` =~ ^[a-z]+[0-9]{2}e.root.yandex.net$ ]]; then
+    sed -i 's/^server 10.0.0.0 255.255.0.0$/server 10.0.32.0 255.255.240.0/' $server_conf
+fi
+
+if [[ ! -z $ipv4 ]]; then
+	sed -i "s/^local.*$/local $ipv4/" $server_conf
+	sed -i "s/^proto.*$/proto tcp-server/" $server_conf
+	exit 0
+fi
+if [[ ! -z $ipv6 ]]; then
+	sed -i "s/^local.*$/local $ipv6/" $server_conf
+	sed -i "s/^proto.*$/proto tcp6-server/" $server_conf
+fi
+
+#ln -sf $cert_dir/RootCA.crt $keys_dir/RootCA.crt
+#ln -sf $cert_dir/RootCA.crl $keys_dir/RootCA.crl
+#ln -sf $cert_dir/vpn-keys/$(hostname -f).crt $keys_dir/$(hostname -f).crt
+#ln -sf $cert_dir/vpn-keys/$(hostname -f).key $keys_dir/$(hostname -f).key
+#ln -sf $cert_dir/dh2048.pem $keys_dir/dh2048.pem
+#ln -sf $cert_dir/ta.key $keys_dir/ta.key

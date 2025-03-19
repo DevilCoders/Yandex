@@ -1,0 +1,36 @@
+#!/usr/bin/env python
+
+import subprocess
+from subprocess import check_output
+import argparse
+
+def main(fix=False):
+    ip6_addrs_list = check_output(["ip", "-6", "-oneline", "address", "show",
+        "scope", "global"]).decode("utf-8").splitlines()
+
+    error_routes = list()
+    for rec in ip6_addrs_list:
+        (_, dev, _, addr, _) = rec.split(None, 4)
+
+        check_route = check_output(["ip", "-6", "route", "show", "exact", addr,
+            "dev", dev]).decode("utf-8").rstrip()
+        if not check_route:
+            if fix:
+                # Try to fix and check result of fix
+                subprocess.call(["ip", "-6", "route", "add", addr, "dev", dev])
+                check_route = check_output(["ip", "-6", "route", "show",
+                    "exact", addr, "dev", dev]).decode("utf-8").rstrip()
+        if not check_route:
+            error_routes.append(addr)
+
+    if error_routes:
+        print("2;No routes for {}".format(",".join(error_routes)))
+    else:
+        print("0;OK")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--fix", help="Add absent route", action="store_true")
+    args = parser.parse_args()
+    main(fix=args.fix)

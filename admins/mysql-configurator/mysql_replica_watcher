@@ -1,0 +1,35 @@
+#!/usr/bin/python
+"""
+Replica Watcher daemon
+Check replication delay time and close/open mysql real from SLB
+"""
+
+import signal
+import eventlet
+from mysql_configurator import load_config
+from mysql_configurator.rwatcher import RWatcher
+
+
+def main():
+    """Main of replica watcher"""
+    cfg = load_config()
+    rwatcher = RWatcher(cfg)
+
+    ev_rwatcher = eventlet.spawn(rwatcher.run)
+
+    def on_sig(*_):
+        """Kill daemon"""
+        ev_rwatcher.kill()
+
+    # kill worker on os kill signals
+    signal.signal(signal.SIGINT, on_sig)
+    signal.signal(signal.SIGTERM, on_sig)
+
+    # wait for the workers to finish
+    try:
+        ev_rwatcher.wait()
+    except OSError:
+        pass
+
+if __name__ == '__main__':
+    main()

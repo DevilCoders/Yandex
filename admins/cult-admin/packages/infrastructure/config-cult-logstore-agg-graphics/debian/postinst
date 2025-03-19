@@ -1,0 +1,62 @@
+#!/bin/bash
+## Variables
+PKGNAME="config-cult-logstore-agg-graphics"
+WORKDIR="/usr/share/yandex-configs/$PKGNAME"
+
+# Get host information
+HOST=`hostname -f`
+GROUP=`curl -fs "http://c.yandex-team.ru/api/hosts/$HOST?format=yaml" | grep 'group' | awk '{print $NF}'`
+PROJECT=`curl -fs "http://c.yandex-team.ru/api/groups2projects/$GROUP?format=yaml" | grep 'name' | awk '{print $NF}'`
+CORE_DC_VLAN=`ip ro | grep default | awk '{print $3}'`
+
+## Helpers
+# Get environment type
+if [ -f "/etc/yandex/environment.type" ]; then
+        ENVIR=`cat /etc/yandex/environment.type`
+else
+        echo 'No /etc/yandex/environment.type, trying detect env by conductor group'
+        preenvir=`echo $GROUP | awk -F\- '{print $NF}'`
+        if [[ "$preenvir" == "testing" ]] || [[ "$preenvir" == "prestable" ]]; then
+                ENVIR=`echo $preenvir`
+        else
+                ENVIR="production"
+        fi
+fi
+
+# Function to make symlinks
+function create_symlink {
+        src=$1
+        dst=$2
+        if [ ! -L $dst ]; then
+                if [ ! -f $dst ]; then
+                        ln -s $src $dst
+                else
+                        echo "File exists, removing $dst and making symlink on $src"
+                        rm -f $dst
+                        ln -s $src $dst
+                fi
+        else
+                echo "Symlink already exists. Rewriting"
+		ln -f -s $src $dst
+        fi
+}
+
+# Install configs
+create_symlink $WORKDIR/procentiles-counter-confs/afisha.cfg /etc/procentiles-counter/afisha.cfg
+create_symlink $WORKDIR/procentiles-counter-confs/kassa.cfg /etc/procentiles-counter/kassa.cfg
+create_symlink $WORKDIR/procentiles-counter-confs/weather.cfg /etc/procentiles-counter/weather.cfg
+create_symlink $WORKDIR/procentiles-counter-confs/content-test-kino.cfg /etc/procentiles-counter/content-test-kino.cfg
+create_symlink $WORKDIR/procentiles-counter-confs/content-kino.cfg /etc/procentiles-counter/content-kino.cfg
+create_symlink $WORKDIR/procentiles-counter-confs/content-tv.cfg /etc/procentiles-counter/content-tv.cfg
+create_symlink $WORKDIR/procentiles-counter-confs/content-front.cfg /etc/procentiles-counter/content-front.cfg
+create_symlink $WORKDIR/procentiles-counter-confs/sport.cfg /etc/procentiles-counter/sport.cfg
+
+# Install checks
+create_symlink $WORKDIR/graphite-checks/afisha-timings.sh /usr/lib/yandex-graphite-checks/enabled/afisha-timings.sh
+create_symlink $WORKDIR/graphite-checks/kassa-timings.sh /usr/lib/yandex-graphite-checks/enabled/kassa-timings.sh
+create_symlink $WORKDIR/graphite-checks/weather-timings.sh /usr/lib/yandex-graphite-checks/enabled/weather-timings.sh
+create_symlink $WORKDIR/graphite-checks/content-timings.sh /usr/lib/yandex-graphite-checks/enabled/content-timings.sh
+create_symlink $WORKDIR/graphite-checks/sport-timings.sh /usr/lib/yandex-graphite-checks/enabled/sport-timings.sh
+
+
+echo -n "$HOST configured with $PKGNAME"

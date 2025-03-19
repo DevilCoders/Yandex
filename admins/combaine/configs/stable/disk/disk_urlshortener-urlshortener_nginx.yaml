@@ -1,0 +1,98 @@
+parsing:
+  groups: [disk_qloud_urlshortener_stable]
+  metahost: disk_urlshortener
+  DataFetcher:
+    timetail_port: 3132
+    logname: "nginx/access-tskv.log"
+    timetail_url: "/timetail?pattern=urlshortener_nginx&type=tskv&log_ts="
+aggregate:
+  data:
+    urlshortener_nginx:
+      type: "custom"
+      class: "Multimetrics"
+      factor: 1000
+      perHost: NO
+
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+
+    juggler_clck_nginx_status_5xx: &juggler-conf
+      type: juggler
+      namespace: disk
+      Host: "disk_urlshortener"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - ignition
+      Aggregator: logic_or
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      flaps: { stable_time: 120, critical_time: 300 }
+      checkname: clck_nginx_status_5xx
+      description: clck_nginx_status_5xx
+      CRIT: [" ${urlshortener_nginx}['5xx'] > 5 "]
+      tags:
+        - production
+
+    juggler_valid_traffic:
+      << : *juggler-conf
+      checkname: valid_traffic
+      description: valid_traffic
+      CRIT: [" ${urlshortener_nginx}['3xx'] <= 20 "]
+      config:
+          type: metahost
+
+    juggler_clck_nginx_timings_95perc:
+      << : *juggler-conf
+      checkname: clck_nginx_timings_95perc
+      description: clck_nginx_timings_95perc
+      CRIT: [" ${urlshortener_nginx}['request_timings'][4] > 110 "]
+
+    juggler_datacenter_valid_traffic:
+      << : *juggler-conf
+      checkname: datacenter_valid_traffic
+      description: datacenter_valid_traffic
+      CRIT: [" ${urlshortener_nginx}['3xx'] <= 10 "]
+      config:
+          type: datacenter
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        unreach_checks: ["disk_urlshortener:valid_traffic"]
+
+    juggler_low_traffic:
+      <<: *juggler-conf
+      checkname: low_traffic
+      description: low_traffic
+      config:
+          type: metahost
+      variables:
+        trigger_n30_d100: "iftimeofday(22, 10, 30, 100)"
+      CRIT: [" ${urlshortener_nginx}['3xx'] < trigger_n30_d100 "]
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        unreach_checks: [":valid_traffic"]
+
+    juggler_datacenter_low_traffic:
+      << : *juggler-conf
+      checkname: datacenter_low_traffic
+      description: datacenter_low_traffic
+      config:
+          type: datacenter
+      variables:
+        trigger_n8_d30: "iftimeofday(22, 10, 8, 30)"
+      CRIT: [" ${urlshortener_nginx}['3xx'] < trigger_n8_d30 "]
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        unreach_checks: [":datacenter_valid_traffic"]
+

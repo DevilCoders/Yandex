@@ -1,0 +1,113 @@
+#!/usr/bin/env lua5.1
+-- load common
+do local _c, _e = loadfile("common.test"); if _e then print(_e); os.exit(1) else _c() end end
+-- end common
+
+local os = require("os")
+local log = require("log")
+
+-- XXX globals for module
+payload = {
+  --[[{Tags = {type = "metahost", name = "host1", metahost = "host1", aggregate = "agg"},
+    Result = {
+      ["2xx"] = 3600.0, ["3xx"] = 336.1, ["4xx"] = 46.2, ["5xx"] = 1006.3,
+      total_upstream_timings = {1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9},
+      backend = {
+        ["2xx"] = 20, ["3xx"] = 33.1, ["4xx"] = 46.2, ["5xx"] = 56.3,
+        total_upstream_timings = {0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9}},
+      ext = {
+        backend = {["2xx"] = 70, ["3xx"] = 73.1, ["4xx"] = 76.2, ["5xx"] = 76.3,
+        total_upstream_timings = {7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8, 7.9}}},
+  }},
+  {Tags = {type = "host", name = "host2", metahost = "host1 with default", aggregate = "agg"},
+   Result = {
+     ["2xx"] = 600.0, ["3xx"] = 36.1, ["4xx"] = 6.2, ["5xx"] = 1000.3,
+     total_upstream_timings = {1.01, 1.02, 1.03, 1.04, 1.05, 1.06, 1.07, 1.08, 1.09},
+     backend = {
+       ["2xx"] = 200, ["3xx"] = 330.1, ["4xx"] = 460.2, ["5xx"] = 5.3,
+       total_upstream_timings = {0.11, 0.22, 0.33, 0.44, 0.55, 0.66, 0.77, 0.88, 0.99}},
+   }}, ]]
+  {Tags = {metahost = "meta.for.simple", name = "host.for.simple", type = "metahost", aggregate = "agg"},
+   Result = {
+     a = 13006.5,
+     ["a.b"] = 13006.5,
+     b = 45.5,
+     ["b_c.a.c-d"] = 45.5,
+     c = 364.0,
+     ["c-d"] = 3364.0999,
+     d = 13.0,
+     e = 226.0,
+     f = 464.5,
+     g = 13471.0,
+     j = {q = {p = 30}},
+     r = {s = {t = 100}},
+     x = {y = {z = 60}},
+     t = {0.269, 0.293, 0.387, 0.471, 0.58, 0.98, 1.375, 1.761, 2.142},
+     t2 = {0.119, 0.133, 0.187, 0.271, 0.378, 0.498, 0.901, 0.921, 0.942},
+     bt = {1269, 1293, 1387, 1471, 2580, 2980, 3375, 3761, 4142},
+     bt2 = {1119, 1133, 1187, 1271, 1378, 1498, 1901, 1921, 1942},
+     ["iter.a.d"] = 121,
+     ["iter.b.d"] = 212,
+     ["iter.c.d"] = 222,
+     ["items.a.d"] = 313,
+     ["items.b.d"] = 232,
+     ["items.c.d"] = 232}},
+}
+variables = {
+  VAR_FIRST = 13006,
+  VAR1      = 13007,
+  VAR2      = 0.58,
+}
+config = {
+  mode = "sum",
+  limits = {CRIT=3000, default="OK"},
+}
+checkName = "Test Simple Plugin"
+-- XXX end globals
+TestConditions = {
+  {ck={"${agg}['a'] >= VAR_FIRST"}, level="CRIT", desc="13006.500>=VAR_FIRST"},
+  {ck={"${agg}['a'] < VAR1"}, level="CRIT", desc="13006.500<VAR1"},
+  {ck={"${agg}['b'] >= 1"}, level="CRIT", desc="45.500>=1"},
+  {ck={"${agg}['t'][4] ==VAR2"}, level="CRIT", desc="0.580==VAR2"},
+  {ck={"${agg}['t'][1] > 444"}, level="OK", desc="OK"},
+  {ck={"${agg}['a'] + ${agg}['b'] <=13090"}, level="CRIT", desc="13052.000<=13090"},
+  {ck={"${agg}['a'] - ${agg}['b'] - ${agg}['c'] <13009"}, level="CRIT", desc="12597.000<13009"},
+  {ck={"${agg}['a']-${agg}['b']-${agg}['b_c.a.c-d'] <10", "${agg}['a']-${agg}['b']-${agg}['c-d'] <10011"},
+    level="CRIT", desc="13006.500 >= VAR_FIRST"},
+  {ck={"${agg}['a'] - (${agg}['b'] + ${agg}['c'])>=312"}, level="CRIT", desc="13006.500 >= VAR_FIRST"},
+  {ck={"${agg}['b'] + ${agg}['c'] + ${agg}['d'] - ${agg}['e'] > 113"}, level="CRIT", desc="13006.500 >= VAR_FIRST"},
+  {ck={"(${agg}['d'] <= 114 )"}, level="CRIT", desc="13006.500 >= VAR_FIRST"},
+  {ck={"(${agg}['j']['q']['p']+${agg}['r']['s']['t'])/(${agg}['x']['y']['z']+0.01)>0.15"},
+    level="CRIT", desc="13006.500 >= VAR_FIRST"},
+  {ck={"(${agg}['a']+${agg}['b']+${agg}['c']+${agg}['d'])/${agg}['f']>0.16"},
+    level="CRIT", desc="13006.500 >= VAR_FIRST"},
+  {ck={"(${agg}['b'] + ${agg}['c'] + ${agg}['d'] + ${agg}['e'])/${agg}['f'] > 0.17"},
+    level="CRIT", desc="13006.500 >= VAR_FIRST"},
+  {ck={"${agg}['f'] / (${agg}['b'] + ${agg}['c'] + ${agg}['d'] + ${agg}['e']) > 0.18",
+       "${agg}['f'] / (${agg}['b'] + ${agg}['c'] + ${agg}['D'] + ${agg}['Q']) > 0.19"},
+    level="CRIT", desc="13006.500 >= VAR_FIRST"},
+  -- and/or + -1
+  {ck={"${agg}['t'][0]>=0.1 or ${agg}['t'][-1]>=1.020"}, level="CRIT", desc="13006.500 >= VAR_FIRST"},
+  {ck={"${agg}['t'][0]>=0.5 or ${agg}['t'][-1]>=1.521"}, level="CRIT", desc="13006.500 >= VAR_FIRST"},
+  {ck={"${agg}['t'][0]>=0.1 or ${agg}['t'][-1]>=1.022"}, level="CRIT", desc="13006.500 >= VAR_FIRST"},
+  {ck={"${agg}['t'][0]>=0.5 or ${agg}['t'][-1]>=1.523"}, level="CRIT", desc="13006.500 >= VAR_FIRST"},
+  {ck={"${agg}['t'][0]<0.3 and ${agg}['t'][-1]<3.024"}, level="CRIT", desc="13006.500 >= VAR_FIRST"},
+  {ck={"${agg}['t2'][0]<0.1 and ${agg}['t2'][-1]<0.925"}, level="CRIT", desc="13006.500 >= VAR_FIRST"},
+  {ck={"${agg}['t'][0]<0.1 and ${agg}['t'][-1]<1.026"}, level="CRIT", desc="13006.500 >= VAR_FIRST"},
+  {ck={"${agg}['t'][0]<0.5 and ${agg}['t'][-1]<3.527"}, level="CRIT", desc="13006.500 >= VAR_FIRST"},
+  {ck={"${agg}['bt'][4]<3000 and ${agg}['bt2'][8]<3028"}, level="CRIT", desc="13006.500 >= VAR_FIRST"},
+  {ck={"${agg}['bt'][4]<2000 and ${agg}['bt2'][8]<3029"}, level="CRIT", desc="13006.500 >= VAR_FIRST"},
+  {ck={"${agg}['bt'][4]<2000 and ${agg}['bt2'][8]<3030", "${agg}['bt'][4]<VAR_LAST and ${agg}['bt2'][8]<VAR_LAST2"},
+    level="CRIT", desc="13006.500 >= VAR_FIRST"},
+}
+
+loadPlugin("simple.lua")
+fmt = string.format
+
+for _, c in pairs(TestConditions) do
+  conditions = {CRIT = c.ck}
+  r = run()[1]
+  r.description = r.description:gsub("%s+", "")
+  -- assert(r.level == c.level, fmt("level %s is not %s", r.level, c.level))
+  -- assert(r.description == c.desc, fmt("level %s is not %s", r.description, c.desc))
+end

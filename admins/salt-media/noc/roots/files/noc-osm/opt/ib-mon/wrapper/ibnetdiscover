@@ -1,0 +1,32 @@
+#!/bin/bash
+
+# кеширующая обертка для ibnetdiscover
+# использовать примерно так:
+#   sudo env IBPATH=/opt/ib-mon/wrapper/ manage_the_unmanaged --guid <SWITCH GUID>
+#
+# manage_the_unmanaged на каждый свитч дергает /usr/sbin/ibswitches, который дергает
+# $IBPATH/ibnetdiscover -y 0, этот вызов и кешируется оберткой
+#
+# -y 0 - предположительно, это значение m_key из /etc/opensm/opensm.conf
+
+
+
+BASE=$(cd -P -- "$(dirname -- "$0")" && pwd -P)/..
+CACHEFILE=/var/cache/ib-mon/ibnetdiscover.cache
+TTLMIN=5 # in minutes
+
+exec 2>>/var/log/ib-mon/ibnetdiscover.err
+echo "`date +%Y-%m-%dT%H-%M-%S` Args: $*" >&2
+set -x
+
+if [ "$*" == "-y 0" ]; then
+	if [ -e $CACHEFILE ] && [ $(find $CACHEFILE -mmin -$TTLMIN | wc -l) -gt 0 ]; then
+		cat $CACHEFILE
+	else
+		/usr/sbin/ibnetdiscover "$@" | tee $CACHEFILE
+	fi
+else
+	/usr/sbin/ibnetdiscover "$@"
+fi
+
+

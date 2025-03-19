@@ -1,0 +1,61 @@
+log: /var/log/mysync/mysync.log
+loglevel: Info
+lockfile: /var/run/mysync/mysync.lock
+emergefile: /var/run/mysync/mysync.emerge
+resetupfile: /var/run/mysync/mysync.resetup
+db_timeout: 2s
+tick_interval: 5s
+healthcheck_interval: 5s
+dcs_wait_timeout: 30s
+critical_disk_usage: 95
+disable_semi_sync_replication_on_maintenance: true
+keep_super_writable_on_critical_disk_usage: true
+db_set_ro_force_timeout: 60s
+exclude_users: 
+    - 'repl'
+    - 'admin'
+    - 'monitor'
+    - 'event_scheduler'
+
+semi_sync: true
+rpl_semi_sync_master_wait_for_slave_count: 1
+semi_sync_enable_lag: 33554432
+
+{%- if grains['yandex-environment'] == 'testing' or grains['yandex-environment'] == 'prestable' %}
+failover: true
+{%- else %}
+failover: false
+{%- endif %}
+failover_cooldown: 1h
+failover_delay: 1m
+failover_quorum: 1
+inactivation_delay: 2m
+
+zookeeper:
+  session_timeout: 10s
+  namespace: /mysql/{{ pillar['mysync']['cluster-id'] }}
+  hosts:
+    {%- for host in salt.conductor.groups2hosts('nocdev-zk') %}
+    - {{ host }}:2181
+    {%- endfor %}
+
+mysql:
+  user: admin
+  password: {{ pillar['mysql_secrets']['mysync_admin_pas'] }}
+  replication_connect_retry: 10
+  replication_retry_count: 0
+  replication_heartbeat_period: 10
+  replication_port: 3306
+  replication_user: repl
+  replication_password: {{ pillar['mysql_secrets']['mysync_replication_pas'] }}
+  port: 3306
+  hosts:
+    {%- set group = pillar.get("mysync_conductor_group", grains['conductor']['group']) %}
+    {%- for host in salt.conductor.groups2hosts(group) %}
+    - {{ host }}:3306
+    {%- endfor %}
+    {%- if 'mysql-add-hosts' in pillar['mysync'] -%}
+    {%- for host in pillar['mysync']['mysql-add-hosts'] %}
+    - {{ host }}:3306
+    {%- endfor %}
+    {%- endif -%}

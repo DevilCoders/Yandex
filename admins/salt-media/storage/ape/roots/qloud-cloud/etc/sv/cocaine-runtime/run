@@ -1,0 +1,38 @@
+#!/bin/bash
+
+export LC_ALL=en_US.UTF-8
+export LANG=en_US.UTF-8
+export LANGUAGE=en_US.UTF-8
+
+mkdir /var/run/cocaine
+exec 2>&1
+ulimit -c unlimited
+DC=$(/usr/local/bin/get_qloud_data.py dc)
+sed -i "s/__DC__/$DC/g" /etc/cocaine/cocaine.conf
+c_rehash /etc/elliptics/ssl/
+touch /var/tmp/cocaine_conf_ok
+sleep 10
+while [ ! -f /var/tmp/ephemeral_ok ]
+do
+    sleep 15
+done
+while [ ! -f /var/tmp/pushclient_ok ]
+do
+    sleep 15
+done
+while [ ! -f /var/tmp/isolate_daemon_ok ]
+do
+    sleep 5
+done
+sleep 5
+export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.1
+echo "put deny firewall rule on port 10053"
+curl -XPUT localhost:1/api/firewall/deny -d '{ "port": 10053 }'
+iptables -I INPUT -p tcp -i veth0 --dport 10053 -j DROP
+iptables -I INPUT -p tcp -i dummy0 --dport 10053 -j DROP
+ip6tables -I INPUT -p tcp -i veth0 --dport 10053 -j DROP
+ip6tables -I INPUT -p tcp -i veth0 --dport 10053 -j DROP
+touch /var/tmp/cocaine-warmup_deny
+sleep 1
+exec /usr/bin/cocaine-runtime --configuration /etc/cocaine/cocaine.conf
+

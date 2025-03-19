@@ -1,0 +1,4 @@
+include:
+  - .check
+  - .monrun
+  - .packages

@@ -1,0 +1,130 @@
+logging:
+  root: {file: "/var/log/grad/server.log", severity: "INFO"}
+  noc.grad.grad.pollers: {file: "/var/log/grad/server%(log_file_prefix)s.log", severity: "INFO"}
+  noc.grad.grad.lib.scheduler: {file: "/var/log/grad/server%(log_file_prefix)s.log", severity: "INFO"}
+  noc.grad.grad.pollers.snmp_poller: {file: "/var/log/grad/server%(log_file_prefix)s.log", severity: "INFO"}
+  noc.grad: {file: "/var/log/grad/%(log_file_prefix)s.log", severity: "INFO"}
+  comocutor: {file: "/var/log/grad/server%(log_file_prefix)s.log", severity: "WARNING"}
+
+importers:
+  perhost:
+    - speed
+    - optical_threshold
+    - bgp_external_peers
+    - border_ifaces
+    - bot_data
+    - is_offline
+    - loopbacks
+    - tiny_mtu
+  dchost: get_rt_hosts_tags
+
+# http
+port: 12346
+
+# настройки отправки данных
+server_upstream:
+  LB:
+    type: LB
+    endpoint_host: vla.logbroker.yandex.net
+    token: "{{pillar['sec']['LOGBROKER_TOKEN']}}"
+    direct_write: true
+    series_filter:
+      "*": "/grad/data_testing/other"
+
+default_afterburn: 1
+
+# Глобальный фильтр для хостов
+host_filter: [
+  "rt%{Nexus 3000} and {серверный свитч}", "rt%{Huawei}"
+]
+
+# Для разработки, обычно, не нужно то что ниже
+internal_metrics_url: "http://localhost:22132"
+internal_metrics_sensor: "sensor"
+
+zookeeper:
+  server: "iva-zk01.net.yandex.net,myt-zk01.net.yandex.net,vla-zk01.net.yandex.net"
+  lock_path: "/grad/server_testing"
+
+redis:
+  server: "redis://localhost"
+#
+#error_booster:
+#  token: *oauth_error_booster_token
+#  topic: "/grad/error-booster"
+#  environment: "testing"
+#  filter:
+#    message: "got error_status.+host=swc-taix-2"
+
+pollers:
+  SNMP Cisco network:
+    poller: snmp
+    poller version: 2
+    poller params:
+      counters:
+        - {oid: ifmib.ifDescr, options: ["use_snmpbulkget"]}
+        - {oid: ifmib.ifAlias, options: ["use_snmpbulkget"]}
+        - {oid: ifmib.ifOutDiscards, options: ["use_snmpget"]}
+        - {oid: ifmib.ifInDiscards, options: ["use_snmpget"]}
+        - {oid: ifmib.ifHighSpeed, options: ["use_snmpget"]}
+        - {oid: ifmib.ifHCInOctets, options: ["use_snmpget"]}
+        - {oid: ifmib.ifHCOutOctets, options: ["use_snmpget"]}
+        - {oid: ifmib.ifHCInUcastPkts, options: ["use_snmpget"]}
+        - {oid: ifmib.ifHCOutUcastPkts, options: ["use_snmpget"]}
+        - {oid: ifmib.ifInErrors, options: ["use_snmpget"]}
+        - {oid: ifmib.ifOutErrors, options: ["use_snmpget"]}
+        - {oid: ifmib.ifOperStatus, options: ["use_snmpget"]}
+        - {oid: ifmib.ifAdminStatus, options: ["use_snmpget"]}
+        - {oid: ifmib.ifLastChange, options: ["use_snmpget"]}
+        - {oid: ifmib.ifInMulticastPkts, options: ["use_snmpget"]}
+        - {oid: ifmib.ifOutMulticastPkts, options: ["use_snmpget"]}
+        - {oid: ifmib.ifInBroadcastPkts, options: ["use_snmpget"]}
+        - {oid: ifmib.ifOutBroadcastPkts, options: ["use_snmpget"]}
+      post_fn: [rearrange_partial_data, cisco_counters_workaround,
+                sum_ifmib_counters_new, check_net_data_sanity]
+      skip_key_expr: {'ifname': '(Null|StackPort|unrouted|.*mpls|StackSub|dwdm)'}
+    filter: ["rt%({Cisco Catalyst} or {Nexus} or {Cisco IE-2000}) and [опрос SNMP]"]
+    series: network_fast_temp
+    interval: 120
+    instances: 3
+
+  SNMP network fast huawei:
+    poller: snmp
+    poller version: 2
+    poller params:
+      timeout: 10
+      counters:
+        - { oid: ifmib.ifDescr, options: [ "use_snmpbulkget" ] }
+        - { oid: ifmib.ifAlias, options: [ "use_snmpbulkget" ] }
+        - { oid: ifmib.ifHighSpeed, options: [ "use_snmpget" ] }
+        - { oid: ifmib.ifHCInOctets, options: [ "use_snmpget" ] }
+        - { oid: ifmib.ifHCOutOctets, options: [ "use_snmpget" ] }
+        - { oid: ifmib.ifHCInUcastPkts, options: [ "use_snmpget" ] }
+        - { oid: ifmib.ifHCOutUcastPkts, options: [ "use_snmpget" ] }
+        - { oid: ifmib.hwIfEtherStatInJumboPkts, options: [ "use_snmpget", "none_to_zero" ] }
+        - { oid: ifmib.hwIfEtherStatOutJumboPkts, options: [ "use_snmpget", "none_to_zero" ] }
+        - { oid: ifmib.hwIfEtherStatInPausePkts, options: [ "use_snmpget", "none_to_zero" ] }
+        - { oid: ifmib.hwIfEtherStatOutPausePkts, options: [ "use_snmpget", "none_to_zero" ] }
+        - { oid: ifmib.ifInDiscards, options: [ "use_snmpget" ] }
+        - { oid: ifmib.ifOutDiscards, options: [ "use_snmpget" ] }
+        - { oid: ifmib.ifInErrors, options: [ "use_snmpget" ] }
+        - { oid: ifmib.ifOutErrors, options: [ "use_snmpget" ] }
+        - { oid: ifmib.ifOperStatus, options: [ "use_snmpget" ] }
+        - { oid: ifmib.ifAdminStatus, options: [ "use_snmpget" ] }
+        - { oid: ifmib.ifLastChange, options: [ "use_snmpget" ] }
+        - { oid: ifmib.ifInMulticastPkts, options: [ "use_snmpget" ] }
+        - { oid: ifmib.ifOutMulticastPkts, options: [ "use_snmpget" ] }
+        - { oid: ifmib.ifInBroadcastPkts, options: [ "use_snmpget" ] }
+        - { oid: ifmib.ifOutBroadcastPkts, options: [ "use_snmpget" ] }
+      post_fn: [check_net_data_stage1, rearrange_partial_data, huawei_counters_workaround,
+                sum_ifmib_counters_new, check_net_data_sanity]
+      skip_key_expr: {ifname: '(NULL|(In)?LoopBack|.+-mplste|Sip|Virtual-Template)'}
+    filter: "({Huawei} and not {Huawei NE40E}) and [опрос SNMP] and [частый опрос SNMP]"
+    series: network_fast_temp
+    interval: 30
+    instances: 5
+
+series:
+  snmp_poller.network_fast_temp:
+    min_interval: 30
+

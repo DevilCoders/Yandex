@@ -1,0 +1,183 @@
+---
+name: disk_downloader_central-downloader_nginx
+parsing:
+  groups: [disk_downloader_central]
+  DataFetcher:
+    logname: 'nginx/access-tskv.log'
+    timetail_url: '/timetail?pattern=downloader_nginx&type=tskv&log_ts='
+aggregate:
+  data:
+    downloader_nginx:
+      type: "custom"
+      class: Multimetrics
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+    juggler_downloader_nginx_status_410: &juggler-conf
+      type: juggler
+      namespace: disk
+      Host: "disk_downloader_central"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-duty-adm
+                - robot-disk-duty-jun
+                - ivanov-d-s
+                - kolyann
+                - ignition
+      Aggregator: logic_or
+      checkname: downloader_nginx_status_410
+      description: downloader_nginx_status_410
+      flaps: { stable_time: 120, critical_time: 300 }
+      aggregator_kwargs:
+        nodata_mode: force_ok
+      CRIT: [" ${downloader_nginx}['410'] > 250 "]
+      tags:
+        - disk_downloader
+        - disk_zaberun
+        - production
+
+    juggler_downloader_nginx_status_4xx_except_410:
+      << : *juggler-conf
+      checkname: downloader_nginx_status_4xx_except_410
+      description: downloader_nginx_status_4xx_except_410
+      CRIT: [" (${downloader_nginx}['4xx'] - ${downloader_nginx}['410']) > 250 "]
+
+    juggler_downloader_nginx_status_5xx:
+      << : *juggler-conf
+      checkname: downloader_nginx_status_5xx
+      description: downloader_nginx_status_5xx
+      CRIT: [" ${downloader_nginx}['5xx'] > 25 "]
+      tags:
+        - disk_downloader
+        - disk_zaberun
+        - disk_admin_critical
+        - production
+
+    juggler_downloader_nginx_status_403:
+      << : *juggler-conf
+      Host: "disk_downloader_devops"
+      namespace: disk-devops
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-java-mntr
+                - shirankov
+                - akinfold
+                - kis8ya
+                - sanya2013
+                - yak-dmitriy
+                - friendlyevil
+                - c4et4uk
+                - derovi
+      flaps: { stable_time: 300, critical_time: 900 }
+      checkname: downloader_nginx_status_403
+      description: downloader_nginx_status_403
+      CRIT: [" ${downloader_nginx}['403'] > 90 "]
+
+    juggler_valid_traffic:
+      << : *juggler-conf
+      checkname: valid_traffic
+      description: valid_traffic
+      CRIT: [" ${downloader_nginx}['2xx'] < 250 "]
+      config:
+          type: metahost
+      tags:
+        - disk_downloader
+        - disk_zaberun
+        - disk_admin_critical
+        - production
+
+    juggler_datacenter_valid_traffic:
+      << : *juggler-conf
+      checkname: datacenter_valid_traffic
+      description: datacenter_valid_traffic
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        unreach_checks: ["disk_downloader_central:valid_traffic"]
+      config:
+          type: datacenter
+      CRIT: [" ${downloader_nginx}['2xx'] < 60 "]
+
+    juggler_low_traffic:
+      <<: *juggler-conf
+      checkname: low_traffic
+      description: low_traffic
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        unreach_checks: [":valid_traffic"]
+      config:
+          type: metahost
+      variables:
+        trigger_n300_d1000: "iftimeofday(22, 10, 300, 1000)"
+      CRIT: [" ${downloader_nginx}['2xx'] < trigger_n300_d1000 "]
+
+    juggler_datacenter_low_traffic:
+      << : *juggler-conf
+      checkname: datacenter_low_traffic
+      description: datacenter_low_traffic
+      aggregator_kwargs:
+        nodata_mode: force_ok
+        unreach_checks: [":datacenter_valid_traffic"]
+      config:
+          type: datacenter
+      variables:
+        trigger_n100_d300: "iftimeofday(22, 10, 100, 300)"
+      CRIT: [" ${downloader_nginx}['2xx'] < trigger_n100_d300 "]
+
+---
+name: disk_downloader_central-downloader_nginx_disk_clients
+parsing:
+  groups: [disk_downloader_central]
+  DataFetcher:
+    logname: 'nginx/access-tskv.log'
+    timetail_url: '/timetail?pattern=downloader_nginx_disk_clients&type=tskv&log_ts='
+aggregate:
+  data:
+    downloader_nginx_disk_clients:
+      type: "custom"
+      class: Multimetrics
+  senders:
+    graphite:
+      cluster: "media.disk"
+      type: graphite
+
+    juggler_downloader_nginx_status_403_for_disk_clients:
+      type: juggler
+      namespace: disk-devops
+      Host: "disk_downloader_devops"
+      notifications:
+        - template_name: phone_escalation
+          template_kwargs:
+            on_success_next_call_delay: 120
+            repeat: 100
+            delay: 900
+            logins:
+                - robot-disk-java-mntr
+                - shirankov
+                - akinfold
+                - kis8ya
+                - sanya2013
+                - yak-dmitriy
+                - friendlyevil
+                - c4et4uk
+                - derovi
+      Aggregator: logic_or
+      checkname: downloader_nginx_status_403_for_disk_clients
+      description: downloader_nginx_status_403_for_disk_clients
+      flaps: { stable_time: 160, critical_time: 320 }
+      CRIT: [" ${downloader_nginx_disk_clients}['403'] > 128 "]
+      tags:
+        - disk_downloader
+        - disk_zaberun
+        - production

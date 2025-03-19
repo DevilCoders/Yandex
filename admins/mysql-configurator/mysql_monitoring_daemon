@@ -1,0 +1,57 @@
+#! /usr/bin/python
+"""
+Mysql Monitoring Daemon
+"""
+import logging.config  # pylint: disable=unused-import
+import signal
+import eventlet
+from setproctitle import setproctitle  # pylint: disable=no-name-in-module, import-error
+from mysql_configurator.monitoring import Server, Poller, Monitoring, Graphite, SlowLog
+from mysql_configurator import load_config, ZK
+eventlet.monkey_patch(all=True)
+
+
+def main():
+    """
+    Main
+    :return: None
+    """
+    setproctitle('mysql-monitoring-daemon (4 series)')
+    conf = load_config()
+
+    # initialize worker objects
+    zook = ZK(conf.zookeeper)
+    graphite = Graphite()
+    server = Server(conf.monitoring)
+    poller = Poller(conf.monitoring)
+    monitoring = Monitoring(conf.monitoring)
+    slowlog = SlowLog(conf, zook)
+
+    # spawn the workers
+    ev_poller = eventlet.spawn(poller.run, server, monitoring, graphite, slowlog)
+    ev_server = eventlet.spawn(server.run, monitoring, poller)
+    ev_slowlog = eventlet.spawn(slowlog.run)
+
+    # install exit handlers
+    def on_signal(*_):
+        """
+        React on kill signal
+        :param _: signal
+        :return: None
+        """
+        ev_slowlog.kill()
+        ev_server.kill()
+        ev_poller.kill()
+
+    signal.signal(signal.SIGINT, on_signal)
+    signal.signal(signal.SIGTERM, on_signal)
+
+    # wait for the workers to finish
+    try:
+        ev_poller.wait()
+        ev_server.wait()
+    except OSError:
+        pass
+
+if __name__ == "__main__":
+    main()

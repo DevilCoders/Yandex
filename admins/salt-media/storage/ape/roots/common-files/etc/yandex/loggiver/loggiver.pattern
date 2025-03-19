@@ -1,0 +1,278 @@
+nginx_media=awk {' $NF=""; $(NF-1)=""; $(NF-2)=""; print $1" "$3" "$6" "$8" "$(NF-6)" "$(NF-5)" "$(NF-4)" "$(NF-3) '} | sed 's/\[//g'
+xscript_media=awk '{x[$3]++;}END{for(i in x)print x[i],i}'
+java_media=awk '{if ($3 ~ /DEBUG|INFO|WARN|ERROR/) {x[$3]++;}}END{for(i in x)print x[i],i}'
+java_err_only=grep ' ERROR '| wc -l
+
+### if you log start '[$time_local] $http_host $remote_addr "$request" $status "$http_referer" "$http_user_agent" "$http_cookie" $request_time $upstream_cache_status $bytes_sent "$upstream_response_time".... ###
+upstream_response_time=cut -d '"' -f 10
+request_time=cut -d '"' -f 9 | awk {' print $1 '}
+upstream_cache_status=cut -d '"' -f 9 | awk '{x[$2]++;}END{for(i in x)print x[i],i}'
+bytes_sent=cut -d '"' -f 9 | awk {' print $3 '}
+status=cut -d '"' -f 3 | awk '{x[$0]++;}END{for(i in x)print x[i],i}'
+
+### music ###
+music_xfront_status=awk {' if ($3 ~ /^music.yandex/) print '} | cut -d '"' -f 3 | awk '{ x[$0]++;}END{for(i in x)print x[i],i}'
+music_xfront_timings=awk {' if ($3 ~ /^music.yandex/ && $8 ~ /2../ && $(NF-3) !~ /"-"/) print '} | cut -d '"' -f 10
+java_music=grep -c ' ERROR '
+music_handle_upload=grep upload-music |  wc -l
+
+music_proxy_status=awk {' if ($3 ~ /storage.music.yandex/) print '} | cut -d '"' -f 3 | awk '{ x[$0]++;}END{for(i in x)print x[i],i}'
+music_proxy_timings=awk {' if ($3 ~ /storage.music.yandex/ && $8 ~ /2../ && $(NF-3) !~ /"-"/) print '} | cut -d '"' -f 10
+music_proxy_upload=awk {' if ($6 ~ /\/upload\//) print '} | cut -d\" -f 3,9-10 | sed 's/^[ \t]*//;s/"//g'
+music_proxy_upload_mp3=awk {' if ($6 ~ /\/upload\/.+mp3/ && $8 ~ /200/) print '} | wc -l
+music_proxy_upload_disk=awk {' if ($6 ~ /\/upload\/.+yadisk.+.mp3/) print '} | cut -d\" -f 3,9-10 | sed 's/^[ \t]*//;s/"//g'
+music_proxy_upload_disk_mp3=awk {' if ($6 ~ /\/upload\/.+yadisk.+.mp3/ && $8 ~ /200/) print '} | wc -l
+music_fastcgi=cut -d' ' -f 4- | awk {' $2=""; print'}
+music_storage=awk {' if ($6 !~ /\/ping/) print '} | cut -d\" -f 3,9-10 | sed 's/^[ \t]*//;s/"//g'
+music_cache=awk {' if ($6 !~ /\/ping/) print '} | cut -d\" -f 3,9-10 | sed 's/^[ \t]*//;s/"//g' | egrep '^2'
+music_face=awk {' if ($3 ~ /internal.music.yandex.net/) print '} | cut -d\" -f 3,9-10 | sed 's/^[ \t]*//;s/"//g'
+music_back=awk {' if ($3 ~ /api.music.yandex.net/) print '} | cut -d\" -f 3,9-10 | sed 's/^[ \t]*//;s/"//g'
+music_back_blackbox=grep -c 'blackbox fatal error'
+music_back_accaunt_status=awk {' if ($3 ~ /api.music.yandex.net/ && $6 ~ /\/api\/account-status/) print '} | cut -d\" -f 3,9-10 | sed 's/^[ \t]*//;s/"//g'
+music_back_play_audio=awk {' if ($3 ~ /api.music.yandex.net/ && $6 ~ /\/api\/play-audio/) print '} | cut -d\" -f 3,9-10 | sed 's/^[ \t]*//;s/"//g'
+music_zk_long=grep LONG | grep ZkWrapperBase | awk {' print $(NF-1) '}
+music_mongo_long=grep LONG | grep r.y.co.mongo.q | awk {' print $(NF-3)'}
+music_origs_java=awk '{if ($4 ~ /DEBUG|INFO|WARN|ERROR/) {x[$4]++;}}END{for(i in x)print x[i],i}'
+music_disk_upload_size=egrep 'Prepared resources in temp dir AudioFileForUpload' | egrep -o 'convertedFileSize=[0-9].*' | awk {' print $1 '} | cut -d'=' -f 2 | sed 's/,//g'
+music_disk_upload_saved_size=egrep 'Found matching by fingerprint file DiskAudioFile' | egrep -o 'convertedFileSize=[0-9].*' | awk {' print $1 '} | cut -d'=' -f 2 | sed 's/,//g'
+music_radio_timings=egrep 'radio/radio-get-tracks' | awk {' print $NF '}
+
+### VIDEO ###
+video_xfront=awk '{ if ($3 ~ /^video.yandex.+/) print }' | cut -d '"' -f 3 | awk '{ x[$0]++;}END{for(i in x)print x[i],i}' 
+video_xfront_timings=awk {' if ($3 ~ /^video.yandex/ && $8 ~ /2../ && $(NF-3) !~ /"-"/) print '} | cut -d '"' -f 10
+video_xfront_users=awk '{ if ($6 ~ /^\/users\/.+/) print }' | cut -d '"' -f 3 | awk '{ x[$0]++;}END{for(i in x)print x[i],i }'
+video_xfront_users_timings=awk {' if ($3 ~ /^video.yandex/ && $8 ~ /2../ && $(NF-3) !~ /"-"/ && $6 ~ /^\/users\//) print '} | cut -d '"' -f 10
+xscript_video=awk '{x[$3]++;}END{for(i in x)print i,x[i]}' | grep err | sed 's/://g'
+video_xfront_player=egrep -o 'errorcode=[0-9][0-9]?' | cut -d= -f2 | awk '{x[$0]++;}END{for(i in x)print x[i],i}'
+video_xfront_player_partners=egrep 'login=(ya-awaps|yaholiday|film-trailers|movie-trailers|ya-fishki|ymaps|ya-events|ya-ukraine-official|yacinema|platon|direct|podskazky1)' | egrep -o 'errorcode=[0-9][0-9]?' |cut -d= -f2 | awk '{x[$0]++;}END{for(i in x)print x[i],i}'
+video_xfront_player_regions=grep 'host=ncache' | egrep -o 'errorcode=[0-9][0-9]?' |cut -d= -f2 | awk '{x[$0]++;}END{for(i in x)print x[i],i}'
+video_xfront_player_partners_regions=awk {' if ($6 ~ /errorcode=/ && $6 ~ /host=ncache/ && $6 ~ /login=(ya-awaps|yaholiday|film-trailers|movie-trailers|ya-fishki|ymaps|ya-events|ya-ukraine-official|yacinema|platon|direct|podskazky1)/) print $6 '} | egrep -o 'errorcode=[0-9][0-9]?' |cut -d= -f2 | awk '{x[$0]++;}END{for(i in x)print x[i],i}'
+video_xfront_regions_alone=egrep -o 'errorcode=[0-9][0-9]?.+host=.+.yandex.net' | awk -F'&' {' print $1" "$2'}  | awk '{x[$0]++;}END{for(i in x)print x[i],i}'| sed 's/errorcode=//g;s/host=//g'
+java_video=grep ' ERROR '| wc -l
+video_proxy_streaming=awk {' if ($3 ~ /streaming.video.yandex/) print '} | cut -d '"' -f 3 | awk '{ x[$0]++;}END{for(i in x)print x[i],i}'
+video_proxy_streaming_awaps=awk {' if ($3 ~ /streaming.video.yandex/ && $6 ~ /ya-awaps/) print '} | cut -d '"' -f 3 | awk '{ x[$0]++;}END{for(i in x)print x[i],i}'
+video_proxy_streaming_film_trailers=awk {' if ($3 ~ /streaming.video.yandex/ && $6 ~ /film-trailers/) print '} | cut -d '"' -f 3 | awk '{ x[$0]++;}END{for(i in x)print x[i],i}'
+video_proxy_streaming_timings=awk {' if ($3 ~ /streaming.video.yandex/ && $8 ~ /2../ && $(NF-3) !~ /"-"/) print '} | cut -d '"' -f 10
+video_proxy_streaming_timings_awaps=awk {' if ($3 ~ /streaming.video.yandex/ && $8 ~ /2../ && $(NF-3) !~ /"-"/ && $6 ~ /ya-awaps/) print '} | cut -d '"' -f 10
+video_proxy_streaming_timings_film_trailers=awk {' if ($3 ~ /streaming.video.yandex/ && $8 ~ /2../ && $(NF-3) !~ /"-"/ && $6 ~ /film-trailers/) print '} | cut -d '"' -f 10
+video_proxy_static=awk {' if ($3 ~ /static.video.yandex/) print '} | cut -d '"' -f 3 | awk '{ x[$0]++;}END{for(i in x)print x[i],i}'
+video_proxy_static_awaps=awk {' if ($3 ~ /static.video.yandex/ && $6 ~ /ya-awaps/) print '} | cut -d '"' -f 3 | awk '{ x[$0]++;}END{for(i in x)print x[i],i}'
+video_proxy_static_film_trailers=awk {' if ($3 ~ /static.video.yandex/ && $6 ~ /film-trailers/) print '} | cut -d '"' -f 3 | awk '{ x[$0]++;}END{for(i in x)print x[i],i}'
+video_proxy_static_timings=awk {' if ($3 ~ /static.video.yandex/ && $8 ~ /2../ && $(NF-3) !~ /"-"/) print '} | cut -d '"' -f 10
+video_proxy_static_timings_awaps=awk {' if ($3 ~ /static.video.yandex/ && $8 ~ /2../ && $(NF-3) !~ /"-"/ && $6 ~ /ya-awaps/) print '} | cut -d '"' -f 10
+video_proxy_static_timings_film_trailers=awk {' if ($3 ~ /static.video.yandex/ && $8 ~ /2../ && $(NF-3) !~ /"-"/ && $6 ~ /film-trailers/) print '} | cut -d '"' -f 10
+video_storage=awk {' if ($3 ~ /video.yandex.net$/) print '} | cut -d '"' -f 3 | awk '{ x[$0]++;}END{for(i in x)print x[i],i}'
+video_storage_timings=awk {' if ($3 ~ /video.yandex.net$/ && $8 ~ /2../ && $(NF-7) !~ /"-"/) print $(NF-6)'}
+video_storage_film_trailers=awk {' if ($6 ~ /film-trailers/) print '} | cut -d '"' -f 9 | awk {' print $3 '}
+video_storage_disk=awk {' if ($6 ~ /stream-id/) print '} | cut -d '"' -f 9 | awk {' print $3 '}
+video_storage_awaps=awk {' if ($6 ~ /ya-awaps/) print '} | cut -d '"' -f 9 | awk {' print $3 '}
+video_regional_storage_status=awk {' if ($3 ~ /video.yandex.net$/ && $6 !~ /\/ping$/) print '} | cut -d '"' -f 3 | awk '{ x[$0]++;}END{for(i in x)print x[i],i}'
+video_regional_storage_request=awk {' if ($3 ~ /video.yandex.net$/ && $6 !~ /\/ping$/ && $8 ~ /2../ && $(NF-3) !~ /"-"/) print '} | cut -d '"' -f 9-10 | awk {' print $1 '}
+video_regional_storage_upstream=awk {' if ($3 ~ /video.yandex.net$/ && $6 !~ /\/ping$/ && $8 ~ /2../ && $(NF-3) !~ /"-"/) print '} | cut -d '"' -f 9-10 | awk {' print $4 '} | sed 's/"//g'
+video_regional_storage_bytes=awk {' if ($3 ~ /video.yandex.net$/ && $6 !~ /\/ping$/) print '} | cut -d '"' -f 9-10 | awk {' print $3 '} | awk '{ SUM += $1} END { print SUM }'
+video_regional_storage_cache_status=awk {' if ($3 ~ /video.yandex.net$/ && $6 !~ /\/ping$/ && $(NF-5) !~ /-/) print '} | cut -d '"' -f 9-10 | awk {' print $2 '} | awk '{ x[$0]++;}END{for(i in x)print x[i],i}'
+
+### photo ###
+photo_nodejs_err=grep ' \[error\] ' | wc -l
+photo_nodejs_timings=grep 'ms)' | grep ' \[info\] ' | awk {' print $NF'} | grep -o "[0-9].*" | cut -d'm' -f 1
+photo_nodejs_blackbox_timings=grep 'blackbox.yandex.net' | grep ' \[info\] ' | awk {' print $NF'} | grep -o "[0-9].*" | cut -d'm' -f 1
+photo_nodejs_blackbox_err=grep 'blackbox.yandex.net' | grep ' \[error\] ' | wc -l
+photo_nodejs_back_timings=grep 'fotki.corba.yandex.net' | grep ' \[info\] ' | awk {' print $NF'} | grep -o "[0-9].*" | cut -d'm' -f 1
+photo_nodejs_back_err=grep 'fotki.corba.yandex.net' | grep ' \[error\] ' | wc -l
+photo_java=grep ' ERROR ' | wc -l
+photo_xscript_and_fastcgi2=grep ' err: ' | wc -l
+photo_status=awk '{ if (($3 ~ /fotki.yandex./ || $3 ~ /imageprocessor.photo.yandex.net/ )&& $6 !~ /^\/ping-alive/) x[$8]++;}END{for(i in x)print x[i],i}'
+photo_request_timings=awk '{ if (($3 ~ /fotki.yandex./ || $3 ~ /imageprocessor.photo.yandex.net/ ) && $6 !~ /^\/ping-alive$/ && $8 ~ /^2../) print }' | cut -d"\"" -f 9 | awk {' print $1 '}
+photo_upstream_timings=awk '{ if (($3 ~ /fotki.yandex./ || $3 ~ /imageprocessor.photo.yandex.net/ ) && $6 !~ /^\/ping-alive$/ && $8 ~ /^2../) print }' |  cut -d"\"" -f 10 | grep -v '-'
+photo_api_status=egrep 'api-fotki.yandex.ru|auth.mobile.yandex.ru| mobile-up.yandex.ru' | grep -v ping | awk '{x[$8]++;}END{for(i in x)print x[i],i}'
+photo_api_request_timings=egrep 'api-fotki.yandex.ru|auth.mobile.yandex.ru| mobile-up.yandex.ru' | grep -v ping | cut -d"\"" -f 9 | awk {' print $1 '}
+photo_api_upstream_timings=egrep 'api-fotki.yandex.ru|auth.mobile.yandex.ru| mobile-up.yandex.ru' | grep -v ping |  cut -d"\"" -f 10 | grep -v '-'
+photo_export_status=awk '{ if ($3 ~ /^fotki-export/) x[$8]++;}END{for(i in x)print x[i],i}'
+photo_export_request_timings=awk '{ if ($3 ~ /^fotki-export/ && $8 ~ /^2../) print }' | cut -d"\"" -f 9 | awk {' print $1 '} | grep -v '-'
+photo_moderator_status=awk '{ if ($3 ~ /^moderator.photo.yandex.ru/ && $8 ~ /^2../) x[$8]++;}END{for(i in x)print x[i],i}'
+photo_moderator_request_timings=awk '{ if ($3 ~ /^moderator.photo.yandex.ru/ && $8 ~ /^2../) print }' | cut -d"\"" -f 9 | awk {' print $1 '} | grep -v '-'
+photo_moderator_upstream_timings=awk '{ if ($3 ~ /^moderator.photo.yandex.ru/ && $8 ~ /^2../) print }' |  cut -d"\"" -f 10 | grep -v '-'
+photo_storage_status=awk '{ if ($3 ~ /photo.yandex.net:10000/) x[$8]++;}END{for(i in x)print x[i],i}'
+photo_storage_request_timings=awk '{ if ($3 ~ /photo.yandex.net:10000/ && $8 ~ /^2../) print }' | cut -d"\"" -f 9 | awk {' print $1 '}
+photo_proxy_regional_cache_status=awk '{ if ($3 ~ /fotki.yandex./ && $6 !~ /^\/ping-alive$/) print }' | cut -d"\"" -f 9 | awk '{ x[$2]++;}END{for(i in x)print x[i],i}'
+photo_proxy_regional_cache_tx=awk '{ if ($3 ~ /fotki.yandex./ && $6 !~ /^\/ping-alive$/ && $(NF-6) !~ /-/) print }' | cut -d"\"" -f 9 | awk {' print $2" "$3 '}
+
+### snews ### 
+snews_crback=awk {' if ($3 ~ /crback.snews.yandex.net/) print '} | cut -d\" -f 3,9-10 | sed 's/^[ \t]*//;s/"//g'
+snews_proxies_get=awk {' if ($6 ~ /^\/get\//) print '} | cut -d\" -f 3,9-10 | sed 's/^[ \t]*//;s/"//g'
+snews_proxies_upload=awk {' if ($6 ~ /^\/upload\//) print '} | cut -d\" -f 3,9-10 | sed 's/^[ \t]*//;s/"//g'
+snews_proxies_delete=awk {' if ($6 ~ /^\/delete\//) print '} | cut -d\" -f 3,9-10 | sed 's/^[ \t]*//;s/"//g'
+snews_proxies=awk {' if ($6 ~ /^\/get\// || /^\/upload\// || /^\/delete\//) print '} | cut -d\" -f 3,9-10 | sed 's/^[ \t]*//;s/"//g'
+
+### ufo ###
+ufo_time=awk '{print $(NF-1)}' | tr -d '"'
+ufo_nodejs_err=grep ' \[error\] ' | wc -l
+ufo_nodejs_blackbox_timings=grep 'blackbox.yandex.net' | grep ' \[info\] ' | awk {' print $NF'} | grep -o "[0-9].*" | cut -d'm' -f 1
+ufo_nodejs_blackbox_err=grep 'blackbox.yandex.net' | grep ' \[error\] ' | wc -l
+ufo_nodejs_back_timings=grep 'mpfs.disk.yandex.net' | grep ' \[info\] ' | awk {' print $NF'} | grep -o "[0-9].*" | cut -d'm' -f 1
+ufo_nodejs_back_err=grep 'mpfs.disk.yandex.net' | grep ' \[error\] ' | wc -l
+
+### cdn ###
+cdn_http=awk '{ if ($6 !~ /(\/ping|\/timetail|\/traffic)/) print }' | cut -d '"' -f 3 | awk '{ x[$0]++;}END{for(i in x)print x[i],i}'
+cdn_cache_status=awk '{ if ($6 !~ /(\/ping|\/timetail|\/traffic)/) print }' | cut -d '"' -f 9 | awk '{x[$2]++;}END{for(i in x)print x[i],i}'
+cdn_cache_download_status=awk '{ if (($3 ~ /download/ ||  $6 ~ /\/download/ ) && ( $6 !~ /(\/ping|\/timetail|\/traffic)/)) print }' | cut -d '"' -f 9 | awk '{x[$2]++;}END{for(i in x)print x[i],i}'
+cdn_cache_sba_status=awk '{ if (( $3 ~ /sba/ ||  $6 ~ /sba\.cdn\.yandex\.net/ ) && ( $6 !~ /(\/ping|\/timetail|\/traffic)/ )) print }' | cut -d '"' -f 9 | awk '{x[$2]++;}END{for(i in x)print x[i],i}'
+cdn_cache_kp_status=awk '{ if (($3 ~ /(kp\.cdn|kinopoisk)/ ||  $6 ~ /(kp\.cdn|kinopoisk)/ ) && ( $6 !~ /(\/ping|\/timetail|\/traffic)/)) print }' | cut -d '"' -f 9 | awk '{x[$2]++;}END{for(i in x)print x[i],i}'
+cdn_cache_tx=awk {' if ($6 !~ /(\/ping|\/timetail|\/traffic)/) print '} | cut -d '"' -f 9 | awk '{ sum[$2] += $3;}END{ for (i in sum ) print sum[i]*8,i }'
+cdn_cache_kp_tx=awk {' if (($3 ~ /(kp\.cdn|kinopoisk)/ ||  $6 ~ /(kp\.cdn|kinopoisk)/ ) && ( $6 !~ /(\/ping|\/timetail|\/traffic)/)) print '} | cut -d '"' -f 9 | awk '{ sum[$2] += $3;}END{ for (i in sum ) print sum[i]*8,i }'
+cdn_request_time=cut -d '"' -f 9 | awk {' print $1 '}
+cdn_cache_download_request_time=awk '{ if (($3 ~ /download/ || $6 ~ /\/download/ ) && ($6 !~ /(\/ping|\/timetail|\/traffic)/)) print }' | cut -d '"' -f 9 | awk {' print $1 '}
+cdn_cache_sba_request_time=awk '{ if (( $3 ~ /sba/ ||  $6 ~ /sba\.cdn\.yandex\.net/ ) && ( $6 !~ /(\/ping|\/timetail|\/traffic)/ )) print }' | cut -d '"' -f 9 | awk {' print $1 '}
+cdn_cache_kp_request_time=awk '{ if (($3 ~ /(kp\.cdn|kinopoisk)/ || $6 ~ /(kp\.cdn|kinopoisk)/ ) && ( $6 !~ /(\/ping|\/timetail|\/traffic)/)) print }' | cut -d '"' -f 9 | awk {' print $1 '}
+cdn_upstream_response_time=cut -d '"' -f 10
+cdn_cache_download_upstream_time=awk '{ if (($3 ~ /download/ || $6 ~ /\/download/ ) && ( $6 !~ /(\/ping|\/timetail|\/traffic)/)) print }' | cut -d '"' -f 10
+cdn_cache_sba_upstream_time=awk '{ if (( $3 ~ /sba/ ||  $6 ~ /sba\.cdn\.yandex\.net/ ) && ( $6 !~ /(\/ping|\/timetail|\/traffic)/ )) print }' | cut -d '"' -f 10
+cdn_cache_kp_upstream_time=awk '{ if (($3 ~ /(kp\.cdn|kinopoisk)/ || $6 ~ /(kp\.cdn|kinopoisk)/ ) && ($6 !~ /(\/ping|\/timetail|\/traffic)/)) print }' | cut -d '"' -f 10
+yastatic_mail_http=awk '{ if ($6 !~ /(\/ping|\/timetail|\/traffic)/ && $6 ~ /\/mail/ ) print }' | cut -d '"' -f 3 | awk '{ x[$0]++;}END{for(i in x)print x[i],i}'
+yastatic_mail_request_time=awk '{ if ($6 !~ /(\/ping|\/timetail|\/traffic)/ && $6 ~ /\/mail/ ) print }' | cut -d '"' -f 9 | awk {' print $1 '}
+cdn_http_crls=awk '{ if ($3 ~ /crls\.yandex|yandex\.ocsp-responder\.com/ && $6 !~ /(\/ping|\/timetail|\/traffic)/) print }' | cut -d '"' -f 3 | awk '{ x[$0]++;}END{for(i in x)print x[i],i}'
+cdn_request_time_crls=awk '{ if ($3 ~ /crls\.yandex|yandex\.ocsp-responder\.com/ ) print }' | cut -d '"' -f 9 | awk {' print $1 '}
+cdn_upstream_response_time_crls=awk '{ if ($3 ~ /crls\.yandex|yandex\.ocsp-responder\.com/ ) print }' | cut -d '"' -f 10
+cdn_proxy_http=awk '{ if ($3 !~ /crls\.yandex|yandex\.ocsp-responder\.com/ ) print }' | cut -d '"' -f 3 | awk '{ x[$0]++;}END{for(i in x)print x[i],i}'
+cdn_proxy_request_time=awk '{ if ($3 !~ /crls\.yandex|yandex\.ocsp-responder\.com/ ) print }' | cut -d '"' -f 9 | awk {' print $1 '}
+cdn_ip_family=awk '{ if ($6 !~ /(\/ping|\/timetail|\/traffic|\/ok\.html)/) print $4}' | awk 'BEGIN { v4=0; v6=0; } /[.]/ { v4+=1 } /:/ { v6+=1 } END {  if (v4 + v6 > 0) {print "v4_requests " v4; print "v6_requests " v6 }}'
+
+### avatars ###
+http_https=cut -d\" -f13 | awk '{ x[$2]++;}END{for(i in x)print x[i],i}'
+avatars_mds_status=awk '{ if ($6 ~ /^\/get-/) print $0}' | sed 's% /get-\([^/\?]*\)[^ ]*% \1%g' | awk '{x[$8" "$6]++;}END{for(i in x)print x[i],i}'
+avatars_mds_cache_status=awk '{ if ($6 ~ /^\/get-/ && $(NF-7) !~ /(-)/) print $0}' | sed 's% /get-\([^/\?]*\)[^ ]*% \1%g;s%[\(\)]%%g' | awk '{x[$(NF-7)" "$6]++;}END{for(i in x)print x[i],i}'
+avatars_mds_timings=awk '{ if ($6 ~ /^\/get-/ && $8<400 && $(NF-1) !~ /^"-"/ && $6 !~ /orig-url/) print $(NF-1),$6}' | sed 's% /get-\([^/\?]*\)[^ ]*% \1%g;s%"%%g'
+avatars_mds_reqtime=awk '{ if ($6 ~ /^\/get-/ && $8<400 $$ $NF !~ /^-/) print $NF,$6}' | sed 's% /get-\([^/\?]*\)[^ ]*% \1%g'
+avatars_mds_bytes=awk '{ if ($6 ~ /^\/get-/ && $8=200) print $(NF-2),$6}' | sed 's% /get-\([^/\?]*\)[^ ]*% \1%g'
+avatars_mds_ssl=awk '{ if ($6 ~ /^\/get-/) print $0}' | sed 's% /get-\([^/\?]*\)[^ ]*% \1%g' |cut -d\" -f2,13 |awk '{x[$5" "$2]++;}END{for(i in x)print x[i],i}'
+avatars_mds_ssl_timings=awk '{ if ($6 ~ /^\/get-/) print $0}' | cut -d\" -f13 | awk '{if ($2~/https/)print $NF}'
+avatars_int_mds_status=awk '{ if ($6 ~ /^(\/put-|\/delete-)/) print $0}' | sed 's% /\(put\|delete\)-\([^/\?]*\)[^ ]*% \2%g' | awk '{x[$8" "$6]++;}END{for(i in x)print x[i],i}'
+avatars_int_mds_timings=awk '{ if ($6 ~ /^(\/put-|\/delete-)/ && $8<400 && $(NF-1) !~ /^"-"/ && $6 !~ /url=/) print $(NF-1),$6}' | sed 's% /\(put\|delete\)-\([^/\?]*\)[^ ]*% \2%g;s%"%%g'
+avatars_mds_proxy_cache_expire=egrep "(will be expired|is too old|has been expired)" | awk '{if ($8=="will" && $9=="be" && $10=="expired") x++;if ($8=="is" && $9=="too" && $10=="old;" ) y++;if ($8=="has" && $9=="been" && $10=="expired;" ) z++} END {if (x>0) print "1 will_expired"; if (y>0) print "1 old" ; if (z>0) print "1 has_expired"}'
+
+avatars_status=awk '{ if ($3 ~ /avatars.yandex.net/ && $3 !~ /r-avatars.yandex.net/ && $6 ~ /^\/get-/) print $0}' | sed 's% /get-\([^/\?]*\)[^ ]*% \1%g' | awk '{x[$8" "$6]++;}END{for(i in x)print x[i],i}'
+avatars_cache_status=awk '{ if ($3 ~ /avatars.yandex.net/ && $3 !~ /r-avatars.yandex.net/ && $6 ~ /^\/get-/ && $(NF-7) !~ /(-)/) print $0}' | sed 's% /get-\([^/\?]*\)[^ ]*% \1%g;s%[\(\)]%%g' | awk '{x[$(NF-7)" "$6]++;}END{for(i in x)print x[i],i}'
+avatars_timings=awk '{ if ($3 ~ /avatars.yandex.net/ && $3 !~ /r-avatars.yandex.net/ && $6 ~ /^\/get-/ && $8<400 && $(NF-1) !~ /^"-"/) print $(NF-1),$6}' | sed 's% /get-\([^/\?]*\)[^ ]*% \1%g;s%"%%g'
+avatars_reqtime=awk '{ if ($3 ~ /avatars.yandex.net/ && $3 !~ /r-avatars.yandex.net/ && $6 ~ /^\/get-/ && $8<400 $$ $NF !~ /^-/) print $NF,$6}' | sed 's% /get-\([^/\?]*\)[^ ]*% \1%g'
+avatars_bytes=awk '{ if ($3 ~ /avatars.yandex.net/ && $3 !~ /r-avatars.yandex.net/ && $6 ~ /^\/get-/ && $8=200) print $(NF-2),$6}' | sed 's% /get-\([^/\?]*\)[^ ]*% \1%g'
+avatars_ssl=awk '{ if ($3 ~ /avatars.yandex.net/ && $3 !~ /r-avatars.yandex.net/ && $6 ~ /^\/get-/) print $0}' | sed 's% /get-\([^/\?]*\)[^ ]*% \1%g' |cut -d\" -f2,13 |awk '{x[$5" "$2]++;}END{for(i in x)print x[i],i}'
+avatars_ssl_timings=awk '{ if ($3 ~ /avatars.yandex.net/ && $3 !~ /r-avatars.yandex.net/ && $6 ~ /^\/get-/) print $0}' | cut -d\" -f13 | awk '{if ($2~/https/)print $NF}'
+avatars_fast_status=awk '{ if ($3 ~ /avatars-fast.yandex.net/ && $3 !~ /r-avatars-fast.yandex.net/ && $6 ~ /^\/get-/) print $0}' | sed 's% /get-\([^/\?]*\)[^ ]*% \1%g' | awk '{x[$8" "$6]++;}END{for(i in x)print x[i],i}'
+avatars_fast_cache_status=awk '{ if ($3 ~ /avatars-fast.yandex.net/ && $3 !~ /r-avatars-fast.yandex.net/ && $6 ~ /^\/get-/ && $(NF-7) !~ /(-)/) print $0}' | sed 's% /get-\([^/\?]*\)[^ ]*% \1%g;s%[\(\)]%%g' | awk '{x[$(NF-7)" "$6]++;}END{for(i in x)print x[i],i}'
+avatars_fast_timings=awk '{ if ($3 ~ /avatars-fast.yandex.net/ && $3 !~ /r-avatars-fast.yandex.net/ && $6 ~ /^\/get-/ && $8<400 && $(NF-1) !~ /^"-"/) print $(NF-1),$6}' | sed 's% /get-\([^/\?]*\)[^ ]*% \1%g;s%"%%g'
+avatars_fast_reqtime=awk '{ if ($3 ~ /avatars-fast.yandex.net/ && $3 !~ /r-avatars-fast.yandex.net/ && $6 ~ /^\/get-/ && $8<400 $$ $NF !~ /^-/) print $NF,$6}' | sed 's% /get-\([^/\?]*\)[^ ]*% \1%g'
+avatars_fast_bytes=awk '{ if ($3 ~ /avatars-fast.yandex.net/ && $3 !~ /r-avatars-fast.yandex.net/ && $6 ~ /^\/get-/ && $8=200) print $(NF-2),$6}' | sed 's% /get-\([^/\?]*\)[^ ]*% \1%g'
+avatars_fast_ssl=awk '{ if ($3 ~ /avatars-fast.yandex.net/ && $3 !~ /r-avatars-fast.yandex.net/ && $6 ~ /^\/get-/) print $0}' | sed 's% /get-\([^/\?]*\)[^ ]*% \1%g' |cut -d\" -f2,13 |awk '{x[$5" "$2]++;}END{for(i in x)print x[i],i}'
+avatars_fast_ssl_timings=awk '{ if ($3 ~ /avatars-fast.yandex.net/ && $3 !~ /r-avatars-fast.yandex.net/ && $6 ~ /^\/get-/) print $0}' | cut -d\" -f13 | awk '{if ($2~/https/)print $NF}'
+avatars_int_status=awk '{ if ($3 ~ /avatars-int.yandex.net/ && $6 ~ /^(\/put-|\/delete-)/) print $0}' | sed 's% /\(put\|delete\)-\([^/\?]*\)[^ ]*% \2%g' | awk '{x[$8" "$6]++;}END{for(i in x)print x[i],i}'
+avatars_int_timings=awk '{ if ($3 ~ /avatars-int.yandex.net/ && $6 ~ /^(\/put-|\/delete-)/ && $8<400 && $(NF-1) !~ /^"-"/) print $(NF-1),$6}' | sed 's% /\(put\|delete\)-\([^/\?]*\)[^ ]*% \2%g;s%"%%g'
+avatars_int_fast_status=awk '{ if ($3 ~ /avatars-int-fast.yandex.net/ && $6 ~ /^(\/put-|\/delete-)/) print $0}' | sed 's% /\(put\|delete\)-\([^/\?]*\)[^ ]*% \2%g' | awk '{x[$8" "$6]++;}END{for(i in x)print x[i],i}'
+avatars_int_fast_timings=awk '{ if ($3 ~ /avatars-int-fast.yandex.net/ && $6 ~ /^(\/put-|\/delete-)/ && $8<400 && $(NF-1) !~ /^"-"/) print $(NF-1),$6}' | sed 's% /\(put\|delete\)-\([^/\?]*\)[^ ]*% \2%g;s%"%%g'
+avatars_int_bs_status=awk '{ if ($3 ~ /avatars-int-bs.yandex.net/ && $6 ~ /^(\/put-|\/delete-)/) print $0}' | sed 's% /\(put\|delete\)-\([^/\?]*\)[^ ]*% \2%g' | awk '{x[$8" "$6]++;}END{for(i in x)print x[i],i}'
+avatars_int_bs_timings=awk '{ if ($3 ~ /avatars-int-bs.yandex.net/ && $6 ~ /^(\/put-|\/delete-)/ && $8<400 && $(NF-1) !~ /^"-"/) print $(NF-1),$6}' | sed 's% /\(put\|delete\)-\([^/\?]*\)[^ ]*% \2%g;s%"%%g'
+
+avatars_img_rps=awk '{if ($5~/stop/&&$7~/imagemagick/) x[$8]++;}END{for(i in x)print x[i],i,"imagemagick"}'  | sed 's/";//g'
+avatars_img_timings=awk '{if ($5~/stop/&&$7~/imagemagick/) print $NF,$8}' | sed 's/";//g;s/spent-time=//g;s/ms;//g' | awk '{printf "%.3f ",$1/1000;print $2}'
+
+avatars_people_status=awk '{ if ($3 ~ /avatars.yandex.net/ && $3 !~ /r-avatars.yandex.net/ && $6 ~ /^\/get-profile-avatar\/people/ ) x[$8]++;}END{for(i in x)print x[i],i}'
+avatars_people_timings=awk '{ if ($3 ~ /avatars.yandex.net/ && $3 !~ /r-avatars.yandex.net/ && $6 ~ /^\/get-profile-avatar\/people/ && $8<400) print}'| cut -d '"' -f 16 | grep -v '-'
+###avatars-test###
+avatars_test_status=awk '{ if ($3 ~ /avatars.pd.yandex.net/ && $3 !~ /r-avatars.yandex.net/ && $6 ~ /^\/get-/) print $0}' | sed 's% /get-\([^/\?]*\)[^ ]*% \1%g' | awk '{x[$8" "$6]++;}END{for(i in x)print x[i],i}'
+avatars_test_timings=awk '{ if ($3 ~ /avatars.pd.yandex.net/ && $3 !~ /r-avatars.yandex.net/ && $6 ~ /^\/get-/ && $8<400 && $(NF-1) !~ /^"-"/) print $(NF-1),$6}' | sed 's% /get-\([^/\?]*\)[^ ]*% \1%g;s%"%%g'
+avatars_test_fast_status=awk '{ if ($3 ~ /avatars-fast.avt.yandex.net/ && $3 !~ /r-avatars-fast.yandex.net/ && $6 ~ /^\/get-/) print $0}' | sed 's% /get-\([^/\?]*\)[^ ]*% \1%g' | awk '{x[$8" "$6]++;}END{for(i in x)print x[i],i}'
+avatars_test_fast_timings=awk '{ if ($3 ~ /avatars-fast.avt.yandex.net/ && $3 !~ /r-avatars-fast.yandex.net/ && $6 ~ /^\/get-/ && $8<400 && $(NF-1) !~ /^"-"/) print $(NF-1),$6}' | sed 's% /get-\([^/\?]*\)[^ ]*% \1%g;s%"%%g'
+avatars_test_int_status=awk '{ if ($3 ~ /avatars-int.pd.yandex.net/ && $6 ~ /^(\/put-|\/delete-)/) print $0}' | sed 's% /\(put\|delete\)-\([^/\?]*\)[^ ]*% \2%g' | awk '{x[$8" "$6]++;}END{for(i in x)print x[i],i}'
+avatars_test_int_timings=awk '{ if ($3 ~ /avatars-int.pd.yandex.net/ && $6 ~ /^(\/put-|\/delete-)/ && $8<400 && $(NF-1) !~ /^"-"/) print $(NF-1),$6}' | sed 's% /\(put\|delete\)-\([^/\?]*\)[^ ]*% \2%g;s%"%%g'
+avatars_test_int_fast_status=awk '{ if ($3 ~ /avatars-int-fast.avt.yandex.net/ && $6 ~ /^(\/put-|\/delete-)/) print $0}' | sed 's% /\(put\|delete\)-\([^/\?]*\)[^ ]*% \2%g' | awk '{x[$8" "$6]++;}END{for(i in x)print x[i],i}'
+avatars_test_int_fast_timings=awk '{ if ($3 ~ /avatars-int-fast.avt.yandex.net/ && $6 ~ /^(\/put-|\/delete-)/ && $8<400 && $(NF-1) !~ /^"-"/) print $(NF-1),$6}' | sed 's% /\(put\|delete\)-\([^/\?]*\)[^ ]*% \2%g;s%"%%g'
+avatars_test_int_bs_status=awk '{ if ($3 ~ /avatars-int-bs.avt.yandex.net/ && $6 ~ /^(\/put-|\/delete-)/) print $0}' | sed 's% /\(put\|delete\)-\([^/\?]*\)[^ ]*% \2%g' | awk '{x[$8" "$6]++;}END{for(i in x)print x[i],i}'
+avatars_test_int_bs_timings=awk '{ if ($3 ~ /avatars-int-bs.avt.yandex.net/ && $6 ~ /^(\/put-|\/delete-)/ && $8<400 && $(NF-1) !~ /^"-"/) print $(NF-1),$6}' | sed 's% /\(put\|delete\)-\([^/\?]*\)[^ ]*% \2%g;s%"%%g'
+### resizer ###
+resizer_status=awk '{ if ($3 ~ /resize.yandex.net/ && $6 !~ /^\/ping/) x[$8]++;}END{for(i in x)print x[i],i}'
+resizer_timings=awk '{ if ($3 ~ /resize.yandex.net/ && $6 !~ /^\/ping/ && $8<400) print}'| cut -d '"' -f 16 | grep -v '-'
+resizer_cache_status=awk '{if ( $(NF-2) ~ /^from_cache/ ) x[$(NF-2)]++;}END{for(i in x)print x[i],i}' | sed 's/from_cache=1/HIT/g;s/from_cache=0/MISS/g'
+resizer_ssl=awk '{ if ($3 ~ /resize.yandex.net/ && $6 !~ /^\/ping/) print $0}' | cut -d\" -f13 |awk '{x[$2]++;}END{for(i in x)print x[i],i,"resizer"}'
+### jmon ###
+jmon_status=awk '{ if ($6 !~ "-") x[$9]++;}END{for(i in x)print x[i],i}'
+jmon_2xx_upstream_time=awk '{ if ($6 !~ "-" && $9<300) print $NF}'
+jmon_all_upstream_time=awk '{ if ($6 !~ "-") print $NF}'
+jmon_all_time=awk '{ if ($6 !~ "-") print $(NF-1)}'
+
+### kp_elliptics ###
+kp_get_status=awk '{ if ( $6 ~ /^\/get/) x[$8]++;}END{for(i in x)print x[i],i}'
+kp_get_timings=awk '{ if ( $6 ~ /^\/get/ && $8<400) print}'| cut -d '"' -f 10 | grep -v '-'
+kp_upl_status=awk '{ if ( $6 ~ /^\/upload/) x[$8]++;}END{for(i in x)print x[i],i}'
+kp_upl_timings=awk '{ if ( $6 !~ /^\/upload/ && $8<400) print}'| cut -d '"' -f 10 | grep -v '-'
+
+### ufo ###
+ufo_time=grep -Ev '" 30. "'|grep -Ev 'GET /(favicon.ico|ping|xiva)' |awk '{ print $(NF-1)}' | tr -d '"'
+ufo_status=awk '{ if ($3 ~ /disk.yandex./ && $6 !~ /^\/ping-alive/) x[$8]++;}END{for(i in x)print x[i],i}'
+
+#### sync ###
+sync_time=grep -Ev '" 30. "'|grep -Ev 'GET /(favicon.ico|ping)' |awk '{ print $NF}'
+sync_status=awk '{ if ($3 ~ /sync.disk./ && $6 !~ /^\/ping-alive/) x[$8]++;}END{for(i in x)print x[i],i}'
+sync_mpfs_timings=grep -Ev '" 30. "'|grep -Ev 'GET /(favicon.ico|ping)' |awk '{ print $NF}'
+sync_mpfs_status=awk '{ if ($6 !~ /^\/ping-alive/) x[$8]++;}END{for(i in x)print x[i],i}'
+sync_nginx_user_agent=awk '{if ($12 ~ /WIN|MAC|IPAD|ANDROID-TABLET|ANDROID-PHONE|IPHONE|LINUX/) {x[$12]++;}}END{for(i in x)print x[i],i}'
+
+## xmpp ##
+xmpp_time=grep -Ev '" 30. "'|grep -Ev 'GET /(favicon.ico|ping)' |awk '{ print $NF}'
+xmpp_status=awk '{ if ($3 ~ /xmpp/ && $6 !~ /^\/ping-alive/) x[$8]++;}END{for(i in x)print x[i],i}'
+xmpp_mpfs_timings=grep -Ev '" 30. "'|grep -Ev 'GET /(favicon.ico|ping)' |awk '{ print $NF}'
+xmpp_mpfs_status=awk '{ if ($6 !~ /^\/ping-alive/) x[$8]++;}END{for(i in x)print x[i],i}'
+
+
+##mail-backup###
+mail_backup_200=awk '{if ($6 ~ /Successful/) x++} END {print x, 200}'
+mail_backup_200_timings=awk '{if ($6 ~ /Successful/) print $NF}'
+
+mail_backup_status=awk '{ if ( $6 !~ /^\/ping/) x[$8]++;}END{for(i in x)print x[i],i}'
+mail_backup_timings=awk '{ if ($6 !~ /^\/ping/ && $8<400) print}'| cut -d '"' -f 10 | grep -v '-'
+mail_backup_delete_status=awk '{ if ( $6 ~ /^\/delete/) x[$8]++;}END{for(i in x)print x[i],i}'
+mail_backup_upload_status=awk '{ if ( $6 ~ /^\/upload/) x[$8]++;}END{for(i in x)print x[i],i}'
+mail_backup_postfix_250=grep -c "proxy-accept: END-OF-MESSAGE: 250 Ok;" | sed 's/$/ 250/g'
+mail_backup_postfix_warn=egrep -c '(lost connection after DATA |warning: )' | sed 's/$/ warning/g'
+
+###mds###
+mds_upload_status=awk '{ if ( $6 ~ /^\/upload/) x[$8]++;}END{for(i in x)print x[i],i}'
+mds_upload_timings=awk '{ if ( $6 ~ /^\/upload/ && $8<400) print }' |  cut -d '"' -f 14 | grep -v '-'
+mds_get_status=awk '{ if ( $6 ~ /^\/get/) x[$8]++;}END{for(i in x)print x[i],i}'
+mds_get_timings=awk '{ if ( $6 ~ /^\/get/ && $8<400) print }' |  cut -d '"' -f 14 | grep -v '-'
+mds_get_cache_status=awk '{ if ($6 ~ /^\/get/ && $(NF-7) !~ /(-)/) x[$(NF-7)]++;}END{for(i in x)print x[i],i}' | sed 's/(//g;s/)//g'
+mds_proxies_status=awk '{ if ($3 ~ /storage.mds.yandex.net/ ) x[$8]++;}END{for(i in x)print x[i],i}'
+mds_proxies_status_int=awk '{ if ($3 ~ /storage-int.mds.yandex.net/ ) x[$8]++;}END{for(i in x)print x[i],i}'
+mds_proxies_timings=awk {' if ($3 ~ /storage.mds.yandex/ && $8 ~ /2../ && $(NF-3) !~ /"-"/) print '} | cut -d '"' -f 14
+mds_proxies_timings_int=awk {' if ($3 ~ /storage-int.mds.yandex/ && $8 ~ /2../ && $(NF-3) !~ /"-"/) print '} | cut -d '"' -f 14
+mds_namespace_rps=grep 'INFO: Get: handle request'  |awk '{print $9}' |cut -f2 -d"/" |sort |uniq -c |sort -nr
+mds_kpi_timing=fgrep -v '/timetail' |awk '{print $(NF-1)}' | sed 's/"//g' |awk '{if ($1>0.3) print}'  |wc -l
+
+###ape###
+uptime=python /usr/local/bin/qloud-uptime.py
+monrun=xargs -I {} sudo monrun -f nagios -r {} || true
+ape_front=timetail_parser_front.py
+ape_elastic=timetail_parser_elastic.py
+ape_front_reqtime=vhost_reqtime.pl goecho
+ape_front_reqtime_echo=vhost_reqtime.pl echo
+ape_front_vhost=awk '{ if ($6 !~ /(\/ping|\/timetail|\/traffic)/) { x[$3]++;}}END{for(i in x)print x[i],i}'
+ape_front_app=awk -F'"' '{ if  ( $2 !~ /(\/ping|\/timetail|\/traffic)/) print $3$9"|"$10"|"" "$12}'
+ape_front_app_all=awk -F '"' '!/localhost|timetail|127.0.0.1|ping|traffic|10.0.0.1/ {split($1,a," ");split($NF,b," ");gsub("api.browser.yandex.","",a[3]);print a[3]" "$3$9"|"$10"|"" "$12" "b[2]}'
+ape_storage_elliptics=egrep -o \ [A-Z][A-Z].*\ time:.*usecs | awk '{print $1 $(NF-1)}'
+ape_gofetcher=awk '/Response/ {if($NF ~ /[0-9]\.[0-9]*s/){split($6,code,",");split($8,url,"/");split($NF,time,"");print code[1]" "time[1]time[3]time[4]time[5]" "url[3]} else {split($6,code,",");split($8,url,"/");split($NF,time,".");print code[1]" "time[1]" "url[3]}}'
+ape_gofetcher_rsyslog=grep Response | awk -F "message:" '{print $2}' | tr -d "[]" | awk '/Response/ {if($NF ~ /[0-9]\.[0-9]*s/){split($3,code,",");split($5,url,"/");split($NF,time,"");print code[1]" "time[1]time[3]time[4]time[5]" "url[3]} else {split($3,code,",");split($5,url,"/");split($NF,time,".");print code[1]" "time[1]" "url[3]}}'
+ape_gofetcher_11=awk '/Response/ {if($NF ~ /[0-9]\.[0-9]*s/){split($10,code,",");split($12,url,"/");split($NF,time,"");print code[1]" "time[1]time[3]time[4]time[5]" "url[3]} else {split($10,code,",");split($12,url,"/");split($NF,time,".");print code[1]" "time[1]" "url[3]}}'
+elliptics_universal=egrep -o \ [A-Z][A-Z]*.[A-Z][A-Z]*:.* | sed 's/://g' | sed 's/,//g' | sed 's/\.//g' | sed 's/\/[0-9]*//g' | egrep -v " CACHE LIFE" | awk '{if ($2 == "reply" && $15 == "total-time") print "op="$1"\ttype="$2"\tsize="$10"\terr=666\ttime="$16; else if($(NF-4) ~ "time") print "op="$1"\ttype="$2"\tsize="$13"\terr="$NF"\ttime="$(NF-3)}'
+elliptics_client_universal=egrep -o [a-z]+\ [A-Z]+.* | sed 's/://g; s/,//g; s/\.//g; s/\/[0-9]*//g' | awk '{if ($1 == "destruction" ) print "op="$2"\ttype="$3"\tsize=0\terr="$18"\ttime="$12 }'
+ape_elliptics_proxy=egrep -o \ [A-Z][A-Z]*.*time:\ [0-9]* | awk '{print $1" "$NF}' | sed 's/\ /:/g'
+ape_front_futbolaski=awk {' if ($3 ~ /futbolaski.yandex.com.tr/) print '} | egrep -v "127.0.0.1" | awk -F'"' '{ if  ( $2 !~ /(\/ping|\/timetail|\/traffic)/) print $3$9"|"$10"|"" "$12}'
+
+io_pool_queue=grep "io pool queues is full" | wc -l
+elliptics_universal26=egrep -o [A-Z]+:.* | sed 's/://g; s/,//g; s/\.//g; s/\/[0-9]*//g' | egrep -v " CACHE LIFE" | awk '{if ($4 == "reply" && $19 == "total-time") print "op="$3"\ttype="$4"\tsize="$14"\terr=666\ttime="$20; else if($11 ~ "time") print "op="$3"\ttype="$4"\tsize="$19"\terr="$15"\ttime="$12}'
+elliptics_client_universal26=egrep -o [A-Z]+:.* | sed 's/://g; s/,//g; s/\.//g; s/\/[0-9]*//g' | awk '{if ($1 == "INFO" && $3 == "destruction" ) print "op="$4"\ttype="$5"\tsize=0\terr="$20"\ttime="$14; else if ($1 == "ERROR") { gsub("\[|\]","",$11); print "op="$8"\ttype="$11"\tsize="$17"\terr="$15"\ttime="}}'
+
+###mirror###
+mirror_status=awk '{ if ($3 !~ /3132/ || $6 !~ /ping/ || $6 !~ /ok.txt/) print $8}' |sort | uniq -c  | awk {' print $2" "$1'}
+mirror_sent_bytes=awk '{ if ($3 !~ /3132/ || $6 !~ /ping/ || $6 !~ /ok.txt/) SUM += $NF } END { printf "%s", "bytes_sent "; printf "%0.0f\n", SUM }'
+mirror_timings=awk '{ if ($3 !~ /3132/ || $6 !~ /ping/ || $6 !~ /ok.txt/) print $(NF-2)}' | tr '\n' ' ' | awk {' print "mirror_timings " $0'}
+
+### media common ###
+network-quality=/usr/local/bin/group-ping-analyze.pl combaine </tmp/yandex-media-network-quality-monitoring|tail -n+2

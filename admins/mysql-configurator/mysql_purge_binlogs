@@ -1,0 +1,225 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+Purge old mysql binlogs
+"""
+import sys
+import logging
+import argparse
+import time
+import requests
+from setproctitle import setproctitle  # pylint: disable=no-name-in-module, import-error
+import mysql_configurator.backup.constants as constants
+import mysql_configurator.backup.utils as utils
+from mysql_configurator import load_config, log2file
+from mysql_configurator.mysql import MySQL, MySQLError
+from mysql_configurator.backup import S3Pusher, FTPPusher
+
+
+def mysql_query(cmd, key=None, host="localhost", read_default_group='client', raw=False):
+    """Query mysql about current binlog"""
+    log = logging.getLogger("mysql_query")
+
+    mysql = MySQL()
+    if not mysql.connect(host, read_default_group=read_default_group):
+        log.error("Failed to connec mysql")
+        sys.exit(1)
+    output = {}
+    try:
+        output = mysql.query(cmd, as_dict=False, raw=raw)
+        if not raw:
+            output = output[0]
+            if key:
+                output = output[key]
+        log.debug("Query %s: '%s' result: %s", host, cmd, output)
+    except MySQLError:
+        log.exception("Failed to get mysql output for '%s' on %s", cmd, host)
+        sys.exit(1)
+    except (IndexError, KeyError):
+        log.exception(
+            "Failed to parse mysql output for '%s' from %s: %s", cmd, host, output
+        )
+        sys.exit(1)
+    return output
+
+
+def get_binlog_status(host=None, key="File", binlog_id=None):
+    """Query mysql about current binlog"""
+    log = logging.getLogger("get_binlog_status")
+
+    if binlog_id is None:
+        cmd = 'show master status'
+        kwargs = {"key": key}
+        if host is not None:
+            cmd = 'show slave status'
+            kwargs = {
+                "host": host,
+                "key": 'Relay_Master_Log_File',
+                "read_default_group": 'mysql-purge-binlogs',
+            }
+
+        binlog_id = mysql_query(cmd, **kwargs)
+
+    status = constants.BINLOG_RE.match(binlog_id)
+    try:
+        if not status:
+            raise ValueError
+        status = status.groupdict()
+        status["num"] = int(status["num"])
+        status["len"] = len(status["len"])
+    except (ValueError, KeyError) as exc:
+        log.error("Failed to parse slave binlog name %s: %s", binlog_id, exc)
+        sys.exit(1)
+    if binlog_id is None:
+        log.debug("The server %s is writing %s", host or "localhost", binlog_id)
+
+    return status
+
+
+def purge_binlogs(conf, args, maxremote, binlogs):
+    """Purge stale mysql binlogs"""
+    log = logging.getLogger("purge_binlogs")
+
+    mstats = get_binlog_status()
+    maxnum = mstats["num"]
+
+    api = conf.backup.api.replica or constants.REPLICA_API
+    log.debug("Query api %s", api)
+    replicas = get_replica_list(api=api)
+
+    if args.ignore:
+        log.warning("Ignore replicas %s", ",".join(args.ignore))
+    replicas = tuple(set(replicas) - set(args.ignore))
+    if replicas:
+        log.debug("Work with hosts %s", ",".join(replicas))
+
+    for host in replicas:
+        sstats = get_binlog_status(host=host)
+        log.info("Remote '%s' binlogs stats: %s", host, sstats)
+        maxnum = min(maxnum, sstats["num"])
+
+    if maxremote != -1:
+        maxnum = min(maxremote, maxnum)
+
+    purge_up_to = "{name}.{num:0{width}d}".format(
+        name=mstats["name"],
+        num=maxnum,
+        width=mstats["len"],
+    )
+
+    if conf.backup.interval_purge_binlogs:
+        try:
+            interval = int(conf.backup.interval_purge_binlogs)
+        except ValueError:
+            raise
+
+        for binlog in binlogs:
+            log.info("Purge binary log to %s", binlog)
+            answer = mysql_query("PURGE BINARY LOGS TO '{0}'".format(binlog), raw=True)
+            time.sleep(interval)
+            log.info("Purge binary log to %s result: %s", binlog, answer or "OK")
+            if binlog == purge_up_to:
+                break
+    else:
+        log.info("Purge binary logs to %s", purge_up_to)
+        answer = mysql_query("PURGE BINARY LOGS TO '{0}'".format(purge_up_to), raw=True)
+        log.info("Purge binary logs to %s result: %s", purge_up_to, answer or "OK")
+
+def get_binlog_list():
+    """Retrive binlog list"""
+    log = logging.getLogger("git_binlog_list")
+
+    binlogs = mysql_query("SHOW BINARY LOGS", raw=True)
+    binlog_list = []
+    for binlog in binlogs:
+        binlog_list.append(binlog[0])
+    binlog_list.sort()
+    log.debug("Binlog list: %s", binlog_list)
+
+    return binlog_list
+
+def get_replica_list(api):
+    """Retrive replica list for this host"""
+    log = logging.getLogger("get_replica_list")
+
+    params = {"fqdn": constants.HOSTNAME}
+    resp = requests.get(api, params=params)
+    if resp.status_code != 200:
+        log.error("Failed to get replica list: %s", resp.reason)
+        sys.exit(1)
+    try:
+        replicas = resp.json()
+        replicas = replicas and [r.values().pop() for r in replicas]
+    except Exception as exc:  # pylint: disable=broad-except
+        log.debug("Failed to parase answer '%s' from '%s' params '%s': %s",
+                  replicas, api, params, exc)
+        sys.exit(1)
+    return replicas
+
+
+def backup_num(conf):
+    """Check max binlog id on backup"""
+    log = logging.getLogger("backup_num")
+
+    if conf.backup.transport == "s3cmd":
+        log.debug("Use transport s3cmd")
+        pusher = S3Pusher(conf.backup)
+    else:
+        log.debug("Use transport ftp (python ftplib)")
+        pusher = FTPPusher(conf.backup)
+        pusher.ensure_path("binlogs")
+
+    maxremote = -1
+    for name in pusher.list("binlogs"):
+        if '-from-' in name:
+            log.debug("Skip partial log %s", name)
+            continue
+        rstats = get_binlog_status(binlog_id=name)
+        maxremote = max(maxremote, rstats["num"])
+
+    log.debug("Max binlog id on backup %s, stop pusher", maxremote)
+    pusher.stop()
+    return maxremote
+
+
+def zk_lock_exists(conf):
+    """Check zklock existence"""
+    if conf.backup.enabled:
+        return utils.is_exists_and_younger_than(constants.LOCK_FLAG, "23.9h")
+    return False
+
+
+def main():
+    "purge old mysql binlogs"
+    setproctitle('mysql-purge-binlogs (4 series)')
+    parser = argparse.ArgumentParser(description='Mysql Purge Binlogs')
+    parser.add_argument(
+        '--ignore', help='Ignore replicas', action=utils.ArgparserListParser, default=[]
+    )
+    args = parser.parse_args()
+    conf = utils.render_backup_config(load_config())
+
+    if not sys.stdout.isatty():
+        log2file("/var/log/mysql-purge-binlogs.log")
+
+    log = logging.getLogger("main")
+    if conf.backup.disable_purge_binlogs:
+        if not sys.stdin.isatty():
+            log.info("Purge binlogs disabled")
+            sys.exit(0)
+        log.warning("Launched from console, ignore 'disable_purge_binlogs' config")
+
+    maxnum = -1
+    if zk_lock_exists(conf):
+        maxnum = backup_num(conf)
+    else:
+        log.info("The backup lock doesn't exist, skipping backup checks")
+
+    binlogs = get_binlog_list()
+    # run purge always on every nodes
+    # unless directly disabled via disable_purge_binlogs
+    purge_binlogs(conf, args, maxnum, binlogs)
+
+
+if __name__ == "__main__":
+    main()

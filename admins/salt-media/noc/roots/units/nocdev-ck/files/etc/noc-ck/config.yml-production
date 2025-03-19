@@ -1,0 +1,679 @@
+database:
+  url: "mongodb://{{pillar['sec']['mongodb-ck-login']}}:{{pillar['sec']['mongodb-ck-password']}}@sas-mongo02.net.yandex.net,vla-mongo01.net.yandex.net,sas-mongo01.net.yandex.net,myt-mongo01.net.yandex.net/noc-ck?replicaSet=rs0"
+comocutor:
+  login: "{{pillar['sec']['comocutor-login']}}"
+  password: "{{pillar['sec']['comocutor-password']}}"
+  no-nocauth: "1"
+rtapi:
+  token: token.txt
+  auth-try-ssh: False
+yt:
+  token: "{{pillar['sec']['yt']}}"
+walle:
+  token: "{{pillar['sec']['walle-oauth']}}"
+checkist:
+  url: "https://chk.yandex-team.ru"
+datacenter:
+  default: "VLA"
+  hostmap:
+    - host: "vla-ck01"
+      datacenter: "VLA"
+    - host: "myt-ck01"
+      datacenter: "MYT"
+    - host: "sas-ck01"
+      datacenter: "SAS"
+  allowed_datacenters:
+    - VLA
+    - MYT
+    - SAS
+tvm:
+  client_id: 2023520
+  secret: "{{pillar['sec']['tvm-secret']}}"
+  dsts:
+    blackbox: 223
+    nocrfcsd: 2032816
+    abc: 2012190
+idm:
+  tvm_client_id: 2001600
+nalivkin:
+  tvm_client_id: 2034185
+logger:
+  # without 'asctime' because of journald timestamping
+  format: "%(levelname)s %(module)s:%(lineno)s: %(logger_extra)s%(message)s"
+  level: DEBUG
+blackbox:
+  oauth_client_id: 155aef63a6d34a57a8c12c4331a66c0b
+  oauth_client_secret: "{{pillar['sec']['oauth-client-secret']}}"
+startrek:
+  token: "{{pillar['sec']['startrek-token']}}"
+error-booster:
+  logbroker-token: "{{pillar['sec']['logbroker-token']}}"
+  environment: production
+zookeeper:
+  nodes:
+# NOCDEV-6163 до серверов зукипера в ман aiozk постоянно выдает
+# таймауты который тригерит баг с недочищенными локами
+{%- for host in salt.conductor.groups2hosts('nocdev-zk') if "man" not in host%}
+    - "{{ host }}:2181"
+{%- endfor %}
+  chroot: /ck/production
+  # https://st.yandex-team.ru/NOCDEV-5891#6144d3187df6db2c36621a7c
+  timeout: 18.0
+nocrfcsd:
+  url: "https://nocrfcs-api.yandex-team.ru"
+warden:
+  token: "{{pillar['sec']['warden-oauth']}}"
+juggler:
+  url: "http://juggler-push.search.yandex.net:80"
+  token: "{{pillar['sec']['juggler-token']}}"
+
+# NOCDEV-4148 Конфиг выкатки отложенных правил
+# Особенности
+#   cronline: указывается в UTC+0 зоне
+#   devices_rackcode: рэккод
+#   type: тип кроножобы
+#       - checkist - снуляет safe_acl диффы. Доступные params:
+#           - gens: список аннушкиных генераторов. Если не указывать, катит все генераторы.
+#       - run_job - выполняет произвольный сценарий. Доступные params:
+#            - scenario: имя сценария (обязательный параметр)
+#            - job_vars: джобварсы для запуска, необязательно.
+#   params.nocrfcs_service: указывается в формате 'ServiceName - EnvironmentName' брать из infra https://nda.ya.ru/t/IWN20eXe4oU9hz
+#   params.nocrfcs_datacenters: список из ["man" "myt" "sas" "vla" "vlx" "iva" "other"]
+#   report_threshold: количество подряд идущих фейлов для одного устройства, после которого в тикет призываются ответственные (summons)
+#   summons: кого призывать в тикет, поддерживаются конкретные пользователи и дежурства из abc, пример:
+#       summons:
+#         - type: abc_duty
+#           service: nocdev
+#           schedule_slug: omfp
+#         - type: user
+#           logins: ["azryve"]
+
+ckron:
+  rules:
+    - name: "Office: Автоматическая выкатка safe_acl на весь офисный парк в Москве"
+      type: checkist
+      devices_rackcode: "{офисная инфраструктура} and {свитч} and not {в оффлайне} and not ({ свитч ABB} or {CloudNetbox}) and {Москва}"
+      cronline: "10 6 * * 1"  # 09:10 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: ["xh4l3"]
+      params:
+          gens: ["Aaa", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog"]
+          nocrfcs_service:  "NOC Office - Network"
+          nocrfcs_datacenters: ["other"]
+
+    - name: "Office: Автоматическая выкатка safe_acl на весь офисный парк кроме Москвы"
+      type: checkist
+      devices_rackcode: "{офисная инфраструктура} and {свитч} and not {в оффлайне} and not ({ свитч ABB} or {CloudNetbox}) and not {Москва}"
+      cronline: "10 6 * * 2"  # 09:10 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: ["xh4l3"]
+      params:
+          gens: ["Aaa", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog"]
+          nocrfcs_service:  "NOC Office - Network"
+          nocrfcs_datacenters: ["other"]
+
+    - name: "Office: Автоматическая выкатка safe_acl на IPMI свитч в Сасово"
+      type: checkist
+      devices_rackcode: "{свитч для IPMI} and {свитч} and not {в оффлайне} and not ({ свитч ABB} or {CloudNetbox}) and {Сасово}"
+      cronline: "10 6 * * 3"  # 09:10 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: ["xh4l3"]
+      params:
+          gens: ["Aaa", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog"]
+          nocrfcs_service:  "NOC Office - Network"
+          nocrfcs_datacenters: ["other"]
+
+    - name: "Office: Автоматическая выкатка safe_acl на IPMI свитчи кроме Сасово"
+      type: checkist
+      devices_rackcode: "{свитч для IPMI} and {свитч} and not {в оффлайне} and not ({ свитч ABB} or {CloudNetbox}) and not {Сасово}"
+      cronline: "10 6 * * 4"  # 09:10 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: ["xh4l3"]
+      params:
+          gens: ["Aaa", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog"]
+          nocrfcs_service:  "NOC Office - Network"
+          nocrfcs_datacenters: ["other"]
+
+    - name: "MYT|VLX: Выкатываем все безопасные генераторы на устройства ({Мытищи} or {Владимир AZ}) and ({Huawei CE} and {Nexus}) and {L3 ToR}"
+      type: checkist
+      devices_rackcode: "({Мытищи} or {Владимир AZ}) and ({Huawei CE} or {Nexus}) and {L3 ToR}"
+      cronline: "5 8 * * 1"  # 11:05 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: ["kitaro", "gslv"]
+      params:
+          #gens: ["Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog"]
+          nocrfcs_service:  "NOC DC - ToR"
+          nocrfcs_datacenters: ["myt", "vlx"]
+
+    - name: "MYT|VLX: Выкатываем все безопасные генераторы на устройства ({Мытищи} or {Владимир AZ}) and {Mellanox} and {L3 ToR}"
+      type: checkist
+      devices_rackcode: "({Мытищи} or {Владимир AZ}) and {Mellanox} and {L3 ToR}"
+      cronline: "35 8 * * 1"  # 11:35 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: ["kitaro", "gslv"]
+      params:
+          #gens: ["telegraf", "snmpd", "rsyslog"]
+          nocrfcs_service:  "NOC DC - ToR"
+          nocrfcs_datacenters: ["myt", "vlx"]
+
+    - name: "MYT|VLX: Выкатываем все безопасные генераторы на устройства ({Мытищи} or {Владимир AZ}) and {Huawei CE} and ({spine1} or {spine2})"
+      type: checkist
+      devices_rackcode: "({Мытищи} or {Владимир AZ}) and {Huawei CE} and ({spine1} or {spine2})"
+      cronline: "5 9 * * 1"  # 12:05 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: [ "kitaro", "gslv" ]
+      params:
+        #gens: [ "Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog" ]
+        nocrfcs_service: "NOC DC - Core"
+        nocrfcs_datacenters: [ "myt", "vlx" ]
+
+    - name: "MYT|VLX: Выкатываем все безопасные генераторы на устройства ({Мытищи} or {Владимир AZ}) and {Huawei CE} and {свитч агрегации}"
+      type: checkist
+      devices_rackcode: "({Мытищи} or {Владимир AZ}) and {Huawei CE} and {свитч агрегации}"
+      cronline: "5 10 * * 1"  # 13:05 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: [ "kitaro", "gslv" ]
+      params:
+        #gens: [ "Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog" ]
+        nocrfcs_service: "NOC DC - Core"
+        nocrfcs_datacenters: [ "myt", "vlx" ]
+
+    - name: "MYT: Выкатываем все безопасные генераторы на устройства {Мытищи} and {Juniper} and {многодэшка}"
+      type: checkist
+      devices_rackcode: "{Мытищи} and {Juniper} and {многодэшка}"
+      cronline: "35 10 * * 1"  # 13:35 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: [ "kitaro", "gslv" ]
+      params:
+        #gens: [ "Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog" ]
+        nocrfcs_service: "NOC DC - Core"
+        nocrfcs_datacenters: [ "myt" ]
+
+    - name: "IVA: Выкатываем все безопасные генераторы на устройства {Ивантеевка} and {Huawei CE} and {серверный свитч}"
+      type: checkist
+      devices_rackcode: "{Ивантеевка} and {Huawei CE} and {серверный свитч}"
+      cronline: "5 8 * * 2"  # 11:05 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: ["kitaro", "gslv"]
+      params:
+          #gens: ["Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog"]
+          nocrfcs_service:  "NOC DC - ToR"
+          nocrfcs_datacenters: ["iva"]
+
+    - name: "IVA: Выкатываем все безопасные генераторы на устройства {Ивантеевка} and {Huawei 12800} and {distrubution с FastBone}"
+      type: checkist
+      devices_rackcode: "{Ивантеевка} and {Huawei 12800} and {distrubution с FastBone}"
+      cronline: "5 9 * * 2"  # 12:05 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: [ "kitaro", "gslv" ]
+      params:
+        #gens: [ "Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog" ]
+        nocrfcs_service: "NOC DC - Core"
+        nocrfcs_datacenters: [ "iva" ]
+
+    - name: "IVA: Выкатываем все безопасные генераторы на устройства {Ивантеевка} and {Huawei CE} and {свитч агрегации}"
+      type: checkist
+      devices_rackcode: "{Ивантеевка} and {Huawei CE} and {свитч агрегации}"
+      cronline: "5 10 * * 1"  # 13:05 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: [ "kitaro", "gslv" ]
+      params:
+        #gens: [ "Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog" ]
+        nocrfcs_service: "NOC DC - Core"
+        nocrfcs_datacenters: [ "iva" ]
+
+    - name: "IVA: Выкатываем все безопасные генераторы на устройства {Ивантеевка} and {Huawei} and {datacenter edge}"
+      type: checkist
+      devices_rackcode: "{Ивантеевка} and {Huawei} and {datacenter edge}"
+      cronline: "35 10 * * 2"  # 13:35 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: [ "kitaro", "gslv" ]
+      params:
+        #gens: [ "Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog" ]
+        nocrfcs_service: "NOC DC - Core"
+        nocrfcs_datacenters: [ "iva" ]
+
+    - name: "SAS: Выкатываем все безопасные генераторы на устройства {Сасово} and ({Huawei} or {Nexus}) and {серверный свитч}"
+      type: checkist
+      devices_rackcode: "{Сасово} and ({Huawei} or {Nexus}) and {серверный свитч} and not {офисная инфраструктура}"
+      cronline: "5 8 * * 3"  # 11:05 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: ["kitaro", "gslv"]
+      params:
+          #gens: [ "Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog" ]
+          nocrfcs_service:  "NOC DC - ToR"
+          nocrfcs_datacenters: ["sas"]
+
+    - name: "SAS: Выкатываем все безопасные генераторы на устройства {Сасово} and {Mellanox} and {серверный свитч}"
+      type: checkist
+      devices_rackcode: "{Сасово} and {Mellanox} and {серверный свитч}"
+      cronline: "35 8 * * 3"  # 11:35 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: ["kitaro", "gslv"]
+      params:
+          #gens: ["telegraf", "snmpd", "rsyslog"]
+          nocrfcs_service:  "NOC DC - ToR"
+          nocrfcs_datacenters: ["sas"]
+
+    - name: "SAS: Выкатываем все безопасные генераторы на устройства {Сасово} and ({spine1} or {spine2})"
+      type: checkist
+      devices_rackcode: "{Сасово} and ({spine1} or {spine2})"
+      cronline: "5 9 * * 3"  # 12:05 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: [ "kitaro", "gslv" ]
+      params:
+        #gens: [ "Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog" ]
+        nocrfcs_service: "NOC DC - Core"
+        nocrfcs_datacenters: [ "sas" ]
+
+    - name: "SAS: Выкатываем все безопасные генераторы на устройства {Сасово} and {Huawei CE} and {свитч агрегации}"
+      type: checkist
+      devices_rackcode: "{Сасово} and {Huawei CE} and {свитч агрегации}"
+      cronline: "5 10 * * 3"  # 13:05 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: [ "kitaro", "gslv" ]
+      params:
+        #gens: [ "Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog" ]
+        nocrfcs_service: "NOC DC - Core"
+        nocrfcs_datacenters: [ "sas" ]
+
+    - name: "SAS: Выкатываем все безопасные генераторы на устройства {Сасово} and {Juniper} and {многодэшка}"
+      type: checkist
+      devices_rackcode: "{Сасово} and {Juniper} and {многодэшка}"
+      cronline: "35 10 * * 3"  # 13:35 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: [ "kitaro", "gslv" ]
+      params:
+        #gens: [ "Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog" ]
+        nocrfcs_service: "NOC DC - Core"
+        nocrfcs_datacenters: [ "sas" ]
+
+    - name: "MAN: Выкатываем все безопасные генераторы на устройства {Мянтсяля} and ({Huawei} or {Nexus}) and {L3 ToR}"
+      type: checkist
+      devices_rackcode: "{Мянтсяля} and ({Huawei} or {Nexus}) and {L3 ToR}"
+      cronline: "5 8 * * 4"  # 11:05 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: [ "kitaro", "gslv" ]
+      params:
+        #gens: [ "Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog" ]
+        nocrfcs_service: "NOC DC - ToR"
+        nocrfcs_datacenters: [ "man" ]
+
+    - name: "MAN: Выкатываем все безопасные генераторы на устройства {Мянтсяля} and {Mellanox} and {L3 ToR}"
+      type: checkist
+      devices_rackcode: "{Мянтсяля} and {Mellanox} and {L3 ToR}"
+      cronline: "35 8 * * 4"  # 11:35 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: ["kitaro", "gslv"]
+      params:
+          #gens: ["telegraf", "snmpd", "rsyslog"]
+          nocrfcs_service:  "NOC DC - ToR"
+          nocrfcs_datacenters: ["man"]
+
+    - name: "MAN: Выкатываем все безопасные генераторы на устройства {Мянтсяля} and ({spine1} or {spine2})"
+      type: checkist
+      devices_rackcode: "{Мянтсяля} and ({spine1} or {spine2})"
+      cronline: "5 9 * * 4"  # 12:05 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: [ "kitaro", "gslv" ]
+      params:
+        #gens: [ "Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog" ]
+        nocrfcs_service: "NOC DC - Core"
+        nocrfcs_datacenters: [ "man" ]
+
+    - name: "MAN: Выкатываем все безопасные генераторы на устройства {Мянтсяля} and {Huawei CE} and {свитч агрегации}"
+      type: checkist
+      devices_rackcode: "{Мянтсяля} and {Huawei CE} and {свитч агрегации}"
+      cronline: "5 10 * * 4"  # 13:05 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: [ "kitaro", "gslv" ]
+      params:
+        #gens: [ "Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog" ]
+        nocrfcs_service: "NOC DC - Core"
+        nocrfcs_datacenters: [ "man" ]
+
+    - name: "MAN: Выкатываем все безопасные генераторы на устройства {Мянтсяля} and ({Juniper} or {Huawei}) and {многодэшка}"
+      type: checkist
+      devices_rackcode: "{Мянтсяля} and ({Juniper} or {Huawei}) and {многодэшка}"
+      cronline: "35 10 * * 4"  # 13:35 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: [ "kitaro", "gslv" ]
+      params:
+        #gens: [ "Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog" ]
+        nocrfcs_service: "NOC DC - Core"
+        nocrfcs_datacenters: [ "man" ]
+
+    - name: "VLA: Выкатываем все безопасные генераторы на устройства {Владимир} and {Huawei} and {L3 ToR}"
+      type: checkist
+      devices_rackcode: "{Владимир} and {Huawei} and {L3 ToR}"
+      cronline: "5 8 * * 5"  # 11:05 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: ["kitaro", "gslv"]
+      params:
+          #gens: ["Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog"]
+          nocrfcs_service:  "NOC DC - ToR"
+          nocrfcs_datacenters: ["vla"]
+
+    - name: "VLA: Выкатываем все безопасные генераторы на устройства {Владимир} and {Mellanox} and {L3 ToR}"
+      type: checkist
+      devices_rackcode: "{Владимир} and {Mellanox} and {L3 ToR}"
+      cronline: "35 8 * * 5"  # 11:35 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: ["kitaro", "gslv"]
+      params:
+          #gens: ["Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog"]
+          nocrfcs_service:  "NOC DC - ToR"
+          nocrfcs_datacenters: ["vla"]
+
+    - name: "VLA: Выкатываем все безопасные генераторы на устройства {Владимир} and ({spine1} or {spine2})"
+      type: checkist
+      devices_rackcode: "{Владимир} and ({spine1} or {spine2})"
+      cronline: "5 8 * * 5"  # 12:05 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: ["kitaro", "gslv"]
+      params:
+          #gens: ["Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog"]
+          nocrfcs_service:  "NOC DC - Core"
+          nocrfcs_datacenters: ["vla"]
+
+    - name: "VLA: Выкатываем все безопасные генераторы на устройства {Владимир} and {Huawei CE} and {свитч агрегации}"
+      type: checkist
+      devices_rackcode: "{Владимир} and {Huawei CE} and {свитч агрегации}"
+      cronline: "5 10 * * 5"  # 13:05 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: [ "kitaro", "gslv" ]
+      params:
+        #gens: [ "Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog" ]
+        nocrfcs_service: "NOC DC - Core"
+        nocrfcs_datacenters: [ "vla" ]
+
+    - name: "VLA: Выкатываем все безопасные генераторы на устройства {Владимир} and ({Juniper} or {Huawei}) and {многодэшка}"
+      type: checkist
+      devices_rackcode: "{Владимир} and ({Juniper} or {Huawei}) and {многодэшка}"
+      cronline: "35 10 * * 5"  # 13:35 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: [ "kitaro", "gslv" ]
+      params:
+        #gens: [ "Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog" ]
+        nocrfcs_service: "NOC DC - Core"
+        nocrfcs_datacenters: [ "vla" ]
+
+    - name: "M9: Выкатываем все безопасные генераторы на устройства {border router} and {ММТС9}"
+      type: checkist
+      devices_rackcode: "{border router} and {ММТС9}"
+      cronline: "00 11 * * 1"  # 14:00 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: [ "karyakin", "artemdenisov" ]
+      params:
+        #gens: [ "Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog" ]
+        nocrfcs_service: "NOC Border - BGP"
+        nocrfcs_datacenters: [ "other" ]
+
+    - name: "ASH: Выкатываем все безопасные генераторы на устройства ({border router} or {свитч}) and {ТП Эшбёрн}"
+      type: checkist
+      devices_rackcode: "({border router} or {свитч}) and {ТП Эшбёрн}"
+      cronline: "00 12 * * 1"  # 15:00 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: [ "karyakin", "artemdenisov" ]
+      params:
+        #gens: [ "Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog" ]
+        nocrfcs_service: "NOC Border - BGP"
+        nocrfcs_datacenters: [ "other" ]
+
+    - name: "MAR: Выкатываем все безопасные генераторы на устройства {border router} and {Марьина Роща 40}"
+      type: checkist
+      devices_rackcode: "{border router} and {Марьина Роща 40}"
+      cronline: "00 11 * * 2"  # 14:00 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: [ "karyakin", "artemdenisov" ]
+      params:
+        #gens: [ "Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog" ]
+        nocrfcs_service: "NOC Border - BGP"
+        nocrfcs_datacenters: [ "other" ]
+
+    - name: "STD: Выкатываем все безопасные генераторы на устройства {border router} and {StoreData}"
+      type: checkist
+      devices_rackcode: "{border router} and {StoreData}"
+      cronline: "00 11 * * 3"  # 14:00 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: [ "karyakin", "artemdenisov" ]
+      params:
+        #gens: [ "Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog" ]
+        nocrfcs_service: "NOC Border - BGP"
+        nocrfcs_datacenters: [ "other" ]
+
+    - name: "SPB: Выкатываем все безопасные генераторы на устройства {border router} and {ТП Санкт-Петербург}"
+      type: checkist
+      devices_rackcode: "{border router} and {ТП Санкт-Петербург}"
+      cronline: "00 11 * * 4"  # 14:00 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: [ "karyakin", "artemdenisov" ]
+      params:
+        #gens: [ "Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog" ]
+        nocrfcs_service: "NOC Border - BGP"
+        nocrfcs_datacenters: [ "other" ]
+
+    - name: "EU: Выкатываем все безопасные генераторы на устройства {border router} and {Европа}"
+      type: checkist
+      devices_rackcode: "{border router} and {Европа}"
+      cronline: "00 11 * * 5"  # 14:00 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: [ "karyakin", "artemdenisov" ]
+      params:
+        #gens: [ "Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog" ]
+        nocrfcs_service: "NOC Border - BGP"
+        nocrfcs_datacenters: [ "other" ]
+
+    - name: "VLA: Выкатываем все безопасные генераторы на устройства {border router} and {Владимир}"
+      type: checkist
+      devices_rackcode: "{border router} and {Владимир}"
+      cronline: "0 8 * * 1"  # 11:00 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: [ "karyakin", "artemdenisov" ]
+      params:
+        #gens: [ "Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog" ]
+        nocrfcs_service: "NOC Border - BGP"
+        nocrfcs_datacenters: [ "vla" ]
+
+    - name: "SAS: Выкатываем все безопасные генераторы на устройства {border router} and {Сасово}"
+      type: checkist
+      devices_rackcode: "{border router} and {Сасово}"
+      cronline: "0 8 * * 2"  # 11:00 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: [ "karyakin", "artemdenisov" ]
+      params:
+        #gens: [ "Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog" ]
+        nocrfcs_service: "NOC Border - BGP"
+        nocrfcs_datacenters: [ "sas" ]
+
+    - name: "MYT: Выкатываем все безопасные генераторы на устройства {border router} and {Мытищи}"
+      type: checkist
+      devices_rackcode: "{border router} and {Мытищи}"
+      cronline: "0 8 * * 3"  # 11:00 MSK (min hours day)
+      comment: ""
+      report_threshold: 3
+      summons:
+        - type: user
+          logins: [ "karyakin", "artemdenisov" ]
+      params:
+        #gens: [ "Aaa", "Mgmt", "MgmtAcl", "Ntp", "Snmp", "SnmpAcl", "SnmpTrap", "Syslog" ]
+        nocrfcs_service: "NOC Border - BGP"
+        nocrfcs_datacenters: [ "myt" ]
+
+    - name: "MYT: запуск сценария s1_bgp_clear {Мытищи} and {spine1} and ({Huawei} or {Nexus})"
+      type: run_job
+      devices_rackcode: "{Мытищи} and {spine1} and ({Huawei} or {Nexus})"
+      cronline: "0 11 * * 1"  # 14:00 MSK (min hours day)
+      comment: ""
+      report_threshold: 2
+      summons:
+        - type: user
+          logins: [ "kitaro", "eg0rov" ]
+      params:
+        scenario: s1-bgp-clear
+        nocrfcs_service: "NOC DC - Core"
+        nocrfcs_datacenters: [ "myt" ]
+
+    - name: "SAS: запуск сценария s1_bgp_clear {Сасово-2} and {spine1} and ({Huawei} or {Juniper})"
+      type: run_job
+      devices_rackcode: "{Сасово-2} and {spine1} and ({Huawei} or {Juniper})"
+      cronline: "0 11 * * 3"  # 14:00 MSK (min hours day)
+      comment: ""
+      report_threshold: 2
+      summons:
+        - type: user
+          logins: [ "kitaro", "eg0rov" ]
+      params:
+        scenario: s1-bgp-clear
+        nocrfcs_service: "NOC DC - Core"
+        nocrfcs_datacenters: [ "sas" ]
+
+    - name: "VLA: запуск сценария s1_bgp_clear {Владимир-1} and {spine1} and ({Huawei} or {Juniper})"
+      type: run_job
+      devices_rackcode: "{Владимир-1} and {spine1} and ({Huawei} or {Juniper})"
+      cronline: "0 11 * * 5"  # 14:00 MSK (min hours day)
+      comment: ""
+      report_threshold: 2
+      summons:
+        - type: user
+          logins: [ "kitaro", "eg0rov" ]
+      params:
+        scenario: s1-bgp-clear
+        nocrfcs_service: "NOC DC - Core"
+        nocrfcs_datacenters: [ "vla" ]
+
+    - name: "VLA: запуск сценария s1_bgp_clear {Владимир-2} and {spine1} and ({Huawei} or {Arista})"
+      type: run_job
+      devices_rackcode: "{Владимир-2} and {spine1} and ({Huawei} or {Arista})"
+      cronline: "30 11 * * 5"  # 14:30 MSK (min hours day)
+      comment: ""
+      report_threshold: 2
+      summons:
+        - type: user
+          logins: [ "kitaro", "eg0rov" ]
+      params:
+        scenario: s1-bgp-clear
+        nocrfcs_service: "NOC DC - Core"
+        nocrfcs_datacenters: [ "vla" ]
+
+    - name: "VLA: запуск сценария s1_bgp_clear {Владимир-3} and {spine1} and ({Huawei} or {Arista})"
+      type: run_job
+      devices_rackcode: "{Владимир-3} and {spine1} and ({Huawei} or {Arista})"
+      cronline: "0 12 * * 5"  # 15:00 MSK (min hours day)
+      comment: ""
+      report_threshold: 2
+      summons:
+        - type: user
+          logins: [ "kitaro", "eg0rov" ]
+      params:
+        scenario: s1-bgp-clear
+        nocrfcs_service: "NOC DC - Core"
+        nocrfcs_datacenters: [ "vla" ]
