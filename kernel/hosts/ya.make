@@ -1,0 +1,13 @@
+RECURSE(
+    clons
+    clons/ut
+    complex_id
+    complex_id/ut
+    extowner
+    extowner/test
+    extowner/test/python
+    extowner/ut
+    minifilter
+    owner
+    owner/ut
+)

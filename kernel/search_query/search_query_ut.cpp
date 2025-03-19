@@ -1,0 +1,42 @@
+#include "search_query.h"
+
+#include <library/cpp/testing/unittest/registar.h>
+
+Y_UNIT_TEST_SUITE(TSearchQueryTest) {
+
+    Y_UNIT_TEST(TestCheckAndFixQueryStringUTF8) {
+        // "utf запрос"
+        TString query1 = "utf\x20\xd0\xb7\xd0\xb0\xd0\xbf\xd1\x80\xd0\xbe\xd1\x81";
+        UNIT_ASSERT( CheckAndFixQueryStringUTF8(query1, query1, false) );
+        UNIT_ASSERT( query1 == "utf\x20\xd0\xb7\xd0\xb0\xd0\xbf\xd1\x80\xd0\xbe\xd1\x81" );
+
+        // "utf запрос с пробелами"
+        TString query2 = "\x09utf\x20\xd0\xb7\xd0\xb0\xd0\xbf\xd1\x80\xd0\xbe\xd1\x81\x20\x09\xd1\x81\x20"
+            "\xd0\xbf\xd1\x80\xd0\xbe\xd0\xb1\xd0\xb5\xd0\xbb\xd0\xb0\xd0\xbc\xd0\xb8\x20\x20\x20";
+        UNIT_ASSERT( CheckAndFixQueryStringUTF8(query2, query2, false) );
+        UNIT_ASSERT( query2 == "utf\x20\xd0\xb7\xd0\xb0\xd0\xbf\xd1\x80\xd0\xbe\xd1\x81\x20\xd1\x81\x20"
+            "\xd0\xbf\xd1\x80\xd0\xbe\xd0\xb1\xd0\xb5\xd0\xbb\xd0\xb0\xd0\xbc\xd0\xb8" );
+
+        // "Запрос UTF8 со СмеШанным регистром"
+        TString query3 = "\xd0\x97\xd0\xb0\xd0\xbf\xd1\x80\xd0\xbe\xd1\x81\x20\x55\x54\x46\x38\x20\xd1\x81\xd0\xbe"
+                        "\x20\xd0\xa1\xd0\xbc\xd0\xb5\xd0\xa8\xd0\xb0\xd0\xbd\xd0\xbd\xd1\x8b\xd0\xbc"
+                        "\x20\xd1\x80\xd0\xb5\xd0\xb3\xd0\xb8\xd1\x81\xd1\x82\xd1\x80\xd0\xbe\xd0\xbc";
+        UNIT_ASSERT( CheckAndFixQueryStringUTF8(query3, query3, true) );
+        UNIT_ASSERT( query3 == "\xd0\xb7\xd0\xb0\xd0\xbf\xd1\x80\xd0\xbe\xd1\x81\x20\x75\x74\x66\x38\x20\xd1\x81\xd0\xbe"
+            "\x20\xd1\x81\xd0\xbc\xd0\xb5\xd1\x88\xd0\xb0\xd0\xbd\xd0\xbd\xd1\x8b\xd0\xbc"
+            "\x20\xd1\x80\xd0\xb5\xd0\xb3\xd0\xb8\xd1\x81\xd1\x82\xd1\x80\xd0\xbe\xd0\xbc");
+
+        // non-utf8 trash
+        TString query4 = "\xf4\x80\x89\x84\xf4\x80\x89\x87\xf4\x80\x88";
+        UNIT_ASSERT( !CheckAndFixQueryStringUTF8(query4, query4, true) );
+
+        TString query5 = "some \x7f""query    with UTF8_FIRST_CHAR \x7f";
+        UNIT_ASSERT(CheckAndFixQueryStringUTF8(query5, query5, true));
+        UNIT_ASSERT_STRINGS_EQUAL( query5, "some query with utf8_first_char" );
+
+        TString query6 = "weird query with that is longer with ToLower \xc8\xbe";
+        UNIT_ASSERT(CheckAndFixQueryStringUTF8(query6, query6, true));
+        UNIT_ASSERT_STRINGS_EQUAL( query6, "weird query with that is longer with tolower \xe2\xb1\xa6" );
+    }
+}
+

@@ -1,0 +1,476 @@
+// todo: 1. rewrite using ragel 6 scanner.
+// todo: 2. get better markers.
+
+#if 0
+%%{
+    machine segnumerator_common;
+
+    action onmark {
+        return true;
+    }
+
+    action onendmark {
+        if(p == pe - 1 )
+            return true;
+    }
+}%%
+
+%%{
+    machine segnumerator_ruletters;
+    alphtype unsigned short;
+    include segnumerator_common;
+
+    copy_sign = 0x00a9;
+
+    ru_A = 0x0430 | 0x0410;
+    ru_B = 0x0431 | 0x0411;
+    ru_V = 0x0432 | 0x0412;
+    ru_G = 0x0433 | 0x0413;
+    ru_D = 0x0434 | 0x0414;
+    ru_Ye = 0x0435 | 0x0415 | 0x0401 | 0x0451;
+    ru_Zh = 0x0436 | 0x0416;
+    ru_Z = 0x0437 | 0x0417;
+    ru_I = 0x0438 | 0x0418;
+    ru_J = 0x0439 | 0x0419;
+    ru_K = 0x043A | 0x041A;
+    ru_L = 0x043B | 0x041B;
+    ru_M = 0x043C | 0x041C;
+    ru_N = 0x043D | 0x041D;
+    ru_O = 0x043E | 0x041E;
+    ru_P = 0x043F | 0x041F;
+    ru_R = 0x0440 | 0x0420;
+    ru_S = 0x0441 | 0x0421;
+    ru_T = 0x0442 | 0x0422;
+    ru_U = 0x0443 | 0x0423;
+    ru_F = 0x0444 | 0x0424;
+    ru_H = 0x0445 | 0x0425;
+    ru_C = 0x0446 | 0x0426;
+    ru_Ch = 0x0447 | 0x0427;
+    ru_Sh = 0x0448 | 0x0428;
+    ru_Sch = 0x0449 | 0x0429;
+    ru_Y = 0x044A | 0x042A;
+    ru_Yy = 0x044B | 0x042B;
+    ru_y = 0x044C | 0x042C;
+    ru_E = 0x044D | 0x042D;
+    ru_Yu = 0x044E | 0x042E;
+    ru_Ya = 0x044F | 0x042F;
+}%%
+#endif
+
+#include <kernel/segnumerator/html_markers.h>
+
+namespace NSegm {
+namespace NPrivate {
+bool CheckAdsCSSMarker(const char * text, ui32 len) {
+    const char *p = text;
+    const char *pe = p + len;
+    const char *eof = pe;
+    Y_UNUSED(eof);
+    int cs;
+
+#if 0
+    %%{
+        machine segnumerator_adscss;
+        include segnumerator_common;
+
+        main := (( any* ([bB] 'anner' | [pP] 'romo') | [sS]'pons' )
+                             | ((any* ^alpha)?
+                         ([sS]'ape' | [rR]'ekl' | ([aA]'d' 's'?) @onendmark ( [vblA-Z] | ^alpha ))
+                                 ) %/onmark) @onmark;
+    }%%
+#endif
+
+    %%{
+        write data noerror nofinal;
+        write init;
+        write exec;
+    }%%;
+
+    (void)segnumerator_adscss_en_main;
+    return false;
+}
+
+bool CheckAdsTextMarker(const wchar16* text, ui32 len) {
+    const wchar16* p = text;
+    const wchar16* pe = p + len;
+    const wchar16* eof = pe;
+    Y_UNUSED(eof);
+    int cs;
+
+#if 0
+    %%{
+        machine segnumerator_adstext;
+        include segnumerator_ruletters;
+
+        ads1  = /ad/i /s/i? @onendmark;
+        ads2 = ( /advert/i | /ban/i /n/i? /er/i
+                | ru_S ru_P ru_O ru_N ru_S ru_O ru_R
+                | ru_P ru_A ru_R ru_T ru_N ru_Ye ru_R
+                | ru_R ru_Ye ru_K ru_L ru_A ru_M
+                | ru_B ru_A ru_N ru_N? ru_Ye ru_R ) @onmark;
+
+        main := ads1 | any* :>> (ads2 | ^alpha ads1 ^alpha);
+    }%%
+#endif
+
+    %%{
+        write data noerror nofinal;
+        write init;
+        write exec;
+    }%%;
+
+    (void)segnumerator_adstext_en_main;
+    return false;
+}
+
+bool CheckFooterCSSMarker(const char * text, ui32 len) {
+    const char *p = text;
+    const char *pe = p + len;
+    int cs;
+
+#if 0
+    %%{
+        machine segnumerator_footercss;
+        include segnumerator_common;
+
+        main := any * :>> ( /[cCkC]onta[ck]t/ | /[fF]oot[ei]/ | /[cCkK]op/ ( 'yr'| 'i' ) ) @onmark;
+
+    }%%
+#endif
+
+    %%{
+        write data noerror nofinal;
+        write init;
+        write exec;
+    }%%;
+
+    (void)segnumerator_footercss_en_main;
+    return false;
+}
+
+bool CheckFooterTextMarker(const wchar16* text, ui32 len) {
+    const wchar16* p = text;
+    const wchar16* pe = p + len;
+    const wchar16* eof = pe;
+    Y_UNUSED(eof);
+    int cs;
+
+#if 0
+    %%{
+        machine segnumerator_footertext;
+        include segnumerator_ruletters;
+
+        year = "19"?[9][1-9]|"20"[0-2][0-9];
+        tse = [cC]|ru_S;
+        footer_words = /&copy/i | '(' tse ')' | tse /opyright/i | ru_K ru_O ru_P ru_I ru_R ru_A ru_J ru_T;
+
+        main := (any* :>> (copy_sign | year space* footer_words | footer_words (any* :>> year))) @onmark;
+
+    }%%
+#endif
+
+    %%{
+        write data noerror nofinal;
+        write init;
+        write exec;
+    }%%;
+
+    (void)segnumerator_footertext_en_main;
+    return false;
+}
+
+bool CheckCommentsCSSMarker(const char* text, ui32 len) {
+    const char *p = text;
+    const char *pe = p + len;
+    const char *eof = pe;
+    Y_UNUSED(eof);
+    int cs;
+
+#if 0
+    %%{
+        machine segnumerator_commentscss;
+        include segnumerator_common;
+
+        main := any * :>> (
+                /[kc]om/i [mM]? /ent/i | /repl[yi]/i | /respon/i | /discus/i
+                                | /opinion/i | /shoutbox/i | /community/i | /dis[cq]us/i
+                ) @onmark;
+
+    }%%
+#endif
+
+    %%{
+        write data noerror nofinal;
+        write init;
+        write exec;
+    }%%;
+
+    (void)segnumerator_commentscss_en_main;
+    return false;
+}
+
+bool CheckCommentsTextMarker(const wchar16* text, ui32 len) {
+    const wchar16* p = text;
+    const wchar16* pe = p + len;
+    int cs;
+
+#if 0
+    %%{
+        machine segnumerator_commentstext;
+        include segnumerator_ruletters;
+
+        main := any* :>> (
+                /[kc]omment/i /s/i? | /repl/i (/y/i | /ies/i) | /respon/i
+                | /discuss/i | /opinion/i
+                | ru_K ru_O ru_M ru_M? ru_Ye ru_N ru_T
+                | ru_O ru_B ru_S ru_U ru_Zh? ru_D ru_Ye ru_N
+                | ru_O ru_T ru_V ru_Ye ru_T ru_Yy
+                | ru_O ru_T ru_Z ru_Yy ru_V ru_Yy
+                | ru_M ru_N ru_Ye ru_N ru_I ru_Ya
+                | ru_N ru_A ru_P ru_I ru_S ru_A ru_L ':'
+                | ru_C ru_I ru_T ru_A ru_T ru_A ':') @onmark;
+
+    }%%
+#endif
+
+    %%{
+        write data noerror nofinal;
+        write init;
+        write exec;
+    }%%;
+
+    (void)segnumerator_commentstext_en_main;
+    return false;
+}
+
+bool CheckMenuCSSMarker(const char* text, ui32 len) {
+    const char *p = text;
+    const char *pe = p + len;
+    const char *eof = pe;
+    Y_UNUSED(eof);
+    int cs;
+
+#if 0
+    %%{
+        machine segnumerator_menucss;
+        include segnumerator_common;
+
+        main := 0;
+
+    }%%
+#endif
+
+    %%{
+        write data noerror nofinal;
+        write init;
+        write exec;
+    }%%;
+
+    (void)segnumerator_menucss_en_main;
+    return false;
+}
+
+bool CheckHeaderCSSMarker(const char* text, ui32 len) {
+    const char *p = text;
+    const char *pe = p + len;
+    const char *eof = pe;
+    Y_UNUSED(eof);
+    int cs;
+
+#if 0
+    %%{
+        machine segnumerator_headercss;
+        include segnumerator_common;
+
+        header1 = ( [sS]'tr''o'?'ng' | [bB]'old' | [hH]'ead' | 'Cap' ( 's' | 'ti' | 'it' ) | [tT]'it''u'?'l' ) @onmark;
+        header2 = ( 'cap' ( 's' | 'ti' | 'it' ) ) @onmark;
+        header3 = ([hHbB]{1,2} | [tT]'it') @onendmark;
+        header4 = header3 ^alpha+ @onendmark;
+        header5 = header4 space @onmark;
+
+        main := header2 | header5 | any* :>> ( header1 | ^alpha header2 | space header5 );
+
+    }%%
+#endif
+
+    %%{
+        write data noerror nofinal;
+        write init;
+        write exec;
+    }%%;
+
+    (void)segnumerator_headercss_en_main;
+    return false;
+}
+
+bool CheckPollCSSMarker(const char * text, ui32 len) {
+    const char *p = text;
+    const char *pe = p + len;
+    const char *eof = pe;
+    Y_UNUSED(eof);
+    int cs;
+
+#if 0
+    %%{
+        machine segnumerator_pollcss;
+        include segnumerator_common;
+
+        poll1 = ( [oO]'pros' | [gG]'olos' | [sS]'urvey' | [mM]'neni' | 'Poll' | 'Vot'[eia] ) @onmark;
+        poll2 = ( 'poll' | 'vot'[eia] ) @onmark;
+
+        main := poll2 | any* :>> ( poll1 | ^alpha poll2 );
+
+    }%%
+#endif
+
+    %%{
+        write data noerror nofinal;
+        write init;
+        write exec;
+    }%%;
+
+    (void)segnumerator_pollcss_en_main;
+    return false;
+}
+
+bool CheckUnlikelyCandidateCSS(const char* text, ui32 len) {
+    const char *p = text;
+    const char *pe = p + len;
+    const char *eof = pe;
+    Y_UNUSED(eof);
+    int cs;
+
+#if 0
+    %%{
+        machine segnumerator_unlikelycandidatecss;
+        include segnumerator_common;
+
+        main := any * :>> ( /[Cc]ombx/ | /[Cc]omment/ | /[Cc]ommunity/ | /[Dd]isqus/ | /[Ee]xtra/
+                        | /[Ff]oot/ | /[Hh]eader/ | /[Mm]enu/ | /[Rr]emark/ | /[Rr]ss/ | /[Ss]houtbox/
+                        | /[Ss]idebar/ | /[Ss]ponsor/ | /[Aa]d-[Bb]reak/ | /[Aa]gregate/ | /[Pp]agination/
+                        | /[Pp]ager/ | /[Pp]opup/ ) @onmark;
+    }%%
+#endif
+
+    %%{
+        write data noerror nofinal;
+        write init;
+        write exec;
+    }%%;
+
+    (void)segnumerator_unlikelycandidatecss_en_main;
+    return false;
+}
+
+bool CheckPossibleCandidateCSS(const char* text, ui32 len) {
+    const char *p = text;
+    const char *pe = p + len;
+    const char *eof = pe;
+    Y_UNUSED(eof);
+    int cs;
+
+#if 0
+    %%{
+        machine segnumerator_possiblecandidatecss;
+        include segnumerator_common;
+
+        main := any * :>> ( /[Aa]nd/ | /[Aa]rticle/ | /[Bb]ody/ | /[Cc]olumn/ | /[Mm]ain/ | /[Ss]hadow/ ) @onmark;
+
+    }%%
+#endif
+
+    %%{
+        write data noerror nofinal;
+        write init;
+        write exec;
+    }%%;
+
+    (void)segnumerator_possiblecandidatecss_en_main;
+    return false;
+}
+
+bool CheckPositiveCSS(const char* text, ui32 len) {
+    const char *p = text;
+    const char *pe = p + len;
+    const char *eof = pe;
+    Y_UNUSED(eof);
+    int cs;
+
+#if 0
+    %%{
+        machine segnumerator_positivecss;
+        include segnumerator_common;
+
+        main := any * :>> ( /[Aa]rticle/ | /[Bb]ody/ | /[Cc]ontent/ | [Hh]?/[Ee]ntry/ | /[Mm]ain/ | /[Pp]age/
+                        | /[Pp]agination/ | /[Pp]ost/ | /[Tt]ext/ | /[Bb]log/ | /[Ss]tory/ ) @onmark;
+
+    }%%
+#endif
+
+    %%{
+        write data noerror nofinal;
+        write init;
+        write exec;
+    }%%;
+
+    (void)segnumerator_positivecss_en_main;
+    return false;
+}
+
+bool CheckNegativeCSS(const char* text, ui32 len) {
+    const char *p = text;
+    const char *pe = p + len;
+    const char *eof = pe;
+    Y_UNUSED(eof);
+    int cs;
+
+#if 0
+    %%{
+        machine segnumerator_negativecss;
+        include segnumerator_common;
+
+        main := any * :>> ( /[Cc]ombx/ | /[Cc]omment/ | /[Cc]om-/ | /[Cc]ontact/ | /[Ff]oot/ ('er'|'note')? | /[Mm]asthead/
+                        | /[Mm]edia/ | /[Mm]eta/ | /[Oo]utbrain/ | /[Pp]romo/ | /[Rr]elated/ | /[Ss]croll/ | /[Ss]houtbox/
+                        | /[Ss]idebar/ | /[Ss]ponsor/ | /[Ss]hopping/ | /[Tt]ags/ | /[Tt]ool/ | /[Ww]idget/ ) @onmark;
+    }%%
+#endif
+
+    %%{
+        write data noerror nofinal;
+        write init;
+        write exec;
+    }%%;
+
+    (void)segnumerator_negativecss_en_main;
+    return false;
+}
+
+
+bool CheckAdsHrefMarker(const char * text, ui32 len) {
+    const char *p = text;
+    const char *pe = p + len;
+    const char *eof = pe;
+    Y_UNUSED(eof);
+    int cs;
+
+#if 0
+    %%{
+        machine segnumerator_adshref;
+        include segnumerator_common;
+
+        main := (( any* ('banner' | 'promo' | 'spons' | 'aff''i'?'l' | 'cl''i'?'ck'
+                        | (any* ^alpha) 'ad' [vs.] | 'ref''_'?'id' | 'refer' | 'partner')) %/onmark) @onmark;
+    }%%
+#endif
+
+    %%{
+        write data noerror nofinal;
+        write init;
+        write exec;
+    }%%;
+
+    (void)segnumerator_adshref_en_main;
+    return false;
+}
+}
+}

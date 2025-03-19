@@ -1,0 +1,146 @@
+%{
+#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
+
+#include <kernel/tarc/iface/tarcface.h>
+
+#include <util/generic/singleton.h>
+#include <util/string/cast.h>
+
+#include <assert.h>
+#include <ctype.h>
+
+namespace {
+
+struct TZone {
+    const char*  Name;
+    EArchiveZone Zone;
+};
+
+%}
+
+%struct-type
+%language=ANSI-C
+%define slot-name Name
+%define hash-function-name zone_hash
+%define lookup-function-name in_zones_set
+%ignore-case
+%compare-lengths
+%compare-strncmp
+%null-strings
+%7bit
+%readonly-tables
+%enum
+%global-table
+
+struct TZone;
+%%
+title,              AZ_TITLE
+anchor,             AZ_ANCHOR
+anchorint,          AZ_ANCHORINT
+abstract,           AZ_ABSTRACT
+keywords,           AZ_KEYWORDS
+hint,               AZ_HINT
+address,            AZ_ADDRESS
+segment_aux,        AZ_SEGAUX
+segment_content,    AZ_SEGCONTENT
+segment_copyright,  AZ_SEGCOPYRIGHT
+segment_head,       AZ_SEGHEAD
+segment_links,      AZ_SEGLINKS
+segment_menu,       AZ_SEGMENU
+segment_news,       AZ_SEGNEWS
+segment_referat,    AZ_SEGREFERAT
+segment_title,      AZ_SEGTITLE
+textarea,           AZ_TEXTAREA
+telephone,          AZ_TELEPHONE
+article_zone,       AZ_ARTICLE
+header_zone,        AZ_HEADER
+main_content,       AZ_MAIN_CONTENT
+main_header,        AZ_MAIN_HEADER
+dater_date,         AZ_DATER_DATE
+faq_q,              AZ_FAQ_Q
+faq_a,              AZ_FAQ_A
+hanswer_q,          AZ_HANSWER_Q
+hanswer_a,          AZ_HANSWER_A
+hanswer_title,      AZ_HANSWER_TITLE
+hanswer_content,    AZ_HANSWER_CONTENT
+fio,                AZ_FIO
+forum_message,      AZ_FORUM_MESSAGE
+forum_quote,        AZ_FORUM_QUOTE
+forum_signature,    AZ_FORUM_SIGNATURE
+opinion,            AZ_OPINION
+xpz,                AZ_XPATH
+user_review,        AZ_USER_REVIEW
+forum_qbody,        AZ_FORUM_QBODY
+strict_header_zone, AZ_STRICT_HEADER
+table,              AZ_TABLE
+table_row,          AZ_TABLE_ROW
+table_cell,         AZ_TABLE_CELL
+list0,              AZ_LIST0
+list1,              AZ_LIST1
+list2,              AZ_LIST2
+list3,              AZ_LIST3
+list4,              AZ_LIST4
+list5,              AZ_LIST5
+list_item0,         AZ_LIST_ITEM0
+list_item1,         AZ_LIST_ITEM1
+list_item2,         AZ_LIST_ITEM2
+list_item3,         AZ_LIST_ITEM3
+list_item4,         AZ_LIST_ITEM4
+list_item5,         AZ_LIST_ITEM5
+forum_info,         AZ_FORUM_INFO
+forum_topic_info,   AZ_FORUM_TOPIC_INFO
+mediawiki_title,    AZ_MEDIAWIKI_TITLE
+mediawiki_headline, AZ_MEDIAWIKI_HEADLINE
+mediawiki_aux,      AZ_MEDIAWIKI_AUX
+mediawiki_toc,      AZ_MEDIAWIKI_TOC
+mediawiki_infobox,  AZ_MEDIAWIKI_INFOBOX
+mediawiki_refs,     AZ_MEDIAWIKI_REFS
+mediawiki_content,  AZ_MEDIAWIKI_CONTENT
+mediawiki_cats,     AZ_MEDIAWIKI_CATS
+mediawiki_quote,    AZ_MEDIAWIKI_QUOTE
+mediawiki_thumb,    AZ_MEDIAWIKI_THUMB
+mediawiki_gallery,  AZ_MEDIAWIKI_GALLERY
+mediawiki_navbox,   AZ_MEDIAWIKI_NAVBOX
+measure,            AZ_MEASURE
+alternate,          AZ_ALTERNATE
+mediawiki_text,     AZ_MEDIAWIKI_TEXT
+noindex,            AZ_NOINDEX
+%%
+
+static const size_t* MakeId2IdxMapping() {
+    static const size_t wordlist_len = Y_ARRAY_SIZE(wordlist);
+    static size_t mapping[AZ_COUNT];
+
+    for (const TZone* zone = wordlist; zone < wordlist + wordlist_len; ++zone) {
+        if (zone->Name) {
+            Y_ASSERT(zone->Zone < AZ_COUNT);
+            mapping[zone->Zone] = zone - wordlist;
+        }
+    }
+
+    return mapping;
+}
+
+struct TFindZoneMapping {
+    const size_t* const Mapping;
+
+    TFindZoneMapping()
+        : Mapping(MakeId2IdxMapping())
+    {
+    }
+};
+
+} // namespace
+
+template <>
+EArchiveZone FromStringImpl(const char* data, size_t length) {
+    if (const TZone* zone = in_zones_set(data, length)) {
+        return zone->Zone;
+    }
+    return AZ_COUNT;
+}
+
+const char* ToString(EArchiveZone id) {
+    Y_ASSERT(id < AZ_COUNT);
+    return wordlist[Singleton<TFindZoneMapping>()->Mapping[id]].Name;
+}

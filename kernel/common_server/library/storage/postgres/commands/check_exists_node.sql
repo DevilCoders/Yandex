@@ -1,0 +1,1 @@
+SELECT COUNT(1) FROM $TABLE_NAME$ WHERE key LIKE '$NODE$' or key = '$KEY$'

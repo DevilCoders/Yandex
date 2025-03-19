@@ -1,0 +1,69 @@
+LIBRARY()
+
+OWNER(g:cs_dev)
+
+PEERDIR(
+    kernel/common_server/abstract
+    kernel/common_server/api
+    kernel/common_server/auth
+    kernel/common_server/common
+    kernel/common_server/certs
+    kernel/common_server/signature
+    kernel/common_server/geoareas
+    kernel/common_server/geobase/impl
+    kernel/common_server/geobase/config
+    kernel/common_server/library/async_proxy
+    kernel/common_server/library/cgi_corrector
+    kernel/common_server/library/logging
+    kernel/common_server/library/network/data
+    kernel/common_server/library/openssl
+    kernel/common_server/library/searchserver/simple
+    kernel/common_server/library/storage
+    kernel/common_server/library/tvm_services/abstract
+    kernel/common_server/library/unistat
+    kernel/common_server/library/unistat/log
+    kernel/common_server/locks
+    kernel/common_server/migrations
+    kernel/common_server/notifications
+    kernel/common_server/personal_data
+    kernel/common_server/processors
+    kernel/common_server/roles/actions
+    kernel/common_server/roles/configured
+    kernel/common_server/rt_background
+    kernel/common_server/rt_background/processes
+    kernel/common_server/emulation
+    kernel/common_server/settings
+    kernel/common_server/secret
+    kernel/common_server/tags
+    kernel/common_server/user_auth
+    kernel/common_server/user_role
+    kernel/common_server/util
+    kernel/common_server/resources
+    kernel/common_server/proposition
+    kernel/common_server/obfuscator
+    kernel/common_server/ciphers
+    kernel/common_server/template
+    kernel/common_server/util/algorithm
+    kernel/common_server/util/datetime
+    kernel/common_server/util/logging
+    kernel/daemon
+    kernel/daemon/config
+    kernel/daemon/module
+    kernel/reqid
+    library/cpp/logger
+    library/cpp/mediator
+    library/cpp/mediator/global_notifications
+    library/cpp/tvmauth/client
+    library/cpp/yconf
+    logbroker/unified_agent/client/cpp/logger
+)
+
+SRCS(
+    GLOBAL server.cpp
+    client.cpp
+    config.cpp
+    http_server.cpp
+    replier.cpp
+)
+
+END()

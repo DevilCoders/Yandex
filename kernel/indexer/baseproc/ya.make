@@ -1,0 +1,63 @@
+LIBRARY()
+
+OWNER(g:base)
+
+SRCS(
+    archproc.cpp
+    groupproc.cpp
+    archflush.cpp
+    baseconf.cpp
+    doc_attr_filler.cpp
+    rsshandler.cpp
+    docactionface.cpp
+    directtextaction.cpp
+    segmentaction.cpp
+    docprocessor.cpp
+    prewalrusproc.cpp
+)
+
+PEERDIR(
+    kernel/groupattrs
+    kernel/groupattrs/creator
+    kernel/hosts/owner
+    kernel/indexer/direct_text
+    kernel/indexer/directindex
+    kernel/indexer/dtcreator
+    kernel/indexer/face
+    kernel/indexer/faceproc
+    kernel/indexer/parseddoc
+    kernel/indexer/posindex
+    kernel/indexer_iface
+    kernel/keyinv/indexfile
+    kernel/keyinv/invkeypos
+    kernel/segmentator/structs
+    kernel/segnumerator
+    kernel/tarc/iface
+    kernel/tarc/markup_zones
+    library/cpp/charset
+    library/cpp/deprecated/dater_old
+    library/cpp/html/entity
+    library/cpp/html/face
+    library/cpp/html/spec
+    library/cpp/langmask
+    library/cpp/microbdb
+    library/cpp/mime/types
+    library/cpp/numerator
+    library/cpp/packedtypes
+    library/cpp/string_utils/base64
+    ysite/directtext/dater
+    ysite/directtext/fio
+    ysite/directtext/freqs
+    ysite/directtext/grammar
+    ysite/directtext/kcparser
+    ysite/directtext/linker
+    ysite/directtext/measure
+    ysite/directtext/segment_trigrams
+    ysite/directtext/sentences_lens
+    ysite/directtext/telextractor
+    ysite/directtext/textarchive
+    ysite/directtext/url_segments
+    yweb/robot/dbscheeme
+)
+
+END()

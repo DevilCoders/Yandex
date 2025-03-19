@@ -1,0 +1,345 @@
+#include <kernel/remorph/engine/lexer.h>
+
+#include <util/charset/utf8.h>
+#include <util/charset/wide.h>
+#include <util/generic/yexception.h>
+#include <util/string/cast.h>
+
+namespace NReMorph {
+namespace NPrivate {
+
+%%{
+    machine remorph_engine_lexer;
+
+    alphtype unsigned int;
+
+    prepush {
+        if (static_cast<size_t>(top) == Stack.size()) {
+            Y_ASSERT(false);
+        }
+    }
+
+    action CaptureReset {
+        UnescapedData.clear();
+        UnescapedPosMap.clear();
+        UnescapedPosOffset = 0;
+    }
+
+    action Capture {
+        UnescapedData.push_back(fc);
+        UnescapedPosMap.push_back(UnescapedPosOffset);
+        if (fc == '\n') {
+            UnescapedPosOffset = 0;
+        }
+    }
+
+    action CaptureEscape {
+        UnescapedData.pop_back();
+        UnescapedPosMap.pop_back();
+        ++UnescapedPosOffset;
+    }
+
+    action CaptureFinish {
+        UnescapedPosMap.push_back(UnescapedPosOffset);
+    }
+
+    action UnexpectedSymbolError {
+        throw Error(ts) << "unexpected symbol: " << GetRawData(ts, te - ts);
+    }
+
+    action UnfinishedStringError {
+        throw Error(fpc) << "unfinished string";
+    }
+
+    action UnfinishedRegexError {
+        throw Error(fpc) << "unfinished regex";
+    }
+
+    action UnfinishedGroupError {
+        throw Error(fpc) << "unfinished group";
+    }
+
+    escape = '\\';
+
+    id = alpha (alnum | '_')*;
+    number_sign = [+\-];
+    int_number = number_sign? digit+;
+    float_number = int_number '.' digit*;
+    number = int_number | float_number;
+    regex_mod = [a-z]+;
+
+    string_quoted_pair = escape ((escape | '"') @CaptureEscape | any) ;
+    regex_quoted_pair = escape ((escape | '/') @CaptureEscape | any);
+
+    string = '"' @CaptureReset (string_quoted_pair | [^\\"])* $Capture $/UnfinishedStringError '"' @CaptureFinish;
+    regex = '/' @CaptureReset (regex_quoted_pair | [^\\/])* $Capture $/UnfinishedRegexError '/' @CaptureFinish;
+    group = '<' id $/UnfinishedGroupError '>';
+
+    comment_scanner := |*
+        '\n' => {
+            fret;
+        };
+        any;
+    *|;
+
+    regex_mod_scanner := |*
+        regex_mod => {
+            YieldToken(tokenHandler, PTT_REGEX_MOD, ts, PTDT_RAW_DATA, ts, te - ts);
+            fret;
+        };
+        any => {
+            fhold;
+            fret;
+        };
+    *|;
+
+    main := |*
+        space;
+        id => {
+            YieldToken(tokenHandler, PTT_ID, ts, PTDT_RAW_DATA, ts, te - ts);
+        };
+        ';' => {
+            YieldToken(tokenHandler, PTT_SEMICOLON, ts);
+        };
+        '=' => {
+            YieldToken(tokenHandler, PTT_EQUALS, ts);
+        };
+        '(' => {
+            YieldToken(tokenHandler, PTT_LPAREN, ts);
+        };
+        ')' => {
+            YieldToken(tokenHandler, PTT_RPAREN, ts);
+        };
+        '[' => {
+            YieldToken(tokenHandler, PTT_LBRACKET, ts);
+        };
+        ']' => {
+            YieldToken(tokenHandler, PTT_RBRACKET, ts);
+        };
+        '#' => {
+            fcall comment_scanner;
+        };
+        number => {
+            YieldToken(tokenHandler, PTT_NUMBER, ts, PTDT_NUMBER, ts, te - ts);
+        };
+        string => {
+            YieldToken(tokenHandler, PTT_STRING, ts, PTDT_DATA_UNESCAPED, UnescapedData.data(), UnescapedData.size(), 1u);
+        };
+        regex => {
+            YieldToken(tokenHandler, PTT_REGEX, ts, PTDT_DATA_UNESCAPED, UnescapedData.data(), UnescapedData.size(), 1u);
+            fcall regex_mod_scanner;
+        };
+        group => {
+            YieldToken(tokenHandler, PTT_GROUP, ts, PTDT_RAW_DATA, ts + 1, te - ts - 2, 1u);
+        };
+        any => UnexpectedSymbolError;
+    *|;
+
+}%%
+
+namespace {
+
+const static size_t LOAD_BUFFER_SIZE = 4096u;
+const static size_t BASE_BUFFER_SIZE_DEFAULT = 4096u;
+const static size_t BUFFER_GROWTH_RATE_DEFAULT = 2u;
+const static size_t BUFFER_CHOPPING_PART_DEFAULT = 2u;
+const static size_t STACK_SIZE = 1u;
+
+inline TString GetRawData(const TAlphType* data, size_t size) {
+    TString rawData;
+    for (const wchar32* symbol = static_cast<const wchar32*>(data); symbol < data + size; ++symbol) {
+        WriteSymbol(*symbol, rawData);
+    }
+    return rawData;
+}
+
+inline TUtf16String GetData(const TAlphType* data, size_t size) {
+    return ::UTF32ToWide(static_cast<const wchar32*>(data), size);
+}
+
+inline double GetNumber(const TAlphType* data, size_t size) {
+    TString number = GetRawData(data, size);
+    return ::FromString<double>(number);
+}
+
+%% write data;
+
+}
+
+TLexer::TLexer(IInputStream& input, const TString& source, size_t baseBufferSize)
+    : Input(input)
+    , Source(source)
+    , BufferGrowthRate(BUFFER_GROWTH_RATE_DEFAULT)
+    , BufferChoppingPart(BUFFER_CHOPPING_PART_DEFAULT)
+    , LoadBuffer(LOAD_BUFFER_SIZE)
+    , LoadCached(0)
+    , Buffer(baseBufferSize ? baseBufferSize : BASE_BUFFER_SIZE_DEFAULT)
+    , Cached(0)
+    , BufferOffset(0, 0)
+    , UnescapedData()
+    , UnescapedPosMap()
+    , UnescapedPosOffset(0)
+    , Stack(STACK_SIZE)
+    , cs(0)
+    , stack(Stack.data())
+    , top(0)
+    , act(0)
+    , ts(NULL)
+    , te(NULL)
+{
+    %% write init;
+
+    Y_ASSERT(LoadBuffer.Capacity() >= 4u);
+    Y_ASSERT(Buffer.size() != 0);
+}
+
+void TLexer::Scan(const TTokenHandler& tokenHandler) {
+    const TAlphType* eof = NULL;
+    while (!eof) {
+        size_t read = Load();
+
+        const TAlphType* p = Buffer.data() + Cached;
+        const TAlphType* pe = p + read;
+
+        if (Cached + read != Buffer.size()) {
+            eof = pe;
+        }
+
+        %% write exec;
+
+        size_t tailOffset = ts ? (ts - Buffer.data()) : 0;
+        size_t tailSize = ts ? (Buffer.size() - tailOffset) : 0;
+        size_t teOffset = (ts && te) ? te - ts : 0;
+
+        if (tailSize) {
+            // Хвост буфера (начало недораспознанного токена) определен и не пуст.
+            Y_ASSERT(ts);
+            if (tailOffset && (tailOffset >= Buffer.size() - Buffer.size() / BufferChoppingPart)) {
+                // Хвост буфера близок к концу буфера (находится в 1/BufferChoppingPart правой части буфера).
+                // Передвигаем хвост на начало буфера.
+                Cached = tailSize;
+                BufferOffset += GetPosOffset(Buffer.data() + tailOffset);
+                Copy(Buffer.data() + tailOffset, Buffer.data() + Buffer.size(), Buffer.data());
+                tailOffset = 0;
+            } else {
+                // Хвост буфера далек от конца буфера.
+                // Оставляем хвост как есть, а буфер расширяем.
+                Cached = Buffer.size();
+                Buffer.resize(Buffer.size() * BufferGrowthRate);
+            }
+        } else {
+            // Хвоста у буфера нет, можно переиспользовать целиком.
+            Cached = 0;
+            tailOffset = 0;
+        }
+
+        Y_ASSERT(Cached < Buffer.size());
+
+        if (ts) {
+            ts = Buffer.data() + tailOffset;
+            if (te) {
+                te = ts + teOffset;
+            }
+        }
+    }
+}
+
+void TLexer::SetBufferGrowthRate(size_t bufferGrowthRate) {
+    Y_ASSERT(bufferGrowthRate >= 2);
+    BufferGrowthRate = bufferGrowthRate;
+}
+
+void TLexer::SetBufferChoppingPart(size_t bufferChoppingPart) {
+    Y_ASSERT(bufferChoppingPart >= 1);
+    BufferChoppingPart = bufferChoppingPart;
+}
+
+size_t TLexer::Load() {
+    TAlphType* dstBegin = static_cast<wchar32*>(Buffer.data() + Cached);
+    TAlphType* dst = dstBegin;
+    const TAlphType* dstEnd = static_cast<const wchar32*>(Buffer.data() + Buffer.size());
+
+    bool eof = false;
+
+    while (!eof && (dst < dstEnd)) {
+        size_t read = Input.Load(LoadBuffer.Data() + LoadCached, LoadBuffer.Capacity() - LoadCached);
+
+        if (LoadCached + read != LoadBuffer.Capacity()) {
+            eof = true;
+        }
+
+        LoadBuffer.Resize(LoadCached + read);
+
+        const unsigned char* src = reinterpret_cast<const unsigned char*>(LoadBuffer.Begin());
+        const unsigned char* srcEnd = reinterpret_cast<const unsigned char*>(LoadBuffer.End());
+
+        while ((dst < dstEnd) && (src < srcEnd)) {
+            RECODE_RESULT result = ReadUTF8CharAndAdvance(*dst, src, srcEnd);
+            if (result == RECODE_OK) {
+                ++dst;
+                continue;
+            } else if (result == RECODE_EOINPUT) {
+                break;
+            } else if (result == RECODE_BROKENSYMBOL) {
+                throw Error(dst + 1) << "incorrect UTF-8 sequence";
+            } else {
+                Y_ASSERT(false);
+            }
+        }
+
+        LoadCached = srcEnd - src;
+        LoadBuffer.ChopHead(LoadBuffer.Size() - LoadCached);
+    }
+
+    return dst - dstBegin;
+}
+
+void TLexer::YieldToken(const TTokenHandler& tokenHandler, EParseTokenType type, const TAlphType* pos, EParseTokenDataType dataType, const TAlphType* data, size_t size, size_t dataOffset) const {
+    TParseToken token(type, dataType);
+    if (data) {
+        switch (dataType) {
+        case PTDT_NONE:
+            break;
+        case PTDT_DATA:
+        case PTDT_DATA_UNESCAPED:
+            token.Data = GetData(data, size);
+            break;
+        case PTDT_RAW_DATA:
+            token.RawData = GetRawData(data, size);
+            break;
+        case PTDT_NUMBER:
+            token.Number = GetNumber(data, size);
+            break;
+        }
+    }
+    token.DataFormat.ExtraOffset = dataOffset;
+    if (dataType == PTDT_DATA_UNESCAPED) {
+        token.DataFormat.ExtraOffsetMap = UnescapedPosMap;
+        Y_ASSERT(token.DataFormat.ExtraOffsetMap.size() == size + 1);
+        for (size_t i = 0; i < token.DataFormat.ExtraOffsetMap.size(); ++i) {
+            token.DataFormat.ExtraOffsetMap[i] += dataOffset;
+            if ((i < size) && (data[i] == '\n')) {
+                break;
+            }
+        }
+    }
+    token.Location = GetLocation(pos);
+    tokenHandler(token);
+}
+
+TSourceLocation TLexer::GetLocation(const TAlphType* p) const {
+    return TSourceLocation(Source, BufferOffset + GetPosOffset(p));
+}
+
+TSourcePos TLexer::GetPosOffset(const TAlphType* p) const {
+    Y_ASSERT(p >= Buffer.data() && p <= Buffer.data() + Buffer.size());
+
+    return SourceOffset(Buffer.data(), p);
+}
+
+TLexingError TLexer::Error(const TAlphType* p) const {
+    return TLexingError(GetLocation(p));
+}
+
+} // NPrivate
+} // NReMorph

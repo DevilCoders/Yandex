@@ -1,0 +1,124 @@
+import "kernel/text_machine/proto/limits_monitor.proto";
+
+package NTextMachineProtocol;
+option cc_enable_arenas = true;
+
+message TPbAnnotation {
+    optional uint32 BreakNumber = 1;
+    optional uint32 FirstWordPos = 2;
+    optional uint32 Length = 3;
+    optional double Value = 4;
+    optional string Text = 5;
+
+    optional uint32 Language = 6;
+    optional uint32 StreamIndex = 7;
+};
+
+message TPbStream {
+    optional uint32 Type = 1; // See EStreamType enum in kernel/lingboost/constants.h
+    optional uint32 AnnotationCount = 2;
+    optional uint32 WordCount = 3;
+    optional double MaxValue = 4;
+
+    repeated TPbAnnotation Annotations = 5; // In ascensing order of pair (break number, stream index)
+};
+
+message TPbPosition {
+    optional uint32 StreamType = 1; // See EStreamType enum in kernel/lingboost/constants.h
+    optional uint32 BreakNumber = 2; // Must match with break number and stream index for exactly one annotation
+                                     // in corresponding stream
+    optional uint32 LeftWordPos = 3;
+    optional uint32 RightWordPos = 4;
+    optional uint32 StreamIndex = 5;
+    optional uint32 Relevance = 6;
+};
+
+message TPbBlockHit {
+    optional uint32 BlockIndex = 1;
+    optional uint32 Precision = 2;
+    optional uint32 LemmaIndex = 3;
+    optional double Weight = 4;
+    optional TPbPosition Position = 5;
+    optional uint32 FormIndex = 6; // zero for special forms, 1+ for forms in qtree
+    optional uint32 LowLevelFormIndex = 7;
+    optional uint32 Layer = 8;
+};
+
+message TPbWordHit {
+    optional uint32 RequestIndex = 1;
+    optional uint32 WordIndex = 2;
+    optional uint32 FormIndex = 3;
+    optional double Weight = 5;
+    optional TPbPosition Position = 4;
+};
+
+message TPbHits {
+    repeated TPbStream Streams = 1; // In any order, each stream type cannot occur more than once
+                                    // Empty streams (with 0 annotations) are allowed
+    repeated TPbBlockHit BlockHits = 2;
+    repeated TPbWordHit WordHits = 3;
+
+    optional string WordJsonsFromDssmTextualFieldSetV1 = 4;
+    optional string BigramJsonsFromDssmTextualFieldSetV1 = 5;
+    optional string WordJsonsFromDssmTextualFieldSetWithoutTitle = 6;
+    optional string BigramJsonsFromDssmTextualFieldSetWithoutTitle = 7;
+
+    optional uint32 PackVersion = 8;
+    optional uint32 PackedBlockHitsCount = 9;
+    optional bytes PackedBlockHits = 10;
+    optional uint32 PackedAnnotationCount = 11;
+    optional bytes PackedAnnotations = 12;
+    optional bytes PackedAnnotationStreams = 13;
+    repeated float HitWeights = 14 [packed = true]; // omitted if all weights are zero
+};
+
+message TWordWeightRewriteAction {
+    optional string Word = 1;
+    optional float RewriteMainWeight = 2;
+    optional float RewriteExactWeight = 3;
+}
+
+message TInExpansionWordWeigthsRewrite {
+    // key defintion
+    // semantics: will apply rewrites if ForExpansionText is equal to reconstructed text
+    //            and either ForExpansionType is empty or ForExpansionType is equal for type
+    optional string ForExpansionText = 1;
+    optional uint32 ForExpansionType = 2;
+
+    repeated TWordWeightRewriteAction WordActions = 3;
+}
+
+message TPbDocHits {
+    optional uint32 DocId = 1;
+    optional string QBundleBase64 = 2; // only one of this and BinaryBundle is present
+    optional TPbHits Hits = 4;
+    optional TPbLimitsMonitor LimitsMonitor = 5; //enable with "pron=qbundlelimitsmonitor"
+
+    repeated TInExpansionWordWeigthsRewrite WordWeigthsRewrites = 6;
+
+    optional bytes BinaryBundle = 7; // version of QBundleBase64 without base64 encoding
+};
+
+message TPbQueryFeatures {
+    optional uint32 ExpansionType = 1;
+    optional uint32 Index = 2;
+    repeated float Values = 3;
+};
+
+message TPbInfo {
+    repeated TPbQueryFeatures QueryFeatures = 1;
+};
+
+message TPbWordStatPerStreamSet {
+    optional bool HasExactMatch = 1;
+    optional bool HasAnyMatch = 2;
+};
+
+message TPbQueryStatPerStreamSet {
+    repeated uint32 StreamType = 1; // EStreamType; combined stats over multiple streams are allowed
+    repeated TPbWordStatPerStreamSet Words = 2;
+};
+
+message TPbQueryWordStats {
+    repeated TPbQueryStatPerStreamSet PerStreamSet = 1;
+};

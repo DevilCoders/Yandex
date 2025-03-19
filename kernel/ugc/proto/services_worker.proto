@@ -1,0 +1,177 @@
+syntax = "proto3";
+
+package NUgc.NSchema.NServices;
+
+import "google/protobuf/timestamp.proto";
+import "kernel/ugc/proto/common/digest.proto";
+import "kernel/ugc/proto/common/author.proto";
+import "kernel/ugc/proto/common/moderation.proto";
+import "kernel/ugc/schema/proto/schema.proto";
+
+// Feedback about contacting the worked to schedule some work.
+message TConversationReview {
+    // Frontend-assigned id of the review.
+    string Id = 1;
+    // The rating of the interaction, 1-5.
+    int32 Rating = 2;
+    // Did the user manage to reach the worker?
+    bool Connected = 3;
+    // Did the user manage to hire the worker?
+    bool Deal = 4;
+    // Expected service date.
+    string DealDate = 5;
+    // Textual review of the conversation, not published yet.
+    string ReviewText = 6;
+    // If the deal failed, the reason for that.
+    string RejectReason = 7;
+    // User agrees to be surveyed over the phone or mail.
+    bool SurveyConsent = 8;
+    // Autoassigned creation time.
+    google.protobuf.Timestamp CreateTime = 9 [(default_value) = "NOW_TIME"];
+}
+
+// Identification of an aspect of the work performed by the worker and a rating of that service.
+// Services form an ontology, so to identify a specialization, the profession needs to be filled in,
+// and so on. Broader categories may be indicated by omitting lower ones.
+message TWorkRating {
+    // The profession in which work was performed.
+    string Profession = 1;
+
+    // The specialization in which work was performed.
+    string Specialization = 2;
+
+    // The service that was performed.
+    string Service = 3;
+
+    // The rating of this aspect of the work, 1-5.
+    int32 Rating = 4;
+}
+
+// Feedback about a Yandex.Services worker.
+message TWorkerReview {
+    // Worker Id assigned by Yandex.Services.
+    string WorkerId = 1;
+
+    // User evaluation of the worker, 1-5.
+    int32 Rating = 2;
+
+    // Identification and evaluation of specific aspects of the work.
+    repeated TWorkRating WorkRatings = 3;
+
+    // Textual review of the worker, subject to moderation.
+    string ReviewText = 4;
+
+    // Autoassigned creation time.
+    google.protobuf.Timestamp CreateTime = 5 [(default_value) = "NOW_TIME"];
+
+    // Feedback about interactions with the worker.
+    repeated TConversationReview ConversationReviews = 6;
+
+    option (schema) = {
+        Table: {
+            Name: "conversation-reviews"
+            Field: "ConversationReviews"
+            Key: "Id"
+        }
+    };
+
+    // Politeness of the worker, 1-5.
+    int32 Politeness = 7;
+
+    // Punctuality of the worker, 1-5.
+    int32 Punctuality = 8;
+
+    // Adequacy of the worker, 1-5.
+    int32 Adequacy = 9;
+
+    // Pricing rating of the worker, 1-3.
+    // The better, i.e. cheaper, the price, the greater this value.
+    int32 Pricing = 10;
+
+    // User refused to provide a review (clicked on a cross in the pop-up or something like that).
+    bool UserRefused = 11;
+
+    // URLs of loaded to MDS photos.
+    repeated string Photos = 12;
+
+    TReviewModeration Moderation = 13 [(internal_write) = true];
+
+    string OrderId = 14;
+    string OrderName = 15;
+    string CategoryId = 16;
+
+    string ReviewId = 17 [(internal_write) = true];
+
+    string ReviewSource = 18;
+
+    // Set of positive or negative features like "good_price", "politeness", "high_quality", "low_quality", "scam", etc
+    repeated string Features = 19;
+
+    bool AntifraudBan = 20 [(internal_write) = true];         // Antifraud verdict
+    bool Hidden = 21 [(internal_write) = true];               // Manual ban
+    string HiddenReason = 22 [(internal_write) = true];       // Manual ban reason
+    string ModerationReviewId = 23 [(internal_write) = true]; // Moderation verdict relates to this ReviewId
+} // NOTE: don't forget to add new value to converter in entity/ugc/data/lib/services_workers_converter.cpp
+
+// Public interface for TWorkerReview
+message TPublicWorkerReview {
+    string WorkerId = 1;
+    int32 Rating = 2;
+    repeated TWorkRating WorkRatings = 3;
+    string ReviewText = 4;
+    google.protobuf.Timestamp CreateTime = 5 [(default_value) = "NOW_TIME"];
+    repeated TConversationReview ConversationReviews = 6;
+
+    int32 Politeness = 7;
+    int32 Punctuality = 8;
+    int32 Adequacy = 9;
+    int32 Pricing = 10;
+    bool UserRefused = 11;
+
+    repeated string Photos = 12;
+
+    TReviewModeration Moderation = 13 [(internal_write) = true];
+
+    string OrderId = 14;
+    string OrderName = 15;
+    string CategoryId = 16;
+
+    string ReviewId = 17 [(internal_write) = true];
+
+    string ReviewSource = 18;
+
+    repeated string Features = 19;
+} // NOTE: don't forget to add new value to converter in entity/ugc/data/lib/services_workers_converter.cpp
+
+
+// like TUserProfile for "big" UGC, used only for /ugcpub/services-workers response
+message TPublicUserProfile {
+    repeated TPublicWorkerReview ServicesWorkers = 42;
+}
+
+
+// TWorkerReview enriched with additional information for publication.
+message TWorkerReviewPub {
+    // Publishable information about review author.
+    TAuthor Author = 1;
+
+    // The actual review content.
+    TPublicWorkerReview WorkerReview = 2;
+}
+
+// Basically a collection of a Yandex.Services worker reviews enriched with some metadata.
+message TWorkerDigest {
+    // Worker Id for which the digest is created.
+    string WorkerId = 1;
+
+    // Common digest data.
+    TDigestCommon DigestCommon = 2;
+
+    // A subset of reviews produced by the current request (e.g. depending on offset and page count).
+    repeated TWorkerReviewPub Reviews = 3;
+
+    // User's own review.
+    TWorkerReviewPub MyReview = 4;
+
+    string CsrfToken = 5;
+}

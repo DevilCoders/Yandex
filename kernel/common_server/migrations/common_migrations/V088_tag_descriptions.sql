@@ -1,0 +1,2 @@
+ALTER TABLE tag_descriptions ADD COLUMN IF NOT EXISTS revision SERIAL NOT NULL UNIQUE;
+ALTER TABLE tag_descriptions_history ADD COLUMN IF NOT EXISTS revision INTEGER;

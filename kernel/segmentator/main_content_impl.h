@@ -1,0 +1,175 @@
+#pragma once
+
+#include "main_features_common.h"
+#include <kernel/segmentator/structs/merge.h>
+
+class TMemoryPool;
+
+namespace NSegm {
+namespace NPrivate {
+
+// feature graveyard:
+//    MCF_COMMENTS_HEADER,
+//    MCF_FOOTER_TEXT,
+//    MCF_HAS_HEADER,
+//    MCF_INCLUDES_FIRST,
+//    MCF_INCLUDES_LAST,
+//    MCF_SEGNUM,
+//    MCF_FIRST_SENT,
+//    MCF_FIRST_SENT_TO_TOTAL,
+//    MCF_MIDDLE_SENT,
+//    MCF_LINKS,
+//    MCF_LINKS_RANK,
+//    MCF_DOMAINS,
+//    MCF_DOMAINS_RANK,
+//    MCF_DOMAINS_RELRANK,
+//    MCF_DOMAINS_PER_LINK_RANK,
+//    MCF_DOMAINS_PER_LINK_RELRANK,
+//    MCF_LOCAL_LINKS_RANK,
+//    MCF_LOCAL_LINKS_RELRANK,
+//    MCF_LOCAL_LINKS_PER_LINK_RANK,
+//    MCF_LOCAL_LINKS_PER_LINK_RELRANK,
+//    MCF_SENTS,
+//    MCF_SENTS_RANK,
+//    MCF_SENTS_RELRANK,
+//    MCF_HEADERS,
+//    MCF_HEADERS_RANK,
+//    MCF_HEADERS_RELRANK,
+//    MCF_HEADERS_PER_SENT_RELRANK,
+//    MCF_LINK_WORDS_RANK,
+//    MCF_LINK_WORDS_PER_WORD_RANK,
+//    MCF_BLOCKS_PER_WORD_RELRANK,
+//    MCF_INPUTS,
+//    MCF_INPUTS_RANK,
+//    MCF_INPUTS_RELRANK,
+//    MCF_INPUTS_PER_WORD,
+//    MCF_INPUTS_PER_WORD_RANK,
+//    MCF_INPUTS_PER_WORD_RELRANK,
+//    MCF_SPACES_PER_SYMBOL_RELRANK,
+//    MCF_COMMAS_PER_SYMBOL_RANK,
+//    MCF_COMMAS_PER_SYMBOL_RELRANK,
+//    MCF_WORDS_PER_SYMBOL_RANK,
+//    MCF_WORDS_PER_SYMBOL_RELRANK,
+//    MCF_TITLE_WORDS_RELRANK,
+//    MCF_FOOTER_WORDS,
+//    MCF_FOOTER_WORDS_RELRANK,
+//    MCF_FOOTER_WORDS_TO_FOOTER,
+//    MCF_ADS_HREF,
+//    MCF_POLL_CSS,
+//    MCF_FOOTER_CSS,
+//    MCF_ADS_HEADER,
+
+enum EMainContentFeatures {
+    MCF_ADS_CSS,
+    MCF_COMMENTS_CSS,
+
+    MCF_TYPE_TRASH,
+    MCF_TYPE_LINK,
+    MCF_TYPE_CONTENT,
+
+    MCF_IN_ARTICLE,
+    MCF_IN_MAIN_CONTENT_READABILITY,
+
+    MCF_BEFORE_COMMENT_HEADER,
+    MCF_BEFORE_COMMENT_CSS,
+
+    MCF_BLOCKS_TO_PREV_ROOT,                // 10
+    MCF_PARS_TO_PREV_ROOT,
+    MCF_ITEMS_TO_PREV_ROOT,
+
+    MCF_BLOCKS_TO_NEXT_ROOT,
+    MCF_PARS_TO_NEXT_ROOT,
+    MCF_ITEMS_TO_NEXT_ROOT,
+
+    MCF_SEGNUM_TO_TOTAL,
+
+    MCF_MIDDLE_SENT_TO_TOTAL,
+
+    MCF_FIRST_WORD,
+    MCF_FIRST_WORD_TO_TOTAL,
+
+    MCF_MIDDLE_WORD,                        // 20
+    MCF_MIDDLE_WORD_TO_TOTAL,
+
+    MCF_WORDS,
+    MCF_WORDS_RANK,
+    MCF_WORDS_RELRANK,
+
+    MCF_WORDS_TO_TOTAL,
+    MCF_WORDS_TO_MAX_WORDS,
+
+    MCF_LINKS_RELRANK,
+
+    MCF_LINKS_PER_WORD,
+    MCF_LINKS_PER_WORD_RANK,
+    MCF_LINKS_PER_WORD_RELRANK,             // 30
+
+    MCF_DOMAINS_PER_LINK,
+
+    MCF_LOCAL_LINKS,
+    MCF_LOCAL_LINKS_PER_LINK,
+
+    MCF_SENTS_PER_WORD,
+    MCF_SENTS_PER_WORD_RANK,
+    MCF_SENTS_PER_WORD_RELRANK,
+
+    MCF_HEADERS_PER_SENT,
+    MCF_HEADERS_PER_SENT_RANK,
+
+    MCF_LINK_WORDS,
+    MCF_LINK_WORDS_RELRANK,                 // 40
+    MCF_LINK_WORDS_PER_WORD,
+    MCF_LINK_WORDS_PER_WORD_RELRANK,
+
+    MCF_BLOCKS,
+    MCF_BLOCKS_RANK,
+    MCF_BLOCKS_RELRANK,
+    MCF_BLOCKS_PER_WORD,
+    MCF_BLOCKS_PER_WORD_RANK,
+
+    MCF_ALPHAS_PER_SYMBOL,
+    MCF_ALPHAS_PER_SYMBOL_RANK,
+    MCF_ALPHAS_PER_SYMBOL_RELRANK,          // 50
+
+    MCF_SPACES_PER_SYMBOL,
+    MCF_SPACES_PER_SYMBOL_RANK,
+
+    MCF_COMMAS_PER_SYMBOL,
+
+    MCF_WORDS_PER_SYMBOL,
+
+    MCF_TITLE_WORDS,
+    MCF_TITLE_WORDS_RANK,
+    MCF_TITLE_WORDS_TO_TITLE,
+
+    MCF_FOOTER_WORDS_RANK,
+    MCF_FRAGMENT_LINKS,
+    MCF_HAS_SELF_LINK,                      // 60
+
+    MCF_CONTENT_BLOCKS_COUNT,
+
+    MCF_METADESCR_WORDS_TOTAL,
+    MCF_METADESCR_WORDS,
+    MCF_METADESCR_WORDS_RANK,
+    MCF_METADESCR_WORDS_TO_METADESCR,       // 65
+
+    MCF_COUNT
+};
+
+static_assert(MCF_COUNT == 65, "expect MCF_COUNT == 65");
+
+struct TSegmentFeatures : public TFeatureArrayVector {
+    TSegmentFeatures(size_t maxSegments, TMemoryPool* pool)
+        : TFeatureArrayVector(MCF_COUNT * 3, maxSegments)
+        , Pool(pool)
+    {  }
+
+    void Calculate(const TDocContext&, const THeaderSpans&, const TSegmentSpans&) override;
+public:
+    TMemoryPool* Pool;
+};
+
+TMainContentSpans FindMainContentSpans(const TDocContext&, const THeaderSpans&, TSegmentSpans&, TMemoryPool*);
+
+}
+}

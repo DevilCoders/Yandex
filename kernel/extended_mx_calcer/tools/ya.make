@@ -1,0 +1,3 @@
+RECURSE(
+    calcers_test
+)

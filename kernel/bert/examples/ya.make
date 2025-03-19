@@ -1,0 +1,8 @@
+IF (NOT OS_WINDOWS AND NOT MUSL AND NOT SANITIZER_TYPE)
+
+    RECURSE(
+        highlighter
+    )
+
+ENDIF()
+

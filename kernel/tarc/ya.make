@@ -1,0 +1,15 @@
+RECURSE(
+    disk
+    docdescr
+    docdescr/ut
+    enums
+    iface
+    iface/ut
+    markup_zones
+    memory
+    merge
+    protos
+    protos/python
+    repack
+    repack/ut
+)

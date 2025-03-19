@@ -1,0 +1,252 @@
+#include <kernel/seinfo/regexps.h>
+
+namespace {
+struct TContext {
+    int MatchedRegexpId = 0;
+    bool MatchedExprKnown = false;
+    NSe::TRegexpResult& Result;
+
+    TContext(NSe::TRegexpResult& r)
+        : Result(r)
+    {}
+};
+
+
+inline void MatchedRegexp(TContext& ctx, int id)
+{
+    if (ctx.MatchedExprKnown)
+        return;
+    Y_ASSERT(!ctx.MatchedRegexpId && "Regexps are ambiguous");
+    ctx.MatchedRegexpId = id;
+}
+
+inline bool MatchFlag(TContext& ctx, int id, NSe::ESearchFlags f) {
+    if (!ctx.MatchedExprKnown)
+        return false;
+    if (id != ctx.MatchedRegexpId)
+        return false;
+    ctx.Result.Flags = NSe::ESearchFlags(ctx.Result.Flags | f);
+    return true;
+}
+
+inline bool MatchType(TContext& ctx, int id, NSe::ESearchType t) {
+    if (!ctx.MatchedExprKnown)
+        return false;
+    if (id != ctx.MatchedRegexpId)
+        return false;
+    ctx.Result.Type = t;
+    return true;
+}
+
+inline bool Match(TContext& ctx, int id, NSe::TRegexpResult::ENamedMatch m, const char* p) {
+    if (!ctx.MatchedExprKnown)
+        return false;
+    if (id != ctx.MatchedRegexpId)
+        return false;
+    ctx.Result.Matches[m] = p;
+    return true;
+}
+
+#define DEBUG(id, param, p) {\
+    Cerr << "RegexpID=" << id << "\t " #param ": " << TStringBuf(url.data(), p) << Endl;\
+}
+
+#define MATCH(id, param) { if (Match(ctx, id, NSe::TRegexpResult::param, p)) {} { DEBUG(id, param, p); } }
+#define MATCH_FLAG(id, param) { if (MatchFlag(ctx, id, NSe::param)) {} { DEBUG(id, param, p); } }
+#define MATCH_TYPE(id, param) { if (MatchType(ctx, id, NSe::param)) {} { DEBUG(id, param, p); } }
+
+#define REGEXP_MATCHED(id) { DEBUG(id, "REGEXP_MATCHED", p); MatchedRegexp(ctx, id); }
+
+%%{
+
+machine SERecognizer;
+
+uninformative_subdomain = [^/.]+ ;
+uninformative_subpath = [^/&?]* ;
+
+param_separator = [?#&;] ;
+uninformative_param = [^?#&;]* ;
+param_value = [^#&]** ;
+
+main := ('http' 's'? '://')? (
+
+yndx: (
+    (
+        (   (   uninformative_subdomain
+            |   /dire[ck]t/i %{MATCH_TYPE(fentry(yndx), ST_COM)}
+            |   ('m'i | 'pda'i) %{MATCH_FLAG(fentry(yndx), SF_MOBILE)}
+            |   ('news'i |'haber'i) %{MATCH_TYPE(fentry(yndx), ST_NEWS)}
+            |   ('maps'i |'harita'i) %{MATCH_TYPE(fentry(yndx), ST_MAPS)}
+            |   ('images'i | 'gorsel'i | 'fotki'i ) %{MATCH_TYPE(fentry(yndx), ST_IMAGES)}
+            |   ('afis'i | 'afisha'i) %{MATCH_TYPE(fentry(yndx), ST_INTERESTS)}
+            |   ('auto'i) %{MATCH_TYPE(fentry(yndx), ST_CARS)}
+            |   ('video'i) %{MATCH_TYPE(fentry(yndx), ST_VIDEO)}
+            |   ('yaca'i) %{MATCH_TYPE(fentry(yndx), ST_CATALOG)}
+            |   ('market'i) %{MATCH_TYPE(fentry(yndx), ST_COM)}
+            )
+            '.'
+        )*
+        - (   'blogs.'i | 'slovari.'i | 'm.slovari.'i | 'music.'i | 'rabota.'i | 'clck.'i
+            | 'mail.'i | 'yabs.'i | 'market-click2.'i | 'an.'i
+        )
+    )
+    ('yandex'i) >{MATCH(fentry(yndx), ENGINE_BEGIN)} %{MATCH(fentry(yndx), ENGINE_END)}
+    '.'('net'i | 'ru'i | 'ua'i |'com'i ('.tr'i)? | 'kz'i | 'by'i)
+    (   '/'
+        (   (uninformative_subpath - ('clck'i | 'jsredir'i))
+        |   ('video'i) %{MATCH_TYPE(fentry(yndx), ST_VIDEO)}
+        |   ('images'i | 'gorsel'i) %{MATCH_TYPE(fentry(yndx), ST_IMAGES)}
+        |   ('m'i | 'touch'i | 'pad'i) %{MATCH_FLAG(fentry(yndx), SF_MOBILE)}
+        |   ('search'i ) %{MATCH_FLAG(fentry(yndx), SF_SEARCH)}
+        )
+    )*
+    (param_separator
+        (   uninformative_param
+        |   (   'text='i %{MATCH_FLAG(fentry(yndx), SF_SEARCH)}
+            |   'person='i %{MATCH_TYPE(fentry(yndx), ST_PEOPLE)}
+            )
+            (param_value) >{MATCH(fentry(yndx), QUERY_BEGIN)} %{MATCH(fentry(yndx), QUERY_END)}
+        |   ('filter=people'i) %{MATCH_TYPE(fentry(yndx), ST_PEOPLE)}
+        |   'numdoc='i (digit*) >{MATCH(fentry(yndx), PSIZE_BEGIN)} %{MATCH(fentry(yndx), PSIZE_END)}
+        |   'p='i (digit*) >{MATCH(fentry(yndx), PNUM_BEGIN)} %{MATCH(fentry(yndx), PNUM_END)}
+        |   ('img_url'i | 'site'i | 'serverurl'i | 'surl'i )'=' %{MATCH_FLAG(fentry(yndx), SF_LOCAL)} param_value
+        )
+    )+
+
+) %{REGEXP_MATCHED(fentry(yndx))}
+
+|
+yndx_slovari: (
+    ('www.'i)?
+    'slovari.'i %{MATCH_TYPE(fentry(yndx_slovari), ST_ENCYC)} %{MATCH_FLAG(fentry(yndx_slovari), SF_SEARCH)}
+    ('yandex'i) >{MATCH(fentry(yndx_slovari), ENGINE_BEGIN)} %{MATCH(fentry(yndx_slovari), ENGINE_END)}
+    '.'
+    ('ru'i | 'ua'i | 'kz'i | 'by'i)
+    '/' ([^/]*) >{MATCH(fentry(yndx_slovari), QUERY_BEGIN)} %{MATCH(fentry(yndx_slovari), QUERY_END)}
+    '/'
+    any*
+) %{REGEXP_MATCHED(fentry(yndx_slovari))}
+
+|
+yndx_m_slovari: (
+    ('m.'i)? %{MATCH_FLAG(fentry(yndx_m_slovari), SF_MOBILE)}
+    'slovari.'i %{MATCH_TYPE(fentry(yndx_m_slovari), ST_ENCYC)} %{MATCH_FLAG(fentry(yndx_m_slovari), SF_SEARCH)}
+    ('yandex'i) >{MATCH(fentry(yndx_m_slovari), ENGINE_BEGIN)} %{MATCH(fentry(yndx_m_slovari), ENGINE_END)}
+    '.'
+    ('ru'i | 'ua'i | 'kz'i | 'by'i)
+    '/' ('translate'i | 'meaning'i | 'spelling'i) '.xml'i
+    (param_separator
+        (   uninformative_param
+        |   'text='i (param_value)
+                >{MATCH(fentry(yndx_m_slovari), QUERY_BEGIN)}
+                %{MATCH(fentry(yndx_m_slovari), QUERY_END)}
+        )
+    )*
+) %{REGEXP_MATCHED(fentry(yndx_m_slovari))}
+
+|
+# Yandex 2.0 (@see: SERP-11065)
+# @see: https://jira.yandex-team.ru/browse/BUKI-1749?focusedCommentId=3185898&page=com.atlassian.jira.plugin.system.issuetabpanels%3Acomment-tabpanel#comment-3185898
+yndx20: (
+    (   'clck.'
+        'yandex' >{MATCH(fentry(yndx20), ENGINE_BEGIN)} %{MATCH(fentry(yndx20), ENGINE_END)}
+        '.'
+        ('ru'i | 'ua'i |'com'i ('.tr'i)? | 'kz'i | 'by'i)
+    |   ('www.'i)?
+        'yandex' >{MATCH(fentry(yndx20), ENGINE_BEGIN)} %{MATCH(fentry(yndx20), ENGINE_END)}
+        '.' ('ru'i | 'ua'i |'com'i ('.tr'i)? | 'kz'i | 'by'i)
+        '/clck'i
+    ) %{MATCH_FLAG(fentry(yndx20), SF_SEARCH)}
+    '/jsredir'i
+    ( '/' uninformative_subpath )*
+    (param_separator
+        (   uninformative_param
+        |   'text='i (param_value)
+                >{MATCH(fentry(yndx20), QUERY_BEGIN)}
+                %{MATCH(fentry(yndx20), QUERY_END)}
+        |   'etext='i (param_value)
+                >{MATCH(fentry(yndx20), ENCRYPTED_QUERY_BEGIN)}
+                %{MATCH(fentry(yndx20), ENCRYPTED_QUERY_END)}
+        |   'from='i
+            # Domain
+            (   (   'images'i %{MATCH_TYPE(fentry(yndx20), ST_IMAGES)}
+                |   'video'i %{MATCH_TYPE(fentry(yndx20), ST_VIDEO)}
+                |   'www'i
+                )
+                '.'
+            )?
+            'yandex.'i ('ru'i | 'com'i('.tr'i)? | 'kz'i | 'ua'i | 'by'i)
+            (';'|'%3B'i)
+
+            # Handler
+            (   'yand'i
+            |   'family'i
+            |   'school'i
+            |   'site'i %{MATCH_FLAG(fentry(yndx20), SF_LOCAL)}
+            |   ('m'i | 'tel'i | 'touch'i | 'pad'i) %{MATCH_FLAG(fentry(yndx20), SF_MOBILE)}
+            |   'large'i
+            |   'json'i
+            |   'xml'i
+            )?
+            'search'i('part'i)?
+            (';'|'%3B'i)
+
+            # Service
+            (   'web'i | 'browser'i
+            |   'searchapp'i %{MATCH_FLAG(fentry(yndx20), SF_MOBILE)}
+            )
+            (';'|'%3B'i)
+
+            # Platform
+            ( ('android'i | 'iphone'i | 'ipad'i | 'wp'i | 'winrt'i)
+                >{MATCH(fentry(yndx20), PLATFORM_BEGIN)}
+                %{MATCH(fentry(yndx20), PLATFORM_END)}
+            )?
+            (';'|'%3B'i)
+
+            # Version
+            [^&]*
+        )
+    )*
+) %{REGEXP_MATCHED(fentry(yndx20))}
+);
+
+write data;
+
+}%%
+
+bool RunRegexps(TContext& ctx, const TStringBuf& url) {
+    const char* p = url.data();
+    const char* pe = url.data() + url.size();
+    const char* eof = pe;
+    Y_UNUSED(eof);
+    int cs;
+
+    %% write init;
+    %% write exec;
+
+    if (cs < %%{ write first_final; }%% ) {
+        return false;
+    }
+
+    return true;
+}
+
+} // namespace;
+
+bool NSe::SERecognizeUrl(NSe::TRegexpResult& result, const TStringBuf& url)
+{
+    TContext ctx(result);
+
+    bool res = RunRegexps(ctx, url);
+    if (!res)
+        return false;
+
+    Y_ASSERT(ctx.MatchedRegexpId);
+
+    ctx.MatchedExprKnown = true;
+    res = RunRegexps(ctx, url);
+    Y_ASSERT(res);
+
+    return true;
+}

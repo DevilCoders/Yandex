@@ -1,0 +1,10 @@
+RECURSE(
+    factor_storage
+    fastres2_data_delivery
+    online_learning
+    rt_counters
+    saas_knn
+    user_saas_factors
+    wizard_clicks
+    wizard_clicks/ut
+)

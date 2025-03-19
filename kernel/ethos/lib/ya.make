@@ -1,0 +1,20 @@
+OWNER(
+    druxa
+    alex-sh
+)
+
+RECURSE(
+    autoencoder
+    cross_validation
+    data
+    logistic_regression
+    metrics
+    metrics/ut
+    naive_bayes
+    reg_tree
+    reg_tree/libregtree
+    reg_tree_applier_lib
+    text_classifier
+    util
+    util/ut
+)

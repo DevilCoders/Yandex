@@ -1,0 +1,371 @@
+ci:
+  flows:
+    binary_trunk-flow:
+      title: 'SOURCE TESTING: Trunk Binary'
+      jobs:
+        main_graph_entry:
+          title: MainGraphEntry
+          task: dummy
+          needs: []
+          input: {}
+          needs-type: all
+        build_backend:
+          title: Build backend
+          task: common/nanny/kosher_ya_make
+          needs:
+          - main_graph_entry
+          input:
+            build_system: semi_distbuild
+            aapi_fallback: true
+            use_aapi_fuse: true
+            use_arc_instead_of_aapi: true
+            targets: kernel/common_server/solutions/fallback_proxy/src
+            result_resources_types: FINTECH_RISK_SOURCES
+            arts: kernel/common_server/solutions/fallback_proxy/src/fallback_proxy
+          needs-type: all
+        release_backend_testing:
+          title: backend to testing
+          task: common/releases/release_rm_component_2
+          needs:
+          - build_backend
+          input:
+            component_resources:
+              backend_FINTECH_RISK_SOURCES: ${tasks.build_backend.resources | [?type == 'FINTECH_RISK_SOURCES'] | [0].id}
+            deploy_system: ya_deploy
+            wait_for_deploy: true
+            wait_for_deploy_attempts: 72
+            component_name: fintech_fallback_proxy
+            where_to_release: testing
+            major_release_num: null
+            minor_release_num: null
+          needs-type: all
+    resources_trunk-flow:
+      title: 'SOURCE TESTING: Trunk Resources'
+      jobs:
+        main_graph_entry:
+          title: MainGraphEntry
+          task: dummy
+          needs: []
+          input: {}
+          needs-type: all
+        build_resources_pack:
+          title: Build resources_pack
+          task: common/arcadia/kosher_ya_package
+          needs:
+          - main_graph_entry
+          input:
+            clear_build: false
+            build_system: ya
+            aapi_fallback: true
+            use_aapi_fuse: true
+            use_arc_instead_of_aapi: true
+            publish_package: false
+            requirements:
+              sandbox:
+                platform: linux
+            resource_type: FINTECH_FALLBACK_PROXY_RESOURCES_PACK
+            package_type: tarball
+            compress_package_archive: false
+            packages: kernel/common_server/solutions/fallback_proxy/rtc/package_resources.json
+          needs-type: all
+        release_resources_pack_testing:
+          title: resources_pack to testing
+          task: common/releases/release_rm_component_2
+          needs:
+          - build_resources_pack
+          input:
+            component_resources:
+              resources_pack_FINTECH_FALLBACK_PROXY_RESOURCES_PACK: ${tasks.build_resources_pack.resources | [?type == 'FINTECH_FALLBACK_PROXY_RESOURCES_PACK'] | [0].id}
+            deploy_system: ya_deploy
+            wait_for_deploy: true
+            wait_for_deploy_attempts: 72
+            component_name: fintech_fallback_proxy
+            where_to_release: testing
+            major_release_num: null
+            minor_release_num: null
+          needs-type: all
+    release_fintech_fallback_proxy-flow:
+      title: 'SOURCE ALL: Brunch All'
+      jobs:
+        new_tag:
+          title: NewTag
+          task: projects/release_machine/create_arc_tag
+          needs: []
+          input:
+            config:
+              component_name: fintech_fallback_proxy
+          needs-type: all
+        main_graph_entry:
+          title: MainGraphEntry
+          task: dummy
+          needs:
+          - new_tag
+          input: {}
+          needs-type: all
+        create_changelog:
+          title: CreateChangelog
+          task: projects/release_machine/release_machine_changelog
+          needs:
+          - main_graph_entry
+          input:
+            candidate_path: ${tasks.new_tag.svn_data.svn_paths.tag}
+            major_release_num: ${context.version_info.major}
+            minor_release_num: ${not_null(context.version_info.minor, `0`)}
+            use_previous_branch_as_baseline: false
+            component_name: fintech_fallback_proxy
+          needs-type: all
+        create_startrek_ticket:
+          title: CreateStartrekTicket
+          task: projects/release_machine/get_or_create_st_ticket
+          needs:
+          - main_graph_entry
+          input:
+            config:
+              component_name: fintech_fallback_proxy
+          needs-type: all
+        link_feature_tickets:
+          title: LinkFeatureTickets
+          task: projects/release_machine/link_feature_tickets_from_changelog
+          needs:
+          - create_changelog
+          - create_startrek_ticket
+          input:
+            config:
+              ticket_key: ${tasks.create_startrek_ticket.st_ticket.key}
+              changelog_resource: ${tasks.create_changelog.resources | [?type == 'RELEASE_MACHINE_CHANGELOG'] | [0]}
+              component_name: fintech_fallback_proxy
+          needs-type: all
+        format_changelog:
+          title: FormatChangelog
+          task: projects/release_machine/format_rm_changelog
+          needs:
+          - create_changelog
+          input:
+            config:
+              changelog_resource: ${tasks.create_changelog.resources | [?type == 'RELEASE_MACHINE_CHANGELOG'] | [0]}
+              component_name: fintech_fallback_proxy
+          needs-type: all
+        post_changelog_to_startrek:
+          title: PostChangelogToStartrek
+          task: projects/release_machine/post_startrek_comment
+          needs:
+          - create_startrek_ticket
+          - format_changelog
+          input:
+            comment_marker: '<# <!-- CHANGELOG --> #>'
+            place_comment: ticket_description
+            issue_key: ${tasks.create_startrek_ticket.st_ticket.key}
+            comment_text: ${tasks.format_changelog.formatted_changelog.wiki}
+            component_name: fintech_fallback_proxy
+          needs-type: all
+        build_backend:
+          title: Build backend
+          task: common/nanny/kosher_ya_make
+          needs:
+          - main_graph_entry
+          input:
+            build_system: semi_distbuild
+            aapi_fallback: true
+            use_aapi_fuse: true
+            use_arc_instead_of_aapi: true
+            targets: kernel/common_server/solutions/fallback_proxy/src
+            result_resources_types: FINTECH_RISK_SOURCES
+            arts: kernel/common_server/solutions/fallback_proxy/src/fallback_proxy
+          needs-type: all
+        release_backend_testing:
+          title: backend to testing
+          task: common/releases/release_rm_component_2
+          needs:
+          - build_backend
+          input:
+            component_resources:
+              backend_FINTECH_RISK_SOURCES: ${tasks.build_backend.resources | [?type == 'FINTECH_RISK_SOURCES'] | [0].id}
+            deploy_system: ya_deploy
+            wait_for_deploy: true
+            wait_for_deploy_attempts: 72
+            component_name: fintech_fallback_proxy
+            where_to_release: testing
+            major_release_num: ${context.version_info.major}
+            minor_release_num: ${not_null(context.version_info.minor, `0`)}
+          manual: true
+          needs-type: all
+        release_backend_prestable:
+          title: backend to prestable
+          task: common/releases/release_rm_component_2
+          needs:
+          - build_backend
+          input:
+            component_resources:
+              backend_FINTECH_RISK_SOURCES: ${tasks.build_backend.resources | [?type == 'FINTECH_RISK_SOURCES'] | [0].id}
+            deploy_system: ya_deploy
+            wait_for_deploy: true
+            wait_for_deploy_attempts: 72
+            component_name: fintech_fallback_proxy
+            where_to_release: prestable
+            major_release_num: ${context.version_info.major}
+            minor_release_num: ${not_null(context.version_info.minor, `0`)}
+          manual: true
+          needs-type: all
+        release_backend_stable:
+          title: backend to stable
+          task: common/releases/release_rm_component_2
+          needs:
+          - build_backend
+          input:
+            component_resources:
+              backend_FINTECH_RISK_SOURCES: ${tasks.build_backend.resources | [?type == 'FINTECH_RISK_SOURCES'] | [0].id}
+            deploy_system: ya_deploy
+            wait_for_deploy: true
+            wait_for_deploy_attempts: 72
+            component_name: fintech_fallback_proxy
+            where_to_release: stable
+            major_release_num: ${context.version_info.major}
+            minor_release_num: ${not_null(context.version_info.minor, `0`)}
+          manual: true
+          needs-type: all
+        build_resources_pack:
+          title: Build resources_pack
+          task: common/arcadia/kosher_ya_package
+          needs:
+          - main_graph_entry
+          input:
+            clear_build: false
+            build_system: ya
+            aapi_fallback: true
+            use_aapi_fuse: true
+            use_arc_instead_of_aapi: true
+            publish_package: false
+            requirements:
+              sandbox:
+                platform: linux
+            resource_type: FINTECH_FALLBACK_PROXY_RESOURCES_PACK
+            package_type: tarball
+            compress_package_archive: false
+            packages: kernel/common_server/solutions/fallback_proxy/rtc/package_resources.json
+          needs-type: all
+        release_resources_pack_testing:
+          title: resources_pack to testing
+          task: common/releases/release_rm_component_2
+          needs:
+          - build_resources_pack
+          input:
+            component_resources:
+              resources_pack_FINTECH_FALLBACK_PROXY_RESOURCES_PACK: ${tasks.build_resources_pack.resources | [?type == 'FINTECH_FALLBACK_PROXY_RESOURCES_PACK'] | [0].id}
+            deploy_system: ya_deploy
+            wait_for_deploy: true
+            wait_for_deploy_attempts: 72
+            component_name: fintech_fallback_proxy
+            where_to_release: testing
+            major_release_num: ${context.version_info.major}
+            minor_release_num: ${not_null(context.version_info.minor, `0`)}
+          manual: true
+          needs-type: all
+        release_resources_pack_prestable:
+          title: resources_pack to prestable
+          task: common/releases/release_rm_component_2
+          needs:
+          - build_resources_pack
+          input:
+            component_resources:
+              resources_pack_FINTECH_FALLBACK_PROXY_RESOURCES_PACK: ${tasks.build_resources_pack.resources | [?type == 'FINTECH_FALLBACK_PROXY_RESOURCES_PACK'] | [0].id}
+            deploy_system: ya_deploy
+            wait_for_deploy: true
+            wait_for_deploy_attempts: 72
+            component_name: fintech_fallback_proxy
+            where_to_release: prestable
+            major_release_num: ${context.version_info.major}
+            minor_release_num: ${not_null(context.version_info.minor, `0`)}
+          manual: true
+          needs-type: all
+        release_resources_pack_stable:
+          title: resources_pack to stable
+          task: common/releases/release_rm_component_2
+          needs:
+          - build_resources_pack
+          input:
+            component_resources:
+              resources_pack_FINTECH_FALLBACK_PROXY_RESOURCES_PACK: ${tasks.build_resources_pack.resources | [?type == 'FINTECH_FALLBACK_PROXY_RESOURCES_PACK'] | [0].id}
+            deploy_system: ya_deploy
+            wait_for_deploy: true
+            wait_for_deploy_attempts: 72
+            component_name: fintech_fallback_proxy
+            where_to_release: stable
+            major_release_num: ${context.version_info.major}
+            minor_release_num: ${not_null(context.version_info.minor, `0`)}
+          manual: true
+          needs-type: all
+        skip_all:
+          title: Skip all
+          task: dummy
+          needs:
+          - main_graph_entry
+          input: {}
+          manual: true
+          needs-type: all
+        done_all:
+          title: Done all
+          task: dummy
+          needs:
+          - release_backend_prestable
+          - release_backend_stable
+          - release_backend_testing
+          - release_resources_pack_prestable
+          - release_resources_pack_stable
+          - release_resources_pack_testing
+          input: {}
+          needs-type: all
+        finish_all:
+          title: Finish_all
+          task: dummy
+          needs:
+          - done_all
+          - skip_all
+          input: {}
+          needs-type: any
+  releases:
+    binary_trunk:
+      title: 'SOURCE TESTING: Trunk Binary'
+      description: ''
+      flow: binary_trunk-flow
+      auto: false
+      filters:
+      - discovery: graph
+        abs-paths:
+        - fintech/risk/sources/core/src/**
+    resources_trunk:
+      title: 'SOURCE TESTING: Trunk Resources'
+      description: ''
+      flow: resources_trunk-flow
+      auto: false
+      filters:
+      - discovery: dir
+        abs-paths:
+        - kernel/common_server/solutions/fallback_proxy/configs/**
+    release_fintech_fallback_proxy:
+      title: 'SOURCE ALL: Brunch All'
+      description: ''
+      flow: release_fintech_fallback_proxy-flow
+      auto: false
+      branches:
+        pattern: releases/fintech_fallback_proxy/stable-${version}
+        auto-create: true
+        forbid-trunk-releases: false
+        independent-stages: false
+        auto: false
+      filters:
+      - discovery: any
+        abs-paths:
+        - fintech/risk/**
+        - kernel/common_server/**
+  actions: {}
+  secret: sec-01desry8fbgvnkbeybem81ferv
+  runtime:
+    sandbox:
+      owner: FINTECH_RISK
+      tags:
+      - RM_CI
+      - RM_COMPONENT:fintech_fallback_proxy
+  config-edit-approvals:
+  - service: fintech_risk
+service: fintech_risk
+title: Fintech Fallback Proxy

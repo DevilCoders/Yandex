@@ -1,0 +1,164 @@
+package NPersonalization.NProto;
+
+import "kernel/user_history/proto/embedding_types.proto";
+import "kernel/user_history/proto/fading_embedding.proto";
+
+option go_package = "a.yandex-team.ru/kernel/user_history/proto;userhistory";
+
+message TEmbedding {
+    optional bytes Data = 1;
+    optional EModels Model = 2;
+}
+
+message TUserHistoryRecord {
+    // user fields
+    optional string UserId = 6;
+
+    // document fields
+    optional string Url = 4;
+    optional string Host = 7;
+    optional string Path = 8;
+    optional string Title = 5;
+    optional string OmniTitle = 18;
+    optional uint32 Position = 16;
+
+    optional string BannerUrl = 22;
+    optional string BannerTitle = 23;
+    optional string BannerText = 24;
+
+    optional bytes DocEmbedding = 3;
+    optional EModels DocEmbeddingModel = 11;
+
+    repeated TEmbedding CustomEmbeddings = 27;
+
+    // action fields
+    optional int64 Timestamp = 1;
+    optional int64 Dwelltime = 2;
+    optional int64 RequestTimestamp = 9;
+
+    message TFlags {
+        optional bool IsZenHost = 1;
+        optional bool IsGreenTraffic = 2;
+    };
+    optional TFlags Flags = 10;
+
+    // query fields
+    optional string Query = 12;
+    optional int32 Region = 17;
+
+    optional string StatefulThemes = 28;
+    optional string StatefulStages = 29;
+
+    optional string DdOsFamily = 20;
+    optional string Device = 21;
+
+    optional uint64 UrlHash = 13;
+    optional uint64 HostHash = 14;
+    optional uint64 QueryHash = 15;
+    optional uint64 ReqidHash = 19;
+
+    optional EResultType ResultType = 25;
+    optional string WizardName = 26; // can be not empty even if ResultType = ORGANIC. e.g. MarketWiz, UslugiWiz, Realty
+
+    // next tag: 30
+}
+
+enum ESortOrderOnMirror {
+    SOM_NO_SORT = 0;
+    SOM_SORT_BY_DWELLTIME = 1;
+    SOM_SORT_BY_TIMESTAMP = 2;
+    SOM_SORT_BY_REQUEST_TIMESTAMP = 3;
+}
+
+message TStoreOptions {
+    optional bool StoreUrl = 1 [default = false]; // indicates whether url in user history records should be stored
+    optional bool StoreTitle = 2 [default = false]; // indicates whether title in user history records should be stored
+    optional bool StoreOmniTitle = 11 [default = false];
+    optional bool StoreBannerUrl = 14 [default = false];
+    optional bool StoreBannerTitle = 15 [default = false];
+    optional bool StoreBannerText = 16 [default = false];
+    optional bool StoreRequestTimestamp = 3 [default = false]; // indicates whether request timestamp in user history records should be stored
+    optional bool StoreQuery = 4 [default = false]; // indicates whether query text in user history records should be stored
+    optional bool StoreEmbedding = 5 [default = true];
+    optional bool StoreUrlHash = 6 [default = false];
+    optional bool StoreHostHash = 7 [default = false];
+    optional bool StoreQueryHash = 8 [default = false];
+    optional bool StorePosition = 9 [default = false];
+    optional bool StoreRegion = 10 [default = false];
+    optional bool StoreDdOsFamily = 12 [default = false];
+    optional bool StoreDevice = 13 [default = false];
+    optional bool StoreWizardName = 17 [default = false];
+    optional bool StoreResultType = 18 [default = false];
+    repeated EModels StoreCustomEmbeddings = 19;
+    optional bool StoreStatefulInfo = 20 [default = false];
+
+    // next 21
+}
+
+enum EContainerId {
+    TitleEmbeddingsMoreThan120 = 0;
+    TitleEmbeddingsMoreThan0 = 1;
+    QueryEmbeddings = 2;
+    QueriesForRtmodel = 3;
+    ClicksForRtmodel = 4;
+    QueryHashesForRtmodel = 5;
+    UrlHashesForRtmodel = 6;
+    QueriesForUserBody = 7;
+    ClicksForUserBody = 8;
+    AdvClicks = 9;
+    WizardNames = 10;
+    QueriesForUserBodyBatch = 11;
+    ClicksForUserBodyBatch = 12;
+    AdvClicksBatch = 13;
+    WizardNamesBatch = 14;
+    TitleEmbeddingsLessThan120Clustered = 15;
+    TitleEmbeddingsMoreThan120Clustered = 16;
+    QueryEmbeddingsClustered = 17;
+    Clicks60sForUserBodyBatch = 18;
+    Clicks60sForUserBody = 19;
+    QueriesForStateful = 20;
+    ClicksForStateful = 21;
+    QueriesForStatefulBatch = 22;
+    ClicksForStatefulBatch = 23;
+}
+
+message TUserRecordsDescription {
+    optional TEmbeddingOptions Options = 1;
+    optional uint64 MaxRecords = 2;
+    optional uint64 RecordLifetime = 6; // Unused
+    optional ESortOrderOnMirror SortOrderOnMirror = 3;
+    optional TStoreOptions StoreOptions = 4;
+    optional bool StoreAdvClicks = 5; // TODO remove it and reserve tag - but later, because for now we need it to read old containers and find out whether they are with adv
+    optional EContainerId ContainerId = 7;
+}
+
+message TFilteredUserRecords {
+    repeated TUserHistoryRecord Records = 1;
+    optional TUserRecordsDescription Description = 2;
+}
+
+message TUserHistory {
+    repeated TUserHistoryRecord Records = 1; // Unused
+    repeated TFadingEmbedding FadingEmbeddings = 2;
+    repeated TFilteredUserRecords FilteredRecords = 3;
+    optional bool IsFiltered = 4; // Unused
+}
+
+message TUserHistoryPatch {
+    enum EUserHistoryPatchLogic {
+        PreferDataFromBase = 0;
+        PreferDataFromPatch = 1;
+    };
+    optional EUserHistoryPatchLogic PatchLogic = 1 [default = PreferDataFromBase];
+    optional TUserHistory Patch = 2;
+};
+
+enum ECodecType {
+    CT_NO_COMPRESSION = 0;
+    CT_BROTLI_5 = 1;
+}
+
+message TCompressedUserHistory {
+    optional ECodecType CodecType = 1;
+    optional string CompressedUserHistory = 2; // serialized TUserHistory with compression
+}

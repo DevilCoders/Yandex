@@ -1,0 +1,193 @@
+#include "seinfo_ut.h"
+
+class TSeinfoTest: public TTestBase {
+private:
+    UNIT_TEST_SUITE(TSeinfoTest);
+    UNIT_TEST(TestGetSeInfo)
+    UNIT_TEST(TestIsSe)
+    UNIT_TEST_SUITE_END();
+
+    void TestGetSeInfo() {
+        extern void TestSeFunc1();
+        TestSeFunc1();
+        extern void TestSeFunc2();
+        TestSeFunc2();
+        extern void TestSeFunc3();
+        TestSeFunc3();
+        extern void TestSeFunc4();
+        TestSeFunc4();
+        extern void TestSeFunc5();
+        TestSeFunc5();
+        extern void TestSeFunc6();
+        TestSeFunc6();
+        extern void TestSeFunc7();
+        TestSeFunc7();
+        extern void TestSeFunc8();
+        TestSeFunc8();
+        extern void TestSeFunc9();
+        TestSeFunc9();
+        extern void TestSeFunc10();
+        TestSeFunc10();
+        extern void TestSeFunc11();
+        TestSeFunc11();
+        extern void TestSeFunc12();
+        TestSeFunc12();
+        extern void TestSeFunc13();
+        TestSeFunc13();
+        extern void TestSeFunc14();
+        TestSeFunc14();
+        extern void TestSeFunc15();
+        TestSeFunc15();
+        extern void TestSeFunc16();
+        TestSeFunc16();
+        extern void TestSeFunc17();
+        TestSeFunc17();
+        extern void TestSeFunc18();
+        TestSeFunc18();
+        extern void TestSeFunc19();
+        TestSeFunc19();
+        extern void TestSeFunc20();
+        TestSeFunc20();
+        extern void TestSeFunc21();
+        TestSeFunc21();
+        extern void TestSeFunc22();
+        TestSeFunc22();
+        extern void TestSeFunc23();
+        TestSeFunc23();
+        extern void TestSeFunc24();
+        TestSeFunc24();
+        extern void TestSeFunc25();
+        TestSeFunc25();
+        extern void TestSeFunc26();
+        TestSeFunc26();
+        extern void TestSeFunc27();
+        TestSeFunc27();
+        extern void TestSeFunc28();
+        TestSeFunc28();
+        extern void TestSeFunc29();
+        TestSeFunc29();
+        extern void TestSeFunc30();
+        TestSeFunc30();
+        extern void TestSeFunc31();
+        TestSeFunc31();
+        extern void TestSeFunc32();
+        TestSeFunc32();
+        extern void TestSeFunc33();
+        TestSeFunc33();
+        extern void TestSeFunc34();
+        TestSeFunc34();
+        extern void TestSeFunc35();
+        TestSeFunc35();
+        extern void TestSeFunc36();
+        TestSeFunc36();
+        extern void TestSeFunc37();
+        TestSeFunc37();
+        extern void TestSeFunc38();
+        TestSeFunc38();
+        extern void TestSeFunc39();
+        TestSeFunc39();
+        extern void TestSeFunc40();
+        TestSeFunc40();
+        extern void TestSeFunc41();
+        TestSeFunc41();
+        extern void TestSeFunc42();
+        TestSeFunc42();
+        extern void TestSeFunc43();
+        TestSeFunc43();
+        extern void TestSeFunc44();
+        TestSeFunc44();
+        extern void TestSeFunc45();
+        TestSeFunc45();
+        extern void TestSeFunc46();
+        TestSeFunc46();
+        extern void TestSeFunc47();
+        TestSeFunc47();
+        extern void TestSeFunc48();
+        TestSeFunc48();
+        extern void TestSeFunc49();
+        TestSeFunc49();
+        extern void TestSeFunc50();
+        TestSeFunc50();
+        extern void TestSeFunc51();
+        TestSeFunc51();
+        extern void TestSeFunc52();
+        TestSeFunc52();
+        extern void TestSeFunc53();
+        TestSeFunc53();
+        extern void TestSeFunc54();
+        TestSeFunc54();
+        extern void TestSeFunc55();
+        TestSeFunc55();
+        extern void TestSeFunc56();
+        TestSeFunc56();
+        extern void TestSeFunc57();
+        TestSeFunc57();
+        extern void TestSeFunc58();
+        TestSeFunc58();
+        extern void TestSeFunc59();
+        TestSeFunc59();
+        extern void TestSeFunc60();
+        TestSeFunc60();
+        extern void TestSeFunc61();
+        TestSeFunc61();
+        extern void TestSeFunc62();
+        TestSeFunc62();
+        extern void TestSeFunc63();
+        TestSeFunc63();
+        extern void TestSeFunc64();
+        TestSeFunc64();
+        extern void TestSeFunc65();
+        TestSeFunc65();
+        extern void TestSeFunc66();
+        TestSeFunc66();
+        extern void TestSeFunc67();
+        TestSeFunc67();
+        extern void TestSeFunc68();
+        TestSeFunc68();
+        extern void TestSeFunc69();
+        TestSeFunc69();
+        extern void TestSeFunc70();
+        TestSeFunc70();
+        extern void TestSeFunc71();
+        TestSeFunc71();
+        extern void TestSeFunc72();
+        TestSeFunc72();
+        extern void TestSeFunc73();
+        TestSeFunc73();
+        extern void TestSeFunc74();
+        TestSeFunc74();
+        extern void TestSeFunc75();
+        TestSeFunc75();
+        extern void TestSeFunc76();
+        TestSeFunc76();
+        extern void TestSeFunc77();
+        TestSeFunc77();
+        extern void TestSeFunc78();
+        TestSeFunc78();
+        extern void TestSeFunc79();
+        TestSeFunc79();
+        extern void TestSeFunc80();
+        TestSeFunc80();
+        extern void TestSeFunc81();
+        TestSeFunc81();
+        extern void TestSeFunc82();
+        TestSeFunc82();
+        extern void TestSeFunc83();
+        TestSeFunc83();
+        extern void TestSeFunc84();
+        TestSeFunc84();
+    }
+
+    void TestIsSe() {
+        using namespace NSe;
+
+        // NSe::IsSe uses GetSeInfo, so there are so little tests
+
+        UNIT_ASSERT(!IsSe("yandex.ru"));
+        UNIT_ASSERT(IsSe("www.yandex.ru/yandsearch?text=ku"));
+    }
+
+#undef KS_TEST_URL
+};
+
+UNIT_TEST_SUITE_REGISTRATION(TSeinfoTest);

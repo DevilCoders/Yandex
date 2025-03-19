@@ -1,0 +1,63 @@
+LIBRARY()
+
+OWNER(g:base)
+
+NO_WSHADOW()
+
+SRCS(
+    poetry.cpp
+    syn_numerator.cpp
+    date_recognizer.cpp
+    tfnumerator.cpp
+    tfproc.h
+    titleproc.cpp
+    metadescr.cpp
+    titleproc.h
+    extbreakproc.h
+    poetry_numerator.h
+    date_recognizer_numerator.h
+    forumlib/forums.cpp
+    forumlib/forum_tag_chains.cpp
+    forumlib/forums_fsm.rl6
+    forumlib/breadcrumbs.cpp
+    forumlib/tags.cpp
+    forumlib/tables.cpp
+    forumlib/dates.cpp
+)
+
+PEERDIR(
+    dict/recognize/docrec
+    kernel/indexann/protos
+    kernel/indexer/face
+    kernel/indexer/faceproc
+    kernel/itditp/proto
+    kernel/itditp/utils
+    kernel/lemmer/core
+    kernel/remap
+    kernel/tarc/iface
+    library/cpp/charset
+    library/cpp/pop_count
+    library/cpp/deprecated/fgood
+    library/cpp/deprecated/split
+    library/cpp/digest/old_crc
+    library/cpp/html/dehtml
+    library/cpp/html/entity
+    library/cpp/html/face
+    library/cpp/html/pdoc
+    library/cpp/html/spec
+    library/cpp/numerator
+    library/cpp/stopwords
+    library/cpp/string_utils/url
+    library/cpp/token
+    library/cpp/tokenizer
+    library/cpp/uri
+    util/draft
+    yweb/antispam/antisyn
+    yweb/antispam/common
+    yweb/autoclassif/ebook/ebook_lib
+    yweb/autoclassif/eshop/eshop_lib
+    yweb/autoclassif/shop_lib
+    yweb/autoclassif/soft404
+)
+
+END()

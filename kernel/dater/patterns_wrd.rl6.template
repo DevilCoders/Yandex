@@ -1,0 +1,337 @@
+#if defined(__GNUC__)
+#   pragma GCC diagnostic ignored "-Wsign-compare"
+#endif
+
+#include <kernel/dater/scanner.h>
+
+namespace ND2 {
+namespace NImpl {
+template<>
+void TScanner::DoScanUrlWords</*@@@scannerlang@@@*/>() {
+
+#if 0
+%%{
+    machine ScanUrlWords/*@@@scannerlang@@@*/;
+
+    include Data "/*@@@datafile@@@*/";
+
+    main := |*
+
+##############################################################
+# day-month-year word patterns
+##############################################################
+
+                sepa month_name sepa? digit_2_1 sepa digit_4_2 sepe
+                { Accept(PT_U_WRD_MMDDYY, SS_MONTH, SS_DAY, SS_YEAR); };
+
+                sepa digit_2_1 sepa? month_name sepa? digit_2_1 sepe
+                { Accept(PT_U_WRD_AAMMBB, SS_DAY | SS_YEAR, SS_MONTH, SS_DAY | SS_YEAR); };
+
+                sepa digit_2_1 sepa? month_name sepa? digit_2_1 sepe
+                { Accept(PT_U_WRD_AAMMBB, SS_DAY | SS_YEAR, SS_MONTH, SS_DAY | SS_YEAR); };
+
+                dsepa digit_4 sepa? month_name sepa? digit_2_1 dsepe
+                { Accept(PT_U_WRD_YYYYMMDD, SS_YEAR, SS_MONTH, SS_DAY); };
+
+                dsepa digit_2_1 sepa? month_name sepa? digit_4 sepe
+                { Accept(PT_U_WRD_DDMMYYYY, SS_DAY, SS_MONTH, SS_YEAR); };
+
+                sepa digit_4_2 sepa digit_2_1 sepa? month_name sepe
+                { Accept(PT_U_WRD_YYDDMM, SS_YEAR, SS_DAY, SS_MONTH); };
+
+##############################################################
+# month-month-year word patterns
+##############################################################
+
+                sepa digit_4_2 sepa? month_name sepa month_name sepe
+                { Accept(PT_U_RNG_YYMMMM, SS_YEAR, SS_MONTH, SS_MONTH); };
+
+                sepa month_name sepa month_name sepa? digit_4_2 sepe
+                { Accept(PT_U_RNG_MMMMYY, SS_MONTH, SS_MONTH, SS_YEAR); };
+
+##############################################################
+# month-year word patterns
+##############################################################
+
+                sepa digit_4_2 sepa? month_name sepe
+                { Accept(PT_U_WRD_YYMM, SS_YEAR, SS_MONTH); };
+
+                sepa month_name sepa? digit_4_2 sepe
+                { Accept(PT_U_WRD_MMYY, SS_MONTH, SS_YEAR); };
+
+##############################################################
+# fallback
+##############################################################
+                any
+                => Reject;
+
+            *|;
+}%%
+#endif
+    %% write data noerror nofinal;
+    %% write init;
+    %% write exec;
+    Y_UNUSED(ScanUrlWords/*@@@scannerlang@@@*/_en_main);
+}
+
+#if 0
+%%{
+    machine WordScannerCommon/*@@@scannerlang@@@*/;
+
+    include Data "/*@@@datafile@@@*/";
+
+    hours_w0 = digit{1,2} %(time, 0)$(time, 1);
+    hours_w1 = hours_w0 hours_suff;
+    hours_w  = hours_w0 | hours_w1;
+
+    minutes_w0 = digit{1,2} %(time, 0)$(time, 1);
+    minutes_w1 = minutes_w0 minutes_suff;
+    minutes_w  = minutes_w0 | minutes_w1;
+
+    seconds_w0 = digit{1,2} %(time, 0)$(time, 1);
+    seconds_w1 = seconds_w0 seconds_suff;
+    seconds_w  = seconds_w0 | seconds_w1;
+
+    hours_minutes_dig0 = hours_w0 t_joiner_dig minutes_w0;
+    hours_minutes_dig1 = hours_w0 t_joiner_dig minutes_w1;
+
+    hours_minutes_w    = hours_w1 t_hm_joiner_common? minutes_w
+                       | hours_w  t_hm_joiner_common  minutes_w;
+    hours_minutes_w1   = hours_w1 t_hm_joiner?        minutes_w1
+                       | hours_w  t_hm_joiner_common  minutes_w1;
+
+    time_dig0 = hours_minutes_dig0 (t_joiner_dig seconds_w0)?;
+    time_dig  = time_dig0 | hours_minutes_dig1;
+
+    time_w    = hours_minutes_w1 (t_ms_joiner?       seconds_w1)?
+              | hours_minutes_w  (t_ms_joiner_common seconds_w1)?;
+
+    time = (time_pref? (hours_w1 | time_w | time_dig) time_suff?) >I%O;
+
+    day_w     = day_pref?   digit_2_1  day_suff?;
+    month_w   = month_pref? month_name month_suff?;
+    year_2_w  = year_pref?  digit_2    year_suff?;
+    year_4_w  = year_pref?  digit_4    year_suff?;
+
+}%%
+
+%%{
+    machine ScanTextWords/*@@@scannerlang@@@*/;
+
+    include WordScannerCommon/*@@@scannerlang@@@*/;
+
+    dm_w   = day_w     d_m_joiner month_w
+           | day_pref? digit_2_1 month_name month_suff?;
+    md_w   = month_w m_d_joiner day_w
+           | month_pref? month_name digit_2_1 day_suff?;
+
+    dmy4_w = dm_w (date_time_joiner_common time_dig0 %T)? dm_y4_joiner year_4_w
+           | day_w d_m_joiner month_pref? month_name digit_4 year_suff?
+           | day_pref? digit_2_1 month_name digit_4 year_suff?;
+
+    mdy4_w = md_w (date_time_joiner_common time_dig0 %T)? md_y4_joiner year_4_w;
+
+    y4md_w = year_4_w y4_md_joiner? md_w
+           | year_pref? digit_4 month_name month_suff? m_d_joiner day_w
+           | year_pref? digit_4 month_name digit_2_1 day_suff?;
+
+    y4dm_w = year_4_w y4_dm_joiner  dm_w;
+
+    dmy2_w = dm_w dm_y2_joiner year_2_w
+           | day_w d_m_joiner month_pref? month_name digit_2 year_suff?
+           | day_pref? digit_2_1 month_name digit_2 year_suff?;
+
+    month_year_4_w = month_w  dm_y4_joiner year_4_w | month_pref? month_name digit_4 year_suff?;
+    year_4_month_w = year_4_w y4_md_joiner month_w  | year_pref?  digit_4 month_name month_suff?;
+
+    day_month_w = dm_w;
+    month_day_w = md_w;
+
+    year_2_month_w = year_2_w y2_md_joiner month_w  | year_pref?  digit_2    month_name month_suff?;
+    month_year_2_w = month_w  dm_y2_joiner year_2_w | month_pref? month_name digit_2    year_suff?;
+
+    day_month_year_4_w = dmy4_w;
+    month_day_year_4_w = mdy4_w;
+
+    day_month_year_2_w = dmy2_w;
+
+    year_4_day_month_w = y4dm_w;
+    year_4_month_day_w = y4md_w;
+
+    bogus_mzm_w = month_name (sepa (day_pref | year_pref)?)? digit_4_2_1 ((day_suff | year_suff)? sepa)? (month_pref? month_name month_suff?)
+                | month_name  sepa (day_pref? digit_4_2_1 (sp? (sepa - ':') sp?) digit_2_1 (sp? (sepa - ':') sp?) digit_4_2_1);
+}%%
+#endif
+
+template <>
+void TScanner::DoScanTextWordDates</*@@@scannerlang@@@*/>() {
+    CurrentLanguage = /*@@@scannerlang@@@*/;
+
+#if 0
+%%{
+    machine ScanTextWordDates/*@@@scannerlang@@@*/;
+
+    include ScanTextWords/*@@@scannerlang@@@*/;
+
+    main := |*
+
+                ## fixing bogus dates like 'mar 4 jan' in ita, frn and spa
+                sepa bogus_mzm_w sepe
+                { SkipFirstAndRescan(); };
+
+                sepa day_month_year_4_w dsepe
+                { Accept(PT_T_WRD_DDMMYYYY, SS_DAY, SS_MONTH, SS_YEAR); };
+
+                sepa month_day_year_4_w dsepe
+                { Accept(PT_T_WRD_MMDDYYYY, SS_MONTH, SS_DAY, SS_YEAR); };
+
+                sepa year_4_day_month_w sepe
+                { Accept(PT_T_WRD_YYYYDDMM, SS_YEAR, SS_DAY, SS_MONTH); };
+
+                sepa year_4_month_day_w sepe
+                { Accept(PT_T_WRD_YYYYMMDD, SS_YEAR, SS_MONTH, SS_DAY); };
+
+                sepa day_month_year_2_w (sepe - (sp? ([:/\-] | hours_suff)))
+                { Accept(PT_T_WRD_DDMMYY, SS_DAY, SS_MONTH, SS_YEAR); };
+
+                sepa month_year_4_w dsepe
+                { Accept(PT_T_WRD_MMYYYY, SS_MONTH, SS_YEAR); };
+
+                sepa year_4_month_w sepe
+                { Accept(PT_T_WRD_YYYYMM, SS_YEAR, SS_MONTH); };
+
+                sepa day_month_w sepe
+                { Accept(PT_T_WRD_DDMM, SS_DAY, SS_MONTH); };
+
+                sepa month_day_w (sepe - (sp? ([:/\-] | hours_suff)))
+                { Accept(PT_T_WRD_MMDD, SS_MONTH, SS_DAY); };
+
+                sepa month_year_2_w (sepe - (sp? ([:/\-] | hours_suff)))
+                { Accept(PT_T_WRD_MMYY, SS_MONTH, SS_YEAR); };
+
+                sepa year_2_month_w sepe
+                { Accept(PT_T_WRD_YYMM, SS_YEAR, SS_MONTH); };
+
+## forum hack for time: exclude # from allowed time prefixes (see tests for this case)
+                ((dsepa - '#') time) >I%O sepe
+                { Accept(PT_T_WRD_TIME, SS_TIME); };
+
+                any
+                => Reject;
+
+            *|;
+}%%
+#endif
+    %% write data noerror nofinal;
+    %% write init;
+    %% write exec;
+    Y_UNUSED(ScanTextWordDates/*@@@scannerlang@@@*/_en_main);
+}
+
+
+#if 0
+%%{
+    machine TextRangeScannerCommon/*@@@scannerlang@@@*/;
+
+    include WordScannerCommon/*@@@scannerlang@@@*/;
+
+    year_w    = year_2_w | year_4_w;
+
+    dm_w   = (day_w    d_m_range_joiner month_w
+           | day_pref? digit_2_1        month_name month_suff?);
+    md_w   = (month_w  m_d_range_joiner day_w
+           | month_pref? month_name digit_2_1 day_suff?);
+}%%
+#endif
+
+template <>
+void TScanner::DoScanTextWordRanges</*@@@scannerlang@@@*/>() {
+    CurrentLanguage = /*@@@scannerlang@@@*/;
+#if 0
+%%{
+    machine ScanTextWordRanges/*@@@scannerlang@@@*/;
+
+    include TextRangeScannerCommon/*@@@scannerlang@@@*/;
+
+    day__day_month_range_w      = day_w d_d_range_joiner day_w d_m_range_joiner month_w;
+    day__day_month_year_range_w = day__day_month_range_w dm_y2_joiner? year_w;
+
+    day_month__day_month_range_w      = dm_w d_d_range_joiner dm_w;
+    day_month__day_month_year_range_w = day_month__day_month_range_w dm_y2_joiner? year_w;
+
+    month_day__month_day_range_w      = md_w d_d_range_joiner md_w;
+    month_day__month_day_year_range_w = month_day__month_day_range_w md_y4_joiner? year_4_w;
+
+    month__month_range_w      = month_w m_m_range_joiner month_w;
+    month__month_year_range_w = month__month_range_w md_y4_joiner? year_w;
+
+    month_year__month_year_range_w  = month_w  md_y4_joiner? year_4_w m_m_range_joiner month_w md_y4_joiner? year_4_w;
+    year_month__year_month_range_w  = year_4_w y4_md_joiner? month_w  m_m_range_joiner year_4_w y4_md_joiner? month_w;
+
+    month_year__year_range_w  = month_w  md_y4_joiner?    year_4_w m_m_range_joiner year_4_w;
+    year_month__year_range_w  = year_4_w y4_md_joiner?    month_w  m_m_range_joiner year_4_w;
+    year__month_year_range_w  = year_4_w m_m_range_joiner month_w  md_y4_joiner?    year_4_w;
+    year__year_month_range_w  = year_4_w m_m_range_joiner year_4_w y4_md_joiner?    month_w;
+
+    main := |*
+
+                sepa day__day_month_year_range_w dsepe
+                { Accept(PT_T_RNG_DD_DDMMYYYY, SS_DAY, SS_DAY, SS_MONTH, SS_YEAR); };
+
+                sepa day__day_month_range_w sepe
+                { Accept(PT_T_RNG_DD_DDMM, SS_DAY, SS_DAY, SS_MONTH); };
+
+                sepa day_month__day_month_year_range_w dsepe
+                { Accept(PT_T_RNG_DDMM_DDMMYYYY, SS_DAY, SS_MONTH, SS_DAY, SS_MONTH, SS_YEAR); };
+
+                sepa day_month__day_month_range_w sepe
+                { Accept(PT_T_RNG_DDMM_DDMM, SS_DAY, SS_MONTH, SS_DAY, SS_MONTH); };
+
+                sepa month_day__month_day_year_range_w dsepe
+                { Accept(PT_T_RNG_MMDD_MMDDYYYY, SS_MONTH, SS_DAY, SS_MONTH, SS_DAY, SS_YEAR); };
+
+                sepa month_day__month_day_range_w sepe
+                { Accept(PT_T_RNG_MMDD_MMDD, SS_MONTH, SS_DAY, SS_MONTH, SS_DAY); };
+
+                sepa month_year__month_year_range_w dsepe
+                { Accept(PT_T_RNG_MMYYYY_MMYYYY, SS_MONTH, SS_YEAR, SS_MONTH, SS_YEAR); };
+
+                sepa year_month__year_month_range_w dsepe
+                { Accept(PT_T_RNG_YYYYMM_YYYYMM, SS_YEAR, SS_MONTH, SS_YEAR, SS_MONTH); };
+
+                sepa year__month_year_range_w dsepe
+                { Accept(PT_T_RNG_YYYY_MMYYYY, SS_YEAR, SS_MONTH, SS_YEAR); };
+
+                sepa year__year_month_range_w sepe
+                { Accept(PT_T_RNG_YYYY_YYYYMM, SS_YEAR, SS_YEAR, SS_MONTH); };
+
+                sepa year_month__year_range_w dsepe
+                { Accept(PT_T_RNG_YYYYMM_YYYY, SS_YEAR, SS_MONTH, SS_YEAR); };
+
+                sepa month_year__year_range_w dsepe
+                { Accept(PT_T_RNG_MMYYYY_YYYY, SS_MONTH, SS_YEAR, SS_YEAR); };
+
+                sepa month__month_year_range_w dsepe
+                { Accept(PT_T_RNG_MM_MMYYYY, SS_MONTH, SS_MONTH, SS_YEAR); };
+
+                sepa month__month_range_w dsepe
+                { Accept(PT_T_RNG_MM_MM, SS_MONTH, SS_MONTH); };
+
+## forum hack for time: exclude # from allowed time prefixes (see tests for this case)
+                ((dsepa - '#') time) >I%O%T sepe
+                { Accept(PT_T_WRD_TIME, SS_TIME); };
+
+                any
+                => Reject;
+
+            *|;
+}%%
+#endif
+    %% write data noerror nofinal;
+    %% write init;
+    %% write exec;
+    Y_UNUSED(ScanTextWordRanges/*@@@scannerlang@@@*/_en_main);
+}
+
+}
+}

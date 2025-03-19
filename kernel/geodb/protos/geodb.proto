@@ -1,0 +1,139 @@
+/* More detailed description is available at https://wiki.yandex-team.ru/Libgeobase/http-export
+ */
+package NGeoDB;
+
+// @see https://doc.yandex-team.ru/lib/libgeobase5/concepts/region-types.xml
+enum EType {
+    // скртый|не валидный
+    UNKNOWN                 = -1;
+    // прочее
+    WORLD                   =  0;
+    // континент
+    CONTINENT               =  1;
+    // регион (объединение регионов, но не является административной единицей)
+    REGION                  =  2;
+    // страна
+    COUNTRY                 =  3;
+    // федеральный округ (макроделение страны, имеет официальный статус)
+    FEDERAL_DISTRICT        =  4;
+    // субъект федерации (деление страны первого уровня)
+    CONSTITUENT_ENTITY      =  5;
+    // город
+    CITY                    =  6;
+    // село (все что не город - поселок городского типа, поселок, станица, хутор и т.д.)
+    TOWN                    =  7;
+    // район города (деление города первого уровня)
+    CITY_AREA               =  8;
+    // станция метро
+    SUBWAY_STATION          =  9;
+    // район субъекта федерации (деление страны второго уровня)
+    CONSTITUENT_ENTITY_AREA = 10;
+    // аэропорт
+    AIRPORT                 = 11;
+    // заморская территория (почти тоже самое, что страна)
+    OVERSEAS_TERRITORY      = 12;
+    // район города второго уровня
+    CITY_SUBAREA            = 13;
+    // станция монорельса
+    LIGHT_RAILWAY_STATION   = 14;
+    // сельское поселение
+    RURAL_SETTLEMENT        = 15;
+};
+
+// -1 в качестве дефолтного значения для IDs == END_CATEG
+message TRegionProto {
+    optional int64 Id        = 1  [default = -1];
+
+    // является ли регион главным на текущем уровне
+    optional bool IsMain     = 2;
+
+    // Столица страны этого региона
+    // например если текущий город Питер - CountryCapitalId == 213 (т.е. Москва)
+    optional int64 CountryCapitalId = 3 [default = -1];
+
+    // Страна региона. -1 в случае если регион находится выше страны, например континтент
+    optional int64 CountryId = 4 [default = -1];    // END_CATEG == -1
+
+    // тесно связан с IsMain
+    // если текущий регион не IsMain, то главного в этом месте можно узнать
+    // по этому полю
+    // например находясь в мособласти, ChiefId == 213 (москва)
+    // удобно для, например, tv каналов, в какой нибудь деревне под урюписнком, где нет своих
+    // каналов, надо брать ChiefId
+    optional int64 ChiefId   = 5 [default = -1];    // END_CATEG == -1
+
+    // непосредственный родитель
+    optional int64 ParentId  = 6 [default = -1];    // END_CATEG == -1
+
+    // все родители в порядке соответствующем проходу вверх по дереву регионов
+    repeated int64 Path      = 7 [packed = true];
+
+    // @see https://doc.yandex-team.ru/lib/libgeobase5/concepts/region-types.xml
+    optional EType Type      = 8  [default = UNKNOWN];
+
+    message TNames {
+        // @see `ELanguage` from library/cpp/langs/langs.h
+        optional uint32 Lang          = 1;
+
+        optional string Nominative    = 2;
+        optional string Genitive      = 3;
+        optional string Dative        = 4;
+        optional string Locative      = 5;
+        optional string Preposition   = 6;
+        optional string Prepositional = 7;
+        optional string Directional   = 8;
+    }
+    repeated TNames Names = 9;
+
+    message TLocation {
+        optional double Lat = 1;
+        optional double Lon = 2;
+    }
+    // географические координаты (широта, долгота)
+    optional TLocation Location = 10;
+
+    message TRectangle {
+        optional double Width  = 1;
+        optional double Height = 2;
+    }
+    // расстояние/границы места
+    optional TRectangle Span     = 11;
+
+    // Region name in native language
+    optional string NativeName  = 12;
+
+    // short english name, e.g. "MSK" for Moskow
+    optional string ShortName   = 13;
+
+    // timezonе этого региона в unix формате (Europe/Moscow)
+    optional string TimeZone    = 14;
+    // численность населения
+    optional uint64 Population  = 15;
+    // телефонные коды
+    // могут содержать значимые ведущие нули
+    repeated string PhoneCode = 16;
+    // сдвиг часового пояса относительно UTC в секундах. Может оказаться неактуальным из-за изменения времени на летнее/зимнее
+    optional int32 TimeZoneOffset = 17;
+    // список id регионов у которых name такой же как и у текущего (омонимия)
+    // этого поля нет в геобазе, генерится динамически в geodb_ops
+    repeated int64 Ambiguous = 18 [packed=true];
+    // список id регионов родителей (не всех) текущего региона если у него есть другие регионы с таким же именем
+    // со своей черной магией. См генератор и Disambiguate()
+    // нужно для снятия омонимии.
+    // этого поля нет в геобазе, генерится динамически в geodb_ops
+    repeated int64 AmbiguousParents = 19 [packed=true];
+
+    // список того присутсвует ли сервис в данном регионе
+    message TServices {
+        optional bool HasWeather = 1; // сервис погоды
+        optional bool HasSubway  = 2; // сервис метро
+        optional bool HasAfisha  = 3; // сервис афиша
+        optional bool HasMaps    = 4; // сервис карт
+        optional bool HasTv      = 5; // сервис прогаммы телепередач
+        optional bool HasAdv     = 6; // реклама
+        optional bool HasETrain  = 7; // сервис расписаний
+    }
+    optional TServices Services = 20;
+
+    repeated string SynonymNames = 21;
+}

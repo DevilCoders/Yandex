@@ -1,0 +1,50 @@
+LIBRARY()
+
+OWNER(
+    g:base
+    gotmanov
+    grechnik
+)
+
+SRCS(
+    break_buffer.cpp
+    bundle_proc.cpp
+    cache.cpp
+    cache_traits.cpp
+    constraint_checker.cpp
+    form_index_assigner.cpp
+    hits_storage.cpp
+    index_offroad_accessor.cpp
+    index_proc.cpp
+    index_yndex_accessor.cpp
+    iterator_impl.cpp
+    iterator_and_impl.cpp
+    iterator_offroad_impl.cpp
+    iterator_yndex_impl.cpp
+    pos_buf.cpp
+    position.cpp
+    reqbundle_hits_provider.cpp
+    reqbundle_iterator.cpp
+    reqbundle_iterator_fwd.cpp
+    reqbundle_iterator_builder.cpp
+    reqbundle_iterator_offroad_builder.cpp
+    reqbundle_iterator_yndex_builder.cpp
+    saveload.cpp
+)
+
+PEERDIR(
+    kernel/doom/key
+    kernel/keyinv/hitlist
+    kernel/keyinv/invkeypos
+    kernel/lingboost
+    kernel/reqbundle
+    kernel/reqbundle_iterator/proto
+    kernel/sent_lens
+    kernel/doom/search_fetcher
+    library/cpp/blob_cache
+    library/cpp/deprecated/iterators_heap
+    library/cpp/containers/absl_flat_hash
+    ysite/yandex/posfilter
+)
+
+END()

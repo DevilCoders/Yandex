@@ -1,0 +1,28 @@
+LIBRARY()
+
+OWNER(
+    elric
+    g:base
+)
+
+PEERDIR(
+    kernel/doom/chunked_wad
+    kernel/doom/offroad_wad
+    kernel/doom/enums
+    kernel/doom/hits
+    kernel/doom/info
+    kernel/doom/key
+    kernel/keyinv/invkeypos
+    kernel/search_types
+    library/cpp/offroad/codec
+    library/cpp/offroad/custom
+    library/cpp/offroad/streams
+    library/cpp/offroad/sub
+    library/cpp/offroad/tuple
+    library/cpp/offroad/utility
+    library/cpp/offroad/wad
+)
+
+SRCS()
+
+END()

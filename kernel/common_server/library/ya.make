@@ -1,0 +1,39 @@
+OWNER(g:cs_dev)
+
+RECURSE(
+    async_proxy
+    cache
+    config
+    executor
+    executor/vstorage
+    geocoder
+    logging
+    neh/server
+    network
+    text_checker
+    scheme
+    persistent_queue
+    searchserver/simple
+    simpledate
+    storage/all
+    storage
+    unistat
+    kv
+    xml2proto
+    vname_checker
+    yt
+)
+
+RECURSE_FOR_TESTS (
+    executor/ut
+    geojson/ut
+    geometry/ut
+    json/ut
+    metasearch/helpers/ut
+    openssl/ut
+    logging/ut
+    rect_hash/ut
+    tvm_services/ut
+    searchserver/ut
+    time_restriction/ut
+)

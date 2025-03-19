@@ -1,0 +1,50 @@
+#include "keys.h"
+
+#include <kernel/keyinv/invkeypos/keynames.h>
+
+// @attention these keys must be sorted!
+//            see kernel/walrus/deletelogic.h
+const char *WalrusExcludedKeys[] = {
+    YDX_FAKE_KEY, //####_FAKE
+    "#BASE=",
+    "#cat=",
+    "#cyrillic=",
+    "#date=",
+    "#domain=",
+    "#host=",
+    "#hostip=",
+    "#lang=",
+    "#lupath=",
+    "#mime=",
+    "#multilanguage",
+    "#new=",
+    "#nv=",
+    "#rhost=",
+    "#rupath=",
+    "#scheme=",
+    "#size=",
+    "#st10=",
+    "#st11=",
+    "#st12=",
+    "#st13=",
+    "#st14=",
+    "#st15=",
+    "#st16=",
+    "#st17=",
+    "#st1=",
+    "#st2=",
+    "#st3=",
+    "#st4=",
+    "#st5=",
+    "#st6=",
+    "#st7=",
+    "#st8=",
+    "#st9=",
+    "#trigramd=",
+    "#upath=",
+    "#url=",
+    "#whois=",
+    "(domname",
+    ")domname",
+    nullptr,
+};

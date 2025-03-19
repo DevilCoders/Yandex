@@ -1,0 +1,78 @@
+// Definition of protocol buffers with erf metadata
+
+package NErf;
+
+// Description of a single field or a bitfield
+message TFieldDescriptor {
+    // Name of the field in generated C++ structure.
+    // Names of field within a single erf file must be unique.
+    // Missing if field represents padding.
+    optional string Name = 1;
+
+    // Size of field in bits.
+    // For bitfields the maximum width is 32 bits.
+    // For non-bitfields width must be equal to 8 times the size of field's C++ type.
+    optional uint32 Width = 2;
+
+    // Field's C++ type if field is not a bitfield
+    optional string Type = 3;
+
+    // If a field has to be renamed, its old name should be saved here
+    // if compatibility with older programs is desired.
+    repeated string PrevName = 4;
+
+    // For bitfields - most likely value.
+    // Code generator may use it to emit __builtin_expect's in certain places.
+    optional uint32 ExpectedValue = 5;
+
+    // For fields that using in rearranging this value should be true
+    optional bool RearrangeUsing = 6 [default=false];
+}
+
+message TRecordDescriptor {
+    // Name of C++ class to generate for representing this record.
+    optional string Name = 1;
+
+    // List of all fields and paddings in the order of their appearance
+    repeated TFieldDescriptor Field = 2;
+
+    // Size of structure in bytes.
+    // This value only forces an additional check - size has to be equal to
+    // the sum of all field width / 8, both generator and runtime check this.
+    optional uint32 Size = 3;
+
+    // Version tag. Structures with different versions are assumed to be incompatible.
+    optional uint32 Version = 4 [default=0];
+
+    message TCodeGenOptions {
+        // Names of parent C++ template classes which provide additional methods
+        // for the generated class through parametrized inheritance
+        // (aka "curiously recurring template pattern").
+        repeated string Mixin = 1;
+
+        optional string ShortName = 2;
+
+        // If present, generator will generate a field mask class
+        // with the name T<ShortName>FieldMask.
+        // Class contains a 1-bit bitfield for each field in the record.
+        optional bool NeedMask = 3 [default=false];
+
+        // If present, generator will generate I<ShortName>FieldsVisitor
+        // interface and visitor methods.
+        optional bool NeedVisitor = 4 [default=false];
+
+        // If present, generator will generate a function for merging
+        // partial records. Requires NeedMask=true.
+        optional bool NeedMergeFunction = 5 [default=false];
+
+        optional bool NeedConstructor = 6 [default=true];
+    }
+
+    // Options for codegen. Stripped when metadata is embedded into an executable or an erf file.
+    optional TCodeGenOptions CodeGenOptions = 5;
+}
+
+message TCodeGenInput {
+    repeated TRecordDescriptor Struct = 1;
+    optional bool PackAsOneByte = 2 [default=false];
+}

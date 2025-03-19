@@ -1,0 +1,93 @@
+option optimize_for = SPEED;
+
+import "kernel/querydata/idl/querydata_common.proto";
+
+package NQueryData;
+
+///////////////////////////////////////
+// interface data types
+///////////////////////////////////////
+
+// Эти структуры нужны только в режиме веб-сервера
+message TMetaData {
+    optional string Json = 1;
+}
+message TMetaProtoCompression {
+    optional bytes Type = 1;
+    optional bytes Data = 2;
+}
+
+//////////////////////////
+// Ответ TQueryDatabase //
+//////////////////////////
+
+// Отдельное поле данных в формате TSKV (имя=значение), каждое поле так устроено
+message TFactor {
+    required string Name = 1;
+
+    optional bytes StringValue = 2;
+    optional int64 IntValue = 3;
+    optional float FloatValue = 4;
+    optional bytes BinaryValue = 5;
+}
+
+// Приоритеты при слиянии. Нужны, чтобы при мёрже ответов работала логика выбора лучшего по иерархии (регионов, например).
+message TMergeTraits {
+    optional uint64 Priority = 1;
+}
+
+// Режимы обработки подключа. Legacy, влияет на логику мёржа и конвертацию в JSON в ноапаче. Выпиливается аккуратным рефакторингом.
+message TKeyTraits {
+    optional bool MustBeInScheme = 1;
+    optional bool IsPrioritized = 2;
+}
+
+// Один сматчившийся подключ
+message TSourceSubkey {
+    optional string Key = 1;        // Подключ
+    optional EKeyType Type = 2;     // Тип подключа
+    optional TKeyTraits Traits = 3; // Режимы обработки. Legacy, влияет на логику мёржа и конвертацию в JSON в ноапаче. Выпиливается аккуратным рефакторингом.
+}
+
+// Каждая запись этого типа - это ответ одного из траев по одной из комбинаций подключей
+message TSourceFactors {
+    // Важные поля
+    optional string SourceName = 1;   // Namespace
+    optional uint64 Version = 2;      // Timestamp
+
+    optional string     SourceKey = 4;        // Отдельно стоящий нулевой подключ. Legacy, изначально был единственным.
+    optional EKeyType   SourceKeyType = 5;    // Тип нулевого подключа.
+    optional TKeyTraits SourceKeyTraits = 10; // Режимы обработки подключа. Legacy, влияет на логику мёржа и конвертацию в JSON в ноапаче. Выпиливается аккуратным рефакторингом.
+
+    repeated TSourceSubkey SourceSubkeys = 6; // Подключи (кроме нулевого, см. SourceKey)
+
+    optional TMergeTraits MergeTraits = 9;    // Приоритеты при слиянии. Нужны, чтобы при мёрже ответов работала логика выбора лучшего по иерархии (регионов, например).
+
+    repeated TFactor Factors = 3; // Данные в формате TSKV (имя=значение)
+    optional string  Json = 8;    // Данные в формате JSON
+
+    // Флаг специального ответа, который возвращается всегда - независимо от того, сматчилось ли хоть что-то. Нужно некоторым траям свежести. При выпиливании нужно посоветоваться с nkmakarov@.
+    optional bool Common = 7;
+
+    // Отладочная информация и спец.поля для работы в realtime-режиме.
+    optional string TrieName = 14;
+    optional uint32 ShardNumber = 11; // 0-based
+    optional uint32 ShardsTotal = 15;
+    optional string HostName = 12;
+    optional bool RealTime = 13; // Legacy, влияет конвертацию в JSON в ноапаче.
+    optional string KeyRef = 16; // Legacy, оптимизация в socnetsnips-rt. Это ключ, по которому нужно сделать selfjoin.
+}
+
+
+// Агрегированный ответ всего сервиса. А также один из форматов его выдачи как веб-сервера
+message TQueryData {
+    // Все ответы по данному запросу
+    repeated TSourceFactors SourceFactors = 1;
+
+    // Все поля ниже имеют смысл только при использовании TQueryData как формата выдачи веб-сервера (в режимах ms=querysearch:proto:1 и ms=querysearch:json:3)
+
+    // Отладочные данные
+    optional TMetaData Meta = 2;
+    // Сжатая выдача, совместимая с search/session/compression
+    optional TMetaProtoCompression MetaProtoCompressed = 3;
+}

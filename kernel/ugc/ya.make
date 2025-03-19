@@ -1,0 +1,19 @@
+RECURSE(
+    aggregation
+    aggregation/proto
+    aggregation/ut
+    aggregation/python
+    aggregation/python/ut
+    coder
+    coder/ut
+    datatypes
+    datatypes/ut
+    proto
+    proto/collections
+    proto/testing
+    runtime
+    schema
+    security
+    security/python
+    security/python/ut
+)

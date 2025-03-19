@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Text Machine hits viewer</title>
+  <style>
+    textarea { width: 100%; height: 400px; }
+    body { overflow-y: scroll; }
+  </style>
+  <link rel="icon" type="image/png" href="/dochits/favicon.png" />
+  <script>
+    if (document.location.hash.startsWith("#opener=") && window.opener) {
+      window.addEventListener("message", function(event) {
+        document.getElementById("dochits").textContent = event.data;
+        submitAjax(document.getElementById("form"));
+      }, false);
+      window.opener.postMessage(document.location.hash, "*");
+      document.location.hash = "";
+    }
+    var request = null;
+    function submitAjax(form) {
+      var resultElement = document.getElementById("result");
+      resultElement.textContent = "[loading]";
+      if (request !== null) {
+        request.abort();
+      }
+      request = new XMLHttpRequest();
+      request.onload = function(){
+        resultElement.textContent = this.responseText;
+      };
+      request.onerror = function(){
+        resultElement.textContent = "[transfer error: " + this.statusText + "]";
+      };
+      request.open("POST", "/dochits/text");
+      request.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+      request.setRequestHeader("Accept", "text/plain");
+      var cgi = "";
+      for (var i = 0; i < form.elements.length; i++) {
+        var e = form.elements[i];
+        if (!e.hasAttribute("name")) { continue; }
+        if (cgi !== "")
+            cgi += "&";
+        cgi += e.name + "=";
+        cgi += encodeURIComponent(e.value);
+      }
+      request.send(cgi);
+    }
+  </script>
+</head>
+<body>
+  <form id="form" action="/dochits" method="post" onsubmit="submitAjax(this);return false;">
+    <textarea id="dochits" name="data">$data$</textarea>
+    <label>Output mode:</label>
+    <select name="mode">$mode_options$</select>
+    <label>Printer:</label>
+    <select name="printer">$printer_options$</select>
+    <label>Expansion:</label>
+    <select name="expansion">$expansion_options$</select>
+    <label>Stream:</label>
+    <select name="stream">$stream_options$</select>
+    <button type="submit">Go</button>
+  </form>
+  <br>
+  Results:
+  <pre id="result">$result$</pre>
+</body>
+</html>

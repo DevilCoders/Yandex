@@ -1,0 +1,53 @@
+LIBRARY()
+
+OWNER(
+    kostik
+    leo
+    mvel
+    g:base
+)
+
+SRCS(
+    attrmap.cpp
+    attrname.cpp
+    attrweight.h
+    attrweightprop.cpp
+    categseries.cpp
+    config.cpp
+    docattrs.cpp
+    docsattrs.cpp
+    docsattrsdata.cpp
+    docsattrswriter.cpp
+    iterator.h
+    metainfo.cpp
+    metainfos.cpp
+    mutdocattrs.cpp
+    packer.cpp
+    printer.cpp
+    segmentiter.cpp
+    switcher.cpp
+    utils.cpp
+)
+
+PEERDIR(
+    kernel/externalrelev
+    kernel/doom/offroad_doc_attrs_wad
+    kernel/doom/offroad_doc_wad
+    kernel/doom/search_fetcher
+    kernel/doom/standard_models_storage
+    kernel/doom/wad
+    kernel/search_types
+    kernel/searchlog
+    library/cpp/pop_count
+    library/cpp/offroad/custom
+    library/cpp/offroad/flat
+    library/cpp/offroad/key
+    library/cpp/offroad/offset
+    library/cpp/on_disk/chunks
+    library/cpp/on_disk/st_hash
+    library/cpp/string_utils/url
+    ysite/yandex/common
+    library/cpp/deprecated/atomic
+)
+
+END()

@@ -1,0 +1,50 @@
+LIBRARY()
+
+OWNER(g:snippets)
+
+PEERDIR(
+    kernel/lemmer/alpha
+    kernel/lemmer/core
+    kernel/lemmer/dictlib
+    kernel/snippets/archive/markup
+    kernel/snippets/archive/view
+    kernel/snippets/archive/zone_checker
+    kernel/snippets/config
+    kernel/snippets/data
+    kernel/snippets/dynamic_data
+    kernel/snippets/factors
+    kernel/snippets/iface/archive
+    kernel/snippets/qtree
+    kernel/snippets/sent_info
+    kernel/snippets/simple_textproc/decapital
+    kernel/snippets/simple_textproc/deyo
+    kernel/snippets/smartcut
+    kernel/snippets/strhl
+    kernel/snippets/telephone
+    kernel/tarc/iface
+    kernel/url_tools
+    library/cpp/charset
+    library/cpp/stopwords
+    library/cpp/string_utils/url
+)
+
+SRCS(
+    glue.cpp
+    internal_links.cpp
+    is_definition.cpp
+    retained_info.cpp
+    sent_match.cpp
+    similarity.cpp
+    single_snip.cpp
+    tsnip.cpp
+    zones_helper.cpp
+    length.cpp
+    enhance.cpp
+    extra_attrs.cpp
+    len_chooser.cpp
+    lang_check.cpp
+    restr.cpp
+    meta.cpp
+)
+
+END()

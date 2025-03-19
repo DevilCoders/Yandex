@@ -1,0 +1,85 @@
+<div class="service" ng-repeat="service in services">
+  <div class="title">
+    <a
+      target="_blank"
+      rel="noopener noreferrer"
+      href="https://nanny.yandex-team.ru/ui/#/services/catalog/{{service.name}}/"
+      >{{service.name}}</a
+    >
+  </div>
+  <div class="data_center" ng-repeat="data_center in service.data_centers">
+    <div class="title">{{data_center.name}}</div>
+    <div
+      ng-repeat="instance in data_center.instances"
+      ng-init="server_info = instance.server_info; resource_requests = instance.resource_requests"
+      ng-class="server_info ? 'instance' : 'instance-crit'"
+    >
+      <div class="title"><a href="/controller_command?pod_host={{instance.name}}&command=get_info_server" target="_blank">{{instance.short_name}}</a></div>
+      <div class="buttons">
+        <input type="button" value="&#9940;" title='Stop' ng-click="controller_command(instance.name,'stop')">
+        <input type="button" value="&#128260;" title='Restart' ng-click="controller_command(instance.name,'restart', {'reread_config': 'yes'})">
+        <input type="button" value="&#128163;" title='Abort without coredump' ng-click="controller_command(instance.name,'abort', {'coredump', 'no'})">
+        <input type="button" value="&#128163;cd" title='Abort with coredump' ng-click="controller_command(instance.name,'abort', {'coredump', 'yes'})">
+        <input type="button" value="&#128164;" title='Shutdown' ng-click="controller_command(instance.name,'shutdown')">
+      </div>
+      <table>
+        <tr
+          ng-init="controller_status = server_info ? server_info.controller_status : 'Unknown'"
+        >
+          <td>status</td>
+          <td
+            class="property-value"
+            ng-class="{'crit': controller_status != 'Active'}"
+          >
+            {{controller_status}}
+          </td>
+        </tr>
+        <tr ng-init="controller_uptime = server_info.controller_uptime">
+          <td>uptime</td>
+          <td
+            class="property-value"
+            ng-class="{'crit': controller_uptime < 60, 'warn': controller_uptime >= 60 && controller_uptime < 600}"
+          >
+            {{controller_uptime}}
+          </td>
+        </tr>
+        <tr ng-if="server_info.svn_tag">
+          <td>tag</td>
+          <td class="property-value">{{server_info.svn_tag}}</td>
+        </tr>
+        <tr ng-if="server_info.Svn_revision">
+          <td>revision</td>
+          <td class="property-value">{{server_info.Svn_revision}}</td>
+        </tr>
+        <tr
+          ng-init="cpu_load = (server_info.cpu_load_system + server_info.cpu_load_user) / 100; vcpu_limit = resource_requests.vcpu_limit / 1000; cpu_usage = cpu_load / vcpu_limit"
+        >
+          <td>cpu_load</td>
+          <td
+            class="property-value"
+            ng-class="{'crit': cpu_usage > 0.8, 'warn': cpu_usage <= 0.8 && cpu_usage > 0.5}"
+          >
+            <div style="display: inline-block; width: 3em">{{cpu_load}}</div>
+            <div style="display: inline-block">({{vcpu_limit}})</div>
+          </td>
+        </tr>
+        <tr>
+          <td>load_avg</td>
+          <td class="property-value">{{server_info.load_average}}</td>
+        </tr>
+        <tr
+          ng-init="mem_real = round(server_info.mem_size_real / 1024); memory_limit = round(resource_requests.memory_limit / 1024 / 1024 / 1024); mem_usage = mem_real / memory_limit"
+        >
+          <td>mem_real</td>
+          <td
+            class="property-value"
+            ng-class="{'crit': mem_usage > 0.8, 'warn': mem_usage <= 0.8 && mem_usage > 0.5}"
+          >
+            <div style="display: inline-block; width: 3em">{{mem_real}}</div>
+            <div style="display: inline-block">({{memory_limit}})</div>
+          </td>
+        </tr>
+      </table>
+    </div>
+  </div>
+</div>

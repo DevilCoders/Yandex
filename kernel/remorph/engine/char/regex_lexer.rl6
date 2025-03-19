@@ -1,0 +1,254 @@
+#include <kernel/remorph/engine/char/regex_lexer.h>
+
+#include <util/charset/wide.h>
+
+namespace NReMorph {
+namespace NPrivate {
+
+%%{
+    machine remorph_engine_char_regex_lexer;
+
+    alphtype unsigned int;
+
+    prepush {
+        if (static_cast<size_t>(top) == Stack.size()) {
+            Stack.resize(Stack.size() * 2);
+        }
+    }
+
+    action UnfinishedQuotedPairError {
+        throw Error(fpc) << "unfinished quoted pair";
+    }
+
+    action UnfinishedGroupError {
+        throw Error(fpc) << "unfinished group";
+    }
+
+    action UnfinishedReferenceError {
+        throw Error(fpc) << "unfinished reference";
+    }
+
+    action UnfinishedRepeaterError {
+        throw Error(fpc) << "unfinished repeater";
+    }
+
+    id = alpha (alnum | '_')*;
+    escape = '\\';
+    quoted_pair = (escape any) <>^UnfinishedQuotedPairError;
+
+    group = ('<' id '>') <>^UnfinishedGroupError;
+    reference = ('@{' id '}') <>^UnfinishedReferenceError;
+    repeater = ('{' digit+ (',' digit*)? '}') <>^UnfinishedRepeaterError;
+
+    set_scanner := |*
+        '[' => {
+            ++NestedSets;
+            fcall set_scanner;
+        };
+        ']' => {
+            --NestedSets;
+            if (!NestedSets) {
+                fhold;
+            }
+            fret;
+        };
+        quoted_pair;
+        any;
+    *|;
+
+    main := |*
+        '.' => {
+            return YieldToken(RTT_ANY);
+        };
+        '(' => {
+            return YieldToken(RTT_LPAREN);
+        };
+        ')' => {
+            return YieldToken(RTT_RPAREN);
+        };
+        '[' => {
+            SetBegin = fpc;
+            ++NestedSets;
+            fcall set_scanner;
+        };
+        ']' => {
+            if (SetBegin) {
+                const TAlphType* begin = SetBegin;
+                SetBegin = NULL;
+                return YieldToken(RTT_SET, begin, ts - begin + 1, begin, te);
+            } else {
+                throw Error(fpc) << "incorrect set, unmatched right bracket";
+            }
+        };
+        '|' => {
+            return YieldToken(RTT_ALTERNATIVE);
+        };
+        '*' => {
+            return YieldToken(RTT_ASTERISK);
+        };
+        '+' => {
+            return YieldToken(RTT_PLUS);
+        };
+        '?' => {
+            return YieldToken(RTT_QUESTION);
+        };
+        '^' => {
+            return YieldToken(RTT_BEGIN);
+        };
+        '$' => {
+            return YieldToken(RTT_END);
+        };
+        group => {
+            return YieldToken(RTT_GROUP, ts + 1, te - ts - 2, ts, te);
+        };
+        reference => {
+            return YieldToken(RTT_REFERENCE, ts + 2, te - ts - 3, ts, te);
+        };
+        repeater => {
+            return YieldToken(RTT_REPEAT, ts + 1, te - ts - 2, ts, te);
+        };
+        quoted_pair => {
+            return YieldToken(RTT_QUOTED_PAIR, *(ts + 1), ts, te);
+        };
+        any => {
+            return YieldToken(RTT_SYMBOL, *ts, ts, te);
+        };
+    *|;
+
+}%%
+
+namespace {
+
+const static size_t STACK_BASE_SIZE = 16u;
+
+%% write data;
+
+}
+
+TRegexLexer::TRegexLexer(const TWtringBuf& data, const TSourceLocation& location, const TParseTokenDataFormat& dataFormat)
+    : OrigData(data)
+    , DataFormat(dataFormat)
+    , Data()
+    , OrigDataMap()
+    , Location(location)
+    , SetBegin(NULL)
+    , NestedSets(0)
+    , Stack(STACK_BASE_SIZE)
+    , cs(0)
+    , stack(Stack.data())
+    , top(0)
+    , act(0)
+    , ts(NULL)
+    , te(NULL)
+    , p(NULL)
+    , pe(NULL)
+    , eof(NULL)
+{
+    %% write init;
+
+    PrepareData();
+
+    p = Data.data();
+    pe = Data.data() + Data.size();
+    eof = pe;
+}
+
+TRegexToken TRegexLexer::GetToken() {
+    %% write exec;
+
+    if (SetBegin) {
+        throw Error(pe) << "unfinished set";
+    }
+
+    return YieldToken(RTT_EOS, pe, pe);
+}
+
+void TRegexLexer::PrepareData() {
+    Data.reserve(OrigData.length());
+    OrigDataMap.reserve(OrigData.length() + 1);
+
+    const wchar16* begin = OrigData.data();
+    const wchar16* end = OrigData.data() + OrigData.size();
+
+    const wchar16* p = begin;
+    while (p < end) {
+        OrigDataMap.push_back(p);
+        Data.push_back(::ReadSymbolAndAdvance(p, end));
+    }
+    OrigDataMap.push_back(end);
+
+    Y_ASSERT(Data.size() + 1 == OrigDataMap.size());
+}
+
+TRegexToken TRegexLexer::YieldToken(ERegexTokenType type, const TAlphType* pos, const TAlphType* posEnd) {
+    TRegexToken token(type);
+    AddTokenLocation(token, pos, posEnd);
+    Reset();
+    return token;
+}
+
+TRegexToken TRegexLexer::YieldToken(ERegexTokenType type) {
+    return YieldToken(type, ts, te);
+}
+
+TRegexToken TRegexLexer::YieldToken(ERegexTokenType type, TAlphType symbol, const TAlphType* pos, const TAlphType* posEnd) {
+    TRegexToken token(type, symbol);
+    AddTokenLocation(token, pos, posEnd);
+    Reset();
+    return token;
+}
+
+TRegexToken TRegexLexer::YieldToken(ERegexTokenType type, const TAlphType* dataBegin, size_t dataSize, const TAlphType* pos, const TAlphType* posEnd) {
+    TRegexToken token(type, GetOrigData(dataBegin, dataSize));
+    AddTokenLocation(token, pos, posEnd);
+    Reset();
+    return token;
+}
+
+const wchar16* TRegexLexer::GetOrigData(const TAlphType* p) const {
+    Y_ASSERT((p >= Data.data()) && (p <= Data.data() + Data.size()));
+
+    return OrigDataMap[p - Data.data()];
+}
+
+TWtringBuf TRegexLexer::GetOrigData(const TAlphType* dataBegin, size_t dataSize) const {
+    const wchar16* origDataBegin = GetOrigData(dataBegin);
+    const wchar16* origDataEnd = GetOrigData(dataBegin + dataSize);
+
+    return TWtringBuf(origDataBegin, origDataEnd - origDataBegin);
+}
+
+void TRegexLexer::AddTokenLocation(TRegexToken& token, const TAlphType* pos, const TAlphType* posEnd) {
+    if (pos) {
+        token.Location = GetLocation(pos);
+    }
+    if (posEnd) {
+        token.LocationEnd = GetLocation(posEnd);
+    }
+}
+
+void TRegexLexer::Reset() {
+    p = te;
+    ts = NULL;
+    te = NULL;
+}
+
+TSourceLocation TRegexLexer::GetLocation(const TAlphType* p) const {
+    Y_ASSERT((p >= Data.data()) && (p <= Data.data() + Data.size()));
+
+    TSourceLocation location = Location;
+    location.Pos += SourceOffset(Data.data(), p);
+    location.Pos.Column += DataFormat.GetExtraOffset(p - Data.data());
+    return location;
+}
+
+TLexingError TRegexLexer::Error() const {
+    return TLexingError(Location);
+}
+
+TLexingError TRegexLexer::Error(const TAlphType* p) const {
+    return TLexingError(GetLocation(p));
+}
+
+} // NPrivate
+} // NReMorph

@@ -1,0 +1,295 @@
+// This file describes interface for *request bundle*.
+// Purpose of a bundle is to represent original user request with a
+// number of associated requests (*extensions*).
+// All requests in a bundle share common set of low-level nodes
+// (words, phrases) called *basic blocks*.
+// Essential property of basic block is that it can be directly used to obtain
+// hits (doc-word positions) from inverted index.
+// Each request is specified by its *schema*, purpose of a schema is to
+// map hits for basic blocks into hits for request words.
+// Request hits are fed into Text Machine that computes text relevance features.
+// Hits for different basic blocks can be gathered independently (i.e. there are
+// no mutual constraints, such as proximity, between blocks).
+//
+// Example:
+//  Suppose one of the requests in a bundle is "msu address".
+//  Basic blocks include 0 - "msu", 1 - "moscow state university", 2 - "address".
+//  Then ("-->" means "is mapped to"):
+//      hit for "msu" --> direct hit with word index = 0
+//      hit for "moscow state university" --> synonym hit with word index = 0
+//      hit for "address" --> direct hit with word index = 1
+//
+// In general hit for a basic block can be mapped to hits for several consecutive
+// words in 0 or more requests (all hits will share the same doc-word position).
+//
+// Note that it is possible (in principle) to describe requests with "gaps",
+// i.e. request with 5 words where word idx = 2 doesn't correspond to any
+// basic blocks.
+//
+// Currently basic block is identical to rich request node, but the intent is that
+// it should be either a single word node or a sequence of such (with AND semantics).
+//
+// Requests in a bundle can be grouped into subsets by *expansion types*.
+// One request schema belongs to exactly one expansion type specified by its index.
+// Expansion types can be used for requests that come from different sources,
+// computed via different algorithms, etc.
+// Text Machine processes each expansion type independently and
+// computes aggregated features at its output.
+//
+
+package NReqBundleProtocol;
+
+import "kernel/hitinfo/proto/skobkainfo.proto";
+import "kernel/qtree/richrequest/protos/proxim.proto";
+import "kernel/qtree/richrequest/protos/rich_tree.proto";
+import "library/cpp/langmask/proto/langmask.proto";
+
+message TRevFreqValue {
+    // Freq value type
+    optional uint32 FreqType = 1 [default = 0];
+
+    // Rev freq value
+    optional sint64 RevFreq = 2 [default = -1];
+};
+
+message TBlockFormInfo {
+    // Form text
+    optional string Text = 1;
+
+    // Form exact flag
+    optional bool Exact = 2;
+};
+
+message TBlockLemmaInfo {
+    // Lemma reverse freq
+    optional sint64 RevFreq = 1 [default = -1];
+
+    // Lemma text
+    optional string Text = 2;
+
+    // Lemma is best
+    optional bool Best = 3;
+
+    // Language
+    optional uint32 Language = 4;
+
+    // Forms
+    repeated TBlockFormInfo Forms = 5;
+
+    // Lemma reverse freqs by type
+    repeated TRevFreqValue RevFreqsByType = 6;
+
+    // Lemma is attribute
+    optional bool Attribute = 7;
+
+    // Form prefixes for delta decoding
+    repeated uint32 FormsPrefixSizes = 8;
+};
+
+message TBlockWordInfo {
+    // DEPRECATED. Replaced by RevFreqsByType
+    optional sint64 RevFreq = 1 [default = -1];
+
+    // DEPRECATED. Replaced by RevFreqsAllFormsByType
+    optional sint64 RevFreqAllForms = 3 [default = -1];
+
+    // Lemma info
+    repeated TBlockLemmaInfo Lemmas = 2;
+
+    // Case flags
+    optional uint32 CaseFlags = 4; // TCharCategory
+
+    // Word text
+    optional string Text = 5;
+
+    // Word lang mask
+    optional NProto.TLangMask Languages = 6;
+
+    // Lemmer type
+    optional uint32 NlpType = 7; // NLP_TYPE
+
+    // Is stop word
+    optional bool StopWord = 8;
+
+    // Word exact form reverse freqs by type
+    repeated TRevFreqValue RevFreqsByType = 9;
+
+    // Word all forms reverse freqs by type
+    repeated TRevFreqValue RevFreqsAllFormsByType = 10;
+
+    // * in ExactOrdered blocks, queries like "hello * world"
+    optional bool AnyWord = 11;
+};
+
+message TBlock {
+    // Contents of basic block as rich node
+    optional NRichTreeProtocol.TRichRequestNode RichNode = 1;
+
+    // Word info
+    repeated TBlockWordInfo Words = 2;
+
+    // DEPRECATED. Replaced by RevFreqsByType
+    optional sint64 RevFreq = 3;
+
+    // Distance (proximity constraint)
+    optional uint32 Distance = 4;
+
+    // Block as binary string
+    optional bytes BinaryData = 5;
+
+    // Hash computed from uncompressed binary representation.
+    // Should always be present when Binary is set.
+    optional uint64 BinaryHash = 6;
+
+    // Block reverse freqs by type
+    repeated TRevFreqValue RevFreqsByType = 7;
+
+    // Block type
+    optional uint32 Type = 9 [default = 0];
+};
+
+message TMatchInfo {
+    // Type of hit reported to Text Machine (original word, synonym, etc.)
+    optional uint32 MatchType = 1;
+
+    // Synonym sub-type mask
+    optional uint32 SynonymMask = 2;
+
+    // DEPRECATED. Replaced by RevFreqsByType
+    optional sint64 RevFreq = 3;
+
+    // Match weight
+    optional double Weight = 4 [default = 1.0];
+
+    // Phrase frequencies that may depend on request context by type
+    repeated TRevFreqValue RevFreqsByType = 5;
+};
+
+message TBlockMatch {
+    // Index to array of blocks in request bundle
+    optional uint32 BlockIndex = 1;
+
+    // can be used in merging synonyms
+    optional uint32 AnchorWordsRangeBegin = 2;
+    optional uint32 AnchorWordsRangeEnd = 3;
+};
+
+message TWordMatch {
+    // Index of first request word, [0, NumWords-1]
+    optional uint32 WordIndexFirst = 1;
+
+    // Index of last request word, [WordIndexFirst, NumWords-1]
+    optional uint32 WordIndexLast = 2;
+};
+
+message TRequestMatch {
+    // Auxiliary information about this type of hit
+    optional TMatchInfo Info = 1;
+
+    // Each basic block hit described by BlockMatch...
+    optional TBlockMatch BlockMatch = 2;
+
+    // ...is mapped to request word hits described by WordMatch
+    optional TWordMatch WordMatch = 3;
+};
+
+// Porximity constraint between adjacent words
+message TWordProximity {
+    // Cohesion strength for Text Machine
+    optional double Cohesion = 1;
+
+    // Multitoken
+    optional bool Multitoken = 2;
+};
+
+// Info about specific word position
+message TRequestWordInfo {
+    // DEPRECATED. Replaced by RevFreqsByType
+    optional sint64 RevFreq = 1;
+
+    // Word reverse freq as currently computed by basesearch.
+    // Incorporates reverse freqs for all synonyms and original word via OR operation.
+    repeated TRevFreqValue RevFreqsByType = 2;
+
+    // Token from original user request string
+    optional string Token = 3;
+};
+
+message TFacet {
+    // Expansion type index
+    optional uint32 ExpansionType = 1;
+
+    // DEPRECATED. Regionality type index
+    optional uint32 RegionalityType = 2;
+
+    // Region index
+    optional sint64 RegionId = 4;
+
+    // Facet value
+    optional float Value = 3 [default = 1.0];
+};
+
+message TConstraint {
+    // Constraint type index
+    optional uint32 Type = 1;
+
+    // Blocks indices
+    repeated uint32 BlockIndices = 2;
+};
+
+message TTopAndArgsForWeb {
+    optional bool IsPosRestrictsEmpty = 1;
+    repeated bool IsPlusWord = 2;
+    repeated NProximity.TProximity Proxes = 3;
+    repeated bool IsStopWord = 4;
+    repeated NSkobkaInfo.TSkobkaInfo HitInfos = 5;
+}
+
+// Kostyl for ReqBundle hit -> TrIterator hit conversion
+message TRequestTrCompatibilityInfo {
+    repeated uint64 MainPartsWordMasks = 1;
+    repeated uint32 MarkupPartsBestFormClasses = 2;
+    optional uint32 WordCount = 3;
+    optional TTopAndArgsForWeb TopAndArgsForWeb = 4;
+};
+
+message TRequest {
+    // Number of words in request
+    optional uint32 NumWords = 1;
+
+    // DEPRECATED. Replaced by Facets
+    optional uint32 ExpansionType = 2;
+
+    // Each structure in Matches array describes
+    // how to map hits for one of basic blocks to
+    // words (word indexes) of this request
+    repeated TRequestMatch Matches = 3;
+
+    // At most NumWords - 1 structures
+    // that describe word proximity constraints
+    // for TR calculation
+    repeated TWordProximity Proxes = 4;
+
+    // DEPRECATED. Replaced by Facets
+    optional float Weight = 5;
+
+    // Info about request words
+    repeated TRequestWordInfo Words = 6;
+
+    // List of request facets
+    repeated TFacet Facets = 7;
+
+    optional TRequestTrCompatibilityInfo TrCompatibilityInfo = 8;
+    optional uint32 AnchorsSrcLength = 9; // number of words in request, anchors links to
+};
+
+message TReqBundle {
+    // Array of common basic blocks
+    repeated TBlock Blocks = 1;
+
+    // Array of request schemas that refer to basic blocks
+    repeated TRequest Requests = 2;
+
+    // Array of constraints
+    repeated TConstraint Constraints = 3;
+};

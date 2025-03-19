@@ -1,0 +1,406 @@
+#include <kernel/social/recognizer.h>
+#include <kernel/social/normalizer.h>
+
+#include <library/cpp/uri/uri.h>
+
+
+#include <library/cpp/regex/pcre/regexp.h>
+#include <util/generic/vector.h>
+#include <library/cpp/string_utils/url/url.h>
+#include <util/stream/output.h>
+#include <util/stream/input.h>
+#include <utility>
+
+#define SET_SN(SN) network = NSocial::SN;
+#define SET_PARSER(PARSER) parser = NSocial::PARSER;
+
+%%{
+
+machine HostParser;
+
+main := ('http' 's'? '://') ([^/]* '.')? (
+    'facebook.com'i %{SET_SN(Facebook)} |
+    ('free-lance.ru'i | 'fl.ru'i) %{SET_SN(FreeLance)} |
+    'foursquare.com'i %{SET_SN(Foursquare)} |
+    'friendfeed.com'i %{SET_SN(FriendFeed)} |
+    'linkedin.com'i %{SET_SN(LinkedIn)} |
+    'liveinternet.ru'i %{SET_SN(LiveInternet)} |
+    'livejournal.com'i %{SET_SN(LiveJournal)} |
+    'mirtesen.ru'i %{SET_SN(MirTesen)} |
+    'moikrug.ru'i %{SET_SN(MoiKrug)} |
+    'my.mail.ru'i %{SET_SN(MoiMirMailRu)} |
+    ('odnoklassniki.ru'i | 'ok.ru'i) %{SET_SN(Odnoklassniki)} |
+    ('picasaweb.google.com'i | 'plus.google.com'i | 'profiles.google.com'i | 'www.google.com'i) %{SET_SN(GooglePlus)} |
+    'twitter.com'i %{SET_SN(Twitter)} |
+    ('vk.com'i | 'vk.lc'i | 'vkontakte.ru'i | 'vkontakteid.ru'i) %{SET_SN(VKontakte)} |
+    'ya.ru'i  %{SET_SN(YaRu)} |
+    'instagram.com'i %{SET_SN(Instagram)}
+) ('/' any*)?;
+
+write data;
+
+}%%
+
+typedef NSocial::ESocialNetwork ESocialNetwork;
+typedef NSocial::TIdentityPair TIdentityPair;
+
+ESocialNetwork ResolveNetwork(TStringBuf url) {
+    const char* p = url.data();
+    const char* pe = url.data() + url.size();
+    const char* eof = pe;
+    int cs;
+
+
+    ESocialNetwork network;
+    SET_SN(UnknownNetwork)
+
+    %% write init;
+    %% write exec;
+
+    return network;
+}
+
+%%{
+
+machine TExtractor;
+
+action B {
+    Begin = fpc;
+}
+
+action E {
+    End = fpc;
+    if (fpc > Reject) {
+        Reject = 0;
+    }
+}
+
+action R {
+    Reject = fpc;
+}
+
+
+any_host = [^/]*;
+id = [a-zA-Z0-9_]+;
+id_d = [a-zA-Z0-9_.]+;      # id with dot
+id_h = [a-zA-Z0-9_\-]+;     # id with hyphen
+id_dh = [a-zA-Z0-9_.\-]+;   # id with dot and hyphen
+
+
+fb_reject = ('events' | 'notes' | 'l.php' | 'apps' | 'groups' | 'home.php' | 'me' | 'sharer.php' | 'people' | 'pages' | 'p' | 'r.php') %R;
+fb_host = ([^/]+ - 'developers.'any_host);
+Facebook := (
+        fb_host '/'('p'|'profile')? '.php?' 'sk=info&'? 'id=' (digit+)>B %E '&sk=info'? |
+        fb_host '/'('people'|'p'|'pages')'/' [a-zA-Z0-9_.%'\-]+ '/' (digit+('/info')?)>B %E '/'? '?sk=info'? |
+        fb_host '/'(id_dh >B %E | fb_reject) '/info'? '?sk=info'?
+) %{SET_PARSER(PP_FACEBOOK)};
+FreeLance := (
+    any_host '/users/' (id_dh)>B %E ('/'? 'info'?)
+) %{SET_PARSER(PP_FREELANCE)};
+
+ff_reject = ('share' | 'rooms' | 'unsafeurl' | 'settings' | 'search' | 'friends' | 'public' | 'api' | 'about') %R;
+FriendFeed := (
+        any_host '/'('list/')?(id_dh >B %E | ff_reject)
+) %{SET_PARSER(PP_FRIENDFEED)};
+
+gp_reject = ('profiles' | 'site' | 'reader' | 'store' | 'calendar' | 'search' | 'url' | 'mapmaker' | 'notebook') %R;
+gp_id = id_dh >B %E | gp_reject ;
+gp_id_plus = (digit{10,} | [a-zA-Z0-9_.\-\+]+) >B %E | gp_reject ;
+GooglePlus := (
+        ('www'|'plus'|'profiles')'.google.com/profiles/'(gp_id)                                 %{SET_PARSER(PP_GPLUS)} |
+        ('plus'|'profiles')'.google.com' '/'('u/0/')? (gp_id_plus) ('/'[a-zA-Z0-9_]*)?          %{SET_PARSER(PP_GPLUS)} |
+        any_host '/reader/shared/'(digit{10,}|gp_id)                                            %{SET_PARSER(PP_NONE)} |
+        (any_host - ('www'|'plus'|'profiles')'.google.com') '/profiles/' gp_id                  %{SET_PARSER(PP_NONE)} |
+        (any_host - ('plus'|'profiles')'.google.com') '/'('u/0/')? gp_id_plus                   %{SET_PARSER(PP_NONE)} |
+        (any_host - ('plus'|'profiles')'.google.com') '/'('u/0/')?('0/')? gp_id_plus            %{SET_PARSER(PP_NONE)}
+);
+
+linked_in_id = [a-zA-Z0-9_.%\-]+;
+LinkedIn := (
+        any_host '/pub/' (linked_in_id'/' id '/' id '/' id)>B %E ('/'[a-zA-Z0-9_]*)? |
+        any_host '/in/' (linked_in_id)>B %E ('/'[a-zA-Z0-9_]*)?
+) %{SET_PARSER(PP_LINKEDIN)};
+LiveInternet := (
+        any_host '/'('users'|'community')'/'(id_dh)>B %E [^?]*
+);
+
+lj_reject = ('community' | 'users' | 'pics' | any* '.' any*) %R;
+lj_id = id_dh >B %E | lj_reject ;
+lj_reject_host = ('community' | 'users' | 'pics');
+lj_id_host = (id_h - lj_reject_host) >B %E;
+LiveJournal := (
+        any_host '/profile' '?userid='(digit+) >B %E                            %{SET_PARSER(PP_LIVEJOURNAL)} |
+        any_host '/'[a-zA-Z0-9_]+'.bml?user='(lj_id)                            %{SET_PARSER(PP_LIVEJOURNAL)} |
+        'users.livejournal.com' '/'('users/')?(lj_id) '/'('profile'|'info')'/'? %{SET_PARSER(PP_LIVEJOURNAL)} |
+        'users.livejournal.com' '/'('users/')?(lj_id) '/'?                      %{SET_PARSER(PP_NONE)} |
+        'livejournal.com' '/users/'(lj_id) '/'('profile'|'info')'/'?            %{SET_PARSER(PP_LIVEJOURNAL)} |
+        'livejournal.com' '/users/'(lj_id) '/'?                                 %{SET_PARSER(PP_NONE)} |
+        (lj_id_host) '.livejournal.com' '/data/foaf'                            %{SET_PARSER(PP_NONE)} |
+        (lj_id_host) '.livejournal.com' '/'('profile'|'info')'/'?               %{SET_PARSER(PP_LIVEJOURNAL)} |
+        (lj_id_host) '.livejournal.com' '/' ([^?]* - (('profile'|'info')'/'?))  %{SET_PARSER(PP_LIVEJOURNAL)}
+);
+MirTesen := (
+        any_host '/people/'(id_dh)>B %E %{SET_PARSER(PP_MIRTESEN)}
+);
+
+
+mk_reject = ('resumes' | 'companies' | 'responses' | 'profile' | 'conversations' | 'vacancies' | 'info' | 'feedback') %R;
+mk_id = ((id_h) >B %E | mk_reject);
+mk_subpages = ('opinions' | 'friends');
+MoiKrug := (
+        mk_id '.moikrug.ru' '/'?                %{SET_PARSER(PP_MOIKRUG)} |
+        any_host '/' mk_id '/'?                 %{SET_PARSER(PP_MOIKRUG)} |
+        any_host '/' mk_id '/' mk_subpages '/'? %{SET_PARSER(PP_NONE)}
+);
+
+mm_reject = (('community'i | 'my'i | 'apps'i | 'cgi-bin'i) '/' any*) %R;
+mm_id = ([a-zA-Z0-9_\.\-]+'/'[a-zA-Z0-9_\.\-]+) >B %E | mm_reject;
+MoiMirMailRu := (
+        any_host '/' mm_id '/foaf' '/'?    %{SET_PARSER(PP_MOIMIR)} |
+        any_host '/' mm_id '/'?            %{SET_PARSER(PP_NONE)}
+);
+
+tw_reject = ('account' | 'settings' | 'statuses' | 'about' | 'business' | 'jobs' | 'tos' | 'privacy' | 'login' |
+             'public_timeline' | 'timeline' | 'newtwitter' | 'search' | 'places' | 'users' | 'home' | 'share') %R;
+Twitter := (
+        any_host '/'('user/')?('@'|'%40')?(id >B %E | tw_reject) '/'?
+) %{SET_PARSER(PP_TWITTER)};
+
+inst_reject = ('about' | 'business' | 'explore') %R;
+
+inst_id = id_d;
+Instagram := (
+        any_host '/'(inst_id >B %E | inst_reject) '/'?
+) %{SET_PARSER(PP_INSTAGRAM)};
+
+vk_reject = (
+    ('wall' '-'? | 'search' | 'video' 's'? '-'? | 'note' 's'? | 'restore' | 'public' | 'topic' '-'? | 'board' | [a-zA-Z0-9_]+ '.php' |
+    'friends' | 'app' 's'? | 'audio' | 'feed' | 'edit' | 'docs' | 'album' 's'? '-'? | 'photo' 's'? '-'? | 'club' | 'event' | 'gifts' |
+    'audios' '-'? | 'write' '-'? | 'join') (digit+ ('_' any*)*)?
+) %R;
+VKontakte := (
+        any_host '/foaf.php' '?id='(digit+)>B %E    %{SET_PARSER(PP_VK_FOAF)} |
+        any_host '/'(id_dh >B %E | vk_reject)       %{SET_PARSER(PP_VK)}
+);
+
+ya_reject = ('clubs' | 'wow' | 'my') %R;
+ya_id = id_h >B %E | ya_reject;
+YaRu := (
+        ya_id '.ya.ru' '/foaf.xml'    %{SET_PARSER(PP_YARU_FOAF)}|
+        ya_id '.ya.ru' '/'?           %{SET_PARSER(PP_NONE)}
+);
+
+ok_reject = ('guests' | 'group' | 'dk' | 'cdk') %R;
+Odnoklassniki := (
+        any_host '/'(('profile'|'user') '/'? digit+)>B %E |
+        any_host '/'(('user/')?(id_dh >B %E | ok_reject))
+) %{SET_PARSER(PP_ODNOKLASSNIKI)};
+
+fs_reject = ('login' | 'download' | 'privacy' | 'pages' | 'jobs' | 'about' | 'apps' | 'business' | 'change_password' | 'signup') %R;
+Foursquare := (
+        any_host '/'('user/'digit+)>B %E |
+        any_host '/'(id_dh >B %E | fs_reject)
+) %{SET_PARSER(PP_FOURSQUARE)};
+
+write data;
+
+}%%
+
+TString PrepareUrl(TStringBuf url, ESocialNetwork network) {
+    using namespace NUri;
+
+    TUri uri;
+    uri.Parse(url, TFeature::FeaturesRecommended);
+    TUriUpdate update(uri);
+
+    TUri fragmentUri;
+    TStringBuf fragment;
+
+    switch (network) {
+    case NSocial::Twitter:
+    case NSocial::Odnoklassniki:
+        fragmentUri.Parse(url, TFeature::FeaturesRecommended ^
+                       TFeature::FeatureHashBangToEscapedFragment ^
+                       TFeature::FeatureEscapedToHashBangFragment);
+        fragment = fragmentUri.GetField(TField::FieldFragment);
+        if (fragment.StartsWith("!/")) {
+            update.Set(TField::FieldPath, fragment.Skip(1));
+            update.Clr(TField::FieldQuery);
+            update.Clr(TField::FieldFragment);
+        }
+        break;
+    default:
+        break;
+    }
+
+    const TString& res = uri.PrintS(TField::FlagAllFields ^ TField::FlagFragment);
+    return res;
+}
+
+bool NSocial::ExtractIdent(TStringBuf url, TIdentityPair& result) {
+    ESocialNetwork network = ResolveNetwork(url);
+
+    const TString& preparedUrl = PrepareUrl(url, network);
+    TStringBuf urlWithoutScheme = CutSchemePrefix(preparedUrl);
+
+    const char* p = urlWithoutScheme.data();
+    const char* pe = preparedUrl.data() + preparedUrl.size();
+    const char* eof = pe;
+    Y_UNUSED(eof);
+
+    int cs;
+
+    if (urlWithoutScheme.StartsWith("www.")) {
+        p += 4;
+    }
+
+    %% write init;
+
+    #define CASE(SN) \
+        case NSocial:: SN: { \
+            cs = TExtractor_en_##SN; \
+            break; \
+        }
+    switch(network) {
+        CASE(Facebook)
+        CASE(FreeLance)
+        CASE(FriendFeed)
+        CASE(GooglePlus)
+        CASE(LinkedIn)
+        CASE(LiveInternet)
+        CASE(LiveJournal)
+        CASE(MirTesen)
+        CASE(MoiKrug)
+        CASE(MoiMirMailRu)
+        CASE(Twitter)
+        CASE(VKontakte)
+        CASE(YaRu)
+        CASE(Odnoklassniki)
+        CASE(Foursquare)
+        CASE(Instagram)
+        case NSocial::UnknownNetwork:
+            return false;
+        default:
+            ythrow yexception() << "Unexpected ESocialNetwork constant";
+    }
+    #undef CASE
+
+    const char* Reject = 0;
+    const char* Begin = 0;
+    const char* End = 0;
+    NSocial::EPageParser parser = NSocial::PP_NONE;
+
+    %% write exec;
+
+    result.Network = network;
+    if (cs >= TExtractor_first_final && Begin && End
+        && (!Reject || Reject > End) && Begin <= End) {
+        TString rawId(Begin, End);
+        const TString& normId = NSocial::TIdentityNormalizer::Instance()->Normalize(network, rawId);
+        if (!!normId) {
+            result.Id = normId;
+            result.Parser = parser;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool NSocial::IsSocialProfileUrl(TStringBuf url) {
+    TIdentityPair result;
+    return ExtractIdent(url, result);
+}
+
+
+%%{
+
+machine TProfileIdRecognizer;
+
+digit_seq = [0-9]+;
+
+VKontakte := 'id' digit_seq;
+Facebook := digit_seq;
+MoiKrug := 'P' digit_seq;
+LinkedIn := any* '/' any*;
+GooglePlus := digit_seq;
+MirTesen := digit_seq;
+LiveInternet := digit_seq;
+Odnoklassniki := 'profile/' digit_seq;
+Foursquare := 'user/' digit_seq;
+LiveJournal := digit_seq;
+
+write data;
+
+}%%
+
+bool NSocial::ValidateProfileId(const TString& id, ESocialNetwork network) {
+    const char* p = id.data();
+    const char* pe = p + id.size();
+    const char* eof = pe;
+    Y_UNUSED(eof);
+
+    int cs;
+
+    %% write init;
+
+    #define CASE(SN) \
+        case NSocial:: SN: { \
+            cs = TProfileIdRecognizer_en_##SN; \
+            break; \
+        }
+    switch(network) {
+        CASE(Facebook)
+        CASE(GooglePlus)
+        CASE(LinkedIn)
+        CASE(LiveInternet)
+        CASE(LiveJournal)
+        CASE(MirTesen)
+        CASE(MoiKrug)
+        CASE(VKontakte)
+        CASE(Odnoklassniki)
+        CASE(Foursquare)
+        default:
+            return false;
+    }
+    #undef CASE
+
+    %% write exec;
+
+    return cs >= TProfileIdRecognizer_first_final;
+}
+
+bool TIdentityPair::ValidateProfileId() const {
+    return NSocial::ValidateProfileId(Id, Network);
+}
+
+template<>
+void Out<ESocialNetwork>(IOutputStream& stream, TTypeTraits<ESocialNetwork>::TFuncParam val) {
+    #define CASE(SN) case NSocial:: SN: stream << #SN; break;
+    switch(val) {
+        CASE(UnknownNetwork)
+        CASE(Beon)
+        CASE(DiaryRu)
+        CASE(Facebook)
+        CASE(FreeLance)
+        CASE(FriendFeed)
+        CASE(GooglePlus)
+        CASE(LinkedIn)
+        CASE(LiveInternet)
+        CASE(LiveJournal)
+        CASE(MirTesen)
+        CASE(MoiKrug)
+        CASE(MoiMirMailRu)
+        CASE(Twitter)
+        CASE(VKontakte)
+        CASE(YaRu)
+        CASE(Odnoklassniki)
+        CASE(Foursquare)
+        CASE(Instagram)
+        CASE(NETWORKS_COUNT)
+        default:
+            ythrow yexception() << "Unknown ESocialNetwork constant";
+    }
+    #undef CASE
+}
+

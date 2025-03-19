@@ -1,0 +1,39 @@
+OWNER(g:facts)
+
+RECURSE(
+    batch_replacer
+    case_corrector
+    classifiers
+    common
+    common/ut
+    common_features
+    common_features/ut
+    compound_filter
+    dist_between_words
+    dist_between_words/ut
+    dssm_applier
+    dynamic_list_replacer
+    dynamic_list_replacer_pylib
+    edit_distance_features
+    edit_distance_features/ut
+    factors_info
+    fast_eval
+    features_calculator
+    features_calculator/ut
+    freshness
+    hosts_catalogue
+    knn
+    page_quality
+    serp_parser
+    serp_parser/ut
+    serp_parser_pylib
+    source_list_filter
+    url_expansion
+    url_expansion/ut
+    vowpal_wabbit_filters
+    word_difference
+    word_embedding
+    word_embedding/ut
+    word_set_match
+    word_set_match/ut
+)

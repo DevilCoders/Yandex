@@ -1,0 +1,22 @@
+RECURSE(
+    attrproc
+    attrproc/ut
+    baseproc
+    disamber
+    directindex
+    directindex/ut
+    dtcreator
+    dtcreator/ut
+    face
+    face/blob
+    face/blob/ut
+    faceproc
+    lexical_decomposition
+    lexical_decomposition/datagen
+    lexical_decomposition/tests
+    parseddoc
+    posindex
+    posindex/ut
+    tfproc
+    tfproc/ut
+)

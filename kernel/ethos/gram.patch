@@ -1,0 +1,431 @@
+Index: lib/core/mathx.h
+===================================================================
+--- lib/core/mathx.h	(revision 1754970)
++++ lib/core/mathx.h	(working copy)
+@@ -35,4 +35,12 @@
+     return 1. / (1. + std::exp(-x));
+ }
+ 
++static inline double Logify(const double value) {
++    return value > 0 ? log(1. + value) : -log(1. - value);
+ }
++
++static inline double Normalize(const double value, const size_t normalizer) {
++    return value / (normalizer + 1);
++}
++
++}
+Index: lib/text_classifier/classifier_features.cpp
+===================================================================
+--- lib/text_classifier/classifier_features.cpp	(revision 1754970)
++++ lib/text_classifier/classifier_features.cpp	(working copy)
+@@ -1,6 +1,7 @@
+ #include "classifier_features.h"
+ 
+ #include <util/string/url.h>
++//#include <library/cpp/string_utils/old_url_normalize/url.h>
+ 
+ namespace NEthos {
+ 
+@@ -21,49 +22,73 @@
+                                                                           TAnyConstIterator<TBinaryLabelDocument> end,
+                                                                           const size_t threadsCount)
+ {
+-    TBinaryLabelFloatFeatureVectors learnItems = FeatureVectorsFromBinaryLabelDocuments(begin, end, options.ModelOptions);
++    ModelOptions = MoveArg(options.ModelOptions);
++    const TLinearClassifierOptions linearClassifierOptions = options.LinearClassifierOptions;
+ 
+-    if (!options.LinearClassifierOptions.FeaturesToUseCount) {
+-        return LearnWithoutFeatureSelection(MoveArg(options), begin, learnItems.begin(), learnItems.end(), threadsCount);
+-    }
++    NRegTree::TRegressionModel::TPoolType pool;
++    for (TAnyConstIterator<TBinaryLabelDocument> document = begin; document != end; ++document) {
++        NRegTree::TRegressionModel::TInstanceType instance;
+ 
+-    TFeaturesSelector<TBinaryLabelFloatFeatureVector> featuresSelector;
+-    for (const TBinaryLabelFloatFeatureVector& featureVector : learnItems) {
+-        featuresSelector.Add(featureVector);
++        instance.QueryId = 0;
++        instance.Goal = instance.OriginalGoal = document->Label == EBinaryClassLabel::BCL_POSITIVE ? +1.0 : -1.0;
++        instance.Weight = document->Weight;
++        instance.PoolId = 0;
++
++        AppendDocumentFeatures(*document, instance.Features);
++
++        pool.AddInstance(instance);
+     }
+-    featuresSelector.Finish(options.LinearClassifierOptions.FeaturesToUseCount);
+ 
+-    TVector<TBinaryLabelFloatFeatureVector> modifiedItems;
+-    for (const TBinaryLabelFloatFeatureVector& featureVector : learnItems) {
+-        modifiedItems.push_back(featuresSelector.SelectFeatures(featureVector));
++    size_t gramLengths[] = {0, 3, 5, 7};
++    for (const size_t gramLength : gramLengths) {
++        TBinaryLabelFloatFeatureVectors learnItems = FeatureVectorsFromBinaryLabelDocuments(begin, end, ModelOptions, gramLength);
++
++        GramModels.push_back(TGramClassifierModel());
++        TGramClassifierModel& gramModel = GramModels.back();
++
++        gramModel.GramLength = gramLength;
++
++        if (!linearClassifierOptions.FeaturesToUseCount) {
++            AppendFeaturesToPool(pool, gramModel, learnItems.begin(), learnItems.end(), linearClassifierOptions, threadsCount);
++            continue;
++        }
++
++        TFeaturesSelector<TBinaryLabelFloatFeatureVector> featuresSelector;
++        for (const TBinaryLabelFloatFeatureVector& featureVector : learnItems) {
++            featuresSelector.Add(featureVector);
++        }
++        featuresSelector.Finish(linearClassifierOptions.FeaturesToUseCount);
++
++        TVector<TBinaryLabelFloatFeatureVector> modifiedItems;
++        for (const TBinaryLabelFloatFeatureVector& featureVector : learnItems) {
++            modifiedItems.push_back(featuresSelector.SelectFeatures(featureVector));
++        }
++
++        AppendFeaturesToPool(pool, gramModel, modifiedItems.begin(), modifiedItems.end(), linearClassifierOptions, threadsCount);
+     }
+ 
+-    return LearnWithoutFeatureSelection(MoveArg(options), begin, modifiedItems.begin(), modifiedItems.end(), threadsCount);
++    return pool;
+ }
+ 
+-NRegTree::TRegressionModel::TPoolType TTextClassifierFeaturesMaker::LearnWithoutFeatureSelection(TTextClassifierOptions&& options,
+-                                                                                                 TAnyConstIterator<TBinaryLabelDocument> documentsBegin,
+-                                                                                                 TAnyIterator<TBinaryLabelFloatFeatureVector> begin,
+-                                                                                                 TAnyIterator<TBinaryLabelFloatFeatureVector> end,
+-                                                                                                 const size_t threadsCount)
++void TTextClassifierFeaturesMaker::AppendFeaturesToPool(NRegTree::TRegressionModel::TPoolType& pool,
++                                                        TGramClassifierModel& gramModel,
++                                                        TAnyIterator<TBinaryLabelFloatFeatureVector> begin,
++                                                        TAnyIterator<TBinaryLabelFloatFeatureVector> end,
++                                                        const TLinearClassifierOptions& linearClassifierOptions,
++                                                        const size_t threadsCount)
+ {
+-    TTextClassifierModelOptions modelOptions = options.ModelOptions;
+-    TLinearClassifierOptions baseLogisticRegressionOptions = MoveArg(options.LinearClassifierOptions);
+-
+-    ModelOptions = MoveArg(options.ModelOptions);
+-
+     TVector<TVariableOptions> variableOptions = GenerateVariableOptions();
+-    ModelsCount = variableOptions.size();
++    gramModel.ModelsCount = variableOptions.size();
+ 
+     for (TAnyIterator<TBinaryLabelFloatFeatureVector> it = begin; it != end; ++it) {
+-        TVector<double>(ModelsCount).swap(it->ExternalFeatures);
++        TVector<double>(gramModel.ModelsCount).swap(it->ExternalFeatures);
+     }
+ 
+-    TConcurrentMutableFloatWeights weights(ModelsCount);
++    TConcurrentMutableFloatWeights weights(gramModel.ModelsCount);
+     THolder<IMtpQueue> queue = CreateMtpQueue(threadsCount);
+-    for (size_t modelNumber = 0; modelNumber < ModelsCount; ++modelNumber) {
++    for (size_t modelNumber = 0; modelNumber < gramModel.ModelsCount; ++modelNumber) {
+         queue->SafeAddFunc([&, modelNumber, begin, end]() {
+-            TLinearClassifierOptions logisticRegressionOptions = variableOptions[modelNumber].Modify(baseLogisticRegressionOptions);
++            TLinearClassifierOptions logisticRegressionOptions = variableOptions[modelNumber].Modify(linearClassifierOptions);
+ 
+             TBinaryLabelLogisticRegressionLearner learner(logisticRegressionOptions);
+             weights.Weights[modelNumber] = learner.LearnWeights(begin, end, modelNumber);
+@@ -71,30 +96,13 @@
+     }
+     queue->Stop();
+ 
+-    Weights = weights.ToCompactMultiLabelWeights(baseLogisticRegressionOptions.WeightsLowerBound);
++    gramModel.Weights = weights.ToCompactMultiLabelWeights(linearClassifierOptions.WeightsLowerBound);
+ 
+-    NRegTree::TRegressionModel::TPoolType pool;
+-
+-    TAnyConstIterator<TBinaryLabelDocument> documentIt = documentsBegin;
+     TAnyIterator<TBinaryLabelFloatFeatureVector> featuresIt = begin;
+-    for (; featuresIt != end; ++featuresIt, ++documentIt) {
+-        if (!featuresIt->HasKnownMark()) {
+-            continue;
+-        }
+-
+-        NRegTree::TRegressionModel::TInstanceType instance;
+-
+-        instance.QueryId = GetOnlyHost(StrongNormalizeUrl(documentIt->Id)).hash() % Max<int>();
+-        instance.Goal = instance.OriginalGoal = documentIt->Label == EBinaryClassLabel::BCL_POSITIVE ? +1.0 : -1.0;
+-        instance.Weight = documentIt->Weight;
+-        instance.Features = Features<double>(*documentIt, featuresIt->ExternalFeatures);
+-        instance.PoolId = 0;
+-
+-        pool.AddInstance(instance);
++    NRegTree::TRegressionModel::TInstanceType* instance = pool.begin();
++    for (; featuresIt != end; ++featuresIt, ++instance) {
++        AppendClassifierFeatures(featuresIt->ExternalFeatures, instance->Features);
+     }
+-
+-    return pool;
+ }
+ 
+-
+ }
+Index: lib/text_classifier/classifier_features.h
+===================================================================
+--- lib/text_classifier/classifier_features.h	(revision 1754970)
++++ lib/text_classifier/classifier_features.h	(working copy)
+@@ -13,17 +13,56 @@
+ #include <util/generic/ptr.h>
+ 
+ namespace NEthos {
++
++template <typename TFloatType>
++static void AppendDocumentFeatures(const TDocument& document, TVector<TFloatType>& features) {
++    ui32 maxHashCount = 0;
++
++    THashMap<ui64, ui32> unigramHashCount;
++    for (const ui32 unigramHash : document.UnigramHashes) {
++        maxHashCount = Max(maxHashCount, ++unigramHashCount[unigramHash]);
++    }
++
++    const size_t unigramsCount = document.UnigramHashes.size();
++    const size_t uniqUnigramsCount = unigramHashCount.size();
++
++    features.push_back(Logify(unigramsCount));
++    features.push_back(Logify(uniqUnigramsCount));
++    features.push_back(Normalize(uniqUnigramsCount, unigramsCount));
++    features.push_back(Normalize(maxHashCount, unigramsCount));
++}
++
++template <typename TFloatType>
++static void AppendClassifierFeatures(const TVector<double>& predictions, TVector<TFloatType>& features) {
++    for (const double prediction : predictions) {
++        const double logifiedPrediction = Logify(prediction);
++        features.push_back(logifiedPrediction);
++    }
++}
++
+ class TTextClassifierFeaturesMaker {
+ public:
+     int Version = GetProgramSvnRevision();
+ 
+ private:
++    struct TGramClassifierModel {
++        size_t GramLength;
++        size_t ModelsCount;
++        TCompactMultiLabelFloatWeights Weights;
++
++        template<typename TFloatType>
++        void AppendFeatures(const TDocument& document, TVector<TFloatType>& features, const TTextClassifierModelOptions& options) const {
++            TVector<double> predictions = Weights.Predictions(FeatureVectorFromDocument(document, options, GramLength), ModelsCount);
++            AppendClassifierFeatures(predictions, features);
++        }
++
++        SAVELOAD_DEFINE(GramLength, ModelsCount, Weights);
++    };
++
+     TTextClassifierModelOptions ModelOptions;
+-
+-    size_t ModelsCount;
+-    TCompactMultiLabelFloatWeights Weights;
++    TVector<TGramClassifierModel> GramModels;
+ public:
+-    SAVELOAD_DEFINE(ModelOptions, ModelsCount, Weights);
++    SAVELOAD_DEFINE(ModelOptions, GramModels);
+ 
+     void LoadFromFile(const TString& filename) {
+         TFileInput in(filename);
+@@ -37,11 +76,12 @@
+ 
+     template<typename TFloatType>
+     TVector<TFloatType> Features(const TDocument& document) const {
+-        TFloatFeatureVector features = FeatureVectorFromDocument(document, ModelOptions);
+-
+-        TVector<double> predictions = Weights.Predictions(features, ModelsCount);
+-
+-        return Features<TFloatType>(document, predictions);
++        TVector<TFloatType> features;
++        AppendDocumentFeatures(document, features);
++        for (const TGramClassifierModel& gramModel : GramModels) {
++            gramModel.AppendFeatures(document, features, ModelOptions);
++        }
++        return features;
+     }
+ 
+     template<typename TFloatType>
+@@ -118,46 +158,12 @@
+         return variableOptions;
+     }
+ 
+-    NRegTree::TRegressionModel::TPoolType LearnWithoutFeatureSelection(TTextClassifierOptions&& options,
+-                                                                       TAnyConstIterator<TBinaryLabelDocument> documentsBegin,
+-                                                                       TAnyIterator<TBinaryLabelFloatFeatureVector> begin,
+-                                                                       TAnyIterator<TBinaryLabelFloatFeatureVector> end,
+-                                                                       const size_t threadsCount);
+-
+-    template <typename TFloatType>
+-    TVector<TFloatType> Features(const TDocument& document, const TVector<double>& predictions) const {
+-        ui32 maxHashCount = 0;
+-
+-        THashMap<ui64, ui32> unigramHashCount;
+-        for (const ui32 unigramHash : document.UnigramHashes) {
+-            maxHashCount = Max(maxHashCount, ++unigramHashCount[unigramHash]);
+-        }
+-
+-        const size_t unigramsCount = document.UnigramHashes.size();
+-        const size_t uniqUnigramsCount = unigramHashCount.size();
+-
+-        TVector<TFloatType> features;
+-
+-        features.push_back(Logify(unigramsCount));
+-        features.push_back(Logify(uniqUnigramsCount));
+-        features.push_back(Normalize(uniqUnigramsCount, unigramsCount));
+-        features.push_back(Normalize(maxHashCount, unigramsCount));
+-
+-        for (const double prediction : predictions) {
+-            const double logifiedPrediction = Logify(prediction);
+-            features.push_back(logifiedPrediction);
+-        }
+-
+-        return features;
+-    }
+-
+-    static double Logify(const double value) {
+-        return value > 0 ? log(1. + value) : -log(1. - value);
+-    }
+-
+-    static double Normalize(const double value, const size_t normalizer) {
+-        return value / (normalizer + 1);
+-    }
++    void AppendFeaturesToPool(NRegTree::TRegressionModel::TPoolType& pool,
++                              TGramClassifierModel& gramModel,
++                              TAnyIterator<TBinaryLabelFloatFeatureVector> begin,
++                              TAnyIterator<TBinaryLabelFloatFeatureVector> end,
++                              const TLinearClassifierOptions& linearClassifierOptions,
++                              const size_t threadsCount);
+ };
+ 
+ }
+Index: lib/text_classifier/CMakeLists.txt
+===================================================================
+--- lib/text_classifier/CMakeLists.txt	(revision 1754970)
++++ lib/text_classifier/CMakeLists.txt	(working copy)
+@@ -22,6 +22,7 @@
+     library/cpp/html/zoneconf
+     library/cpp/html/html5
+     library/cpp/svnversion
++    library/cpp/string_utils/old_url_normalize
+     library/cpp/numerator
+     ysite/yandex/pure
+ )
+Index: lib/text_classifier/document_factory.cpp
+===================================================================
+--- lib/text_classifier/document_factory.cpp	(revision 1756078)
++++ lib/text_classifier/document_factory.cpp	(working copy)
+@@ -1,4 +1,5 @@
+ #include "document_factory.h"
++#include "util.h"
+ 
+ #include <kernel/indexer/baseproc/directtextaction.h>
+ #include <kernel/indexer/directindex/extratext.h>
+@@ -20,16 +21,6 @@
+ 
+ namespace NEthos {
+ 
+-namespace {
+-    TVector<ui64> SymbolHashes(const TWtringBuf text) {
+-        TVector<ui64> result(text.length());
+-        for (size_t i = 0; i < text.size(); ++i) {
+-            result[i] = IntHash<ui64>(text[i]);
+-        }
+-        return result;
+-    }
+-}
+-
+ void TDocumentFactory::DocumentAndIdFromStringBuf(TStringBuf& stringBuf,
+                                                   bool hasIdColumn,
+                                                   TDocument* document,
+Index: lib/text_classifier/util.cpp
+===================================================================
+--- lib/text_classifier/util.cpp	(revision 1754970)
++++ lib/text_classifier/util.cpp	(working copy)
+@@ -5,6 +5,31 @@
+ 
+ namespace NEthos {
+ 
++TVector<ui64> SymbolHashes(const TWtringBuf text) {
++    TVector<ui64> result(text.length());
++    for (size_t i = 0; i < text.size(); ++i) {
++        result[i] = IntHash<ui64>(text[i]);
++    }
++    return result;
++}
++
++TVector<ui64> GramHashes(const TVector<ui64>& symbolHashes, const size_t gramLength) {
++    ui64 gramHash = 0;
++    for (size_t i = 0; i < symbolHashes.size() && i < gramLength; ++i) {
++        gramHash ^= symbolHashes[i];
++    }
++
++    TVector<ui64> gramHashes;
++    gramHashes.push_back(gramHash);
++
++    for (size_t i = 0; i + gramLength < symbolHashes.size(); ++i) {
++        gramHash ^= symbolHashes[i] ^ symbolHashes[i + gramLength];
++        gramHashes.push_back(gramHash);
++    }
++
++    return gramHashes;
++}
++
+ namespace {
+ 
+ void AddHashes(const TVector<ui64>& hashes, const TIndexWeighter& indexWeighter, TVector<TIndexedFloatFeature>& hashWeights) {
+@@ -71,19 +96,26 @@
+ 
+ }
+ 
+-TFloatFeatureVector FeatureVectorFromDocument(const TDocument& document, const TTextClassifierModelOptions& options) {
+-    return FeatureVectorFromHashes(document.UnigramHashes, document.BigramHashes, options);
++TFloatFeatureVector FeatureVectorFromDocument(const TDocument& document,
++                                              const TTextClassifierModelOptions& options,
++                                              const size_t gramLength)
++{
++    if (gramLength == 0) {
++        return FeatureVectorFromHashes(document.UnigramHashes, document.BigramHashes, options);
++    }
++    return FeatureVectorFromHashes(GramHashes(document.SymbolHashes, gramLength), TVector<ui64>(), options);
+ }
+ 
+ TBinaryLabelFloatFeatureVectors FeatureVectorsFromBinaryLabelDocuments(TAnyConstIterator<TBinaryLabelDocument> begin,
+                                                                        TAnyConstIterator<TBinaryLabelDocument> end,
+-                                                                       const TTextClassifierModelOptions& options)
++                                                                       const TTextClassifierModelOptions& options,
++                                                                       const size_t gramLength)
+ {
+     TBinaryLabelFloatFeatureVectors items;
+ 
+     for (; begin != end; ++begin) {
+         const TBinaryLabelDocument& document = *begin;
+-        TFloatFeatureVector features = FeatureVectorFromDocument(document, options);
++        TFloatFeatureVector features = FeatureVectorFromDocument(document, options, gramLength);
+         items.push_back(TBinaryLabelFloatFeatureVector(document.Index, MoveArg(features), document.Label, document.Weight));
+     }
+ 
+Index: lib/text_classifier/util.h
+===================================================================
+--- lib/text_classifier/util.h	(revision 1754970)
++++ lib/text_classifier/util.h	(working copy)
+@@ -5,12 +5,17 @@
+ 
+ namespace NEthos {
+ 
++TVector<ui64> SymbolHashes(const TWtringBuf text);
++TVector<ui64> GramHashes(const TVector<ui64>& symbolHashes, const size_t gramLength);
++
+ TFloatFeatureVector FeatureVectorFromDocument(const TDocument& document,
+-                                              const TTextClassifierModelOptions& options);
++                                              const TTextClassifierModelOptions& options,
++                                              const size_t gramLength = 0);
+ 
+ TBinaryLabelFloatFeatureVectors FeatureVectorsFromBinaryLabelDocuments(TAnyConstIterator<TBinaryLabelDocument> begin,
+                                                                        TAnyConstIterator<TBinaryLabelDocument> end,
+-                                                                       const TTextClassifierModelOptions& options);
++                                                                       const TTextClassifierModelOptions& options,
++                                                                       const size_t gramLength = 0);
+ 
+ TMultiBinaryLabelFloatFeatureVectors FeatureVectorsFromMultiLabelDocuments(TAnyConstIterator<TMultiLabelDocument> begin,
+                                                                            TAnyConstIterator<TMultiLabelDocument> end,

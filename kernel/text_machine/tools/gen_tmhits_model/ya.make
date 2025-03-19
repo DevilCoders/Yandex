@@ -1,0 +1,12 @@
+PROGRAM()
+OWNER(grechnik)
+SRCS(
+    gen_tmhits_model.cpp
+)
+PEERDIR(
+    kernel/idx_proto
+    kernel/text_machine/util
+    library/cpp/getopt
+    mapreduce/yt/client
+)
+END()

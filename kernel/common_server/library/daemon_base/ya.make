@@ -1,0 +1,9 @@
+RECURSE(
+    actions_engine
+    controller_actions
+    daemon
+    metrics
+    actions_engine/get_conf
+    actions_engine/list_conf
+    unistat_signals
+)

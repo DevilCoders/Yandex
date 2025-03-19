@@ -1,0 +1,620 @@
+#include <kernel/indexer/tfproc/forumlib/forums_fsm.h>
+#include <util/generic/utility.h>
+namespace NForumsImpl {
+
+%%{
+    machine RuLetters;
+    ru_A = 0x410;
+    ru_V = 0x412;
+    ru_G = 0x413;
+    ru_I = 0x418;
+    ru_M = 0x41C;
+    ru_N = 0x41D;
+    ru_O = 0x41E;
+    ru_R = 0x420;
+    ru_S = 0x421;
+    ru_T = 0x422;
+    ru_F = 0x424;
+    ru_Ts = 0x426;
+    ru_Er2 = 0x42C;
+    ru_a = 0x430;
+    ru_b = 0x431;
+    ru_v = 0x432;
+    ru_g = 0x433;
+    ru_d = 0x434;
+    ru_e = 0x435;
+    ru_zh = 0x436;
+    ru_z = 0x437;
+    ru_i = 0x438;
+    ru_j = 0x439;
+    ru_k = 0x43A;
+    ru_l = 0x43B;
+    ru_m = 0x43C;
+    ru_n = 0x43D;
+    ru_o = 0x43E;
+    ru_p = 0x43F;
+    ru_P = 0x41F;
+    ru_r = 0x440;
+    ru_s = 0x441;
+    ru_t = 0x442;
+    ru_u = 0x443;
+    ru_f = 0x444;
+    ru_h = 0x445;
+    ru_ts = 0x446;
+    ru_ch = 0x447;
+    ru_sh = 0x448;
+    ru_tsh = 0x449;
+    ru_y = 0x44B;
+    ru_er2 = 0x44C;
+    ru_yu = 0x44E;
+    ru_ya = 0x44F;
+}%%
+
+%%{
+    machine PageNumbers;
+    include RuLetters;
+    alphtype unsigned short;
+    action AdvanceCurNumber { curNumber = curNumber * 10 + fc - '0'; }
+    action SetNumMsgs { NumMessages = curNumber; }
+    action SetThisPage { ThisPage = curNumber; ThisPageIsReliable = true; }
+    action SetNumPages { NumPages = NumPagesIsReliable ? Max(NumPages, curNumber) : curNumber; NumPagesIsReliable = true; }
+    action SetThisPageUnreliable { if (!ThisPageIsReliable) ThisPage = curNumber; }
+    action SetNumPagesUnreliable { if (!NumPagesIsReliable) NumPages = Max(NumPages, curNumber); }
+    action SetTemp { TempNumber = curNumber; }
+    action SetThisPage2 { ThisPage = TempNumber; ThisPageIsReliable = true; }
+    action SetNumPages2 { NumPages = Max(NumPages, TempNumber); }
+    number = ([0-9] >AdvanceCurNumber)+;
+    link = 1;
+    ru_Stranits = (ru_S | ru_s) ru_t ru_r ru_a ru_n ru_i ru_ts;
+    en_Page = ('P' | 'p') 'a' 'g' 'e';
+    ru_Messages = (ru_S | ru_s) ru_o ru_o ru_b ru_tsh ru_e ru_n ru_i ru_j;
+    pattern1ru = ' ' ru_Stranits ru_a ' ' number @SetThisPage (' ' ru_i ru_z ' ' number @SetNumPages)?;
+    pattern1en = ' ' link? en_Page ' ' link? number @SetThisPage ' ' link? 'o' 'f' ' ' link? number @SetNumPages;
+    pattern1tr = ' ' ("Sayfa " number @SetTemp | number @SetTemp " Sayfa") (" Toplam " | "/" @{ curNumber = 0; }) @SetThisPage2 number @SetNumPages;
+    pattern2 = ' ' ((ru_P | ru_p) ru_o ru_k ru_a ru_z ru_a ru_n ru_o | ru_Messages) ' ' ru_s ' '
+        number @{ ThisStartMsg = curNumber; } ' ' ru_p ru_o ' ' number @{ ThisEndMsg = curNumber; } ' ' ru_i ru_z ' ' number @SetNumMsgs;
+    pattern3 = ' ' number @SetTemp ' ' ru_Stranits ru_y? ' ' @SetNumPages2;
+    pattern31 = ' ' '1' ' ' ru_Stranits ru_a @{ NumPages = Max(NumPages, 1); };
+    pattern4 = ' ' '1' (' ' link number @{ if (!ThisPageIsReliable) ThisPage = 1; } @SetNumPagesUnreliable)+;
+    pattern5 = ' ' link '1' (' ' link number)* ' ' number @SetNumPagesUnreliable @SetThisPageUnreliable (' ' link number @SetNumPagesUnreliable)*;
+    pattern6 = ' ' ru_Messages ' ' number @SetNumMsgs;
+    pattern7ru = ' ' ru_Stranits ru_y? ' ' number @SetNumPagesUnreliable;
+    pattern7en = ' ' en_Page 's' ' ' number @SetNumPagesUnreliable;
+    main := any* (
+        pattern1ru | pattern1en | pattern1tr | pattern2 | pattern3 | pattern31 |
+        pattern4 | pattern5 | pattern6 | pattern7ru | pattern7en
+        )* any*;
+}%%
+
+%% write data noerror;
+
+void TPageNumbers::Clear()
+{
+    ThisPage = 0;
+    NumPages = 0;
+    NumMessages = 0;
+    Active = true;
+    ThisPageIsReliable = false;
+    NumPagesIsReliable = false;
+    %% write init;
+}
+
+void TPageNumbers::BreakParagraph()
+{
+    %% write init;
+}
+
+void TPageNumbers::ProcessToken(const wchar16* p, const wchar16* pe)
+{
+    if (!Active)
+        return;
+    int curNumber = 0;
+    %% write exec;
+}
+
+%%{
+    machine QuoteBody;
+    include RuLetters;
+    alphtype unsigned short;
+    action SavePtr { ptr = p; }
+    ru_quote = (ru_Ts | ru_ts) (ru_I | ru_i) (ru_T | ru_t) (ru_A | ru_a) (ru_T | ru_t) (ru_A | ru_a);
+    ru_quote2 = (ru_Ts | ru_ts) (ru_I | ru_i) (ru_T | ru_t) (ru_I | ru_i) (ru_R | ru_r) (ru_O | ru_o)
+        (ru_V | ru_v) (ru_A | ru_a) (ru_T | ru_t) (ru_Er2 | ru_er2);
+    en_quote = ('Q' | 'q') ('U' | 'u') ('O' | 'o') ('T' | 't') ('E' | 'e');
+    ru_message = (ru_S | ru_s) ru_o ru_o ru_b ru_tsh ru_e ru_n ru_i ru_e;
+    ru_from = ru_o ru_t;
+    en_posted = /[Oo]riginally [Pp]osted [Bb]y/;
+    ru_HiddenText = (ru_S | ru_s) ru_k ru_r ru_y ru_t ru_y ru_j space+ ru_t ru_e ru_k ru_s ru_t;
+    main := space* ('-' space*)? ((ru_quote | ru_quote2 | en_quote) ':'? space*)* @SavePtr
+        ((ru_message ' '+ @SavePtr)? ru_from | en_posted ':'?) ' '+ @SavePtr |
+        space* ru_HiddenText (' ' | ':') @SavePtr @{ bad = 1; };
+}%%
+
+%% write data;
+
+void TMessages::InitFSM()
+{
+    %% write init;
+}
+
+const wchar16* TMessages::RunFSM(const wchar16* p, const wchar16* pe)
+{
+    const wchar16* ptr = p;
+    const wchar16* start = p;
+    int bad = 0;
+    %% write exec;
+    if (bad)
+        cs = %%{ write error; }%%;
+    return ptr == start ? 0 : ptr + 1;
+}
+
+bool TMessages::FSMDecidedStop() const
+{
+    return (cs == %%{ write error; }%%);
+}
+
+bool TMessages::FSMDecidedAuthor() const
+{
+    return (cs >= %%{ write first_final; }%%);
+}
+
+%%{
+    machine QuoteHeaderReverse;
+    include RuLetters;
+    alphtype unsigned short;
+    action SetMetaEnd { metaEnd = p; }
+    pattern1 = ':' ')' @SetMetaEnd any any+ '(';
+    pattern2 = any* '@';
+    pattern3 = any* ' ' ru_t ru_o ' ';
+    wroteRu = ':' (')' ru_a '(')? ru_l ru_a ru_s ru_i ru_p (ru_a ru_n)? ' ';
+    wroteRu2 = ':' (')' ru_a '(')? ru_l ru_a ru_z ru_a ru_k ru_s ' ';
+    wroteRu3 = ':' ru_o ru_n ru_a ru_s ru_i ru_p ru_a ru_n ' ';
+    writesRu = ':' ru_t ru_e ru_sh ru_i ru_p ' ';
+    time = ('M' [AP] ' '?)? [0-9] [0-9] ':' [0-9] [0-9] (':' [0-9] [0-9])? ' '+;
+    datetime1 = ',' @SetMetaEnd time [,\-] [^,]+ ',' @{ metaStart = 0; };
+    datetime2 = ')' @SetMetaEnd time '-' [^(]+ '(' @{ metaStart = 0; };
+    main := (pattern1 | pattern2 | pattern3 | (wroteRu | writesRu | wroteRu2 | wroteRu3) (datetime1 | datetime2)?)
+        @{ if (!metaStart) metaStart = p; }
+        any*;
+}%%
+
+%% write data;
+
+bool TMessages::HeaderFSM(const wchar16* p, const wchar16* pe, TWtringBuf& meta)
+{
+    const wchar16* metaStart = 0;
+    const wchar16* origEnd = p - 1;
+    const wchar16* metaEnd = origEnd;
+    int cs;
+    %% write init;
+    %% write exec;
+    if (metaEnd > metaStart)
+        metaEnd = origEnd; // possible if datetime* has started, but not finished
+    meta = TWtringBuf(metaEnd, metaStart ? metaStart : p);
+    return (cs >= %%{ write first_final; }%%);
+}
+
+%%{
+    machine TableHeaders;
+    include RuLetters;
+    alphtype unsigned short;
+
+    delim = ' ' | 13 | 10 | 9 | 160;
+
+    forumName = ru_R ru_a ru_z ru_d ru_e ru_l
+        | ru_F ru_o ru_r ru_u ru_m
+        | ru_I ru_n ru_f ru_o ru_r ru_m ru_a ru_ts ru_i ru_ya ' ' ru_o ' ' ru_f ru_o ru_r ru_u ru_m ru_e
+        | "Forum" 's'?
+        | "Forum i" 0xE7 "eri" 0x11F "i";
+    lastMessage = ru_P ru_o ru_s ru_l ru_e ru_d ru_n ru_e ru_e (' ' ru_s ru_o ru_o ru_b ru_tsh ru_e ru_n ru_i ru_e)?
+        | ru_P ru_o ru_s ru_l ru_e ru_d ru_n ru_i ru_j ' ' ru_o ru_t ru_v ru_e ru_t
+        | "Last Post Info"
+        | ru_O ru_b ru_n ru_o ru_v ru_l ru_e ru_n ru_i (ru_e | ru_ya)
+        | "Last Post" | "Last post"
+        | "Posted"
+        | "Son mesaj" | "Son Mesaj";
+    numTopics = ru_T ru_e ru_m
+        | "Threads"
+        | "Konular";
+    numMessages = ru_S ru_o ru_o ru_b ru_tsh ru_e ru_n ru_i ru_j
+        | ru_S ru_o ru_o ru_b ru_tsh ru_e ru_n ru_i ru_ya
+        | ru_O ru_t ru_v ru_e ru_t ru_o ru_v
+        | ru_O ru_t ru_v ru_e ru_t ru_y
+        | ru_O ru_t ru_v
+        | "Posts"
+        | "Replies"
+        | "Mesajlar"
+        | "Cevaplar";
+    statistics = ru_S ru_t ru_a ru_t ru_i ru_s ru_t ru_i ru_k ru_a
+        | ru_O ru_t ru_v ru_e ru_t ru_o ru_v ' '* '/' ' '* ru_P ru_r ru_o ru_s ru_m ru_o ru_t ru_r ru_o ru_v
+        | ru_T ru_e ru_m ru_y ' '* '/' ' '* ru_S ru_o ru_o ru_b ru_tsh ru_e ru_n ru_i ru_ya
+        | "Stats";
+    topicNameWithAuthor =  (ru_R ru_e ru_j ru_t ru_i ru_n ru_g delim*)? ru_T ru_e ru_m ru_a delim* '/' delim* ru_A ru_v ru_t ru_o ru_r
+        | ru_T ru_e ru_m ru_a
+        | (ru_R ru_e ru_j ru_t ru_i ru_n ru_g delim*)? ru_N ru_a ru_z ru_v ru_a ru_n ru_i ru_e ' ' ru_t ru_e ru_m ru_y
+        | "Topic"
+        | "Subject" ' '* '/' ' '* "Poster";
+    numViews = ru_P ru_r ru_o ru_s ru_m ru_o ru_t ru_r ru_o ru_v
+        | ru_P ru_r ru_o ru_s ru_m ru_o ru_t ru_r ru_y
+        | ru_S ru_m ru_o ru_t ru_r
+        | "Views"
+        | "G" 0xF6 "r" 0xFC "nt" 0xFC "leme"
+        | "Okunma";
+    author = ru_A ru_v ru_t ru_o ru_r
+        | ru_A ru_v ru_t ru_o ru_r ' ' ru_t ru_e ru_m ru_y
+        | "Yazar"
+        | "Konuyu Ba" 0x15F "latan";
+    similarTopics = ru_P ru_o ru_h ru_o ru_zh ru_i ru_e delim+ ru_t ru_e ru_m ru_y;
+
+    main := delim* (
+        forumName   @{ Result = TS_FORUM_NAME; } |
+        lastMessage @{ Result = TS_LAST_MESSAGE; } |
+        numTopics   @{ Result = TS_NUM_TOPICS; } |
+        numMessages @{ Result = TS_NUM_MESSAGES; } |
+        topicNameWithAuthor @{ Result = TS_TOPIC_NAME; } |
+        numViews @{ Result = TS_NUM_VIEWS; } |
+        statistics @{ Result = TS_TWO_NUMBERS; } |
+        ("Topics"
+         | ru_T ru_e ru_m ru_y
+         | "Ba" 0x15F "l" 0x131 "klar"
+         | "Konu" (" "? 0xDC "st Konular" 0x131 " G" 0xF6 "ster")?
+        ) @{ Result = (context == Unknown ? TS_TOPIC_NAME : TS_NUM_TOPICS); } |
+        author @{ Result = TS_AUTHOR; } |
+        similarTopics @{ Result = TS_SIMILAR_TOPICS; }
+    ) delim*;
+}%%
+
+%% write data;
+
+void TTableHeaderRecognizer::InitFSM()
+{
+    %% write init;
+}
+
+void TTableHeaderRecognizer::RunFSM(const wchar16* p, const wchar16* pe, EContext context)
+{
+    if (cs == %%{ write error; }%%) {
+        return;
+    }
+    %% write exec;
+}
+
+bool TTableHeaderRecognizer::Recognized() const
+{
+    return (cs >= %%{ write first_final; }%%);
+}
+
+%%{
+    machine TwoNumbers;
+    include RuLetters;
+    alphtype unsigned short;
+
+    action AdvanceNumber1 { Number1 = Number1 * 10 + fc - '0'; }
+    action AdvanceNumber2 { Number2 = Number2 * 10 + fc - '0'; }
+
+    action AdvanceNumber1sp { Number1sp = Number1sp * 10 + fc - '0'; }
+    action AdvanceNumber2sp { Number2sp = Number2sp * 10 + fc - '0'; }
+    action Swap { DoSwap(Number1, Number2); }
+    action SelectSP1 { Number1 = Number1sp; Number2 = 0; }
+    action SelectSP2 { Number2 = Number2sp; }
+    action SelectSwapSP { Number1 = Number2sp; Number2 = Number1sp; }
+
+    nbsp = 160;
+    number1 = (([0-9] @AdvanceNumber1)+ (nbsp | ',' | '.')?)+;
+    number2 = (([0-9] @AdvanceNumber2)+ (nbsp | ',' | '.')?)+;
+
+    number1sp = ([0-9] @AdvanceNumber1sp)+ ' ' (([0-9] @AdvanceNumber1sp)+ ' ')+;
+    number2sp = ([0-9] @AdvanceNumber2sp)+ ' ' (([0-9] @AdvanceNumber2sp)+ ' ')+;
+
+    delim = ' ' | 13 | 10 | 9;
+
+    topics = (ru_T | ru_t) ru_e ru_m | "topic" 's'? | "Threads" | /[Kk]onu/ /lar/? | /[Bb]a/ 0x15F /l/ 0x131 /k/;
+    replies = (ru_O | ru_o) ru_t ru_v ru_e ru_t (ru_o ru_v)? | "reply" | "replies" | [Cc] "evap" "lar"? | "Cvpl" | "Yan" 0x131 "t";
+    views = (ru_P | ru_p) ru_r ru_o ru_s ru_m (ru_o ru_t ru_r ru_o | 0x2011) ru_v |
+        (ru_P | ru_p) ru_o ru_k ru_a ru_z ru_o ru_v |
+        "view" 's'? | /[Hh]it/ | [Gg] 0xF6 "r" 0xFC "nt" 0xFC "leme" | [Gg] 0xF6 "sterim" | "Okunma" | "Izl";
+    messages = (ru_S | ru_s) ru_o ru_o ru_b ru_tsh ru_e ru_n ru_i ru_j | "Posts" | /[Mm]esajlar/ | 0x130 "leti" | "Mesaj";
+    rating = ru_R ru_e ru_j ru_t ru_i ru_n ru_g | "De" 0x11F "erlendirme" | "Oylama" | "Puan";
+
+    main := delim* (
+        number1 delim+ number2 (delim* rating [0-5] " / 5")? |
+        number1 delim* '/' delim* number2 |
+        number1 delim* topics delim* number2 delim* replies |
+        number1 delim* replies delim* number2 delim* views |
+        topics ':' delim* number1 delim* messages ':' delim* number2 |
+        replies ':' (nbsp | delim)* number1 delim* views ':' (nbsp | delim)* number2 (delim* rating [0-5] " / 5")? |
+        (number1sp delim* messages @SelectSP1 |
+            number1 delim* messages) delim*
+        (number2sp delim* topics @SelectSP2 | number2 delim* topics) @Swap |
+        ((ru_G ru_o ru_r ru_ya ru_ch ru_a ru_ya ' ' ru_t ru_e ru_m ru_a | "Hot") (nbsp | delim)*)?
+            (number1sp delim* replies @SelectSP1 | number1 delim* replies) delim*
+            (number2sp delim* views @SelectSP2 | number2 delim* views)
+        ) delim*;
+}%%
+
+%% write data;
+
+void TTwoNumbersFSM::InitFSM()
+{
+    Number2 = Number1 = 0;
+    Number2sp = Number1sp = 0;
+    %% write init;
+}
+
+void TTwoNumbersFSM::RunFSM(const wchar16* p, const wchar16* pe)
+{
+    %% write exec;
+}
+
+bool TTwoNumbersFSM::Recognized() const
+{
+    return (cs >= %%{ write first_final; }%%);
+}
+
+%%{
+    machine EndOfDescription;
+    include RuLetters;
+    alphtype unsigned short;
+
+    number = [0-9] @{numDigits = 1;} [0-9]* @{numDigits++;};
+    action length7  { if (!result) { result = p - 7; } }
+    action length8  { if (!result) { result = p - 8; } }
+    action length9  { if (!result) { result = p - 9; } }
+    action length10 { if (!result) { result = p - 10; } }
+    action length11 { if (!result) { result = p - 11; } }
+    action length12 { if (!result) { result = p - 12; } }
+    action length13 { if (!result) { result = p - 13; } }
+    action length14 { if (!result) { result = p - 14; } }
+    action length15 { if (!result) { result = p - 15; } }
+    action length16 { if (!result) { result = p - 16; } }
+    action length17 { if (!result) { result = p - 17; } }
+    action length22 { if (!result) { result = p - 22; } }
+
+    action length5d  { if (!result) { result = p - numDigits - 5; } }
+    action length6d  { if (!result) { result = p - numDigits - 6; } }
+    action length7d  { if (!result) { result = p - numDigits - 7; } }
+    action length9d  { if (!result) { result = p - numDigits - 9; } }
+    action length10d { if (!result) { result = p - numDigits - 10; } }
+    action length12d { if (!result) { result = p - numDigits - 12; } }
+    action length13d { if (!result) { result = p - numDigits - 13; } }
+    action length14d { if (!result) { result = p - numDigits - 14; } }
+    action length15d { if (!result) { result = p - numDigits - 15; } }
+    action length17d { if (!result) { result = p - numDigits - 17; } }
+    action length18d { if (!result) { result = p - numDigits - 18; } }
+    action length19d { if (!result) { result = p - numDigits - 19; } }
+    action length22d { if (!result) { result = p - numDigits - 22; } }
+
+    main := any*
+        (ru_P ru_o ru_d ru_r ru_a ru_z ru_d ru_e ru_l ru_y ':' @length10 |
+        ru_M ru_o ru_d ru_e ru_r ru_a ru_t ru_o ru_r (':' | ' ') @length9 |
+        ru_M ru_o ru_d ru_e ru_r ru_a ru_t ru_o ru_r ru_y (':' | ' ') @length10 |
+        ru_M ru_o ru_d ru_e ru_r ru_a ru_t ru_o ru_r ' ' ru_f ru_o ru_r ru_u ru_m ru_a ':' @length16 |
+        "Moderator" [: ] @length9 |
+        "Moderated by:" @length12 |
+        "Moderators" [: ] @length10 |
+        "Moderatore:" @length10 |
+        "Moderatori:" @length10 |
+        "Valvojat:" @length9 |
+        "Moderatorzy:" @length11 |
+        "Moderat" 0xF6 "r:" @length9 |
+        "Moderat" 0xF6 "rler:" @length12 |
+        "Mod" 0xE9 "rateur:" @length10 |
+        "Forum Led by:" @length12 |
+        "Forum betreut von:" @length16 |
+        "Forum dirig" 0xE9 " par :" @length17 |
+        "Forum moderat de:" @length16 |
+        "Forum prowadzone przez:" @length22 |
+        "Forum condus de:" @length15 |
+        "Moderatoren:" @length11 |
+        "Moderator(en):" @length13 |
+        "Moderaator:" @length10 |
+        "Moderador:" @length9 |
+        "Moderadores:" @length11 |
+        "Animateur:" @length9 |
+        "Animateurs:" @length10 |
+        "Yetkili:" @length7 |
+        "(Moderated by" @length12 |
+        "(Moderowane przez" @length16 |
+        "(Mod" 0xE9 "r" 0xE9 " par" @length10 |
+        ru_N ru_a ru_b ru_l ru_yu ru_d ru_a ru_t ru_e ru_l ru_i ':' @length11 |
+        ru_O ru_t ru_v ru_e ru_t ru_s ru_v ru_e ru_n ru_n ru_y ru_e ':' @length12 |
+        ru_P ru_o ru_d ru_r ru_a ru_z ru_d ru_e ru_l ':' @length9 |
+        (ru_P | ru_p) ru_o ru_d ru_f ru_o ru_r ru_u ru_m ':' @length8 |
+        (ru_P | ru_p) ru_o ru_d ru_f ru_o ru_r ru_u ru_m ru_y ':' @length9 |
+        ru_R ru_a ru_z ru_d ru_e ru_l ru_y ':' @length7 |
+        "Subforum:" @length8 |
+        "Subforums:" @length9 |
+        /[Ss]ub[\- ][Ff]orums:/ @length10 |
+        "Underforum:" @length10 |
+        "Unterforum:" @length10 |
+        "Unterforen:" @length10 |
+        /Alt [Ff]orum:/ @length9 |
+        /Alt [Ff]orumlar:/ @length12 |
+        ru_p ru_r ru_o ru_s ru_m ru_a ru_t ru_r ru_i ru_v ru_a ru_yu ru_t ':' @length13 |
+        number " Guests" @length6d |
+        number ' ' ru_G ru_o ru_s ru_t ru_i @length5d |
+        '(' number ' ' ru_S ru_o ru_o ru_b ru_tsh ru_e ru_n ru_i ru_j ')' @length10d |
+        '(' number " Ki" 0x15F "i " 0x130 0xE7 "erde)" @length13d |
+        '(' number " Ki" 0x15F "i " 0x130 0xE7 "eride)" @length14d |
+        '(' number / [Kk]i/ 0x15F /i [Gg]/ 0xF6 "r" 0xFC "nt" 0xFC "l" 0xFC "yor)" @length19d |
+        '(' number / [Vv]iewing)/ @length9d |
+        '(' number " G" 0xF6 "r" 0xFC "nt" 0xFC "leyen)" @length14d |
+        "(1 Post)" @length7 |
+        '(' number " Posts)" @length7d |
+        '(' number " Betrachter)" @length12d |
+        '(' number " Przegl" 0x105 "daj" 0x105 "cych)" @length17d |
+        '(' number " Visitatori)" @length12d |
+        '(' number " aan het bekijken)" @length18d |
+        "(1 user browsing)" @length10 |
+        '(' number ' ' ru_P ru_r ru_o ru_s ru_m ru_a ru_t ru_r ru_i ru_v ru_a ru_e ru_t ')' @length15d |
+        '(' ru_P ru_r ru_o ru_s ru_m ru_a ru_t ru_r ru_i ru_v ru_a ru_yu ru_t ' ' ru_f ru_o ru_r ru_u ru_m ':' ' ' number ')' @length22d |
+        '(' ru_p ru_e ru_r ru_e ru_g ru_l ru_ya ru_d ru_a ru_yu ru_t ru_er2 ':' ' ' number ')' @length15d )
+        any*;
+}%%
+
+%% write data;
+
+const wchar16* FindEndOfDescription(const wchar16* p, const wchar16* pe)
+{
+    int cs;
+    int numDigits = 0;
+    const wchar16* result = NULL;
+    const wchar16* start = p;
+    %% write init;
+    %% write exec;
+    if (result && result > start && result[-1] == '(')
+        --result;
+    while (result > start && result[-1] != 10 && !IsAlnum(result[-1]))
+        --result;
+    if (result > start && result[-1] != 10)
+        return 0;
+    return result;
+}
+
+%%{
+    machine AuthorshipPrefixLastMsg;
+    include RuLetters;
+    alphtype unsigned short;
+    action SetResult { if (p == pe - 1) { result = pe; } else if (p[1] == ' ' || p[1] == ':' || p[1] == 160) {result = p + 2; } }
+
+    main := (' ' | '\t' | '\r' | '\n')* (
+        (ru_O | ru_o) ru_t |
+        (ru_P | ru_p) ru_o ru_s ru_l ru_e ru_d ru_n ru_e ru_e ' ' ru_s ru_o ru_o ru_b ru_tsh ru_e ru_n ru_i ru_e ' ' ru_o ru_t |
+        (ru_P | ru_p) ru_o ru_s ru_l ru_e ru_d ru_n ru_i ru_j ' ' ru_o ru_t ru_v ru_e ru_t ' ' ru_o ru_t |
+        ru_A ru_v ru_t ru_o ru_r |
+        ru_P ru_o ru_s ru_l '.' ' ' ru_s ru_o ru_o ru_b ru_tsh ru_e ru_n ru_i ru_e |
+        "by" | "By" | "Last post" " by"? | "yazar" |  [Gg] 0xF6 "nderen" | "en son "? "yazan" | "Son Mesaj" | "Son Yazan")
+        @SetResult;
+}%%
+
+%% write data;
+
+const wchar16* IsAuthorshipPrefixLastMsg(const wchar16* p, const wchar16* pe)
+{
+    int cs;
+    const wchar16* result = NULL;
+    %% write init;
+    %% write exec;
+    if (result && result != pe && *result == ':')
+        ++result;
+    return result;
+}
+
+%%{
+    machine AuthorshipPrefixTopic;
+    include RuLetters;
+    alphtype unsigned short;
+    action SetResult { result = p + 1; }
+
+    main := (' ' | '\t' | '\r' | '\n')* (
+        "Started by" | "Konuyu A" 0xE7 "an" | "Konu Bilgileri:" | "Oyuncu" | "Taraf" 0x131 "ndan" |
+        "by" |
+        '-' 160 |
+        ru_A ru_v ru_t ru_o ru_r (' ' ru_t ru_e ru_m ru_y ':')? |
+        ([Kk] "onuyu ")? [Bb] 'a' 0x15F "latan" |
+        "Iniciado por" )
+    @SetResult;
+}%%
+
+%% write data;
+
+const wchar16* IsAuthorshipPrefixTopic(const wchar16* p, const wchar16* pe)
+{
+    int cs;
+    const wchar16* result = NULL;
+    %% write init;
+    %% write exec;
+    return result;
+}
+
+%%{
+    machine AdPrefixTopic;
+    include RuLetters;
+    alphtype unsigned short;
+    action SetResult { result = p + 1; }
+
+    main := space* (
+        "Reklam:")
+    @SetResult;
+}%%
+
+%% write data;
+
+bool IsAdPrefixTopic(const wchar16* p, const wchar16* pe)
+{
+    int cs;
+    const wchar16* result = NULL;
+    %% write init;
+    %% write exec;
+    return result != NULL;
+}
+
+%%{
+    machine NumTopicsPrefix;
+    include RuLetters;
+    alphtype unsigned short;
+
+    main := (' ' | '\t' | '\r' | '\n')* (
+        ('(' | '[') ru_t ru_e ru_m ':' ' '* ([0-9] @{number = number * 10 + *p - '0';})+ (')' | ']')
+    ) (' ' | '\t' | '\r' | '\n')* @{result = p + 1;} any*;
+}%%
+
+%% write data;
+
+const wchar16* IsNumTopicsPrefix(const wchar16* p, const wchar16* pe, int* numTopics)
+{
+    int cs;
+    int number = 0;
+    const wchar16* result = NULL;
+    %% write init;
+    %% write exec;
+    if (cs < %%{ write first_final; }%%)
+        return NULL;
+    *numTopics = number;
+    return result;
+}
+
+%%{
+    machine SpecialDate;
+    include RuLetters;
+    alphtype unsigned short;
+
+    number = ([0-9] @{ CurNumber = CurNumber * 10 + fc - '0'; })+;
+    today = (ru_S | ru_s) ru_e ru_g ru_o ru_d ru_n ru_ya | /[Tt]oday/ | /[Bb]ug/ 0xFC /n/;
+    yesterday = (ru_V | ru_v) ru_ch ru_e ru_r ru_a | /[Yy]esterday/ | [Dd] 0xFC /n/;
+    minutesAgo = number ' ' /[Mm]inutes [Aa]go/;
+    minutesAndSecondsAgo = number ' ' @{ TempNumber = CurNumber; CurNumber = 0; } /[Mm]inutes / number ' ' /[Ss]econds [Aa]go/;
+    hoursAgo = number ' ' (/[Hh]our/ 's'? / [Aa]go/ | /[Ss]aat / (0xD6 | 0xF6) "nce");
+    daysAgo = number ' ' (/[Dd]ays [Aa]go/ | [Gg] 0xFC "n " (0xD6 | 0xF6) "nce");
+    weeksAgo = number ' ' (/[Ww]eek/ 's'? / [Aa]go/ | /[Hh]afta / (0xD6 | 0xF6) "nce");
+
+    main := any* (
+        today @{ DeltaSeconds = 0; } |
+        yesterday @{ DeltaSeconds = 24 * 60 * 60; } |
+        minutesAgo @{ DeltaSeconds = CurNumber * 60; } |
+        minutesAndSecondsAgo @{ DeltaSeconds = TempNumber * 60 + CurNumber; } |
+        hoursAgo @{ DeltaSeconds = CurNumber * 60 * 60; } |
+        daysAgo @{ DeltaSeconds = CurNumber * 24 * 60 * 60; } |
+        weeksAgo @{ DeltaSeconds = CurNumber * 7 * 24 * 60 * 60; }
+    ) any*;
+}%%
+
+%% write data;
+
+void TSpecialDateRecognizer::InitFSM()
+{
+    %% write init;
+    CurNumber = 0;
+}
+
+void TSpecialDateRecognizer::RunFSM(const wchar16* p, const wchar16* pe)
+{
+    %% write exec;
+}
+
+bool TSpecialDateRecognizer::Recognized() const
+{
+    return (cs >= %%{ write first_final; }%%);
+}
+
+} // namespace NForumsImpl

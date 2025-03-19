@@ -1,0 +1,9 @@
+RECURSE(
+    common
+    common/ut
+    converters
+    senders
+    server
+    sources
+    unistat_signals
+)

@@ -1,0 +1,15 @@
+PROTO_LIBRARY()
+
+OWNER(g:base)
+
+SRCS(
+    offroad_wad_ranges.proto
+)
+
+IF (NOT PY_PROTOS_FOR)
+    EXCLUDE_TAGS(GO_PROTO JAVA_PROTO)
+ENDIF()
+
+NEED_CHECK()
+
+END()

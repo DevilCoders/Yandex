@@ -1,0 +1,84 @@
+LIBRARY()
+
+OWNER(
+    gotmanov
+    g:base
+    g:wizard
+)
+
+SRCS(
+    block.cpp
+    block_accessors.cpp
+    block_contents.cpp
+    block_pure.cpp
+    blocks_counter.cpp
+    blocks_remapper.cpp
+    duplicates_resolvers.cpp
+    facets.cpp
+    fuzzy.cpp
+    hashed_sequence.cpp
+    hashed_reqbundle.cpp
+    merge.cpp
+    parse_for_search.cpp
+    GLOBAL print.cpp
+    rearrange_helpers.cpp
+    remap.cpp
+    reqbundle_accessors.cpp
+    reqbundle_contents.cpp
+    request_accessors.cpp
+    request_helpers.cpp
+    request_contents.cpp
+    request_pure.cpp
+    request_splitter.cpp
+    request_tr_compatibility_info.cpp
+    restrict.cpp
+    richnode_helpers.cpp
+    sequence_accessors.cpp
+    sequence_contents.cpp
+    serializer.cpp
+    size_limits.cpp
+    util.cpp
+    validate.cpp
+)
+
+PEERDIR(
+    kernel/country_data
+    kernel/factor_storage
+    kernel/idf
+    kernel/lemmer/core
+    kernel/lingboost
+    kernel/proto_fuzz
+    kernel/qtree/compressor
+    kernel/qtree/request
+    kernel/qtree/richrequest
+    kernel/qtree/richrequest/protos
+    kernel/reqbundle/proto
+    kernel/reqbundle/scheme
+    kernel/search_types
+    kernel/text_machine/structured_id
+    library/cpp/binsaver
+    library/cpp/containers/stack_vector
+    library/cpp/json
+    library/cpp/cgiparam
+    library/cpp/langmask
+    library/cpp/langmask/serialization
+    library/cpp/langs
+    library/cpp/packedtypes
+    library/cpp/scheme
+    library/cpp/streams/lz
+    library/cpp/string_utils/base64
+    library/cpp/string_utils/quote
+    library/cpp/string_utils/scan
+    library/cpp/token
+    library/cpp/token/serialization/protos
+    library/cpp/wordpos
+    ysite/yandex/common
+    ysite/yandex/posfilter
+    ysite/yandex/pure
+)
+
+GENERATE_ENUM_SERIALIZATION(facets.h)
+
+GENERATE_ENUM_SERIALIZATION(request_helpers.h)
+
+END()

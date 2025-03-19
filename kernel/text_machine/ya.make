@@ -1,0 +1,14 @@
+RECURSE(
+    interface
+    basic_core
+    parts
+    parts/core/static
+    parts/tracker/static
+    plain_text
+    structured_id
+    structured_id/ut
+    tm_codegen
+    metadata
+    util
+    ut
+)

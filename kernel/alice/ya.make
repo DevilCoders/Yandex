@@ -1,0 +1,20 @@
+OWNER(
+    olegator
+    g:alice_quality
+)
+
+RECURSE(
+    asr_factors_info
+    begemot_nlu_factors_info
+    begemot_nlu_features
+    begemot_query_factors_info
+    device_state_factors_info
+    direct_scenario_factors_info
+    gc_scenario_factors_info
+    music_scenario
+    music_scenario_factors_info
+    query_tokens_factors_info
+    search_request_info
+    search_scenario_factors_info
+    video_scenario
+)

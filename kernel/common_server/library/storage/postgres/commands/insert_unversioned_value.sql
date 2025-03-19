@@ -1,0 +1,1 @@
+INSERT INTO $TABLE_NAME$ (key, value) VALUES('$KEY$', '$VALUE$') ON CONFLICT(key) DO UPDATE SET value='$VALUE$';

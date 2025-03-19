@@ -1,0 +1,435 @@
+#include <util/generic/string.h>
+#include <util/stream/output.h>
+#include <util/generic/utility.h>
+
+#include <kernel/qtree/request/request.h>
+#include <kernel/qtree/request/reqscan.h>
+
+#include <kernel/qtree/request/req_pars.h>
+
+#if defined (_MSC_VER)
+#   pragma warning(disable:4702) /*'this' : unreachable code*/
+#endif
+
+// this macro is defined in request.h
+#ifdef TRACE_RULE_ORDER
+#   define PRINT_TOKEN(name, value)     PrintToken(name, value)
+#else
+#   define PRINT_TOKEN(name, value)     ((void)0)
+#endif
+
+using namespace std;
+
+#ifdef TRACE_RULE_ORDER
+namespace {
+    inline void PrintToken(const TString& name, const TLangEntry& entry) {
+        Cout << name << ": [" << entry.EntryPos << ", " << entry.EntryLeng << "] '"
+            << TUtf16String(entry.Entry(), entry.EntryEnd()) << "'\n";
+    }
+    inline void PrintToken(const TString& name, wchar16 fc) {
+        Cout << name << ": '" << TUtf16String(1, fc) << "'\n";
+    }
+    inline void PrintToken(const TString& name, const TUtf16String& token) {
+        Cout << name << ": '" << token << "'\n";
+    }
+}
+#endif
+
+template<> void TVersionedReqTokenizer<1>::ProcessSeparator() {
+    PRINT_TOKEN("sep+", TUtf16String(ts, te));
+    SepEnd = te;
+    LE.Reset();
+    OnSpaces();
+}
+
+%%{
+    machine QuotedString;
+    include ReqToken "reqtoken1.rl";
+
+    main :=  |*
+
+    ( prefix compositemultitoken postfix ) {
+        PRINT_TOKEN("WS: token", LE);
+        AddMultitoken(ts, te, p);
+    };
+
+    ( ( surrogatelead surrogatetail ) | ideograph ) {
+        PRINT_TOKEN("WS: ideograph", LE);
+        AddIdeograph(ts, te);
+    };
+
+    ( sep+ ( '*' sep+ )+ ) {
+        PRINT_TOKEN("WS: sep+ ( yc_asterisk sep+ )+", LE);
+        SetDistance(ts, te);
+        SepEnd = te;
+        OnSpaces();
+    };
+
+    sep+ {
+        PRINT_TOKEN("sep+", TUtf16String(ts, te));
+        SepEnd = te;
+        OnSpaces();
+    };
+
+    action are_ascii_emojis_allowed { CanStartAsciiEmoji() }
+
+    # punct is Ragel builtin, ASCII printable non-alphanumeric
+    (punct when are_ascii_emojis_allowed) punct+ {
+        PRINT_TOKEN("punct", TUtf16String(ts, te));
+        AddPunctuation(ts, te, p);
+    };
+
+    miscnlp {
+        PRINT_TOKEN("WS: miscnlp", LE);
+        OnMiscChar();
+    };
+
+    *|;
+
+    write data noerror nofinal;
+}%%
+
+template<> TRequestNode* TVersionedQuotedStringTokenizer<1>::Parse() {
+%% write init;
+    p = reinterpret_cast<const TAlphType*>(extLE.Entry() + 1);
+    pe = reinterpret_cast<const TAlphType*>(extLE.EntryEnd() - 1);
+    eof = pe;
+%% write exec;
+    OnFinish();
+    return res;
+}
+
+%%{
+    machine ReqTokenizer;
+    include ReqToken "reqtoken1.rl";
+
+    attrzoneident  = tokprefix? ( ( ylatinsmall+ yc_underscore? ( ( ylatinsmall | ydigit ) yc_underscore? )* yc_underscore* ) >begin_entry $update_entry ); # [a-z]+ [_a-z0-9]*, but without double underscores inside;
+
+    attreq = attrzoneident (   yc_colon                        @{ LE.OpInfo.CmpOper = cmpEQ; } );
+    attrgt = attrzoneident ( ( yc_colon yc_greater )           @{ LE.OpInfo.CmpOper = cmpGT; } );
+    attrge = attrzoneident ( ( yc_colon yc_greater yc_equals ) @{ LE.OpInfo.CmpOper = cmpGE; } );
+    attrlt = attrzoneident ( ( yc_colon yc_less )              @{ LE.OpInfo.CmpOper = cmpLT; } );
+    attrle = attrzoneident ( ( yc_colon yc_less yc_equals )    @{ LE.OpInfo.CmpOper = cmpLE; } );
+
+    # attreq is processed separately because zones can be used only with ':'
+    attrop = attrgt | attrge | attrlt | attrle;
+
+    action extensions_enabled { EnableExtendedSyntax }
+
+    # ranking search inside zone (old syntax: zone[text]$$$)
+    zonesearch = attrzoneident ( ( yc_minus when extensions_enabled yc_greater ) @{ LE.OpInfo.Arrange = true; } );
+
+    # attribute value for the form without " ( { [
+    # @todo add control symbols 0x01..0x13 ?
+    # @note '()[]{}' are added because the parser must keep it in case of 'one (two link:yandex.ru) three'
+    #       and 'link:yandex.ru(a b c)
+    #       '\0' is added otherwise "url:http" fails because NTS does not stop processing
+    #       \" is added for [a b softness:50"c d"]
+    # @attention space must follow attribute value: [a b c softness:50&&url:d] otherwise parser will consider attribute value as "50&&url:d"
+    attrvalue = ( yalnum | surrogatelead | ideograph ) . ( any - ( yc_space | yc_tab | yc_zero |
+                  yc_left_paren | yc_right_paren | yc_quotation ) )*; # [^ \t\0()\"]*;
+
+    # quoted = ('\"' [^\0\"]+ '\"');
+    quoted = ( yc_quotation  ( any - ( yc_zero | yc_quotation  ) )+ yc_quotation  );
+
+    quotedstr = prefix . ( quoted >begin_entry $update_entry ) . postfix;
+
+    action clear_lo {
+        LE.OpInfo.Lo = 0;
+    }
+    action update_lo {
+        int s = (LE.OpInfo.Lo >= 0 ? 1 : -1);
+        LE.OpInfo.Lo = LE.OpInfo.Lo * 10 + s * (fc - '0');
+    }
+    action clear_hi {
+        LE.OpInfo.Hi = 0;
+    }
+    action update_hi {
+        int s = (LE.OpInfo.Hi >= 0 ? 1 : -1);
+        LE.OpInfo.Hi = LE.OpInfo.Hi * 10 + s * (fc - '0');
+    }
+    action interpret_short {
+        if (LE.Necessity != nDEFAULT) {
+            if (LE.Necessity == nMUSTNOT && LE.OpInfo.Hi > 0)
+                LE.OpInfo.Hi *= -1;
+            LE.OpInfo.Lo = LE.OpInfo.Hi;
+        } else {
+            LE.OpInfo.Lo = -LE.OpInfo.Hi;
+        }
+    }
+    action process_attreq_quoted_value {
+        PRINT_TOKEN("process_attreq_quoted_value", LE);
+        int sym = 0;
+        if (!CheckAttrName<VALUE_QUOTED>(lval, sym))
+            return sym;
+    }
+    action process_attreq_value_in_parentheses {
+        PRINT_TOKEN("process_attreq_value_in_parentheses", LE);
+        int sym = 0;
+        if (!CheckAttrName<VALUE_IN_PARENTHESES>(lval, sym))
+            return sym;
+    }
+    action process_attreq_value {
+        PRINT_TOKEN("process_attreq_value", LE);
+        Y_ASSERT(*LE.EntryEnd() == ':');
+        if (IsNameUnknown(GetNameByEntry(LE)))
+            return ConvertNameToToken(lval);
+    }
+    action process_attr_value {
+        PRINT_TOKEN("process_attr_value", LE);
+        Y_ASSERT(*LE.EntryEnd() == ':');
+        // attrvalue can be quoted, in parentheses or with nothing
+        if (!IsAttrName(GetNameByEntry(LE)))
+            return ConvertNameToToken(lval);
+    }
+    action process_zonesearch {
+        PRINT_TOKEN("process_zonesearch", LE);
+        Y_ASSERT(LE.EntryLeng);
+        if (!IsZoneName(GetNameByEntry(LE)))
+            return ConvertNameToToken(lval);
+    }
+
+    hival = ( integer >clear_hi $update_hi );
+    loval = ( integer >clear_lo $update_lo );
+
+    # distance specification: '/1', '/+2', '/-3', '/(1 2)'
+    sign     = ( yc_plus @{ LE.Necessity = nMUST; } | yc_minus @{ LE.Necessity = nMUSTNOT; } );
+    prolo    = ( sign? loval ) @{ if (LE.Necessity == nMUSTNOT) { LE.OpInfo.Lo *= -1; LE.Necessity = nDEFAULT; } };
+    prohi    = ( sign? hival ) @{ if (LE.Necessity == nMUSTNOT) { LE.OpInfo.Hi *= -1; LE.Necessity = nDEFAULT; } };
+    prosh    = ( sign? hival );
+    nearop   = ( ( yc_slash prosh ) @interpret_short ) | ( yc_slash yc_left_paren sep* prolo ( sep+ >{ LE.Necessity = nDEFAULT; } ) prohi sep* yc_right_paren );
+
+    and1     = ( yc_ampersand @{ LE.OpInfo.Level = 1; } );
+    and2     = ( ( yc_ampersand yc_ampersand ) @{ LE.OpInfo.Level = 2; } );
+    andnot1  = ( yc_tilde @{ LE.OpInfo.Level = 1; } );
+    andnot2  = ( ( yc_tilde yc_tilde ) @{ LE.OpInfo.Level = 2; } );
+    refine   = ( yc_less yc_minus ); # "<-"
+
+    main :=  |*
+
+    ( prefix compositemultitoken postfix ) {
+        PRINT_TOKEN("compositemultitoken", LE);
+        return ProcessMultitoken(lval);
+    };
+
+    # surrogatelead without tail or tail without lead are interpreted as miscnlp
+    ( ( surrogatelead surrogatetail ) | ideograph ) {
+        PRINT_TOKEN("surrogate pair", LE);
+        return ProcessSurrogatePair(lval);
+    };
+
+    action are_ascii_emojis_allowed { CanStartAsciiEmoji() }
+
+    # punct is Ragel builtin, ASCII printable non-alphanumeric
+    (punct when are_ascii_emojis_allowed) punct+ {
+        PRINT_TOKEN("punct", TUtf16String(ts, te));
+        int status = ProcessPunctuation(lval);
+        if (status != -1)
+            return status;
+    };
+
+    quotedstr {
+        PRINT_TOKEN("quotedstr", LE);
+        return ProcessQuotedString(lval);
+    };
+
+    # parser eats up all symbols inside quotes, it stops when it finds the second quote
+    # pay attention to behavior of different types of attributes, particularly text and literal
+    ( prefix.attreq.(
+        ( ( yc_quotation  >process_attreq_quoted_value ) ( any - ( yc_zero | yc_quotation  ) )* yc_quotation  ) |
+        ( ( yc_apostrophe >process_attreq_quoted_value ) ( any - ( yc_zero | yc_apostrophe ) )* yc_apostrophe ) |
+        ( ( yc_accent     >process_attreq_quoted_value ) ( any - ( yc_zero | yc_accent     ) )* yc_accent     ) ) ) {
+        PRINT_TOKEN("( prefix.attreq.value_in_quotes )", LE);
+        return ProcessZoneOrAttr<ATTR>(lval);
+    };
+
+    # pay attention to behavior of different types of attributes, particularly text and literal
+    ( prefix.attreq.( ( yc_left_paren >process_attreq_value_in_parentheses ) ( any - ( yc_zero | yc_right_paren ) )* yc_right_paren ) ) {
+        PRINT_TOKEN("( prefix.attreq.value_in_parentheses )", LE);
+        return ProcessZoneOrAttr<ATTR>(lval);
+    };
+
+    ( prefix.attreq.( attrvalue >process_attreq_value ) ) {
+        PRINT_TOKEN("( prefix.attreq.attrvalue )", LE);
+        return ProcessZoneOrAttr<ZONE_OR_ATTR>(lval);
+    };
+
+    ( prefix.attrop.(
+        ( ( yc_quotation  >process_attr_value ) ( any - ( yc_zero | yc_quotation  ) )* yc_quotation  ) |
+        ( ( yc_apostrophe >process_attr_value ) ( any - ( yc_zero | yc_apostrophe ) )* yc_apostrophe ) |
+        ( ( yc_accent     >process_attr_value ) ( any - ( yc_zero | yc_accent     ) )* yc_accent     ) ) ) {
+        PRINT_TOKEN("( prefix.attrop.value_in_quotes )", LE);
+        return ProcessZoneOrAttr<ATTR>(lval);
+    };
+
+    ( prefix.attrop.( ( yc_left_paren >process_attr_value ) ( any - ( yc_zero | yc_right_paren ) )* yc_right_paren ) ) {
+        PRINT_TOKEN("( prefix.attrop.value_in_parentheses )", LE);
+        return ProcessZoneOrAttr<ATTR>(lval);
+    };
+
+    ( prefix.attrop.( attrvalue >process_attr_value ) ) {
+        PRINT_TOKEN("( prefix.attrop.attrvalue )", LE);
+        return ProcessZoneOrAttr<ZONE_OR_ATTR>(lval);
+    };
+
+    ( prefix.zonesearch.( yc_quotation | yc_apostrophe | yc_accent ) ) {
+        PRINT_TOKEN("prefix.zonesearch.( '\"' | '\'' | '`' )", LE);
+        // @todo apostrophe is considered as tokdelim and is not eaten by the parser after word: [title->'a'] -> [title->"a"']
+        //       this can be eliminated using the following parser:
+        //       prefix.zonesearch.( ( ( yc_apostrophe  >process_zonesearch ) ( any - ( yc_zero | yc_apostrophe ) )* yc_apostrophe  )
+        //       and from this parser call to ParseWholeString() with quoted text,
+        //       this problem exists and in case of regular zone request: [title:'a b c']
+        //       it also allows to avoid a lot of "syntax error"
+        return ProcessZoneSearch<VALUE_QUOTED>(lval);
+    };
+
+    ( prefix.zonesearch.( yc_left_paren ) ) {
+        PRINT_TOKEN("prefix.zonesearch.( '(' )", LE);
+        return ProcessZoneSearch<VALUE_IN_PARENTHESES>(lval);
+    };
+
+    ( prefix.zonesearch.( attrvalue >process_zonesearch ) ) {
+        PRINT_TOKEN("( prefix.zonesearch.text )", LE);
+        return ProcessZoneOrAttr<ZONE>(lval);
+    };
+
+    ( sep+ and2 sep+ ) {
+        PRINT_TOKEN("( and2 )", LE);
+        ProcessOperatorWithDistance(oAnd, lval.suffix);
+        SepEnd = te;
+        return AND2;
+    };
+
+    ( sep+ ( nearop | and1 ) sep+ ) {
+        PRINT_TOKEN("( nearop | and1 )", LE);
+        ProcessOperatorWithDistance(oAnd, lval.suffix);
+        SepEnd = te;
+        return AND1;
+    };
+
+    ( sep+ and2 sep* nearop sep+ ) {
+        PRINT_TOKEN("( and2 sep* nearop )", LE);
+        LE.OpInfo.Level -= 1;
+        ProcessOperatorWithDistance(oAnd, lval.suffix);
+        SepEnd = te;
+        return AND2;
+    };
+
+    ( sep+ and1 sep* nearop sep+ ) {
+        PRINT_TOKEN("( and1 sep* nearop )", LE);
+        LE.OpInfo.Level -= 1;
+        ProcessOperatorWithDistance(oAnd, lval.suffix);
+        SepEnd = te;
+        return AND1;
+    };
+
+    ( sep+ andnot2 sep+ ) {
+        PRINT_TOKEN("( andnot2 )", LE);
+        ProcessOperatorWithDistance(oAndNot, lval.suffix);
+        SepEnd = te;
+        return ANDNOT2;
+    };
+
+    ( sep+ andnot1 sep+ ) {
+        PRINT_TOKEN("( andnot1 )", LE);
+        ProcessOperatorWithDistance(oAndNot, lval.suffix);
+        SepEnd = te;
+        return ANDNOT1;
+    };
+
+    ( sep+ andnot2 sep* nearop sep+ ) {
+        PRINT_TOKEN("( andnot2 sep* nearop )", LE);
+        LE.OpInfo.Level -= 1;
+        ProcessOperatorWithDistance(oAndNot, lval.suffix);
+        SepEnd = te;
+        return ANDNOT2;
+    };
+
+    ( sep+ andnot1 sep* nearop sep+ ) {
+        PRINT_TOKEN("( andnot1 sep* nearop )", LE);
+        LE.OpInfo.Level -= 1;
+        ProcessOperatorWithDistance(oAndNot, lval.suffix);
+        SepEnd = te;
+        return ANDNOT1;
+    };
+
+    ( sep+ refine @{ if (EnableExtendedSyntax) LE.OpInfo = request.PhraseOperInfo; } sep+ ) {
+        if (EnableExtendedSyntax) {
+            PRINT_TOKEN("( (refine...", LE);
+            ProcessOperator(oRefine, lval.suffix);
+            SepEnd = te;
+            return REFINE;
+        } else {
+            ProcessSeparator();
+        }
+    };
+
+    ( sep+ yc_vert_bar sep+ ) {
+        PRINT_TOKEN("|", LE);
+        ProcessOperator(oOr, lval.suffix);
+        SepEnd = te;
+        return OR;
+    };
+
+    ( sep+ yc_caret sep+ ) {
+        if (EnableExtendedSyntax) {
+            PRINT_TOKEN("^", LE);
+            ProcessOperator(oWeakOr, lval.suffix);
+            SepEnd = te;
+            return WORD_VARIANT_OP;
+        } else {
+            ProcessSeparator();
+        }
+    };
+
+    ( sep+ yc_less yc_less sep+ ) {
+        PRINT_TOKEN("<<", LE);
+        ProcessOperator(oRestrDoc, lval.suffix);
+        SepEnd = te;
+        return RESTR_DOC;
+    };
+
+    ( yc_right_paren.postfix ) {
+        PRINT_TOKEN("( ')'.postfix )", LE);
+        // @todo this token injects a defect: ")one two", "one) two", "one two)" -> syntax error
+        lval.suffix = LE;
+        lval.suffix.RParenPos = te - LE.Text - 1;
+        pcur = te;
+        return R_PAREN;
+    };
+
+    ( prefix.yc_left_paren ) {
+        PRINT_TOKEN("( prefix.'(' )", LE);
+        lval.prefix = LE;
+        lval.prefix.LParenPos = te - LE.Text - 1;
+        pcur = te;
+        SepEnd = te;
+        return L_PAREN;
+    };
+
+    sep+ {
+        ProcessSeparator();
+    };
+
+    miscnlp {
+        CancelToken();
+        PRINT_TOKEN("miscnlp", fc);
+        LE.Reset();
+        OnMiscChar();
+    };
+    othermisc {
+    };
+
+    *|;
+
+    write data noerror nofinal;
+}%%
+
+template<> int TVersionedReqTokenizer<1>::Tokenize(void* val) {
+    YYSTYPE &lval = *((YYSTYPE*)val);
+%% write init;
+    LE.Reset();
+    p = pcur;
+%% write exec noend;
+    return -1;
+}

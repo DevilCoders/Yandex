@@ -1,0 +1,7 @@
+#include "counts_hit.h"
+#include "doc_attrs_hit.h"
+#include "long_form_hit.h"
+#include "panther_hit.h"
+#include "superlong_hit.h"
+#include "uninverted_hit.h"
+#include "click_sim_hit.h"

@@ -1,0 +1,117 @@
+syntax = "proto3";
+
+package NUgc.NTestSchema;
+
+import "kernel/ugc/schema/proto/schema.proto";
+
+import "google/protobuf/timestamp.proto";
+
+message TModeration {
+    enum EStatus {
+        UNKNOWN = 0;
+        ACCEPTED = 1;
+        DECLINED = 2;
+    }
+
+    EStatus Status = 1;
+    string Reason = 2;
+}
+
+message TPhoto {
+    string Id = 1;
+    string Url = 2;
+}
+
+message TReview {
+    string Id = 1;
+    uint32 Rating = 2 [(NUgc.NSchema.default_value) = "11"];
+    string Text = 3;
+    google.protobuf.Timestamp CreateTime = 4;
+
+    TModeration Moderation = 5;
+
+    repeated TPhoto Photos = 6 [(NUgc.NSchema.value_format) = PROTO];
+
+    repeated string Tags = 7;
+
+    option (NUgc.NSchema.schema) = {
+        Column: {
+            Name: "moderation"
+            Field: "Moderation"
+        }
+
+        Table: {
+            Name: "photos"
+            Field: "Photos"
+            Key: "Id"
+        }
+    };
+}
+
+message TIndexedReview {
+    string Id = 1;
+    string GlobalId = 2;
+    string Text = 3;
+
+    repeated TPhoto Photos = 4;
+
+    option (NUgc.NSchema.schema) = {
+        Table: {
+            Name: "photos"
+            Field: "Photos"
+            Key: "Id"
+        }
+    };
+}
+
+message TUser {
+    string Id = 1;
+    string Name = 2;
+
+    repeated TReview Reviews = 3;
+    repeated TIndexedReview IndexedReviews = 4;
+
+    option (NUgc.NSchema.schema) = {
+        Table: {
+            Name: "reviews"
+            Field: "Reviews"
+            Key: "Id"
+        }
+
+        Table: {
+            Name: "indexed-reviews"
+            Field: "IndexedReviews"
+            Key: "Id"
+        }
+
+        Rpc: {
+            Name: "dummy-action"
+            Handler: "DummyActionHandler"
+        }
+    };
+}
+
+message TRoot {
+    repeated TUser Users = 1 [(NUgc.NSchema.topic) = "ugc"];
+
+    option (NUgc.NSchema.schema) = {
+        Table: {
+            Name: "users"
+            Field: "Users"
+            Key: "Id"
+        }
+
+        TableIndex: {
+            Name: "reviews-by-gid"
+            Table: "users.indexed-reviews"
+            Key: "GlobalId"
+            Unique: true
+        }
+
+        TableIndex: {
+            Name: "reviews-by-text"
+            Table: "users.indexed-reviews"
+            Key: "Text"
+        }
+    };
+}

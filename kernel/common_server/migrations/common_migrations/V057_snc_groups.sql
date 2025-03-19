@@ -1,0 +1,2 @@
+ALTER TABLE snc_groups ADD COLUMN IF NOT EXISTS data JSON;
+ALTER TABLE snc_groups_history ADD COLUMN IF NOT EXISTS data JSON;

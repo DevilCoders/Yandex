@@ -1,0 +1,29 @@
+OWNER(g:remorph)
+
+RECURSE(
+    api
+    api/dynamic
+    api/ut
+    bindings
+    cascade
+    common
+    core
+    core/text
+    core/ut
+    directtext
+    engine
+    engine/char
+    facts
+    info
+    input
+    input/richtree
+    literal
+    matcher
+    misc
+    proc_base
+    service
+    text
+    tokenizer
+    tokenlogic
+    ut
+)

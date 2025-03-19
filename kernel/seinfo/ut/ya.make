@@ -1,0 +1,96 @@
+UNITTEST_FOR(kernel/seinfo)
+
+OWNER(smikler)
+
+# compilation is too slow
+NO_OPTIMIZE()
+
+SRCS(
+    seinfo_ut.cpp
+    seinfo_ut_2.cpp
+    seinfo_ut_3.cpp
+    seinfo_ut_4.cpp
+    seinfo_ut_5.cpp
+    seinfo_ut_52.cpp
+    seinfo_ut_65.cpp
+    seinfo_ut_8.cpp
+    seinfo_ut_advert_serp.cpp
+    seinfo_ut_advert_web.cpp
+    seinfo_ut_alexa.cpp
+    seinfo_ut_aport.cpp
+    seinfo_ut_ask_com.cpp
+    seinfo_ut_babylon_com.cpp
+    seinfo_ut_bad_start_cgi_field.cpp
+    seinfo_ut_baidu.cpp
+    seinfo_ut_bing.cpp
+    seinfo_ut_blekko_com.cpp
+    seinfo_ut_bsdev_52299.cpp
+    seinfo_ut_by_aropan.cpp
+    seinfo_ut_case_sensitiveness.cpp
+    seinfo_ut_conduit.cpp
+    seinfo_ut_daemon_search.cpp
+    seinfo_ut_duckduckgo.cpp
+    seinfo_ut_exalead.cpp
+    seinfo_ut_gbg_bg.cpp
+    seinfo_ut_gigabase_ru.cpp
+    seinfo_ut_go_km_ru.cpp
+    seinfo_ut_gogo.cpp
+    seinfo_ut_google.cpp
+    seinfo_ut_google_search_by_image.cpp
+    seinfo_ut_google_source_param_buki_1847.cpp
+    seinfo_ut_gre_ru.cpp
+    seinfo_ut_handycafe.cpp
+    seinfo_ut_i_ua.cpp
+    seinfo_ut_icq_com.cpp
+    seinfo_ut_incredimail.cpp
+    seinfo_ut_istella_it.cpp
+    seinfo_ut_kaz_kz.cpp
+    seinfo_ut_kazakh_kz.cpp
+    seinfo_ut_liveinternet.cpp
+    seinfo_ut_logstat_2923.cpp
+    seinfo_ut_logstat_3101.cpp
+    seinfo_ut_logstat_3295.cpp
+    seinfo_ut_logstat_3439.cpp
+    seinfo_ut_logstat_3465.cpp
+    seinfo_ut_logstat_3580.cpp
+    seinfo_ut_logstat_4211.cpp
+    seinfo_ut_logstat_4538_popular_online_shops.cpp
+    seinfo_ut_mail.cpp
+    seinfo_ut_mail_2.cpp
+    seinfo_ut_metabot.cpp
+    seinfo_ut_more_google_rules_buki_1857.cpp
+    seinfo_ut_music.cpp
+    seinfo_ut_mywebsearch.cpp
+    seinfo_ut_naver.cpp
+    seinfo_ut_news_local.cpp
+    seinfo_ut_nur_kz.cpp
+    seinfo_ut_poisk_ru.cpp
+    seinfo_ut_popular_video_hostings.cpp
+    seinfo_ut_qip_ru.cpp
+    seinfo_ut_quintura.cpp
+    seinfo_ut_rambler.cpp
+    seinfo_ut_redirector_urls.cpp
+    seinfo_ut_search_inside_social_networks.cpp
+    seinfo_ut_searchya.cpp
+    seinfo_ut_seznam_an_co.cpp
+    seinfo_ut_sogou.cpp
+    seinfo_ut_stack_limit.cpp
+    seinfo_ut_tineye_search_by_image.cpp
+    seinfo_ut_topsy.cpp
+    seinfo_ut_torrent_sites_buki_1819.cpp
+    seinfo_ut_tut_by.cpp
+    seinfo_ut_video_hostings_videopoisk_2601.cpp
+    seinfo_ut_videopoisk_4106.cpp
+    seinfo_ut_webalta.cpp
+    seinfo_ut_work.cpp
+    seinfo_ut_www_lemoteur_fr.cpp
+    seinfo_ut_yahoo.cpp
+    seinfo_ut_yahoo_with_https_url_by_gotmanov.cpp
+    seinfo_ut_yandex.cpp
+    seinfo_ut_yandex_2_0_buki_1749.cpp
+    seinfo_ut_yandex_slovari.cpp
+    seinfo_ut_yandex_xml_search_buki_1834.cpp
+    seinfo_ut_factor_1248.cpp
+)
+
+END()

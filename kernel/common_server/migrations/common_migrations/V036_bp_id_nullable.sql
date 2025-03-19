@@ -1,0 +1,1 @@
+ALTER TABLE rt_background_settings_history ALTER COLUMN bp_id DROP NOT NULL;

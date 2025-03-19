@@ -1,0 +1,52 @@
+#pragma once
+#include <kernel/doom/wad/wad_index_type.h>
+#include <kernel/doom/offroad_struct_wad/struct_type.h>
+#include <kernel/doom/offroad_omni_wad/omni_io.h>
+
+template <class Io>
+class TDocOmniIndexAccessor;
+
+template <NDoom::EWadIndexType indexType, class Data, class Serializer, NDoom::EStructType>
+class TOffroadStructWadIo;
+
+using TOmniUrlAccessor = TDocOmniIndexAccessor<NDoom::TOmniUrlIo>;
+using TOmniTitleAccessor = TDocOmniIndexAccessor<NDoom::TOmniTitleIo>;
+using TOmniRelCanonicalTargetAccessor = TDocOmniIndexAccessor<NDoom::TOmniRelCanonicalTargetIo>;
+
+using TOmniDssmLogDwellTimeBigramsEmbeddingAccessor = TDocOmniIndexAccessor<NDoom::TOmniDssmLogDwellTimeBigramsEmbeddingIo>;
+using TOmniAnnRegStatsAccessor = TDocOmniIndexAccessor<NDoom::TOmniAnnRegStatsIo>;
+using TOmniDssmAggregatedAnnRegEmbeddingAccessor = TDocOmniIndexAccessor<NDoom::TOmniDssmAggregatedAnnRegEmbeddingIo>;
+using TOmniDssmAnnCtrCompressedEmbeddingAccessor = TDocOmniIndexAccessor<NDoom::TOmniDssmAnnCtrCompressedEmbeddingIo>;
+using TOmniDssmAnnXfDtShowWeightCompressedEmbedding1Accessor = TDocOmniIndexAccessor<NDoom::TOmniDssmAnnXfDtShowWeightCompressedEmbedding1Io>;
+using TOmniDssmAnnXfDtShowWeightCompressedEmbedding2Accessor = TDocOmniIndexAccessor<NDoom::TOmniDssmAnnXfDtShowWeightCompressedEmbedding2Io>;
+using TOmniDssmAnnXfDtShowWeightCompressedEmbedding3Accessor = TDocOmniIndexAccessor<NDoom::TOmniDssmAnnXfDtShowWeightCompressedEmbedding3Io>;
+using TOmniDssmAnnXfDtShowWeightCompressedEmbedding4Accessor = TDocOmniIndexAccessor<NDoom::TOmniDssmAnnXfDtShowWeightCompressedEmbedding4Io>;
+using TOmniDssmAnnXfDtShowWeightCompressedEmbedding5Accessor = TDocOmniIndexAccessor<NDoom::TOmniDssmAnnXfDtShowWeightCompressedEmbedding5Io>;
+using TOmniDssmAnnXfDtShowOneCompressedEmbeddingAccessor = TDocOmniIndexAccessor<NDoom::TOmniDssmAnnXfDtShowOneCompressedEmbeddingIo>;
+using TOmniDssmAnnXfDtShowOneSeCompressedEmbeddingAccessor = TDocOmniIndexAccessor<NDoom::TOmniDssmAnnXfDtShowOneSeCompressedEmbeddingIo>;
+using TOmniDssmBertDistillL2EmbeddingAccessor = TDocOmniIndexAccessor<NDoom::TOmniDssmBertDistillL2EmbeddingRawIo>;
+using TOmniDssmNavigationL2EmbeddingAccessor = TDocOmniIndexAccessor<NDoom::TOmniDssmNavigationL2EmbeddingRawIo>;
+using TOmniFullSplitBertEmbeddingAccessor = TDocOmniIndexAccessor<NDoom::TOmniDssmFullSplitBertEmbeddingRawIo>;
+using TOmniReservedEmbeddingAccessor = TDocOmniIndexAccessor<NDoom::TOmniReservedEmbeddingRawIo>;
+using TOmniDssmSinsigL2EmbeddingAccessor = TDocOmniIndexAccessor<NDoom::TOmniDssmSinsigL2EmbeddingRawIo>;
+
+// L1 stage
+using TOmniDssmLogDwellTimeBigramsEmbeddingRawAccessor = TDocOmniIndexAccessor<NDoom::TOmniDssmLogDwellTimeBigramsEmbeddingRawIo>;
+// L2 stage
+using TOmniAnnRegStatsRawAccessor = TDocOmniIndexAccessor<NDoom::TOmniAnnRegStatsRawIo>;
+using TOmniDssmAggregatedAnnRegEmbeddingRawAccessor = TDocOmniIndexAccessor<NDoom::TOmniDssmAggregatedAnnRegEmbeddingRawIo>;
+using TOmniDssmAnnCtrCompressedEmbeddingRawAccessor = TDocOmniIndexAccessor<NDoom::TOmniDssmAnnCtrCompressedEmbeddingRawIo>;
+using TOmniDssmAnnXfDtShowWeightCompressedEmbedding1RawAccessor = TDocOmniIndexAccessor<NDoom::TOmniDssmAnnXfDtShowWeightCompressedEmbedding1RawIo>;
+using TOmniDssmAnnXfDtShowWeightCompressedEmbedding2RawAccessor = TDocOmniIndexAccessor<NDoom::TOmniDssmAnnXfDtShowWeightCompressedEmbedding2RawIo>;
+using TOmniDssmAnnXfDtShowWeightCompressedEmbedding3RawAccessor = TDocOmniIndexAccessor<NDoom::TOmniDssmAnnXfDtShowWeightCompressedEmbedding3RawIo>;
+using TOmniDssmAnnXfDtShowWeightCompressedEmbedding4RawAccessor = TDocOmniIndexAccessor<NDoom::TOmniDssmAnnXfDtShowWeightCompressedEmbedding4RawIo>;
+using TOmniDssmAnnXfDtShowWeightCompressedEmbedding5RawAccessor = TDocOmniIndexAccessor<NDoom::TOmniDssmAnnXfDtShowWeightCompressedEmbedding5RawIo>;
+using TOmniDssmAnnXfDtShowWeightCompressedEmbeddingsRawAccessor = TDocOmniIndexAccessor<NDoom::TOmniDssmAnnXfDtShowWeightCompressedEmbeddingsRawIo>;
+using TOmniDssmAnnXfDtShowOneCompressedEmbeddingRawAccessor = TDocOmniIndexAccessor<NDoom::TOmniDssmAnnXfDtShowOneCompressedEmbeddingRawIo>;
+using TOmniDssmAnnXfDtShowOneSeCompressedEmbeddingRawAccessor = TDocOmniIndexAccessor<NDoom::TOmniDssmAnnXfDtShowOneSeCompressedEmbeddingRawIo>;
+using TOmniDssmMainContentKeywordsEmbeddingRawAccessor = TDocOmniIndexAccessor<NDoom::TOmniDssmMainContentKeywordsEmbeddingRawIo>;
+using TOmniDssmBertDistillL2EmbeddingRawAccessor = TDocOmniIndexAccessor<NDoom::TOmniDssmBertDistillL2EmbeddingRawIo>;
+using TOmniDssmNavigationL2EmbeddingRawAccessor = TDocOmniIndexAccessor<NDoom::TOmniDssmNavigationL2EmbeddingRawIo>;
+using TOmniFullSplitBertEmbeddingRawAccessor = TDocOmniIndexAccessor<NDoom::TOmniDssmFullSplitBertEmbeddingRawIo>;
+using TOmniReservedEmbeddingRawAccessor = TDocOmniIndexAccessor<NDoom::TOmniReservedEmbeddingRawIo>;
+using TOmniDssmSinsigL2EmbeddingRawAccessor = TDocOmniIndexAccessor<NDoom::TOmniDssmSinsigL2EmbeddingRawIo>;

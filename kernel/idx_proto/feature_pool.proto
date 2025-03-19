@@ -1,0 +1,452 @@
+// This file describes FML common pool format.
+// Developed and supported by mvel@ and smikler@
+
+// As Google Protobuf has some caveats, ANY field addition
+// and especially MODIFICATIONS should be carefully reviewed.
+// Please DO NOT COMMIT any changes without REVIEW.
+
+package NFeaturePool;
+
+import "kernel/indexdoc/entry_protos/entry.proto";
+import "kernel/tarc/protos/tarc.proto";
+import "kernel/text_machine/proto/text_machine.proto";
+
+option optimize_for = SPEED;
+
+// bit mask
+enum ENormalizationType {
+    NT_UNKNOWN = 0;
+    NT_WEAK    = 1;
+    NT_STRONG  = 2;
+    NT_OLD     = 4;
+}
+
+enum ESearchType {
+    ST_DEFAULT   = 0;
+    ST_EXTENDED  = 1;
+    ST_NOT_FOUND = 2;
+    ST_TRASH     = 3; // for ironpeter@ fastrank pools
+}
+
+enum EFiltrationType {
+    FT_NOT_FILTERED      = 0;
+
+    FT_NOT_FOUND_SKIPPED = 1;
+    FT_STRONG_WITH_WEAK  = 2;
+    FT_DUPLICATE         = 3;
+    FT_TOO_MANY_STRONG   = 4;
+    FT_TIER_PRIORITY     = 5;
+    FT_SAME_ROBOT_DIFFERENT_RANKING = 6;
+    FT_MULTILANG_PRIORITY = 9;
+
+    // old production ufilter logic: drop all strong
+    // when there are > 1 url per tier
+    FT_TIER_WEAK_EXISTS = 7;
+
+    FT_UNKNOWN = 8; // default value, for cross-version compatibility
+}
+
+// It is essential that *EVERY* field of this structure
+// should be carefuly documented. If it was added
+// for specific feature, that feature should be mentioned in comments,
+// non-documented fields may be dropped without announcement
+
+/* Stream structures for experimental text ranking (snow@, ironpeter@) */
+message TWordStream {
+    optional uint64 TotalStreamWords = 1;
+    optional uint64 TotalStreamNumber = 2;
+    optional float SynonymLevel = 3;
+    optional bool ExactLemma = 4;
+}
+
+message TStreamInfo {
+    optional uint64 TotalStreamWords = 1;
+    optional uint64 TotalStreamBreaks = 2;
+    optional uint64 TotalStreamNumber = 3;
+
+    repeated TWordStream StreamWords = 4;
+}
+
+message TStreams {
+    optional uint64 Docs = 1;
+    repeated TStreamInfo Infos = 2;
+    optional string WordText = 3;
+}
+
+message THitInfo {
+    optional uint32 PositionInStream = 1;
+    optional uint32 SynNum = 2;
+    optional uint32 Break = 3;
+    optional uint32 Word = 4;
+    optional uint32 BreakLengthInWords = 5;
+    repeated float BreakFactors = 6;
+}
+
+message TWordStreamInfo {
+    optional uint32 StreamId = 1;
+    optional uint32 StreamLengthInWords = 2;
+    optional uint32 StreamLengthInBreaks = 3;
+    repeated THitInfo HitInfos = 4;
+}
+
+message TWordInfo {
+    optional string WordText = 1;
+    repeated TWordStreamInfo Infos = 2;
+}
+
+message TStreamDoc {
+    optional uint32 DocId = 1;
+    // assessor rating
+    optional float Rating = 2;
+
+    // url shown to assessor (from ANG)
+    optional string RankingUrl = 3;
+
+    // grouping
+    optional string Grouping = 4;
+
+    // shard identifier, to separate different shards (used as key in TShardInfo map)
+    optional string Shard = 5;
+
+    repeated TWordInfo QueryWords = 6;
+}
+
+// Snippets: SEARCH-604
+message TDocSnippets {
+    optional string Title = 1;
+    optional string Headline = 2;
+    repeated string Passages = 3;
+    optional string Context = 4;
+}
+
+/**
+  * Main pool structure: pool line
+  * Undocumented fields are STRICTLY PROHIBITED
+  * Ticket reference is REQUIRED
+  **/
+
+message TLwLemmaBunch {
+    repeated string Lemmas = 10;
+}
+
+message TLwWordBucket {
+    optional uint64 WordNo = 2;
+    optional bool IsVariant = 3;
+    repeated TLwLemmaBunch BLemmas = 12;
+}
+
+message TLwWordStream {
+    optional string FormText = 1;
+    repeated uint64 TotalStreamWords = 10;
+    repeated uint64 TotalStreamBreaks = 11;
+    repeated uint64 TotalStreamNumbers = 12;
+}
+
+message TLwStream {
+    optional string Name = 2;
+    repeated TLwWordStream Words = 12;
+}
+
+enum EStreamType {
+    ST_URL = 0;
+    ST_TITLE = 1;
+    ST_BODY = 2;
+    ST_CATALOGUE_YANDEX = 3;
+    ST_CATALOGUE_DMOZ = 4;
+    ST_LINKS_INTERNAL = 5;
+    ST_LINKS_EXTERNAL_DPR = 6;
+    ST_LINKS_EXTERNAL_TIC = 7;
+    ST_CORRECTED_CTR = 8;
+    ST_WIKI_TITLE = 9;
+    ST_SAME_QUERY_RETURN_FRC_BROWSER = 10;
+    ST_SAMPLE_PERIOD_DAY_FRC = 11;
+}
+
+enum EFormClass {
+    FC_EQUAL_BY_STRING = 0; //Note: Can be set for hit by TE_TRANSLIT synonym
+    FC_EQUAL_BY_LEMMA = 1;
+    FC_EQUAL_BY_SYNONYM = 2;
+    FC_EQUAL_BY_SYNSET = 3;
+}
+
+
+message TLwHit {
+    //deprecated. No one uses this message, could be safely deleted in 2015
+    optional uint64 FormIndex = 1;
+    optional uint32 BrkNum = 2;
+    optional uint32 WrdNum = 3;
+    optional uint32 RelevLevel = 4;
+    optional uint32 PositionInStream = 5;
+    optional EStreamType Kind = 6;
+    optional uint32 DocId = 7;
+    optional uint32 BreakLengthInWords= 8;
+    optional EFormClass FormClass = 9;
+    repeated float BreakFactors = 11;
+}
+
+message TLwBucketHits {
+    repeated TLwHit Hits = 1;
+}
+
+message TLwDocInfo {
+    optional string Url = 1;
+    optional uint32 DocId = 2;
+    optional float Rating = 3;
+}
+
+message TLwPoolBucketsData {
+    optional uint32 NumDocsInShard = 1;
+    repeated TLwWordBucket QueryBuckets = 7;
+    repeated TLwStream QueryStreams = 8;
+    repeated TLwDocInfo DocInfos = 9;
+    repeated TLwBucketHits BucketHits = 10;
+}
+
+message TFilteredFeature {
+    required uint32 FeatureId = 1;
+    required float  FeatureValue = 2;
+}
+
+message TNamedAttribute {
+    required string Name = 1;
+    required string Value = 2;
+}
+
+message TFeaturesGroup {
+    repeated float Feature = 1 [packed=true];
+    optional string StageName = 2;
+    optional string Slices = 3;
+}
+
+message TMarketAdditionalDocInfo {
+    optional string SerializedJson = 1;
+}
+
+/** Once upon a time, this was a storage for omni-index document properties,
+  * complete with Url and Title instead of TLine::Omni{Url,Title}.
+  * Back then, the corresponding robot protobuf NOxygen.TDocOmniEntry was used.
+  * However, Url and Title never catched on,
+  * and the rest mimics NMetaProtocol.TDocumentBinaryData.
+  * Later, every new field from TDocumentBinaryData got added to this structure,
+  * even those fields that have nothing to do with omni-index and robot in general.
+  * Now, prs_ops automagically fills fields with matched names from TDocumentBinaryData
+  * (except that for new fields, the binary should be rebuilt to know about those),
+  * but we are stuck with tags from NOxygen.TDocOmniEntry for binary compatibility
+  * of pool tables instead of just using TDocumentBinaryData as is.
+  **/
+message TDocumentBinaryDataSubset {
+    optional string Url = 1; // never filled, keep to avoid breaking builds
+    optional string Title = 2; // never filled, keep to avoid breaking builds
+    optional bytes DssmLogDwellTimeBigramsEmbedding = 3;
+    optional bytes AnnRegStats = 5;
+    optional bytes DssmAggregatedAnnRegEmbedding = 7;
+    optional bytes DssmAnnCtrCompressedEmbedding = 10;
+    optional bytes DssmAnnXfDtShowWeightCompressedEmbedding1 = 11;
+    optional bytes DssmAnnXfDtShowWeightCompressedEmbedding2 = 12;
+    optional bytes DssmAnnXfDtShowWeightCompressedEmbedding3 = 13;
+    optional bytes DssmAnnXfDtShowWeightCompressedEmbedding4 = 14;
+    optional bytes DssmAnnXfDtShowWeightCompressedEmbedding5 = 15;
+    optional bytes DssmAnnXfDtShowOneCompressedEmbedding = 16;
+    optional bytes DssmAnnXfDtShowOneSeCompressedEmbedding = 17;
+    optional bytes DssmMainContentKeywordsEmbedding = 18;
+    optional bytes DssmAnnXfDtShowOneSeAmSsHardCompressedEmbedding = 19;
+    optional bytes DssmPantherTermsEmbedding = 20;
+    optional bytes DssmReformulationsLongestClickLogDtEmbedding = 24;
+    optional string AliceWebMusicTrackTitle = 25;
+    optional string AliceWebMusicArtistName = 26;
+    optional bytes RelevantSentences = 27;
+    optional bytes DssmBertDistillL2Embedding = 28;
+    optional bytes SplitBertEmbedding = 29;
+    optional bytes DssmNavigationL2Embedding = 30;
+    optional bytes DssmFullSplitBertEmbedding = 31;
+    optional bytes FetchedRelevantSentences = 32;
+    optional bytes BoymelEmbedding = 33;
+    optional bytes PantherTermMatchesInfo = 34;
+    optional bytes DssmSinsigL2Embedding = 35;
+    optional bytes ReservedEmbedding = 36;
+    optional bytes DssmL2Input = 37;
+}
+
+message TLine {
+    // request identifier (from ANG)
+    optional uint64 RequestId = 1;
+
+    // assessor rating
+    optional float Rating = 2;
+
+    // url shown to assessor (from ANG)
+    optional string RankingUrl = 3;
+
+    // Used for grouping for MatrixNet (FML-collected pools contain domain there)
+    optional string Grouping = 4;
+
+    // what type of search was used to obtain result
+    optional ESearchType SearchType = 5;
+
+    // document identifier in shard
+    optional uint32 DocId = 6;
+
+    // main robot url associated with matched robot url
+    // it is retrieved from indexarc for images
+    optional string MainRobotUrl = 7;
+
+    // response code got by document crawler (robot)
+    optional uint32 HttpCode = 8;
+
+    // robot url matched with ranking url after normalization
+    optional string MatchedRobotUrl = 9;
+
+    // normalization mask (sum of ENormalizationType)
+    optional uint32 NormalizationMask = 10;
+
+    // calculated relevance value
+    optional int64 Relevance = 11;
+
+    // unpacked float array of calculated features (aka factors)
+    // DEPRECATED: use TFeaturesGroup::Feature
+    repeated float Feature = 12 [packed=true];
+
+    // huffman-packed features blob. used only for micropool merging
+    optional bytes PackedFeatures = 13;
+
+    // shard identifier, to separate different shards (used as key in TShardInfo map)
+    optional string Shard = 14;
+
+    // filtering reason: why given line was dropped (or not)
+    optional EFiltrationType FiltrationType = 15 [default = FT_UNKNOWN];
+
+    // quorum pools require same request sub-indexing
+    optional uint32 RequestSubindex = 16;
+
+    // Region id from relevgeo (FORMULATOR-917)
+    optional int32 RegionId = 17;
+
+    // Document text from archive, requested by alsafr@, SEARCH-480.
+    // Obsolete, use DocArcData with text and language
+    optional string DocText = 18;
+
+    // Document text from ref archive, requested by alsafr@, SEARCH-480
+    optional string DocRefText = 19;
+
+    // Document domain (not used by now)
+    //optional string Domain = 20;
+
+    // Streams info for experimental text ranking (snow@)
+    repeated TStreams QueryStreams = 21;
+
+    // Stream docs with Word infos for experimental text ranking (snow@)
+    repeated TStreamDoc StreamDocs = 22;
+
+    // Snippets with title (SEARCH-604)
+    optional TDocSnippets DocSnippets = 23;
+
+    // User query (SEARCH-582)
+    optional string UserQuery = 24;
+
+    // Bunch of stream related data
+    optional TLwPoolBucketsData BucketData = 25;
+
+    // Use this key instead of request id for MR writer
+    optional string MrKey = 26;
+
+    // Document data from archive, requested by alsafr@, SEARCH-480.
+    // Includes document text, zones and attributes (see ysite/yandex/tarc/proto/tarc.proto).
+    optional NTextArc.TDocArcData DocArcData = 27;
+
+    repeated TFilteredFeature FilteredFeature = 28;
+
+    // Multilanguage flag from url.dat
+    optional string MultilanguageHostPrefix = 29;
+
+    // Text-machine format hits
+    optional NTextMachineProtocol.TPbDocHits TMHits = 30;
+
+    // Text-machine additional info
+    optional NTextMachineProtocol.TPbInfo TMInfo = 48;
+
+    // Tier (Shard tag). If set, should match Tier from TShardInfo by Shard key
+    // Used in MR-built pools where size does not matter
+    optional string Tier = 31;
+
+    // Most probable query language from CGI "qmpl", see SEARCH-968
+    optional uint32 RequestMostProbableLang = 32;
+
+    // Interface language from CGI "uil", see SEARCH-968
+    optional uint32 UserInterfaceLang = 33;
+
+    // Relev country (function of region id)
+    optional int32 CountryId = 34;
+
+    // Document language from ERF
+    optional uint32 DocLanguage = 35;
+
+    // Document factor slices, see FORMULA-558 & SEARCH-1536 (serialized to string like "all[0;1624) formula[0;1124) web[0;1100) web_production[0;1066) ... ")
+    // DEPRECATED: use TFeaturesGroup::Slice
+    optional string FactorSlices = 36;
+
+    // Title from omni index (deprecated, use DocOmniEntry.Title)
+    optional string OmniTitle = 37 [deprecated = true];
+
+    // Url from omni index (deprecated, use DocOmniEntry.Url)
+    optional string OmniUrl = 38 [deprecated = true];
+
+    // Relevance from basesearch (L2); used in PRS pools only
+    optional int64 L2Relevance = 39;
+
+    // document id on metasearch in form of (\d+-)*[A-Fa-f0-9]+
+    optional string MetasearchDocId = 40;
+
+    // storage for named document attribures (such as erfs, herfs etc.)
+    repeated TNamedAttribute NamedAttribute = 41;
+
+    // storage for index.omni data (SEARCH-4455) plus NMetaProtocol::TDocumentBinaryData
+    optional TDocumentBinaryDataSubset DocOmniEntry = 42;
+
+    // ShardTimestamp (SEARCH-4265)
+    optional uint64 ShardTimestamp = 43;
+
+    // TLD from queries_full (SEARCH-5415)
+    optional string TopLevelDomain = 44;
+
+    // Rating space (LEARN/TEST) from queries_full (SEARCH-5415)
+    optional string RatingSpace = 45;
+
+    // Platform from queries_full (SEARCH-5415)
+    optional string Platform = 46;
+
+    // OS family from queries_full (SEARCH-5415)
+    optional string OsFamily = 47;
+
+    // storage for searchprops (Route.NewRegionWEB, etc)
+    repeated TNamedAttribute SearchProps = 49;
+
+    // Query timestamp (ITDITP-461)
+    optional uint64 QueryTimestamp = 50;
+
+    // User ID: yandexuid, icookie, ... (ITDITP-461)
+    optional string UserId = 51;
+
+    optional string LeftUrl = 52;
+
+    optional uint32 RightUrlCluster = 53;
+    optional uint32 LeftUrlCluster = 54;
+
+    optional string BeautyUrl = 55;
+    optional string MainContentUrl = 56;
+
+    repeated TFeaturesGroup FeatureGroup = 57;
+    optional string ActiveFeturesStageName = 58;
+
+    optional TMarketAdditionalDocInfo MarketAdditionalDocInfo = 59;
+}
+
+message TShardInfo {
+    // tier name (e.g. RusTier0, GeoTier0, ...)
+    optional string Tier = 1;
+
+    // shard name (e.g. primus-XXX-<timestamp>)
+    optional string Shard = 2;
+
+    // line count (for fast consistency checking)
+    optional uint64 LineCount = 3;
+}
