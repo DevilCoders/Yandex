@@ -1,0 +1,31 @@
+{% extends "vpc_api_base_alert.j2" %}
+
+{% set service = "vpc-api-not-processing-tasks" %}
+{% set windowSecs = 300 %}
+
+{% macro prog() %}
+let ts = {
+    cluster='cloud_{{env}}_vpc-api'
+    ,service='vpc-config-plane'
+    ,sensor='tasks_task_ready'
+    ,host='cluster'
+};
+
+let processed_tasks_count = sum(ts);
+
+alarm_if(processed_tasks_count < 1);
+{% endmacro %}
+
+{% block main %}
+    "name": "VPC API tasks processed during {{ windowSecs }} seconds {{env}}",
+    "annotations": {
+        "processed_tasks_count": "[[ expression.processed_tasks_count ]]",
+        "description": "VPC API processed tasks during {{ windowSecs }} seconds: [[ expression.processed_tasks_count ]]",
+        "windowSecs": "{{ windowSecs }}",
+        "host": "{{ solomon_host() }}",
+        "service": "{{ service }}",
+        "dashboard": "{{ vpc_api_dashboard() }}",
+        "wiki": "{{ wiki_url(service) }}" 
+    },
+    "type": {{ type_expression() }}
+{% endblock %}

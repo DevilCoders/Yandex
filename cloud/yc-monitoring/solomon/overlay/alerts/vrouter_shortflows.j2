@@ -1,0 +1,77 @@
+{% extends "../../base/alert.j2" %}
+
+{% set windowSecs = 3600 %}
+
+{% set alert_name = "vpc vrouter short flows" %}
+{% set juggler_service = "vrouter-shortflows" %}
+{% if noisy %}
+    {% set alert_name = alert_name ~ " noisy" %}
+    {% set juggler_service = juggler_service ~ "-noisy" %}
+{% endif %}
+
+{#
+    FIXME(CLOUD-46104): Audit entry is noisy due to SG-DROP reverse flows
+    FIXME(CLOUD-65845): Short flow Interface unavailable is noisy if
+                        someone uses IPv6 in IPv4-only network
+    FIXME(CLOUD-49364): Short flow same flow and rflow requires removal
+                        of nasty semicolon in said ticket in VIF loop logic
+                        (VIF loop is enabled only for super-flow-v2)
+#}
+{% set noisy_short_flow_reasons = [
+    "Short flow Flow Limit Reached",
+    "Short flow Neither address is private",
+    "Short flow No Source route",
+    "Short flow No Destination route",
+    "Short flow Audit Entry",
+    "Short flow Interface unavialable",
+    "Short flow Interface unavailable",
+    "Short flow same flow and rflow",
+    "Short Flow Asymmetric response for incoming Internet traffic",
+] %}
+{% set ignored_short_flow_reasons = [
+    "Short flow No Reverse flow",
+    "UNKNOWN"
+] %}
+
+{% macro prog() %}
+// Only select top short flow reason for analysis
+{% if noisy %}
+let shorts = {
+    cluster='cloud_{{ env }}_compute',
+    service='oct_vrouter_snh_flows',
+    name='shortflows.count_per_second',
+    reason='{{ noisy_short_flow_reasons|join('|') }}'
+};
+let shorts_threshold = 10;
+{% else %}
+let shorts = top(5, 'max', {
+    cluster='cloud_{{ env }}_compute',
+    service='oct_vrouter_snh_flows',
+    name='shortflows.count_per_second',
+    reason!='{{ (noisy_short_flow_reasons + ignored_short_flow_reasons)|join('|') }}'
+});
+let shorts_threshold = 0.5;
+{% endif %}
+
+let shorts_above_th = heaviside(flatten(shorts - shorts_threshold));
+let shorts_smooth = moving_avg(shorts_above_th, 20m);
+
+let top_reason = get_label(top_max(1, shorts_smooth), "reason");
+let is_red = any_of(map(shorts_smooth, v -> max(v) > 0.95));
+{% endmacro %}
+
+{% block main %}
+  "name": "{{ alert_name }} @ {{ env|upper }}",
+  "groupByLabels": [
+    "host"
+  ],
+  "annotations": {
+     "host": "{{ compute_node_fqdn() }}",
+     "top_reason": "[[expression.top_reason]]",
+     "dashboard": "{{ compute_node_network_metrics_url() }}",
+     "service": "{{ juggler_service }}",
+     "tags": "Solomon"
+  },
+  "description": "https://wiki.yandex-team.ru/cloud/devel/sdn/dropstats/",
+  "type": {{ type_expression() }}
+{% endblock %}

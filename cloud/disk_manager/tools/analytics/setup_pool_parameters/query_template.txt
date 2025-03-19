@@ -1,0 +1,34 @@
+$image_id = Utf8("$IMAGE_ID");
+$zone_id = Utf8("$ZONE_ID");
+$base_disks = "$BASE_DISKS_TABLE";
+$pools = "$POOLS_TABLE";
+
+$free_units = ($units, $active_units, $status, $from_pool, $active_slots) -> {
+    return IF(
+        $status > 2,
+        0,
+        IF(
+            NOT $from_pool,
+            0,
+            IF(
+                $active_slots >= 640,
+                0,
+                IF(
+                    $active_units >= $units,
+                    0,
+                    $units - $active_units
+                )
+            )
+        )
+    );
+};
+
+SELECT free_units, acquired_units FROM (
+    SELECT $image_id as image_id, $zone_id as zone_id, free_units, acquired_units FROM $pools WHERE image_id = $image_id AND zone_id = $zone_id
+    UNION ALL
+    SELECT $image_id as image_id, $zone_id as zone_id, SUM($free_units(`units`, `active_units`, `status`, `from_pool`, `active_slots`)) as free_units, SUM(active_units) as acquired_units FROM $base_disks WHERE image_id = $image_id AND zone_id = $zone_id AND status == 2
+);
+
+UPSERT INTO $pools (image_id, zone_id, free_units, acquired_units) (
+    SELECT $image_id as image_id, $zone_id as zone_id, SUM($free_units(`units`, `active_units`, `status`, `from_pool`, `active_slots`)) as free_units, SUM(active_units) as acquired_units FROM $base_disks WHERE image_id = $image_id AND zone_id = $zone_id AND status == 2
+);

@@ -1,0 +1,107 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "iam-sync"
+  namespace: "iam"
+  labels:
+    "yc.iam.env": "iam-sync"
+  annotations:
+    {{- $secretsSha := include (print $.Template.BasePath "/secrets.yaml") . | sha256sum }}
+    {{- $configmapSha := include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    {{- $sshConfigsSha := include (print $.Template.BasePath "/ssh-configs.yaml") . | sha256sum }}
+    {{- $sshSecretsSha := include (print $.Template.BasePath "/ssh-secrets.yaml") . | sha256sum }}
+    {{- $sha := printf "%s%s%s%s" $secretsSha $configmapSha $sshConfigsSha $sshSecretsSha | sha256sum | trunc 63 }}
+    checksum/config: {{ $sha }}
+spec:
+  initContainers:
+    - name: "clone-repository"
+      image: alpine/git
+      args:
+        - clone
+        - --single-branch
+        - --
+        - "{{ $.Values.iamSyncConfigsRepository }}"
+        - "/configs-repo/"
+      volumeMounts:
+        - name: configs-repository-volume
+          mountPath: "/configs-repo/"
+        - name: iam-sync-ssh-secrets-volume
+          mountPath: "{{ $.Values.iamSyncSshPrivateKeyPath }}"
+          subPath: syncRobotSshPrivateKey
+          readOnly: true
+        - name: iam-sync-ssh-configs-volume
+          mountPath: "{{ $.Values.iamSyncSshConfigsPath }}"
+          subPath: iamSyncSshConfigs
+          readOnly: true
+    - name: ca-certificates-init
+      image: "{{ .Values.docker.registry }}/{{ .Values.docker.repository }}:{{ .Values.docker.tag }}"
+      command:
+        - "sh"
+        - "-c"
+        - "rm -f /usr/share/ca-certificates/mozilla/DST_Root_CA_X3.crt \
+                && sed -i '/^mozilla\\/DST_Root_CA_X3.crt$/ s/^/!/' /etc/ca-certificates.conf \
+                && update-ca-certificates \
+                && cat /etc/ssl/certs/ca-certificates.crt /usr/share/ca-certificates/iam-root-ca-certificates.crt > /ca-certs/ca-certificates.crt"
+      volumeMounts:
+        - name: iam-common-secrets-volume
+          mountPath: "/usr/share/ca-certificates/iam-root-ca-certificates.crt"
+          subPath: rootCaCert
+          readOnly: true
+        - name: ca-certificates-volume
+          mountPath: /ca-certs
+  containers:
+    - name: "iam-sync"
+      image: "{{ $.Values.docker.registry }}/{{ $.Values.docker.repository }}:{{ $.Values.docker.tag }}"
+      imagePullPolicy: {{ $.Values.image.pullPolicy }}
+      env:
+        - name: "IAM_SYNC_ENV"
+          value: "{{ $.Values.iamSyncEnv }}"
+      volumeMounts:
+        - name: configs-repository-volume
+          mountPath: "{{ $.Values.iamSyncConfigsPath }}/"
+        - name: iam-sync-configs-volume
+          mountPath: "{{ $.Values.iamSyncConfigsPath }}/endpoints.yaml"
+          subPath: "endpoints.yaml"
+          readOnly: true
+        - name: logs-volume
+          mountPath: "/var/log/yc/iam-sync-daemon/"
+        - name: secrets-volume
+          mountPath: "/etc/yc/iam-sync-daemon/secrets/yc-iam-sync-{{ $.Values.iamSyncEnv }}.pkey"
+          subPath: syncSaPrivateKey
+          readOnly: true
+        - name: iam-sync-ssh-secrets-volume
+          mountPath: "{{ $.Values.iamSyncSshPrivateKeyPath }}"
+          subPath: syncRobotSshPrivateKey
+          readOnly: true
+        - name: iam-sync-ssh-configs-volume
+          mountPath: "{{ $.Values.iamSyncSshConfigsPath }}"
+          subPath: iamSyncSshConfigs
+          readOnly: true
+        - name: ca-certificates-volume
+          mountPath: "/etc/ssl/certs/ca-certificates.crt"
+          subPath: ca-certificates.crt
+  volumes:
+    - name: configs-repository-volume
+      emptyDir: {}
+    - name: iam-sync-configs-volume
+      configMap:
+        name: "iam-sync-configs"
+    - name: logs-volume
+      hostPath:
+        path: "/var/log/yc/iam-sync-daemon"
+        type: DirectoryOrCreate
+    - name: secrets-volume
+      secret:
+        secretName: "iam-sync-secrets"
+    - name: iam-sync-ssh-secrets-volume
+      secret:
+        secretName: "iam-sync-ssh-secrets"
+        defaultMode: 0400
+    - name: iam-sync-ssh-configs-volume
+      configMap:
+        name: "iam-sync-ssh-configs"
+    - name: iam-common-secrets-volume
+      secret:
+        secretName: "iam-common-secrets"
+    - name: ca-certificates-volume
+      emptyDir: {}

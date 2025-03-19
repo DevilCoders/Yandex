@@ -1,0 +1,58 @@
+{% extends "base.j2" %}
+
+{% set id = "{}-{}-{}".format(prefix, env, "grpc-long-requests") %}
+{% set name = team + " gRPC long requests (" + env + ")" %}
+{% set transform = 'DIFFERENTIATE' %}
+
+
+{% macro grpc_count_by_time(le, status='none', app=app, host='none', method='none') %}
+series_sum({
+    sensor='grpc_durations'
+    ,hist_type='bin'
+    {% if app != 'none' %}
+        ,app='{{ app }}'
+    {% endif %}
+    {% if method != 'none' %}
+        ,method='{{ method }}'
+    {% endif %}
+    {% if status != 'none' %}
+        ,status='{{ status }}'
+    {% endif %}
+    {% if host != 'none' %}
+        ,host='{{host}}'
+    {% endif %},
+    le = '{{le}}'
+})
+{% endmacro %}
+
+{% block additional_params %}
+    ,{
+        "name": "zone",
+        "value": "{{ az_zones_for_parameter }}"
+    }
+    ,{
+        "name": "host",
+        "value": "*"
+    },
+    {
+        "name": "app",
+        "value": "*_client"
+    },
+    {
+        "name": "method",
+        "value": "*"
+    }
+{% endblock %}
+
+{% block elements %}
+	{{ render_element("<100ms", grpc_count_by_time('0.001|0.0025|0.005|0.0075|0.01|0.025|0.05|0.075|0.1', app='none') | to_prog, yaxis="LEFT") }},
+	{{ render_element("100 - 250ms", grpc_count_by_time('0.25', app='none') | to_prog, area="true", stack="true", yaxis="RIGHT") }},
+	{{ render_element("250 - 1000ms", grpc_count_by_time('0.5|0.75|1.0', app='none') | to_prog, area="true", stack="true", yaxis="RIGHT") }},
+	{{ render_element("1000ms - 2500ms", grpc_count_by_time('2.5', app='none') | to_prog, area="true", stack="true", yaxis="RIGHT") }},
+	{{ render_element("2500ms - 5000ms", grpc_count_by_time('5.0', app='none') | to_prog, area="true", stack="true", yaxis="RIGHT") }},
+	{{ render_element("> 5000ms", grpc_count_by_time('7.5|10.0|25.0|50.0|75.0|100.0|inf', app='none') | to_prog, area="true", stack="true", yaxis="RIGHT") }}
+{% endblock %}
+
+{% block transform %}
+    "transform": "DIFFERENTIATE",
+{% endblock %}

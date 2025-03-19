@@ -1,0 +1,26 @@
+{% extends "base_alert.j2" %}
+
+{% set windowSecs = 300 %}
+{% set checkExpression = "" %}
+{% set repeatNotifySecs = 3600 %}
+{% set description = "https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-head-private-errors" %}
+
+{% macro prog() %}
+let ernums = group_lines('sum', {project='{{ project_id }}', cluster='cloud_{{ env }}_head', service='compute_head', sensor='private_http_code', http_status_code!='All|200|500|404'});
+let errors = sum(ernums);
+let readable = to_fixed(errors, 2);
+warn_if(errors > 3);
+{% endmacro %}
+
+{% block main %}
+    "name": "Alert on compute private API 4xx errors @{{ env | upper }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "service": "compute-head-private-warnings",
+        "host": "{{ svm_fqdn() }}",
+        "error_rate": "[[expression.readable]]",
+        "description": "{{ description }}"
+    },
+    "description": "Notifies about private API failed with critical internal error\n\nSee {{ description }} for instructions.",
+    "type": {{ type_expression() }}
+{% endblock %}

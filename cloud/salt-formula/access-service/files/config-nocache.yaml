@@ -1,0 +1,106 @@
+{%- import "common/kikimr/init.sls" as vars with context -%}
+
+{%- set endpoints = salt['grains.get']('cluster_map:load_balancer:endpoints') -%}
+{%- set access_service = pillar.get('access-service') -%}
+{%- set cache_reload = access_service['cache_reload'] -%}
+
+{%- set hostname = grains['nodename'] %}
+{%- set base_role = grains['cluster_map']['hosts'][hostname]['base_role'] -%}
+
+accessServer:
+  maxClockSkew: PT10M
+{% if base_role == 'cloudvm' %}
+  masterToken: {{ access_service['config']['master_token'] }}
+  masterSubjectUserId: {{ access_service['config']['master_subject_user_id'] }}
+{% endif %}
+
+grpcServer:
+  certificatePemFile: /etc/yc/access-service/server.pem
+  threadPoolSize: 24
+  queueSize: 256
+  reflectionEnabled: true
+  port: {{ access_service['grpcServer']['port'] }}
+
+repository:
+  init: false
+  retryCount: 1
+  isolationLevel: ONLINE_CONSISTENT_READ_ONLY
+
+kikimr:
+  host: {{ endpoints.iam_kikimr_grpc.host }}
+  port: {{ pillar['kikimr_tenant_ports'][vars.iam_database]['grpc_port'] }}
+  tablespace: {{ vars.ydb_domain }}/{{ vars.iam_database }}/{{ grains['cluster_map']['stand_type'] }}/{{ salt['grains.get']('overrides:kikimr_id', salt['grains.get']('cluster_map:kikimr:shared_dir')) }}/
+
+metrics:
+  pullPort: 9990
+
+scms:
+  masterKeyFile: /var/lib/yc/access-service/master.key
+
+##########
+# caches #
+##########
+
+accessKeyCache:
+  maxSize: 0
+
+apiKeyCache:
+  maxSize: 0
+
+cloudCache:
+  maxSize: 0
+
+encryptionKeyCache:
+  maxSize: 0
+
+folderCache:
+  maxSize: 0
+
+keyCache:
+  expire: P7D
+  maxSize: 196608
+  reload:
+    interval: {{ cache_reload.interval }}
+    batchSize: {{ cache_reload.batch_size }}
+
+permissionCache:
+  expire: P7D
+  maxSize: 16777216
+  reload:
+    interval: {{ cache_reload.immutable_interval }}
+    batchSize: {{ cache_reload.batch_size }}
+
+resourcePermissionsCache:
+  maxSize: 0
+  reload:
+    batchSize: {{ cache_reload.batch_size }}
+    pageSize: {{ cache_reload.page_size }}
+
+rolePermissionsCache:
+  expire: P7D
+  maxSize: 16777216
+  reload:
+    interval: {{ cache_reload.immutable_interval }}
+    pageSize: {{ cache_reload.page_size }}
+
+serviceAccountCache:
+  maxSize: 0
+
+tokenCache:
+  expire: PT12H
+  maxSize: 1048576
+
+#########
+# pools #
+#########
+
+aesGcmCipherPool:
+  maxTotal: 128
+
+hmacPool:
+  maxTotal: 65536
+  maxTotalPerKey: 64
+
+signaturePool:
+  maxTotal: 65536
+  maxTotalPerKey: 64

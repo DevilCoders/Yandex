@@ -1,0 +1,658 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "snapshot.swagger",
+    "version": "version not set"
+  },
+  "schemes": [
+    "http",
+    "https"
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/projects/{project_id}/snapshots": {
+      "get": {
+        "summary": "Get snapshot list by parameters.",
+        "description": "There are two modes of operation:\n1. (CURSOR) Neither \"limit\" nor \"sort\" is passed.\n   You get a predefined number of snapshots.\n   You also get \"next_cursor\", which can be passed to subsequent calls to get next part of data and a new cursor.\n\n   NOTE: all query parameters must be passed as before, along with cursor\n\n   Example:\n       Request: GET /v1/projects/P1/snapshots?search_prefix=yyy\n       Response: {\"next_cursor\":\"ccc\", \"result\": [...]}\n       Request: GET /v1/projects/P1/snapshots?search_prefix=yyy\u0026cursor=ccc\n\n2. (LIMIT) \"limit\" is specified. NOTE: \"sort\" requires \"limit\".\n   You get up to \"limit\" snapshots sorted by \"sort\".\n   If there are more snapshots matching the criteria then \"has_more\" is set to true.\n   You can increase the limit for subsequent calls.",
+        "operationId": "List",
+        "responses": {
+          "200": {
+            "description": "",
+            "schema": {
+              "$ref": "#/definitions/snapshot_rpcSnapshotList"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "description": "Maximum number of entries to return.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "cursor",
+            "description": "Cursor for next part of data. Incompatible with \"limit\" and \"sort\".",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "disk",
+            "description": "Snapshot \"disk\" to filter by.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "search_prefix",
+            "description": "Prefix of snapshot \"name\" and \"description\" to filter by.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "search_full",
+            "description": "Substring of snapshot \"name\" and \"description\" to filter by.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "created_after",
+            "description": "Minimum snapshot \"created\" to filter by.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "name": "created_before",
+            "description": "Maximum snapshot \"created\" to filter by.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "name": "sort",
+            "description": "Sorting order.\n\nFormat: [-]\u003cfield\u003e(,[-]\u003cfield\u003e)*\n\n\u003cfield\u003e is on of \"created\",\"real_size\",\"name\",\"description\".",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "snapshot"
+        ]
+      },
+      "post": {
+        "summary": "Import snapshot from S3.",
+        "description": "You can import a snapshot in different formats.\nSnapshot will be converted to our format.\n\nNOTE: This request only starts conversion process.\n      You must check freshly created snapshot until its \"state\".\"code\"\n      changes from \"creating\" to \"ready\" or \"failed\".",
+        "operationId": "Convert",
+        "responses": {
+          "200": {
+            "description": "",
+            "schema": {
+              "$ref": "#/definitions/snapshot_rpcConvertResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/snapshot_rpcConvertRequest"
+            }
+          }
+        ],
+        "tags": [
+          "snapshot"
+        ]
+      }
+    },
+    "/v1/snapshots/{id}": {
+      "get": {
+        "summary": "Get snapshot properties.",
+        "description": "Get snapshot properties by id.",
+        "operationId": "Info",
+        "responses": {
+          "200": {
+            "description": "",
+            "schema": {
+              "$ref": "#/definitions/snapshot_rpcSnapshotInfo"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "skip_status_check",
+            "description": "show deleting/deleted snapshots.",
+            "in": "query",
+            "required": false,
+            "type": "boolean",
+            "format": "boolean"
+          }
+        ],
+        "tags": [
+          "snapshot"
+        ]
+      },
+      "delete": {
+        "summary": "Delete snapshot.",
+        "operationId": "Delete",
+        "responses": {
+          "200": {
+            "description": "",
+            "schema": {
+              "$ref": "#/definitions/snapshot_rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "skip_status_check",
+            "description": "Allows to clear snapshots in 'deleting' status.",
+            "in": "query",
+            "required": false,
+            "type": "boolean",
+            "format": "boolean"
+          },
+          {
+            "name": "params.task_id",
+            "description": "ID of task to track progress.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "params.heartbeat_enabled",
+            "description": "Allow auto-stop on heartbeat timeout.",
+            "in": "query",
+            "required": false,
+            "type": "boolean",
+            "format": "boolean"
+          },
+          {
+            "name": "params.heartbeat_timeout_ms",
+            "description": "Timeout for auto-stop.",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "snapshot"
+        ]
+      },
+      "put": {
+        "summary": "Update specified fields in snapshot",
+        "operationId": "Update",
+        "responses": {
+          "200": {
+            "description": "",
+            "schema": {
+              "$ref": "#/definitions/snapshot_rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/snapshot_rpcUpdateRequest"
+            }
+          }
+        ],
+        "tags": [
+          "snapshot"
+        ]
+      }
+    },
+    "/v1/snapshots/{id}/bases": {
+      "get": {
+        "summary": "Get the list of base snapshots.",
+        "description": "Get the list of base and differential snapshots\nstarting from direct predecessor.",
+        "operationId": "ListBases",
+        "responses": {
+          "200": {
+            "description": "",
+            "schema": {
+              "$ref": "#/definitions/snapshot_rpcSnapshotList"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "description": "Maximum number of entries to return.",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "snapshot"
+        ]
+      }
+    },
+    "/v1/snapshots/{id}/verify": {
+      "get": {
+        "summary": "Verify checksum for snapshot and chunks",
+        "operationId": "Verify",
+        "responses": {
+          "200": {
+            "description": "",
+            "schema": {
+              "$ref": "#/definitions/snapshot_rpcVerifyReport"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "full",
+            "description": "Enable chunks verification.",
+            "in": "query",
+            "required": false,
+            "type": "boolean",
+            "format": "boolean"
+          }
+        ],
+        "tags": [
+          "snapshot"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "snapshot_rpcChange": {
+      "type": "object",
+      "properties": {
+        "real_size": {
+          "type": "string",
+          "format": "int64",
+          "description": "New \"real_size\"."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when a change occured."
+        }
+      },
+      "description": "Change in snapshot \"real_size\"."
+    },
+    "snapshot_rpcChunkMismatch": {
+      "type": "object",
+      "properties": {
+        "offset": {
+          "type": "string",
+          "format": "int64",
+          "description": "Offset of chunk in snapshot."
+        },
+        "chunk_id": {
+          "type": "string",
+          "description": "ID of chunk in database."
+        },
+        "details": {
+          "type": "string",
+          "description": "Error details."
+        }
+      },
+      "description": "Corrupted chunk information."
+    },
+    "snapshot_rpcConvertRequest": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Destination snapshot ID (generate new if empty)."
+        },
+        "bucket": {
+          "type": "string",
+          "description": "Source image S3 bucket (incompatible with url)."
+        },
+        "key": {
+          "type": "string",
+          "description": "Source image S3 key (incompatible with url)."
+        },
+        "url": {
+          "type": "string",
+          "description": "Source image url (incompatible with S3 bucket/key)."
+        },
+        "format": {
+          "type": "string",
+          "description": "Source image format. Leave empty for auto-detection."
+        },
+        "metadata": {
+          "type": "string",
+          "description": "Destination snapshot metadata."
+        },
+        "organization": {
+          "type": "string",
+          "description": "Destination snapshot organization."
+        },
+        "project_id": {
+          "type": "string",
+          "description": "Destination snapshot project_id."
+        },
+        "name": {
+          "type": "string",
+          "description": "Snapshot name."
+        },
+        "description": {
+          "type": "string",
+          "description": "Destination snapshot description."
+        },
+        "product_id": {
+          "type": "string",
+          "description": "Destination snapshot product ID."
+        },
+        "image_id": {
+          "type": "string",
+          "description": "Destination snapshot image ID."
+        },
+        "public": {
+          "type": "boolean",
+          "format": "boolean",
+          "description": "Destination snapshot public."
+        }
+      },
+      "description": "Source image and destination snapshot metadata."
+    },
+    "snapshot_rpcConvertResponse": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "ID of newly created snapshot."
+        }
+      },
+      "description": "Result of import request processing."
+    },
+    "snapshot_rpcDeleteParams": {
+      "type": "object",
+      "properties": {
+        "task_id": {
+          "type": "string",
+          "title": "ID of task to track progress"
+        },
+        "heartbeat_enabled": {
+          "type": "boolean",
+          "format": "boolean",
+          "description": "Allow auto-stop on heartbeat timeout."
+        },
+        "heartbeat_timeout_ms": {
+          "type": "integer",
+          "format": "int32",
+          "description": "Timeout for auto-stop."
+        }
+      },
+      "title": "Delete params"
+    },
+    "snapshot_rpcSnapshotInfo": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Snapshot ID."
+        },
+        "metadata": {
+          "type": "string",
+          "description": "Snapshot metadata."
+        },
+        "base": {
+          "type": "string",
+          "description": "Direct predecessor for incremental snapshots."
+        },
+        "base_project_id": {
+          "type": "string",
+          "description": "Project of direct predecessor."
+        },
+        "size": {
+          "type": "string",
+          "format": "int64",
+          "description": "Snapshot virtual size, i.e. the minimum amount of disk space needed to restore."
+        },
+        "organization": {
+          "type": "string",
+          "description": "Organization owning snapshot."
+        },
+        "project_id": {
+          "type": "string",
+          "description": "Project owning snapshot."
+        },
+        "disk": {
+          "type": "string",
+          "description": "ID of disk from which the snapshot was created."
+        },
+        "created": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp."
+        },
+        "real_size": {
+          "type": "string",
+          "format": "int64",
+          "description": "Snapshot real size, i.e. the amount of disk space occupied on storage."
+        },
+        "public": {
+          "type": "boolean",
+          "format": "boolean",
+          "description": "Whether or not snapshot is publicly visible."
+        },
+        "shared_with": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of projects the snapshot is shared with."
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/snapshot_rpcChange"
+          },
+          "description": "Changes in snapshot real size."
+        },
+        "name": {
+          "type": "string",
+          "description": "User-defined snapshot name."
+        },
+        "description": {
+          "type": "string",
+          "description": "User-defined snapshot description."
+        },
+        "product_id": {
+          "type": "string",
+          "description": "Snapshot product ID."
+        },
+        "image_id": {
+          "type": "string",
+          "description": "Back reference to image ID."
+        },
+        "state": {
+          "$ref": "#/definitions/snapshot_rpcState"
+        }
+      },
+      "description": "Snapshot properties."
+    },
+    "snapshot_rpcSnapshotList": {
+      "type": "object",
+      "properties": {
+        "result": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/snapshot_rpcSnapshotInfo"
+          },
+          "title": "Actual data"
+        },
+        "has_more": {
+          "type": "boolean",
+          "format": "boolean",
+          "description": "For LIMIT requests, this field shows whether there is more data mathing the criteria."
+        },
+        "next_cursor": {
+          "type": "string",
+          "description": "For CURSOR requests, this is the \"cursor\" to get next part of data."
+        }
+      },
+      "description": "List of snapshots mathing criteria."
+    },
+    "snapshot_rpcState": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "One of\n\"creating\"\n\"ready\"\n\"failed\"\n\"deleting\" (system state)\n\"deleted\" (system state)",
+          "title": "State code"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable state description.\n\nContains:\n- error description for failed snapshots.\n- progress description for snapshot being created."
+        },
+        "progress": {
+          "type": "number",
+          "format": "float",
+          "description": "For snapshots being created, creation progress (0..100) is here."
+        }
+      },
+      "description": "Snapshot state and description."
+    },
+    "snapshot_rpcStatus": {
+      "type": "object"
+    },
+    "snapshot_rpcUpdateRequest": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "ID of requested snapshot."
+        },
+        "metadata": {
+          "type": "string",
+          "description": "New snapshot metadata."
+        },
+        "description": {
+          "type": "string",
+          "description": "New snapshot description."
+        },
+        "public": {
+          "type": "boolean",
+          "format": "boolean",
+          "description": "New snapshot visibility."
+        }
+      },
+      "description": "Request for update of specific snapshot."
+    },
+    "snapshot_rpcVerifyReport": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Snapshot ID."
+        },
+        "status": {
+          "type": "string",
+          "description": "Short result description."
+        },
+        "details": {
+          "type": "string",
+          "description": "Detailed result description."
+        },
+        "checksum_matched": {
+          "type": "boolean",
+          "format": "boolean",
+          "description": "Snapshot checksum matched."
+        },
+        "chunk_size": {
+          "type": "string",
+          "format": "int64",
+          "description": "Snapshot chunk size."
+        },
+        "total_chunks": {
+          "type": "string",
+          "format": "int64",
+          "description": "Number of chunks."
+        },
+        "empty_chunks": {
+          "type": "string",
+          "format": "int64",
+          "description": "Number of empty (non-filled, read as zero) chunks."
+        },
+        "zero_chunks": {
+          "type": "string",
+          "format": "int64",
+          "description": "Number of zero (filled) chunks."
+        },
+        "data_chunks": {
+          "type": "string",
+          "format": "int64",
+          "description": "Number of data chunks."
+        },
+        "mismatches": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/snapshot_rpcChunkMismatch"
+          },
+          "description": "Chunk corruption messages."
+        }
+      },
+      "description": "Snapshot verification report."
+    }
+  }
+}

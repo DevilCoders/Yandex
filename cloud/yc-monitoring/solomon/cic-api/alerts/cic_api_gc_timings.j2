@@ -1,0 +1,31 @@
+{% extends "cic_api_base_alert.j2" %}
+
+{% set service = "cic-api-gc-timings" %}
+
+{% macro prog() %}
+let ts = non_negative_derivative({
+    cluster='cloud_{{env}}_cic-api-k8s'
+    ,service='vpc-cloud-interconnect'
+    ,sensor='jvm_gc_collection_seconds'
+    ,summary_type='count'
+    ,host='cic-api-*'
+});
+
+let max_gc_timings = max(moving_avg(series_max(ts), 5m));
+
+alarm_if(max_gc_timings > {{ alarm_limit }});
+warn_if(max_gc_timings > {{ warn_limit }});
+{% endmacro %}
+
+{% block main %}
+    "name": "CIC API JVM gc timings {{env}}",
+    "annotations": {
+        "max_gc_timings": "[[ expression.max_gc_timings ]]",
+        "description": "CIC API JVM gc timings: [[ expression.max_gc_timings ]]",
+        "host": "{{ solomon_host() }}",
+        "service": "{{ service }}",
+        "dashboard": "{{ cic_api_dashboard() }}",
+        "wiki": "{{ wiki_url(service) }}"
+    },
+    "type": {{ type_expression() }}
+{% endblock %}

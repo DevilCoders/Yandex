@@ -1,0 +1,28 @@
+{% extends "base_alert.j2" %}
+
+{% set name = "Compute node accounting errors" %}
+{% set jugglerService = "compute-node-accounting-errors" %}
+{% set description = "https://docs.yandex-team.ru/yc-monitoring/compute-node/compute-node-accounting-errors" %}
+{% set isComputeNode = True %}
+{% set windowSecs = 20 * 60 %}
+
+{% set annotations = [("reasons", "[[expression.reasons]]")] %}
+
+{% macro prog() %}
+let data = {
+    project='{{ project_id }}',
+    cluster='cloud_{{ env }}_compute',
+    service='compute_node',
+    sensor='accounting_errors',
+    host='*'
+};
+
+// TODO: simplify filter expression after MONSUPPORT-446 is done.
+// We assume that measurements occur more frequently than once per hour,
+// that's why metric (rate per second) value cannot be lower than 1/3600.
+let zero_threshold = 1/3600;
+let nonzero = drop_empty_lines(drop_below(data, zero_threshold));
+
+let reasons = map(last(nonzero) by reason, x -> get_label(x, 'reason'));
+alarm_if(size(reasons) > 0);
+{% endmacro %}

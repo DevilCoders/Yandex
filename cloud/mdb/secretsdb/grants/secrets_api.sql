@@ -1,0 +1,5 @@
+GRANT USAGE ON SCHEMA secrets TO secrets_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA secrets TO secrets_api;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA secrets TO secrets_api;
+
+GRANT CONNECT ON DATABASE secretsdb TO secrets_api;

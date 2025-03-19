@@ -1,0 +1,2 @@
+{{ sls }}:
+  pkg.installed

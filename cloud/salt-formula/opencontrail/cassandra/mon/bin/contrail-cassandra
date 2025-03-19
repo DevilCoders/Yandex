@@ -1,0 +1,70 @@
+#!/usr/bin/env python
+# -*-coding: utf-8 -*-
+# vim: sw=4 ts=4 expandtab ai
+
+import sys
+import socket
+import time
+from cassandra.cluster import Cluster,NoHostAvailable
+from cassandra.policies import SimpleConvictionPolicy
+from cassandra.pool import Host, HostConnectionPool
+import introspect
+
+"""Monitoring for OpenContrail cassandra database"""
+SERVICE_UP = 'up'
+SERVICE_DOWN = 'down'
+
+def get_host_thrift_status(address, session):
+    status = SERVICE_DOWN
+    try:
+        host = Host(address, SimpleConvictionPolicy)
+        host_pool = HostConnectionPool(host, 1, session)
+        host_state = host_pool.get_state()
+        if not host_state['shutdown']:
+            status = SERVICE_UP
+        return status
+    except socket.error, messages:
+        return messages
+
+def cql_connect_host(ip):
+    cluster = Cluster([ip])
+    session = cluster.connect()
+    main_node = session.execute('select broadcast_address from system.local')
+    cluster.shutdown()
+    return main_node, session
+
+def get_service_status(ip, port):
+    status = introspect.STATUS_CRIT
+    messages = None
+    try:
+        result, session = cql_connect_host(ip)
+        for row in result:
+            status = get_host_thrift_status(row.broadcast_address, session)
+            if status == SERVICE_UP:
+                status = introspect.STATUS_OK
+            elif status == SERVICE_DOWN:
+                messages = 'Database cassandra is down.  Thrift is down ({}:{})'.format(ip, port)
+            else:
+                messages = 'Could not connect to host ({})'.format(status)
+    except NoHostAvailable:
+        messages = 'Can\'t get status for service ({}:{}). CQL is unavailable'.format(ip, port)
+    return status, messages
+
+def update_cassandra_lastalive_file(lastalive_file):
+    with open(lastalive_file, 'w') as f:
+        current_timestamp = int(time.time())
+        f.write(str(current_timestamp))
+
+def main():
+    try:
+        config = introspect.load_config('contrail-cassandra.conf')
+        status, messages = get_service_status(config['ip'], config['port'])
+        if status == introspect.STATUS_OK:
+            update_cassandra_lastalive_file(config['lastalive_file'])
+        introspect.print_for_monitoring('contrail-cassandra', status, messages)
+    except IOError:
+        introspect.print_for_monitoring('contrail-cassandra', introspect.STATUS_CRIT, 'Can\'t load config file for monitoring')
+    sys.exit(0)
+
+if __name__ == '__main__':
+    main()

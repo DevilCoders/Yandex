@@ -1,0 +1,238 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.airflow.v1;
+
+import "google/protobuf/field_mask.proto";
+import "yandex/cloud/priv/airflow/v1/cluster.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+import "yandex/cloud/priv/validation.proto";
+import "yandex/cloud/api/operation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/airflow/v1;airflow";
+option java_outer_classname = "AFCS";
+
+// A set of methods for managing Airflow clusters.
+service ClusterService {
+  // Returns the specified Airflow cluster.
+  rpc Get (GetClusterRequest) returns (Cluster) {
+  }
+
+  // Retrieves a list of Airflow clusters.
+  rpc List (ListClustersRequest) returns (ListClustersResponse) {
+  }
+
+
+  // Creates a Airflow cluster.
+  rpc Create (CreateClusterRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "CreateClusterMetadata"
+      response: "Cluster"
+    };
+  }
+
+  // Updates configuration of the specified Airflow cluster.
+  rpc Update (UpdateClusterRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateClusterMetadata"
+      response: "Cluster"
+    };
+  }
+
+  // Deletes the specified Airflow cluster.
+  rpc Delete (DeleteClusterRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeleteClusterMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+
+  // Start the specified Airflow cluster.
+  rpc Start (StartClusterRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "StartClusterMetadata"
+      response: "Cluster"
+    };
+  }
+
+  // Stop the specified Airflow cluster.
+  rpc Stop (StopClusterRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "StopClusterMetadata"
+      response: "Cluster"
+    };
+  }
+
+  rpc ListOperations (ListClusterOperationsRequest) returns (ListClusterOperationsResponse) {
+  }
+}
+
+message GetClusterRequest {
+  // Required. ID of the Airflow cluster to return.
+  string cluster_id = 1 [(length) = "<=50"];
+}
+
+message ListClustersRequest {
+  // Required. ID of the folder to list Airflow clusters in.
+  string folder_id = 1 [(length) = "<=50"];
+
+  // The maximum number of results per page that should be returned. If the number of available
+  // results is larger than `page_size`, the service returns a `next_page_token` that can be used
+  // to get the next page of results in subsequent ListClusters requests.
+  // Acceptable values are 0 to 1000, inclusive. Default value: 100.
+  int64 page_size = 2 [(value) = "<=1000"];
+
+  // Page token. Set `page_token` to the `next_page_token` returned by a previous ListClusters
+  // request to get the next page of results.
+  string page_token = 3 [(length) = "<=100"];
+
+  // String that describes a display filter.
+  string filter = 4 [(length) = "<=1000"];
+}
+
+message ListClustersResponse {
+  // Requested list of Airflow clusters.
+  repeated Cluster clusters = 1;
+
+  // This token allows you to get the next page of results for ListClusters requests,
+  // if the number of results is larger than `page_size` specified in the request.
+  // To get the next page, specify the value of `next_page_token` as a value for
+  // the `page_token` parameter in the next ListClusters request. Subsequent ListClusters
+  // requests will have their own `next_page_token` to continue paging through the results.
+  string next_page_token = 2;
+}
+
+message CreateClusterRequest {
+    // Required. ID of the folder to create Airflow cluster in.
+    string folder_id = 1 [(length) = "<=50"];
+
+    // Required. Name of the Airflow cluster. The name must be unique within the folder.
+    // The name must be 1-63 characters long and match the regular expression `^[a-z]([-a-z0-9]{,61}[a-z0-9])?$`.
+    // The name can't be changed after the Airflow cluster is created.
+    string name = 2 [(pattern) = "|[a-z][-a-z0-9]{1,61}[a-z0-9]"];
+
+    // Description of the Airflow cluster. 0-256 characters long.
+    string description = 3 [(length) = "<=256"];
+
+    map<string, string> labels = 4 [(priv.size) = "<=64", (length) = "<=63", (pattern) = "[-_0-9a-z]*", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_0-9a-z]*"];
+
+    ClusterConfig config = 6 [(required) = true];
+
+    NetworkConfig network = 7;
+
+    CodeSyncConfig code_sync = 8;
+
+    // Deletion Protection inhibits deletion of the cluster
+    bool deletion_protection = 9;
+}
+
+message CreateClusterMetadata {
+    // Required. ID of the creating Airflow cluster.
+    string cluster_id = 1;
+}
+
+message UpdateClusterConfigSpec {
+    // Version of image for cluster provisioning
+    string version_id = 1;
+
+    // Airflow specific options
+    AirflowConfig airflow = 2;
+
+    // Configuration for workloads
+    WebserverConfig webserver = 3;
+    SchedulerConfig scheduler = 4;
+    TriggererConfig triggerer = 5;
+    WorkerConfig worker = 6;
+}
+
+message UpdateNetworkConfigSpec {
+    // User security groups.
+    repeated string security_group_ids = 1;
+}
+
+message UpdateClusterRequest {
+  // Required. ID of the Airflow cluster.
+  string cluster_id = 1 [(length) = "<=50"];
+
+  google.protobuf.FieldMask update_mask = 2;
+
+  string name = 3 [(pattern) = "|[a-z][-a-z0-9]{1,61}[a-z0-9]"];
+
+  // Description of the Airflow cluster. 0-256 characters long.
+  string description = 4 [(length) = "<=256"];
+
+  map<string, string> labels = 5 [(priv.size) = "<=64", (length) = "<=63", (pattern) = "[-_0-9a-z]*", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_0-9a-z]*"];
+
+  UpdateClusterConfigSpec config_spec = 6;
+
+  CodeSyncConfig code_sync = 7;
+
+  UpdateNetworkConfigSpec network_spec = 8;
+
+  // Deletion Protection inhibits deletion of the cluster
+  bool deletion_protection = 9;
+}
+
+message UpdateClusterMetadata {
+  // Required. ID of the Airflow cluster.
+  string cluster_id = 1;
+}
+
+
+message DeleteClusterRequest {
+  // Required. ID of the Airflow cluster to delete.
+  string cluster_id = 1 [(length) = "<=50"];
+
+  // Timeout to gracefully decommission nodes. In seconds. Default value: 0
+  int64 decommission_timeout = 2 [(value) = "0-86400"];
+}
+
+message DeleteClusterMetadata {
+  // Required. ID of the deleting Airflow cluster.
+  string cluster_id = 1;
+}
+
+message StartClusterRequest {
+  // Required. ID of the Airflow cluster to start.
+  string cluster_id = 1 [(length) = "<=50"];
+}
+
+message StartClusterMetadata {
+  // Required. ID of the Airflow cluster.
+  string cluster_id = 1;
+}
+
+message StopClusterRequest {
+  // Required. ID of the Airflow cluster to stop.
+  string cluster_id = 1 [(length) = "<=50"];
+}
+
+message StopClusterMetadata {
+  // Required. ID of the Airflow cluster.
+  string cluster_id = 1;
+}
+
+message ListClusterOperationsRequest {
+  // Required. ID of the Airflow cluster.
+  string cluster_id = 1 [(length) = "<=50"];
+
+  // The maximum number of results per page that should be returned. If the number of available
+  // results is larger than `page_size`, the service returns a `next_page_token` that can be used
+  // to get the next page of results in subsequent ListOperations requests.
+  // Acceptable values are 0 to 1000, inclusive. Default value: 100.
+  int64 page_size = 2 [(value) = "<=1000"];
+
+  // Page token. Set `page_token` to the `next_page_token` returned by a previous ListOperations
+  // request to get the next page of results.
+  string page_token = 3 [(length) = "<=100"];
+}
+
+message ListClusterOperationsResponse {
+  repeated operation.Operation operations = 1;
+
+  // This token allows you to get the next page of results for ListOperations requests,
+  // if the number of results is larger than `page_size` specified in the request.
+  // To get the next page, specify the value of `next_page_token` as a value for
+  // the `page_token` parameter in the next ListOperations request. Subsequent ListOperations
+  // requests will have their own `next_page_token` to continue paging through the results.
+  string next_page_token = 2;
+}

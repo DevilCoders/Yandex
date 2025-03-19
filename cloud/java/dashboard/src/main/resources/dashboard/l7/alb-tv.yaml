@@ -1,0 +1,128 @@
+# Link: https://grafana.yandex-team.ru/d/cloud-alb-tv
+#
+# How to update:
+#
+# Get token from https://oauth.yandex-team.ru/authorize?response_type=token&client_id=12225edea41e4add87aaa4c4896431f1
+#
+# $ export GRAFANA_OAUTH_TOKEN=...
+#
+# $ cd ~/arcadia/cloud/java/dashboard/src/main/resources/dashboard
+# $ sudo docker run --rm -it -v `pwd`:/data/ -e GRAFANA_OAUTH_TOKEN="$GRAFANA_OAUTH_TOKEN" registry.yandex.net/cloud/platform/dashboard:latest java -jar build/java-dashboard.jar upload /data/l7/alb-tv.yaml
+#
+
+uid: cloud-alb-tv
+title: Cloud L7 controlplane
+refresh: 1m
+tags: [ycp, l7, alb]
+
+graphDefaults:
+  datasource: 'Solomon Cloud'
+  width: 3
+  height: 3
+
+queryDefaults:
+  dropNan: true
+  labels: 'project=platform, host=!cluster'
+
+rows:
+- title: XDS - prod
+  queryDefaults:
+    labels: 'cluster=cloud_prod_xds, service=api_xds_ma'
+  panels:
+    !include include/xds-lights.yaml
+
+- title: ALB - prod
+  queryDefaults:
+    labels: 'cluster=cloud_prod_alb, service=albapi_ma'
+  panels:
+    !include include/alb-lights.yaml
+
+- title: XDS - preprod
+  queryDefaults:
+    labels: 'cluster=cloud_preprod_xds, service=api_xds_ma'
+  panels:
+    !include include/xds-lights.yaml
+
+- title: ALB - preprod
+  queryDefaults:
+    labels: 'cluster=cloud_preprod_alb, service=albapi_ma'
+  panels:
+    !include include/alb-lights.yaml
+
+- title: ALS - prod
+  queryDefaults:
+    labels: 'cluster=cloud_prod_als, service=l7-als_ma, host=!cluster'
+  panels:
+  - type: singlestat
+    title: Heap max
+    format: bytes
+    query:
+      params: { labels: 'name=process_resident_memory_bytes' }
+      groupByTime: { max: default }
+      select: { group_lines: 'max' }
+    value: { valueFontSize: 110%, valueFunction: 'current' }
+    sparkline: { show: true, lineColor: 'yellow', fullHeight: true }
+    coloring:
+      colorValue: true
+      thresholds: [ 14000111222 ] # 16 Gb total RAM
+      colorsList: [ 'green', 'red' ]
+  - type: singlestat
+    title: Metrics pusher errors
+    query:
+      params: { labels: 'name=ma_push_errors' }
+      groupByTime: { max: default }
+      select: { group_lines: 'sum', diff: [], drop_below: [0] }
+    value: { valueFontSize: 150%, valueFunction: 'total' }
+    sparkline: { show: true, lineColor: 'yellow', fullHeight: true }
+    coloring:
+      colorValue: true
+      thresholds: [ 1 ]
+      colorsList: [ 'green', 'red' ]
+  - type: singlestat
+    title: Metrics Discarded
+    query:
+      params: { labels: 'name=als_metrics_discarded_messages_total' }
+      groupByTime: { max: default }
+      select: { group_lines: 'sum', diff: [], drop_below: [0] }
+    value: { valueFontSize: 150%, valueFunction: 'total' }
+    sparkline: { show: true, lineColor: 'yellow', fullHeight: true }
+    coloring:
+      colorValue: true
+      thresholds: [ 1 ]
+      colorsList: [ 'green', 'red' ]
+  - type: singlestat
+    title: Logs Discarded
+    query:
+      params: { labels: 'name=cloud_logs_discarded_messages_counter' }
+      groupByTime: { max: default }
+      select: { group_lines: 'sum', diff: [], drop_below: [0] }
+    value: { valueFontSize: 150%, valueFunction: 'total' }
+    sparkline: { show: true, lineColor: 'yellow', fullHeight: true }
+    coloring:
+      colorValue: true
+      thresholds: [ 1 ]
+      colorsList: [ 'green', 'red' ]
+  - type: singlestat
+    title: Blue RPS
+    query:
+      params: { labels: 'name=cloud_logs_reported_messages, color=blue' }
+      groupByTime: { max: default }
+      select: { group_lines: 'sum', non_negative_derivative: [], asap: [] }
+    value: { valueFontSize: 150%, valueFunction: 'average' }
+    sparkline: { show: true, lineColor: 'yellow', fullHeight: true }
+    coloring:
+      colorValue: true
+      thresholds: [ 1, 10000 ]
+      colorsList: [ 'gray', 'blue', 'red' ]
+  - type: singlestat
+    title: Green RPS
+    query:
+      params: { labels: 'name=cloud_logs_reported_messages, color=green' }
+      groupByTime: { max: default }
+      select: { group_lines: 'sum', non_negative_derivative: [], asap: [] }
+    value: { valueFontSize: 150%, valueFunction: 'average' }
+    sparkline: { show: true, lineColor: 'yellow', fullHeight: true }
+    coloring:
+      colorValue: true
+      thresholds: [ 1, 10000 ]
+      colorsList: [ 'gray', 'green', 'red' ]

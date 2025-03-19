@@ -1,0 +1,17 @@
+RECURSE(
+    records_splitting
+    toloka
+    files
+    join
+    obfuscate
+    select_records_joins
+    markup_metrics
+    markup_cost
+    markup_params
+    honeypots
+    import_data
+    transcription_tasks
+    user_bits_urls
+    transcript_feedback_loop
+    projects
+)

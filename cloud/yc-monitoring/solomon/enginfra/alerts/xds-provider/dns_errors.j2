@@ -1,0 +1,43 @@
+{% extends "base_alert.j2" %}
+
+{% set service = "dns-errors" %}
+
+
+{% set dns_errors = (
+    'dns_requests_errors',
+)%}
+
+{% macro prog() %}
+let ts = series_sum({
+    cluster='cloud_{{env}}_xds-provider_{{ az }}'
+    ,sensor='{{ dns_errors | join ('|') }}'
+    ,host='*'
+});
+
+// It's ok, just no errors for current host for a while
+ok_if(count(ts) == 0);
+
+let error_rate_str = '0';
+let error_rate = last(ts);
+let error_rate_str = to_fixed(error_rate, 1);
+
+alarm_if(error_rate > (2 / 60.0));
+warn_if(error_rate > (1 / 60.0));
+{% endmacro %}
+
+{% block main %}
+    "name": "XDS provider DNS errors {{env}}@{{az}}",
+    "annotations": {
+        "error_rate": "[[ expression.error_rate_str ]]",
+        "description": "XDS provider DNS errors: [[ expression.error_rate_str ]]",
+        "host": "{{ svm_fqdn() }}",
+        "service": "{{ service }}",
+        "dashboard": "{{ xds_provider_dashboard() }}",
+        "wiki": "{{ wiki_url(service) }}" 
+    },
+    "type": {{ type_expression() }},
+    "description": "",
+    "groupByLabels": [
+        "host"
+    ]
+{% endblock %}

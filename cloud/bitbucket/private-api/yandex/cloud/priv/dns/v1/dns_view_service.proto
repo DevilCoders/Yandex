@@ -1,0 +1,160 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.dns.v1;
+
+import "google/protobuf/field_mask.proto";
+import "yandex/cloud/api/operation.proto";
+import "yandex/cloud/priv/access/access.proto";
+import "yandex/cloud/priv/dns/v1/dns_view.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/dns/v1;dns";
+option java_outer_classname = "PDVS";
+
+service DnsViewService {
+  rpc Get (GetDnsViewRequest) returns (DnsView);
+
+  rpc List (ListDnsViewRequest) returns (ListDnsViewResponse);
+
+  rpc Create (CreateDnsViewRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "CreateDnsViewMetadata"
+      response: "DnsView"
+    };
+  };
+
+  rpc Update (UpdateDnsViewRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateDnsViewMetadata"
+      response: "DnsView"
+    };
+  };
+
+  rpc Delete (DeleteDnsViewRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeleteDnsViewMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+
+  rpc ListZones (ListDnsViewZonesRequest) returns (ListDnsViewZonesResponse);
+
+  rpc UpdateZones (UpdateDnsViewZonesRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateDnsViewZonesMetadata"
+      response: "google.protobuf.Empty"
+    };
+  };
+
+  rpc ListOperations (ListDnsViewOperationsRequest) returns (ListDnsViewOperationsResponse);
+
+  rpc ListAccessBindings (access.ListAccessBindingsRequest) returns (access.ListAccessBindingsResponse);
+
+  rpc SetAccessBindings (access.SetAccessBindingsRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "access.SetAccessBindingsMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+
+  rpc UpdateAccessBindings (access.UpdateAccessBindingsRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "access.UpdateAccessBindingsMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+}
+
+message GetDnsViewRequest {
+  string dns_view_id = 2 [(required) = true];
+}
+
+message ListDnsViewRequest {
+  string folder_id = 1 [(required) = true];
+  string dns_zone_id = 2; // filtering views by zone is currently not supported
+
+  int64 page_size = 4 [(value) = "<=1000"];
+  string page_token = 5 [(length) = "<=1000"];
+}
+
+message ListDnsViewResponse {
+  repeated DnsView dns_views = 1;
+
+  string next_page_token = 5;
+}
+
+message CreateDnsViewRequest {
+  string folder_id = 1 [(required) = true];
+  string name = 2 [(pattern) = "|[a-z]([-a-z0-9]{0,61}[a-z0-9])?"];
+  string description = 3 [(length) = "<=256"];
+  map<string, string> labels = 4 [(priv.size) = "<=64", (length) = "<=63", (pattern) = "[-_./\\@0-9a-z]*", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_./\\@0-9a-z]*"];
+  int64 rps_limit = 5 [(value) = "<10000"];
+
+  string tag = 10 [(required) = true, (length) = "<=255"];
+  string cluster = 11 [(length) = "<=255", (pattern) = "|[a-z][-a-z0-9.]*"]; // default is "private"
+}
+
+message CreateDnsViewMetadata {
+  string dns_view_id = 1;
+}
+
+message UpdateDnsViewRequest {
+  string dns_view_id = 1 [(required) = true];
+  google.protobuf.FieldMask update_mask = 2;
+
+  string name = 3 [(pattern) = "|[a-z]([-a-z0-9]{0,61}[a-z0-9])?"];
+  string description = 4 [(length) = "<=256"];
+  map<string, string> labels = 5 [(priv.size) = "<=64", (length) = "<=63", (pattern) = "[-_./\\@0-9a-z]*", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_./\\@0-9a-z]*"];
+
+  int64 rps_limit = 6 [(value) = "<10000"];
+
+  string tag = 10 [(required) = true, (length) = "<=255"];
+}
+
+message UpdateDnsViewMetadata {
+  string dns_view_id = 1;
+}
+
+message DeleteDnsViewRequest {
+  string dns_view_id = 1 [(required) = true];
+}
+
+message DeleteDnsViewMetadata {
+  string dns_view_id = 1;
+}
+
+message ListDnsViewZonesRequest {
+  string dns_view_id = 1 [(length) = "20"];
+
+  int64 page_size = 4 [(value) = "<=1000"];
+  string page_token = 5 [(length) = "<=1000"];
+}
+
+message ListDnsViewZonesResponse {
+  repeated string dns_zone_ids = 1;
+
+  string next_page_token = 2;
+}
+
+message UpdateDnsViewZonesRequest {
+  string dns_view_id = 1 [(length) = "20"];
+  repeated string dns_zone_id_additions = 2 [(size) = "<=1000", (length) = "<=255"];
+  repeated string dns_zone_id_deletions = 3 [(size) = "<=1000", (length) = "<=255"];
+}
+
+message UpdateDnsViewZonesMetadata {
+}
+
+message ListDnsViewOperationsRequest {
+  string dns_view_id = 1 [(length) = "20"];
+
+  int64 page_size = 2 [(value) = "0-1000"];
+  string page_token = 3 [(length) = "<=100"];
+  string filter = 4 [(length) = "<=1000"];
+}
+
+message ListDnsViewOperationsResponse {
+  repeated operation.Operation operations = 1;
+  string next_page_token = 2;
+}

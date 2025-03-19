@@ -1,0 +1,167 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.iot.devices.v1.inner;
+
+import "yandex/cloud/priv/validation.proto";
+import "yandex/cloud/priv/sensitive.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/iot/devices/v1/inner;inner";
+option java_outer_classname = "PITAS";
+
+service AuthService {
+
+  // exchange client certificate for identity
+  rpc Authenticate (AuthenticateRequest) returns (AuthenticateResponse);
+
+  // authorize publish access to specified topics and get topics meta-info
+  rpc AuthorizePub (AuthorizePubRequest) returns (AuthorizePubResponse);
+
+  // authorize subscribe access to specified topic patterns and get descriptions of resulting subscriptions
+  rpc AuthorizeSub (AuthorizeSubRequest) returns (AuthorizeSubResponse);
+}
+
+message AuthenticateRequest {
+  oneof credentials {
+    option (exactly_one) = true;
+    bytes certificate_data = 1 [(sensitive) = true];
+    LoginCredential login = 2;
+  }
+  message LoginCredential {
+    string login = 1;
+    string password = 2 [(sensitive) = true];
+  }
+}
+
+message AuthenticateResponse {
+  string identity = 1;
+  // folder of this client
+  string folder_id = 2;
+  string log_group_id = 3;
+  string registry_id = 4;
+  string device_id = 5;
+  string broker_id = 7;
+  string cloud_id = 6;
+}
+
+message ClientInfo {
+  string folder_id = 1;
+  string log_group_id = 2;
+  string registry_id = 3;
+  string device_id = 4;
+  string cloud_id = 5;
+}
+
+enum AuthorizeStatus {
+  AUTHORIZE_STATUS_UNSPECIFIED = 0;
+  OK = 1;
+  PARTIALLY_DENIED = 2;
+  DENIED = 3;
+}
+
+// Authorize PUB messages
+
+message TopicForPublish {
+  string registry_id = 1;
+  string device_id = 2;
+  // canonical topic name to be used in logbroker
+  string canonical_topic_name = 3;
+  // topic type (events/commands)
+  TopicType topic_type = 4;
+  // topic entity (per-registry/per-device)
+  TopicEntity topic_entity = 5;
+  // list of aliases for this topic
+  repeated string aliases = 6;
+}
+
+message AuthorizePubRequest {
+  oneof auth {
+    string identity = 1;
+    IAMAuth iam = 3;
+  }
+  repeated string topics = 2;
+  bool show_client_info = 4;
+}
+
+message IAMAuth {
+  oneof entity_id {
+    string device_id = 1;
+    string registry_id = 2;
+  }
+  string iam_token = 3 [(sensitive) = true, (sensitive_type) = SENSITIVE_IAM_TOKEN];
+}
+
+message AuthorizePubResponse {
+  AuthorizeStatus status = 1;
+  map<string, TopicForPublish> authorized_topics = 2;
+  ClientInfo client_info = 3;
+}
+
+// Authorize SUB messages
+
+// Holds set of restrictions to filter mqtt message.
+// Single subscription's filters should be checked as there is conjunction between them.
+// Disjunction can be expressed as list of subscriptions
+message Subscription {
+  // registry id filter
+  string registry_id = 1;
+  // device id filter
+  string device_id = 2;
+  // topic type (events/commands) filter
+  TopicType topic_type = 3;
+  // topic entity (per-registry/per-device) filter
+  TopicEntity topic_entity = 4;
+  // MQTT namespace (user/system) filter
+  MQTTNamespace mqtt_namespace = 5;
+  // original filter string produced this subscription
+  string filter_string = 6;
+  // canonical filter string produced this subscription
+  string canonical_filter_string = 7;
+}
+
+message AuthorizeSubRequest {
+  oneof auth {
+    string identity = 1;
+    IAMAuth iam = 3;
+  }
+  repeated string sub_patterns = 2;
+  bool show_client_info = 4;
+}
+
+message AuthorizeSubResponse {
+  AuthorizeStatus status = 1;
+  repeated Subscription subscriptions = 2;
+  ClientInfo client_info = 3;
+}
+
+enum TopicType {
+  TOPIC_TYPE_UNSPECIFIED = 0;
+  EVENTS = 1;
+  COMMANDS = 2;
+  STATE = 3;
+  CONFIG = 4;
+  MONITORING = 5;
+}
+
+enum TopicEntity {
+  TOPIC_ENTITY_UNSPECIFIED = 0;
+  REGISTRY = 1;
+  DEVICE = 2;
+}
+
+enum MQTTNamespace {
+  MQTT_NAMESPACE_UNSPECIFIED = 0;
+  SYSTEM = 1;
+  USER = 2;
+}
+
+enum TopicDirection {
+  TOPIC_DIRECTION_UNSPECIFIED = 0;
+  FROM_DEVICE = 1;
+  TO_DEVICE = 2;
+}
+
+enum QOS {
+  QOS_UNSPECIFIED = 0;
+  AT_MOST_ONCE = 1;
+  AT_LEAST_ONCE = 2;
+}

@@ -1,0 +1,63 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "iam-populate-db"
+  namespace: "iam"
+  labels:
+    "yc.iam.env": "iam-populate-db"
+  annotations:
+    {{- $secretsSha := include (print $.Template.BasePath "/secrets.yaml") . | sha256sum }}
+    {{- $configmapSha := include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    {{- $sha := printf "%s%s" $secretsSha $configmapSha | sha256sum | trunc 63 }}
+    checksum/config: {{ $sha }}
+spec:
+  ttlSecondsAfterFinished: 60
+  template:
+    spec:
+      containers:
+        - name:  "iam-populate-db"
+          image: "{{ .Values.docker.registry }}/{{ .Values.docker.repository }}:{{ .Values.docker.tag }}"
+          command: ["/bin/bash"]
+          args:
+            - "-c"
+            - "rm -f /usr/share/ca-certificates/mozilla/DST_Root_CA_X3.crt \
+                  && sed -i '/^mozilla\\/DST_Root_CA_X3.crt$/ s/^/!/' /etc/ca-certificates.conf \
+                  && update-ca-certificates \
+                  && YDB_CLIENT_VERSION=2 /usr/bin/yc-identity-populate-db \
+                  --config=/etc/yc/identity/config.toml \
+                  --sa-keys-file=/etc/yc/identity/secrets/system_account_keys.json \
+                  --bootstrap-sa-public-key-file=/etc/yc/identity/secrets/eve.pub \
+                  --no-fixtures \
+                  "
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          volumeMounts:
+            - name: configs-volume
+              mountPath: "/etc/yc/identity/config.toml"
+              subPath: "config.toml"
+              readOnly:  true
+            - name: configs-volume
+              mountPath: "/etc/yc/ids.yaml"
+              subPath: "ids.yaml"
+              readOnly:  true
+            - name: secrets-volume
+              mountPath: "/etc/yc/identity/secrets/"
+              readOnly: true
+      restartPolicy: Never
+      volumes:
+        - name: configs-volume
+          configMap:
+            name: "populate-db-configs"
+        - name: secrets-volume
+          secret:
+            secretName: "populate-db-secrets"
+            items:
+              - key: "ydb-sa-private.key"
+                path: "ydb-sa-private.key"
+              - key: "eve.pub"
+                path: "eve.pub"
+              - key: "system_account_keys.json"
+                path: "system_account_keys.json"
+              {{- if hasKey .Values.secrets "master.token" }}
+              - key: "master.token"
+                path: "ydb_token"
+              {{- end }}

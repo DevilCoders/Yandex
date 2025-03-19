@@ -1,0 +1,99 @@
+uid: ycpApiAdapter
+refresh: 3m
+title: API Adapter [New] (ma) Details
+
+tags: [ 'ycp', 'ycp-adapter', 'ycp-duty', 'ycp-drilldown' ]
+links:
+  - { title: 'Live Hosts (from L7) (${cluster})', vars: false, url: 'https://solomon.cloud.yandex-team.ru/?project=platform&dashboard=${cluster}-cpl-api-adapter' }
+
+variables:
+  ui:
+    cluster: { values: [prod, preprod, gpn] }
+    backend_group: { values: ["ds72mvrnk7b55ki34dne|a5dce5a6lkipt6u2op8m|albe7rsnidtn9a7saa53"], titles: ["l7-balancer"], hidden: true }
+    backend_group_new: { values: ["ds7gogpe5c9gfd3dve8p|a5df504vjjcb52figk7i|none"], titles: ["l7-balancer-new"], hidden: true }
+  repeat:
+    jvm_memory_area:
+      values: ['heap', 'nonheap']
+      titles: ['Heap', 'Non-Heap']
+    is_external:
+      values: ['*', 'false', 'true']
+      titles: ['both internal and external', 'internal', 'external']
+  replacement:
+    !include ../include/errors.yaml
+
+graphDefaults:
+  datasource: 'Solomon Cloud'
+  width: 8
+  height: 6
+queryDefaults: { dropNan: true, labels: 'project=api-adapter, cluster=${cluster}, service=core, host=!cluster' }
+
+rows:
+  !include ../l7/include/l7-dashboard-row-template.yaml 'L7 balancer' '$backend_group' 'cloud_${cluster}_cpl' rps rps
+
+  !include ../l7/include/l7-dashboard-row-template.yaml 'L7 balancer new (compute)' '$backend_group_new' 'cloud_${cluster}_cpl' rps rps
+
+  - title: 'API Adapter [New] (ma)'
+    graphDefaults: { datasource: 'Solomon Cloud' }
+    queryDefaults: { labels: 'app=cloud-api-adapter_server, method=all' }
+    panels:
+      - type: graph
+        templates: { name: rps, rate: ui }
+        title: 'Adapter $rateUnit ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_requests, meter_type=count' }
+
+      - type: placeholder
+
+      - type: graph
+        templates: { name: percentile, groupLines: true, format: solomon }
+        title: 'Adapter response duration ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_durations' }
+
+      - type: graph
+        repeat: is_external
+        templates: { name: errors }
+        title: 'Adapter @{is_external:title} errors ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_statuses_with_external, status=@4xx, external=@{is_external}' }
+          - params: { labels: 'name=grpc_statuses_with_external, status=@503, external=@{is_external}' }
+          - params: { labels: 'name=grpc_statuses_with_external, status=@5xx, external=@{is_external}' }
+        draw: [{ alias: '4xx', color: '#147', at: right }, { alias: '503', color: '#da7', at: left }, { alias: '5xx', color: '#b20', at: left }]
+
+  - title: 'JVM and System'
+    panels:
+      - type: graph
+        title: '@{jvm_memory_area:title} Memory'
+        repeat: jvm_memory_area
+        queries:
+          - params: { labels: 'name=jvm_memory_bytes_used|jvm_memory_bytes_committed, area=@{jvm_memory_area}' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: [ 'avg', 'name' ] }
+        yAxes: [ { format: bytes }]
+      - type: graph
+        title: 'Sys VM & RSS'
+        queries:
+          - params: { labels: 'name=process_virtual_memory_bytes|process_resident_memory_bytes' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: [ 'avg', 'name'] }
+      - type: graph
+        title: 'File Descriptors'
+        queries:
+          - params: { labels: 'name=process_open_fds' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: ['max', 'name'], alias: 'max FDs' }
+      - type: graph
+        title: 'Threads'
+        queries:
+          - params: { labels: 'name=jvm_threads_state, state=*' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: ['avg', 'state'] }
+        display: { empty: false }
+      - type: graph
+        title: '% Cores'
+        queries:
+          - params: { labels: 'name=process_cpu_seconds_total' }
+            groupByTime: { max: default }
+            select: { non_negative_derivative: [] }
+        display: { empty: false }
+        yAxes: [{ format: percentunit, decimals: 0 }]

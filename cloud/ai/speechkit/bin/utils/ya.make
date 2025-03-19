@@ -1,0 +1,3 @@
+RECURSE(
+    mutate_texts
+)

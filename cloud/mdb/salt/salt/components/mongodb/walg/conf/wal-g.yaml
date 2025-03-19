@@ -1,0 +1,68 @@
+{% from "components/mongodb/walg/map.jinja" import walg, s3 with context %}
+{% set mongodb = salt.slsutil.renderer('salt://components/mongodb/defaults.py?saltenv=' ~ saltenv) %}
+
+{%- set user = "admin" %}
+{% set password = mongodb.users.get(user).password %}
+{% if mongodb.services_deployed|length > 1 and mongodb.services_deployed[0] == 'mongos' %}
+{%   set srv = mongodb.services_deployed[1] %}
+{% else %}
+{%   set srv = mongodb.services_deployed[0] %}
+{% endif %}
+{% set host = salt.grains.get('id') %}
+{% set port = mongodb.config.get(srv).net.port %}
+{% set dbname = 'admin' %}
+
+{% set mongodb_uri = "mongodb://{user}:{password}@{host}:{port}/?authSource={dbname}&connect=direct&socketTimeoutMS=300000&connectTimeoutMS=120000&serverSelectionTimeoutMS=120000{ssl_opts}".format(user=user, password=password, host=host, port=port, dbname=dbname, ssl_opts=mongodb.config.get(srv).cli.ssl_uri_args) %}
+{% set mongorestore_args = '--preserveUUID' %}
+
+{% set mongodump_args = '{oplog} --numParallelCollections={numParallelCollections}'.format(oplog='--oplog' if walg.mongodump_oplog else '', numParallelCollections=walg.mongodump_numParallelCollections) %}
+
+{%- set walg_io_limit = salt.pillar.get('data:dbaas:flavor:io_limit', salt.pillar.get('data:walg:io_limit', 536870912)) // 2 -%}
+{% set walg_network_limit = salt.pillar.get('data:dbaas:flavor:network_limit', salt.pillar.get('data:walg:network_limit', 1073741824)) // 2 %}
+{% set def_walg_coroutines = salt.pillar.get('data:dbaas:flavor:cpu_guarantee', salt.pillar.get('data:walg:parallel_workers', 1)) %}
+{% if def_walg_coroutines < 4 %}
+{% set walg_coroutines = 1 %}
+{% else %}
+{% set walg_coroutines = def_walg_coroutines %}
+{% endif %}
+{% set compression = salt.pillar.get('data:walg:compression', 'brotli') %}
+{% set retain_period_hours = salt.pillar.get('data:backup:retain_period', 7) | int * 24 %}
+
+AWS_ACCESS_KEY_ID:           {{ s3.access_key_id }}
+AWS_SECRET_ACCESS_KEY:       {{ s3.access_secret_key }}
+AWS_ENDPOINT:                {{ s3.endpoint }}
+AWS_S3_FORCE_PATH_STYLE:     {{ (not salt.pillar.get('data:s3:virtual_addressing_style', False)) | json }}
+AWS_REGION:                  {{ s3.region }}
+WALG_GPG_KEY_ID:             {{ s3.gpg_key_id }}
+WALG_PGP_KEY_PATH:           {{ walg.confdir }}/PGP_KEY
+WALG_S3_PREFIX:              {{ s3.backup_path }}
+S3_MAX_PART_SIZE:            '{{s3.multipart_chunk_size}}'
+WALG_UPLOAD_CONCURRENCY:     1
+
+WALG_DISK_RATE_LIMIT:        {{ walg_io_limit | int }}
+WALG_NETWORK_RATE_LIMIT:     {{ walg_network_limit | int }}
+GOMAXPROCS:                  {{ (walg_coroutines + 1) | int }}
+
+WALG_LOG_LEVEL:              'DEVEL'
+WALG_COMPRESSION_METHOD:     '{{ compression }}'
+
+WALG_SENTINEL_USER_DATA:     '{"shard_name": "{{walg.replset_identifier}}", "backup_id": "{{walg.backup_id}}"}'
+
+MONGODB_URI:                 '{{ mongodb_uri }}'
+WALG_STREAM_CREATE_COMMAND:  'mongodump --archive {{ mongodump_args }} {{ mongodb.config.get(srv).cli.ssl_mongodump_args }} --uri="{{ mongodb_uri }}"'
+# WALG_STREAM_RESTORE_COMMAND: 'mongorestore --archive {{ mongorestore_args }} {{ mongodb.config.get(srv).cli.ssl_mongodump_args }} --drop --uri="{{ mongodb_uri }}"'
+
+OPLOG_ARCHIVE_TIMEOUT_INTERVAL: '{{ walg.oplog_archive_timeout }}'
+OPLOG_ARCHIVE_AFTER_SIZE:       '{{ walg.oplog_archive_after_size }}'
+
+OPLOG_PUSH_STATS_ENABLED:           'true'
+OPLOG_PUSH_STATS_LOGGING_INTERVAL:  '30s'
+OPLOG_PUSH_STATS_UPDATE_INTERVAL:   '25s'
+OPLOG_PUSH_STATS_EXPOSE_HTTP:       'true'
+OPLOG_PUSH_WAIT_FOR_BECOME_PRIMARY: 'true'
+
+OPLOG_PITR_DISCOVERY_INTERVAL: '{{retain_period_hours}}h'
+
+HTTP_LISTEN:                '127.0.0.1:8090'
+HTTP_EXPOSE_PPROF:          'true'
+HTTP_EXPOSE_EXPVAR:         'true'

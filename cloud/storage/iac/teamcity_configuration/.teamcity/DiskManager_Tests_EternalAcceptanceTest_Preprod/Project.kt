@@ -1,0 +1,32 @@
+package DiskManager_Tests_EternalAcceptanceTest_Preprod
+
+import DiskManager_Tests_EternalAcceptanceTest_Preprod.buildTypes.*
+import jetbrains.buildServer.configs.kotlin.v2019_2.*
+import jetbrains.buildServer.configs.kotlin.v2019_2.Project
+
+object Project : Project({
+    id("DiskManager_Tests_EternalAcceptanceTest_Preprod")
+    name = "preprod"
+    archived = true
+
+    buildType(DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest8TiB)
+    buildType(DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest32GiB)
+    buildType(DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest2GiB)
+    buildType(DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest2TiB)
+    buildType(DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest1TiB)
+    buildType(DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest512GiB)
+    buildType(DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest4TiB)
+    buildType(DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest128GiB)
+    buildType(DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest8GiB)
+    buildType(DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest256GiB)
+    buildType(DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest64GiB)
+    buildType(DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest4GiB)
+    buildType(DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest16GiB)
+
+    params {
+        param("env.CLUSTER", "preprod")
+        param("env.INSTANCE_RAM", "8")
+        param("env.INSTANCE_CORES", "8")
+    }
+    buildTypesOrder = arrayListOf(DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest2GiB, DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest4GiB, DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest8GiB, DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest16GiB, DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest32GiB, DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest64GiB, DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest128GiB, DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest256GiB, DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest512GiB, DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest1TiB, DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest2TiB, DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest4TiB, DiskManager_Tests_EternalAcceptanceTest_Preprod_EternalAcceptanceTest8TiB)
+})

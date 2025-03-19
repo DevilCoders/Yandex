@@ -1,0 +1,28 @@
+{% extends "../../base/alert.j2" %}
+{% macro prog() %}
+    let latency = histogram_percentile(99, 'bin', group_by_time(20s, 'max', {cluster='cloud_{{ env }}_vpc-control', service="vpc-control", sensor="micro_operation_duration_seconds"}));
+    let max_latency=max(latency);
+    let latency_seconds = to_fixed(max_latency,3);
+
+    let is_red = max_latency > {{ alarm_limit }};
+    let is_yellow = max_latency > {{ warn_limit }};
+    let trafficColor = is_red ? 'red' : (is_yellow ? 'yellow' : 'green');
+    let description = 'Micro operation latency of 99 percentile: ' + latency_seconds;
+    alarm_if(is_red);
+    warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+    "name": "vpc-control micro operation latency @ {{ env }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "tags": "Solomon",
+        "host": "{{ svm_fqdn() }}",
+        "service": "vpc-control-micro-operation-latency",
+        "trafficLight.color": "[[expression.trafficColor]]",
+        "latency_seconds": "[[expression.latency_seconds]]",
+        "details": "[[expression.description]]"
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

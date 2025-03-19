@@ -1,0 +1,33 @@
+{% extends "base_alert.j2" %}
+
+{% set windowSecs = 300 %}
+
+{% set description = "https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-hanging-tasks"%}
+
+{% macro prog() %}
+let hanging_tasks = group_by_labels({
+    project="{{ project_id }}",
+    service="compute_tasks",
+    cluster="cloud_{{ env }}_head",
+    sensor="hanging_tasks_count",
+    host!="cluster",
+    function_id!="All"
+}, 'function_id', v -> group_lines('max', v));
+
+let tasks_count = max(hanging_tasks);
+alarm_if(tasks_count > 0);
+{% endmacro %}
+
+{% block main %}
+    "name": "Compute hanging tasks @{{ env | upper }}",
+    "groupByLabels": ["function_id"],
+    "annotations": {
+        "details": "Too many hanging operations of type [[labels.function_id]]: [[expression.tasks_count]]",
+        "tags": "compute-hanging-tasks",
+        "service": "compute-hanging-tasks",
+        "description": "Too many hanging tasks. {{ description }}",
+        "host": "yc_compute_head_{{ env }}-[[labels.function_id]]"
+    },
+    "description": "Количество зависших тасков",
+    "type": {{ type_expression() }}
+{% endblock %}

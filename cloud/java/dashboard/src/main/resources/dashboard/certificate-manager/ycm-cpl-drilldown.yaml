@@ -1,0 +1,1098 @@
+uid: ycm-cpl-drilldown
+refresh: 1m
+title: YC Certificate Manager CPL Drilldown
+
+tags: [ 'yc-cert-manager', 'yc-cert-manager-cpl-drilldown' ]
+
+variables:
+  ui:
+    !include include/_datasources.yaml
+    !include include/_projects.yaml
+    !include include/_clusters.yaml
+    host:
+      multi: true
+      values: [
+        'cluster-cpl',
+        'cpl-myt-1',
+        'cpl-sas-1',
+        'cpl-vla-1']
+    client_app:
+      multi: true
+      hidden: true
+      values: ['auth', 'kms-crypto', 'resource-manager']
+      titles: ['Auth', 'KMS Crypto', 'Resource Manager']
+    taskprocessor_pool:
+      multi: true
+      hidden: true
+      values: ['default']
+  replacement:
+    !include ../include/errors.yaml
+  repeat:
+    tx_duration_sensor:
+      values: ['tx_attempt_duration_seconds', 'tx_total_duration_seconds']
+      titles: ['Tx Attempt Duration', 'Tx Total Duration']
+    jvm_memory_area:
+      values: ['heap', 'nonheap']
+      titles: ['Heap', 'Non-Heap']
+
+links:
+  - { title: 'Dashboards', tags: ['yc-cert-manager'] }
+
+graphDefaults:
+  datasource: '${datasource}'
+  width: 8
+  height: 6
+
+queryDefaults: { labels: 'project=${project}, cluster=${cluster}, service=core, host=${host}' }
+
+rows:
+  - title: Private L7
+    drilldowns:
+      - uid: yc-cert-manager-cpl-private-l7-hostdata
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+        uiQuery:
+          host:
+            multi: true
+        uiRepeat: host
+        labels: 'host=$host'
+    graphDefaults: { width: 8 }
+    queryDefaults: { labels: 'service=private_envoy' }
+    panels:
+      - type: graph
+        title: 'Private L7 RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=envoy_http_downstream_rq_total, envoy_http_conn_manager_prefix=ingress_http' }
+      - type: graph
+        title: 'Private L7 Errors'
+        templates: { name: errors, sumLines: true }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=envoy_http_downstream_rq_xx, envoy_http_conn_manager_prefix=ingress_http, envoy_response_code_class=5' }
+          - params: { labels: 'name=envoy_http_downstream_rq_xx, envoy_http_conn_manager_prefix=ingress_http, envoy_response_code_class=4' }
+        draw:
+          - { color: '#da7', alias: '5xx' }
+          - { color: '#147', alias: '4xx' }
+        display: { stack: true }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Private L7 Upstream Errors'
+        templates: { name: errors, sumLines: true }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=envoy_cluster_upstream_rq_xx, envoy_response_code_class=5' }
+          - params: { labels: 'name=envoy_cluster_upstream_rq, envoy_response_code=503' }
+          - params: { labels: 'name=envoy_cluster_upstream_rq_xx, envoy_response_code_class=4' }
+        draw:
+          - { color: '#da7', alias: '5xx' }
+          - { color: '#b20', alias: '503' }
+          - { color: '#147', alias: '4xx' }
+        display: { stack: true }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Private L7 Response Duration'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=envoy_cluster_upstream_rq_time' }
+        yAxes: [{ format: 'ms' }]
+      - type: graph
+        title: 'Private L7 Failed Healthcheck'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=envoy_cluster_health_check_failure' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'failures' }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Private L7 Outlier Detection'
+        queries:
+          - params: { labels: 'name=envoy_cluster_outlier_detection_ejections_active' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'ejections' }
+        yAxes: [{ min: 0 }]
+  - title: Public L7
+    drilldowns:
+      - uid: yc-cert-manager-data-public-l7-host-data
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+        uiQuery:
+          host:
+            multi: true
+        uiRepeat: host
+        labels: 'host=$host'
+    graphDefaults: { width: 8 }
+    queryDefaults: { labels: 'service=public_envoy, cluster=${cluster}' }
+    panels:
+      - type: graph
+        title: 'Public L7 RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=envoy_http_downstream_rq_total, envoy_http_conn_manager_prefix=frontend_*' }
+      - type: graph
+        title: 'Public L7 Errors'
+        templates: { name: errors, sumLines: true }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=envoy_http_downstream_rq_xx, envoy_http_conn_manager_prefix=frontend_*, envoy_response_code_class=5' }
+          - params: { labels: 'name=envoy_http_downstream_rq_xx, envoy_http_conn_manager_prefix=frontend_*, envoy_response_code_class=4' }
+        draw:
+          - { color: '#da7', alias: '5xx' }
+          - { color: '#147', alias: '4xx' }
+        display: { stack: true }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Public L7 Response Duration'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=envoy_cluster_upstream_rq_time' }
+        yAxes: [{ format: 'ms' }]
+
+  - title: Certificate Manager CPL Server
+    drilldowns:
+      - uid: yc-cert-manager-cpl-host-server
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'cpl-myt-1',
+              'cpl-sas-1',
+              'cpl-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+    panels:
+      - type: graph
+        title: 'RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=grpc_requests, app=certificate-manager-control-plane_server, method=*, meter_type=count' }
+
+      - type: graph
+        title: 'Errors (by type)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, app=certificate-manager-control-plane_server, method=*, status!=OK' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: '0', group_by_labels: ['sum', 'status'], alias: '{{status}}' }
+        display: { decimals: 0, empty: false }
+
+      - type: graph
+        title: 'Durations'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=grpc_durations, app=certificate-manager-control-plane_server, method=*' }
+
+      - type: graph
+        title: 'GRPC Thread Pool: Task Count'
+        queries:
+          - params: { labels: 'name=certificate_manager_control_plane_running, type=running' }
+            groupByTime: { max: default }
+            select: { group_lines: 'sum', alias: 'running now count' }
+          - params: { labels: 'name=certificate_manager_control_plane_task, meter_type=count, type=*' }
+            groupByTime: { max: default }
+            select: { non_negative_derivative: [], group_by_labels: ['sum', 'type'], alias: '{{type}} RPS' }
+        yAxes: [{ decimals: 0, format: short, min: 0 }, { decimals: 1, format: short, min: 0 }]
+        draw: [{ alias: '/.* RPS/', at: right }]
+
+      - type: graph
+        title: 'GRPC Thread Pool: Task Duration'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=certificate_manager_control_plane_timings, type=duration' }
+
+      - type: graph
+        title: 'GRPC Thread Pool: Idle Time'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=certificate_manager_control_plane_timings, type=idle' }
+
+  - title: Certificate Manager CPL — ACME Orders
+    drilldowns:
+      - uid: yc-cert-manager-cpl-acme-orders
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'cpl-myt-1',
+              'cpl-sas-1',
+              'cpl-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+    queryDefaults: { defaultTimeWindow: '15s' }
+    panels:
+      - type: graph
+        title: 'OrderJob Fails'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=orderJobFails' }
+
+      - type: graph
+        title: 'OrderJob Failed Authorizations'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=orderJobFailedAuthorizations' }
+
+      - type: graph
+        title: 'Orders created in last 3 hours'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'host=cluster,name=fresh_orders' }
+
+      - type: graph
+        title: 'ACME Total Errors'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=acmeServiceTotalErrors' }
+
+      - type: graph
+        title: 'ACME Unique Rate Errors'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=acmeServiceUniqueErrorsAcmeRateLimitedException' }
+
+      - type: graph
+        title: 'ACME Unique Errors by type'
+        display: { empty: false, stack: true }
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=acmeServiceUniqueErrorsAcme*' }
+
+      - type: graph
+        title: 'ACME Errors by type'
+        display: { empty: false, stack: true }
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=acmeServiceErrorsAcme*' }
+
+      - type: graph
+        title: 'Orders’ states'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'host=cluster,name=active_orders' }
+            select: { alias: 'active' }
+          - params: { labels: 'host=cluster,name=pending_orders' }
+            select: { alias: 'pending' }
+
+      - type: graph
+        title: 'Orders’ problems'
+        display: { empty: false, stack: true }
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'host=cluster,name=hung_orders' }
+            select: { alias: 'job отвалился' }
+          - params: { labels: 'host=cluster,name=hung_new_orders' }
+            select: { alias: 'не создается в LE' }
+          - params: { labels: 'host=cluster,name=stray_pending_orders' }
+            select: { alias: 'челенжи неделю' }
+
+      - type: graph
+        templates: { name: percentile, format: solomon, groupLines: true }
+        title: 'OrderJob Time to Finish'
+        queries:
+          - params: { labels: 'name=orderJobTotalTimes' }
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        templates: { name: percentile, format: solomon, groupLines: true }
+        title: 'OrderJob Run Time'
+        queries:
+          - params: { labels: 'name=orderJobRunTimes' }
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        title: 'Acme Accounts Usage'
+        display: { empty: false, stack: true }
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=orderJobAccountReuses' }
+            select: { alias: 'reuse' }
+          - params: { labels: 'name=acmeServiceAccountCreatedCounter' }
+            select: { alias: 'create' }
+
+      - type: graph
+        title: 'Rejects of previous account on renew'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=certificateServiceRenewAlienUsages' }
+
+  - title: Certificate Manager CPL - Internal Providers
+    drilldowns:
+      - uid: yc-cert-manager-cpl-crt-api
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'cpl-myt-1',
+              'cpl-sas-1',
+              'cpl-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+    queryDefaults: { defaultTimeWindow: '15s' }
+    panels:
+      - type: graph
+        title: 'Internal Providers Job Fails'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=crtApiFails' }
+
+      - type: graph
+        title: 'Internal Providers Certificate Errors'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=crtApiCertificateStatusErrors' }
+
+      - type: graph
+        title: 'Internal Providers API HTTP Errors'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=crtApiHttpErrors' }
+
+      - type: graph
+        templates: { name: percentile, format: solomon, groupLines: true }
+        title: 'Internal Providers Job Run Time'
+        queries:
+          - params: { labels: 'name=crtApiJobRunTimes' }
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        templates: { name: percentile, format: solomon, groupLines: true }
+        title: 'Internal Providers Job Time to Finish'
+        queries:
+          - params: { labels: 'name=crtApiJobTotalTimes' }
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        title: 'Internal Providers Job too Long'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=crtApiJobTooLong' }
+
+      - type: graph
+        title: 'Successfully Created Internal Certificates'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=crtApiSuccessNew' }
+
+      - type: graph
+        title: 'Successfully Renewed Internal Certificates'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=crtApiSuccessRenew' }
+
+  #     - type: graph
+  #       title: 'ACME Total Errors'
+  #       yAxes: [{ min: 0 }]
+  #       queries:
+  #         - params: { labels: 'name=acmeServiceTotalErrors' }
+
+  #     - type: graph
+  #       title: 'ACME Unique Rate Errors'
+  #       yAxes: [{ min: 0 }]
+  #       queries:
+  #         - params: { labels: 'name=acmeServiceUniqueErrorsAcmeRateLimitedException' }
+
+  #     - type: graph
+  #       title: 'ACME Unique Errors by type'
+  #       display: { empty: false, stack: true }
+  #       yAxes: [{ min: 0 }]
+  #       queries:
+  #         - params: { labels: 'name=acmeServiceUniqueErrorsAcme*' }
+
+  #     - type: graph
+  #       title: 'ACME Errors by type'
+  #       display: { empty: false, stack: true }
+  #       yAxes: [{ min: 0 }]
+  #       queries:
+  #         - params: { labels: 'name=acmeServiceErrorsAcme*' }
+
+  #     - type: graph
+  #       title: 'Orders’ states'
+  #       yAxes: [{ min: 0 }]
+  #       queries:
+  #         - params: { labels: 'host=cluster,name=active_orders' }
+  #           select: { alias: 'active' }
+  #         - params: { labels: 'host=cluster,name=pending_orders' }
+  #           select: { alias: 'pending' }
+
+  #     - type: graph
+  #       title: 'Orders’ problems'
+  #       display: { empty: false, stack: true }
+  #       yAxes: [{ min: 0 }]
+  #       queries:
+  #         - params: { labels: 'host=cluster,name=hung_orders' }
+  #           select: { alias: 'job отвалился' }
+  #         - params: { labels: 'host=cluster,name=hung_new_orders' }
+  #           select: { alias: 'не создается в LE' }
+  #         - params: { labels: 'host=cluster,name=stray_pending_orders' }
+  #           select: { alias: 'челенжи неделю' }
+
+  - title: Certificate Manager CPL — Certificates
+    drilldowns:
+      - uid: yc-cert-manager-cpl-certificates
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'cpl-myt-1',
+              'cpl-sas-1',
+              'cpl-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+    queryDefaults: { defaultTimeWindow: '15s' }
+    panels:
+      - type: graph
+        title: 'Total'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'host=cluster,name=certificates_count' }
+            select: { alias: 'certificates' }
+
+      - type: graph
+        title: 'By type'
+        yAxes: [{ min: 0 }]
+        display: { empty: false, stack: true }
+        queries:
+          - params: { labels: 'host=cluster,name=certificates_count_imported' }
+            select: { alias: 'imported' }
+          - params: { labels: 'host=cluster,name=certificates_count_managed' }
+            select: { alias: 'managed' }
+
+      - type: graph
+        title: 'By status'
+        yAxes: [{ min: 0 }]
+        display: { empty: false, stack: true }
+        queries:
+          - params: { labels: 'host=cluster,name=certificates_count_issued' }
+            select: { alias: 'issued' }
+          - params: { labels: 'host=cluster,name=certificates_count_invalid' }
+            select: { alias: 'invalid' }
+          - params: { labels: 'host=cluster,name=certificates_count_validating' }
+            select: { alias: 'validating' }
+          - params: { labels: 'host=cluster,name=certificates_count_renewing' }
+            select: { alias: 'renewing' }
+          - params: { labels: 'host=cluster,name=certificates_count_renewal_failed' }
+            select: { alias: 'renewal_failed' }
+
+      - type: graph
+        title: 'Validating'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'host=cluster,name=certificates_count_validating' }
+            select: { alias: 'all' }
+          - params: { labels: 'host=cluster,name=certificates_count_validating_day' }
+            select: { alias: 'day' }
+          - params: { labels: 'host=cluster,name=certificates_count_validating_week' }
+            select: { alias: 'week' }
+
+      - type: graph
+        title: 'Renewing'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'host=cluster,name=certificates_count_renewing' }
+            select: { alias: 'all' }
+          - params: { labels: 'host=cluster,name=certificates_count_renewing_day' }
+            select: { alias: 'day' }
+          - params: { labels: 'host=cluster,name=certificates_count_renewing_week' }
+            select: { alias: 'week' }
+
+      - type: graph
+        title: 'Used in S3 buckets'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'host=cluster,name=certificates_count_used_by_s3_bucket' }
+            select: { alias: 'certificates' }
+
+  - title: Certificate Manager CPL — Notifications
+    drilldowns:
+      - uid: yc-cert-manager-cpl-notify
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'cpl-myt-1',
+              'cpl-sas-1',
+              'cpl-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+    queryDefaults: { defaultTimeWindow: '15s' }
+    panels:
+      - type: graph
+        title: 'ScheduledJob fails'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=scheduledJobFails' }
+            select: { alias: 'fails' }
+          - params: { labels: 'name=scheduledJobRetries' }
+            select: { alias: 'retries' }
+
+      - type: graph
+        title: 'Notification max age'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'host=cluster,name=notification_max_age_sec' }
+            select: { alias: 'sec' }
+
+      - type: graph
+        title: 'ScheduledJob max age'
+        yAxes: [{ min: -3600 }]
+        queries:
+          - params: { labels: 'host=cluster,name=schebuled_job_max_age_sec' }
+            select: { alias: 'sec' }
+
+  - title: Certificate Manager CPL — Backups
+    drilldowns:
+      - uid: yc-cert-manager-ydb-backups
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'cpl-myt-1',
+              'cpl-sas-1',
+              'cpl-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+    queryDefaults: { defaultTimeWindow: '15s' }
+    panels:
+      - type: graph
+        title: 'Dumper Backup size'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'service=service,host=cluster,sensor=ydbDumperBackupSize,storageType=cloud-s3' }
+            select: { alias: 's3', replace_nan: [ 0 ] }
+
+  - title: Certificate Manager CPL — Autorenewing
+    drilldowns:
+      - uid: yc-cert-manager-cpl-autorenewing
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'cpl-myt-1',
+              'cpl-sas-1',
+              'cpl-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+    queryDefaults: { defaultTimeWindow: '15s' }
+    panels:
+      - type: graph
+        title: 'expirationDetector fails'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=expirationDetectorJobFails' }
+            select: { alias: 'fails' }
+
+      - type: graph
+        title: 'Successful renewals'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=expirationDetectorJobRenews' }
+            select: { alias: 'detections' }
+          - params: { labels: 'name=orderJobSuccessfulRenewals' }
+            select: { alias: 'renews' }
+
+      - type: graph
+        title: 'expirationDetector run time'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=expirationDetectorRunTime' }
+            select: { alias: 'ms' }
+
+      - type: graph
+        title: 'Cleaner job fails'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=cleanerJobFails' }
+            select: { alias: 'fails' }
+
+  - title: Certificate Manager CPL — Domains
+    drilldowns:
+        - uid: yc-cert-manager-cpl-domains
+          tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+          ui:
+            cluster: cluster
+            host:
+              multi: true
+              values: [
+                'cpl-myt-1',
+                'cpl-sas-1',
+                'cpl-vla-1']
+          uiRepeat: host
+          labels: 'host=$host'
+    queryDefaults: { defaultTimeWindow: '15s' }
+    panels:
+      - type: graph
+        title: 'Total'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'host=cluster,name=domains_count' }
+            select: { alias: 'domains' }
+
+      - type: graph
+        title: 'By status'
+        yAxes: [{ min: 0 }]
+        display: { empty: false, stack: true }
+        queries:
+          - params: { labels: 'host=cluster,name=domains_count_valid' }
+            select: { alias: 'valid' }
+          - params: { labels: 'host=cluster,name=domains_count_invalid' }
+            select: { alias: 'invalid' }
+          - params: { labels: 'host=cluster,name=domains_count_validating' }
+            select: { alias: 'validating' }
+          - params: { labels: 'host=cluster,name=domains_count_revalidating' }
+            select: { alias: 'revalidating' }
+
+      - type: graph
+        title: 'Used in API Gateway'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'host=cluster,name=domains_count_used_by_api_gateway' }
+            select: { alias: 'domains' }
+
+  - title: 'YCM CPL Task Processor - ${taskprocessor_pool} Pool'
+    uiRepeat: 'taskprocessor_pool'
+    drilldowns:
+      - uid: yc-cert-manager-cpl-host-tp
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'cpl-myt-1',
+              'cpl-sas-1',
+              'cpl-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+    panels:
+      - type: graph
+        title: 'Task RPS'
+        templates: { name: rps, sumLines: false }
+        queries:
+          - params: { labels: 'name=taskprocessor_task_duration_count, pool=${taskprocessor_pool}' }
+        display: { empty: false }
+
+      - type: graph
+        title: 'Special Task States'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=taskprocessor_task_failed|taskprocessor_task_resurrected|taskprocessor_task_interrupted, meter_type=count, pool=${taskprocessor_pool}' }
+            groupByTime: { max: 'default' }
+            select: { nn_deriv: [], group_by_labels: ['sum', 'name'] }
+
+      - type: graph
+        title: 'Task Start Delay'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=taskprocessor_task_delay, pool=${taskprocessor_pool}' }
+
+      - type: graph
+        title: 'Task Duration'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=taskprocessor_task_duration, pool=${taskprocessor_pool}' }
+
+  - title: 'YCM CPL JVM and System'
+    drilldowns:
+      - uid: yc-cert-manager-cpl-host-sys
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'cpl-myt-1',
+              'cpl-sas-1',
+              'cpl-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+    panels:
+      - type: graph
+        title: 'Instances'
+        queries:
+          - params: { labels: 'name=jvm_info, host=cpl-*' }
+        display: { empty: false, stack: true }
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        title: 'JVM @{jvm_memory_area:title} Memory'
+        repeat: jvm_memory_area
+        queries:
+          - params: { labels: 'name=jvm_memory_bytes_used|jvm_memory_bytes_committed, area=@{jvm_memory_area}' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'] }
+        yAxes: [{ format: bytes }]
+      - type: graph
+        title: 'Sum JVM @{jvm_memory_area:title} Memory'
+        repeat: jvm_memory_area
+        queries:
+          - params: { labels: 'name=jvm_memory_bytes_used|jvm_memory_bytes_committed, area=@{jvm_memory_area}' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'] }
+        yAxes: [{ format: bytes }]
+      - type: graph
+        title: 'Sys VM & RSS'
+        queries:
+          - params: { labels: 'name=process_virtual_memory_bytes|process_resident_memory_bytes' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: ['avg', 'name'] }
+      - type: graph
+        title: '% Cores'
+        queries:
+          - params: { labels: 'name=process_cpu_seconds_total' }
+            groupByTime: { max: default }
+            select: { non_negative_derivative: [] }
+        display: { empty: false }
+        yAxes: [{ format: percentunit, decimals: 0 }]
+      - type: graph
+        title: 'Sum CPU time'
+        queries:
+          - params: { labels: 'service=sys, path=/System/IdleTime' }
+            groupByTime: { avg: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'idle' }
+          - params: { labels: 'service=sys, path=/System/IoWaitTime' }
+            groupByTime: { avg: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'iowait' }
+          - params: { labels: 'service=sys, path=/System/IrqTime' }
+            groupByTime: { avg: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'irq' }
+          - params: { labels: 'service=sys, path=/System/NiceTime' }
+            groupByTime: { avg: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'nice' }
+          - params: { labels: 'service=sys, path=/System/SystemTime' }
+            groupByTime: { avg: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'system' }
+          - params: { labels: 'service=sys, path=/System/UserTime' }
+            groupByTime: { avg: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'user' }
+        display: { stack: true }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'JVM Threads'
+        queries:
+          - params: { labels: 'name=jvm_threads_state, state=*' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'state'] }
+        display: { empty: false, stack: true }
+      - type: graph
+        title: 'Load Average (1 min)'
+        queries:
+          - params: { labels: 'service=sys, path=/Proc/LoadAverage1min' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'la' }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Sum Load Average (1 min)'
+        queries:
+          - params: { labels: 'service=sys, path=/Proc/LoadAverage1min' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'la' }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Memory'
+        queries:
+          - params: { labels: 'service=sys, path=/Memory/ActiveAnon' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'anon' }
+          - params: { labels: 'service=sys, path=/Memory/ActiveFile' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'file' }
+          - params: { labels: 'service=sys, path=/Memory/MemTotal' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'total' }
+        yAxes: [{ format: bytes, min: 0 }]
+      - type: graph
+        title: 'Sum Memory'
+        queries:
+          - params: { labels: 'service=sys, path=/Memory/ActiveAnon' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'anon' }
+          - params: { labels: 'service=sys, path=/Memory/ActiveFile' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'file' }
+          - params: { labels: 'service=sys, path=/Memory/MemTotal' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'total' }
+        yAxes: [{ format: bytes, min: 0 }]
+      - type: graph
+        title: 'Network Bytes'
+        queries:
+          - params: { labels: 'service=sys, path=/Net/Ifs/RxBytes, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'rx' }
+          - params: { labels: 'service=sys, path=/Net/Ifs/TxBytes, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'tx' }
+        display: { stack: true }
+        yAxes: [{ format: bytes, min: 0 }]
+      - type: graph
+        title: 'Network Packets'
+        queries:
+          - params: { labels: 'service=sys, path=/Net/Ifs/RxPackets, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'rx' }
+          - params: { labels: 'service=sys, path=/Net/Ifs/TxPackets, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'tx' }
+        display: { stack: true }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Network Drop & Err'
+        queries:
+          - params: { labels: 'service=sys, path=/Net/Ifs/RxDrop, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'rx drop' }
+          - params: { labels: 'service=sys, path=/Net/Ifs/TxDrop, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'tx drop' }
+          - params: { labels: 'service=sys, path=/Net/Ifs/RxErrs, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'rx errs' }
+          - params: { labels: 'service=sys, path=/Net/Ifs/TxErrs, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'tx errs' }
+        display: { stack: true }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'File Descriptors'
+        queries:
+          - params: { labels: 'name=process_open_fds' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: ['max', 'name'], alias: 'max FDs' }
+      - type: graph
+        title: 'Free Space'
+        queries:
+          - params: { labels: 'service=sys, path=/Filesystem/FreeB' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['min', 'name'], alias: 'space' }
+        yAxes: [{ format: bytes, min: 0 }]
+      - type: graph
+        title: 'IO Ops'
+        queries:
+          - params: { labels: 'service=sys, path=/Io/Disks/Reads' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'reads' }
+          - params: { labels: 'service=sys, path=/Io/Disks/Writes' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'writes' }
+        display: { stack: true }
+      - type: graph
+        title: 'IO Bytes'
+        queries:
+          - params: { labels: 'service=sys, path=/Io/Disks/ReadBytes' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'reads' }
+          - params: { labels: 'service=sys, path=/Io/Disks/WriteBytes' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'writes' }
+        display: { stack: true }
+        yAxes: [{ format: bytes }]
+      - type: graph
+        title: 'IO Waits'
+        queries:
+          - params: { labels: 'service=sys, path=/Io/Disks/ReadWaitMillisec' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'reads msec' }
+          - params: { labels: 'service=sys, path=/Io/Disks/WriteWaitMillisec' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'writes msec' }
+        display: { stack: true }
+
+  - title: 'YCM CPL KiKiMR GRPC Client'
+    queryDefaults: { labels: 'app=kikimr_client, method=*' }
+    drilldowns:
+      - uid: yc-cert-manager-cpl-kikimr-grpc
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'cpl-myt-1',
+              'cpl-sas-1',
+              'cpl-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+
+    panels:
+      - type: graph
+        title: 'KiKiMR Client Call RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=grpc_requests, meter_type=count' }
+
+      - type: graph
+        title: 'KiKiMR Client Errors (by type)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, status!=OK' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: '0', group_by_labels: ['sum', 'status'], alias: '{{status}}' }
+        display: { decimals: 0, empty: false }
+
+      - type: graph
+        title: 'KiKiMR Client Call Durations'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=grpc_durations' }
+
+  - title: 'YCM CPL KiKiMR Tx'
+    drilldowns:
+      - uid: yc-cert-manager-cpl-kikimr-tx
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'cpl-myt-1',
+              'cpl-sas-1',
+              'cpl-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+
+    panels:
+      - type: graph
+        title: 'Tx Attempt Count'
+        templates: { name: percentile, format: solomon, groupLines: true }
+        yAxes: [{ decimals: 1, format: short, min: 0 }]
+        queries:
+          - params: { labels: 'tx_name=*, name=tx_attempts' }
+
+      - type: graph
+        repeat: tx_duration_sensor
+        title: '@{tx_duration_sensor:title}'
+        templates: { name: percentile, format: solomon, groupLines: true }
+        queries:
+          - params: { labels: 'tx_name=*, name=@{tx_duration_sensor}' }
+
+      - type: graph
+        title: 'Tx Result RPS'
+        queries:
+          - params: { labels: 'tx_name=*, name=tx_result, result=*' }
+            groupByTime: { max: default }
+            select: { nn_deriv: [], group_by_labels: ['sum', 'result'], alias: '{{result}} RPS' }
+
+      - type: graph
+        title: 'Session Count'
+        queries:
+          - params: { labels: 'name=sessions_count, type=active|idle' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'type'] }
+        display: { stack: true }
+
+      - type: graph
+        title: 'Session Timings (Used)'
+        templates: { name: percentile, format: solomon, groupLines: true }
+        queries:
+          - params: { labels: 'name=sessions_timings, type=used' }
+
+  - title: 'YCM CPL Solomon sensors pusher'
+    drilldowns:
+      - uid: yc-cert-manager-cpl-host-pusher
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'cpl-myt-1',
+              'cpl-sas-1',
+              'cpl-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+    panels:
+      - type: graph
+        title: 'Solomon client RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=app_solomon_pusher_requests' }
+
+      - type: graph
+        title: 'Solomon client errors RPS'
+        templates: { name: errors }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=app_solomon_pusher_errors' }
+        draw: [ { alias: '5xx', color: '#b20' } ]
+
+      - type: graph
+        title: 'Solomon pusher rejected sensors RPS'
+        templates: { name: errors }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=app_solomon_pusher_rejects' }
+        draw: [ { alias: '5xx', color: '#b20' } ]
+
+      - type: graph
+        title: 'Solomon pusher, not pushed after retries RPS'
+        templates: { name: errors }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=app_solomon_pusher_not_pushed' }
+        draw: [ { alias: '5xx', color: '#b20' } ]
+
+      - type: graph
+        title: 'Queue size'
+        queries:
+          - params: { labels: 'name=app_solomon_pusher_queue_size' }
+        display: { empty: false }
+
+      - type: graph
+        title: 'Solomon client Durations'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=app_solomon_pusher_durations' }
+
+  - title: 'YCM CPL ${client_app} Client'
+    uiRepeat: client_app
+    queryDefaults: { labels: 'app=${client_app}_client, method=*' }
+    drilldowns:
+      - uid: yc-cert-manager-cpl-host-client
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'cpl-myt-1',
+              'cpl-sas-1',
+              'cpl-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+    panels:
+      - type: graph
+        title: '${client_app} Client Call RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=grpc_requests, meter_type=count' }
+
+      - type: graph
+        title: '${client_app} Client Errors (by type)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, status!=OK' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: '0', group_by_labels: ['sum', 'status'], alias: '{{status}}' }
+        display: { decimals: 0, empty: false }
+
+      - type: graph
+        title: '${client_app} Client Call Durations'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=grpc_durations' }

@@ -1,0 +1,93 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.bastion.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/bastion/v1;bastion";
+
+service BastionSessionService {
+  rpc List (ListRequest) returns (ListResponse);
+  rpc ListActive (ListRequest) returns (ListResponse);
+  rpc Get (GetRequest) returns (SessionMetadata);
+  // Load - streams already finished and stored session
+  rpc Load(SessionRequest) returns (stream SessionResponse);
+  // Watch - streams active session
+  rpc Watch(SessionRequest) returns (stream SessionResponse);
+}
+
+message ListRequest {
+  int64 page_size = 1 [(value) = "0-10000"]; // default 1000
+  string page_token = 2 [(length) = "<=100"];
+  string filter = 3 [(length) = "<=1000"];
+}
+
+message ListResponse {
+  repeated SessionMetadata sessions = 1;
+  string next_page_token = 2;
+}
+
+message GetRequest {
+  string session_id = 1 [(length) = "<=100"];
+}
+
+message SessionRequest {
+  string session_id = 1 [(length) = "<=100"];
+  bool skip_metadata = 2;
+  // maximum size of response chunk in bytes, default 5MB
+  google.protobuf.Int64Value max_chunk_size = 3 [(value) = "1024-5242880"];
+}
+
+message SessionResponse {
+  oneof message {
+    SessionMetadata session_metadata = 1;
+    bytes chunk = 2;
+  }
+}
+
+message SessionMetadataBytes {
+  int64 stdin = 1;
+  int64 stdout = 2;
+  int64 stderr = 3;
+}
+
+message SessionMetadata {
+  // SSH session ID
+  string session_id = 1;
+  // bastion cluster ID
+  string cluster_id = 2;
+  // bastion hostname
+  string bastion_hostname = 3;
+  // SSH connection ID
+  string conn_id = 4;
+  // SSH request type
+  // (shell, exec, env, pty-req, x11-req, signal,
+  //  subsystem, tcpip-forward, window-change,
+  //  xon-xoff, break, eow@openssh.com)
+  string req_type = 5;
+  // OSLogin subject ID
+  string subject_id = 6;
+  // Source user name
+  string source_user = 7;
+  // Source ip address
+  string source_addr = 8;
+  // destination user name
+  string dest_user = 9;
+  // destination fqdn or ip address
+  string dest_host = 10;
+  // destination port
+  int64 dest_port = 11;
+  // destination ip address and port
+  string dest_addr = 12;
+  // Creation timestamp
+  google.protobuf.Timestamp opened_at = 13;
+  // Timestamp connection was closed
+  // Could be nil if connection still open or was not properly closed
+  google.protobuf.Timestamp closed_at = 14;
+  // Session status (opened, closed, failed)
+  string status = 15;
+  // Bytes amount transmitted within session in standard threads
+  SessionMetadataBytes bytes = 16;
+}

@@ -1,0 +1,452 @@
+uid: trail-preparer
+refresh: 1m
+title: Audit Trails Preparer Dashboard — Main
+
+tags:
+  - yc-trails
+  - yc-audit-trails
+links:
+  - { title: 'System', url: 'https://grafana.yandex-team.ru/d/trail-preparer-system' }
+  - { title: 'Run', url: 'https://grafana.yandex-team.ru/d/trail-preparer-run-metrics' }
+  - { title: 'Workers', url: 'https://grafana.yandex-team.ru/d/trail-preparer-workers' }
+  - { title: 'Dashboards', tags: [ yc-trails ] }
+
+variables:
+  ui:
+    !include include/_datasources.yaml
+    !include include/_projects.yaml
+    !include include/_clusters.yaml
+    host:
+      values:
+        - cluster-prp
+        - prp-vla-1
+        - prp-sas-1
+        - prp-myt-1
+  replacement:
+    !include ../include/errors.yaml
+  repeat:
+    grpc_method:
+      values:
+        - 'EventIngestionService/Write'
+
+
+graphDefaults:
+  datasource: ${datasource}
+  width: 8
+  height: 6
+
+queryDefaults:
+  dropNan: false
+  labels: 'project=${project}, cluster=trail, service=service, host=${host}'
+  defaultTimeWindow: $__interval
+
+rows:
+  - title: Incoming/Outgoing Bytes
+    panels:
+      - type: graph
+        title: Incoming Message Size
+        templates: [ { name: percentile, groupLines: true, format: solomon, sensor: raw } ]
+        queries:
+          - params: { labels: 'sensor=preparerIncomingBytes' }
+        yAxes: [ { min: 0, format: decbytes } ]
+      - type: graph
+        title: Outgoing Message Size
+        templates: [ { name: percentile, groupLines: true, format: solomon, sensor: raw } ]
+        queries:
+          - params: { labels: 'sensor=preparerOutgoingBytes' }
+        yAxes: [ { min: 0, format: decbytes } ]
+      - type: graph
+        title: Incoming/Outgoing Bytes
+        queries:
+          - params: { labels: 'name=preparerIncomingBytes_sum, service=core' }
+            select: { group_by_labels: [ sum, sensor ], diff: [ ], drop_below: '0', alias: 'incoming' }
+          - params: { labels: 'name=preparerOutgoingBytes_sum, service=core' }
+            select: { group_by_labels: [ sum, sensor ], diff: [ ], drop_below: '0', alias: 'outgoing' }
+        draw:
+          - { alias: incoming }
+          - { alias: outgoing }
+        yAxes: [ { min: 0, format: decbytes } ]
+      - type: graph
+        title: Incoming Bytes by Installation
+        queries:
+          - params: { labels: 'name=preparerIncomingBytes_sum, service=core' }
+            select: { group_by_labels: [ sum, installation ], diff: [ ], drop_below: '0', alias: '{{installation}}' }
+        yAxes: [ { min: 0, format: decbytes } ]
+        display: { empty: false, sort: decreasing }
+      - type: graph
+        title: Incoming Bytes by Topic
+        queries:
+          - params: { labels: 'name=preparerIncomingBytes_sum, service=core' }
+            select: { group_by_labels: [ sum, topic ], diff: [ ], alias: '{{topic}}' }
+        yAxes: [ { min: 0, format: decbytes } ]
+        display: { empty: false, sort: decreasing }
+      - type: graph
+        title: Outgoing Bytes by Target
+        queries:
+          - params: { labels: 'name=preparerOutgoingBytes_sum, service=core' }
+            select: { group_by_labels: [ sum, target ], diff: [ ], drop_below: '0', alias: '{{target}}' }
+        yAxes: [ { min: 0, format: decbytes } ]
+        display: { empty: false, sort: decreasing }
+
+
+  - title: Graphs
+    panels:
+      - type: graph
+        title: Preparer Job Critical Failures
+        queries:
+          - params: { labels: 'sensor=preparerCriticalFailures' }
+            select: { group_by_labels: [ sum, sensor ], integrate_fn: [ ], diff: [ ], drop_below: '0', alias: 'fails' }
+        draw:
+          - { color: '#f55', alias: 'fails' }
+        display: { empty: false }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Running preparer worker jobs
+        queries:
+          - params: { labels: 'sensor=preparerJobRunningJobs' }
+            select: { group_by_labels: [ sum, topic ], alias: '{{topic}}' }
+        display: { empty: false }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: 'Last Trails Cache Refresh'
+        queries:
+          - params: { labels: 'sensor=trailsCacheLastRefreshTime, host=prp-*' }
+            select: { drop_below: '1600000000', math: [ '* 1000' ] }
+        display: { stack: false }
+        yAxes: [ { format: dateTimeAsIsoNoDateIfToday } ]
+
+      - type: graph
+        title: Total Processing Delay
+        templates: [ { name: percentile, groupLines: true, format: solomon, sensor: raw } ]
+        queries:
+          - params: { labels: 'sensor=preparerProcessingDelay' }
+        yAxes: [ { min: 0, format: s } ]
+      - type: graph
+        title: Total Logbroker Read Time
+        templates: [ { name: percentile, groupLines: true, format: solomon, sensor: raw } ]
+        queries:
+          - params: { labels: 'sensor=logbrokerReadTime' }
+        yAxes: [ { min: 0, format: s } ]
+      - type: graph
+        title: Logbroker Read Errors by Worker
+        queries:
+          - params: { labels: 'sensor=preparerLogbrokerReadErrors' }
+            select: { group_by_labels: [ sum, worker ], integrate_fn: [ ], diff: [ ], drop_below: '0', alias: '{{worker}}' }
+        display: { empty: false, sort: decreasing }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Worker Config Not Found
+        queries:
+          - params: { labels: 'sensor=preparerWorkerConfigNotFound' }
+            select: { group_by_labels: [ sum, worker ], integrate_fn: [ ], diff: [ ], drop_below: '0', alias: '{{worker}}' }
+        display: { empty: false, sort: decreasing }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Logbroker Read Errors by Type
+        queries:
+          - params: { labels: 'sensor=preparerLogbrokerReadErrors' }
+            select: { group_by_labels: [ sum, type ], integrate_fn: [ ], diff: [ ], drop_below: '0', alias: '{{type}}' }
+        display: { empty: false, sort: decreasing }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Unknown Fields in Events by Type
+        queries:
+          - params: { labels: 'sensor=eventParserUnknownFields' }
+            select: { group_by_labels: [ sum, eventType ], alias: 'cloud {{eventType}}' }
+          - params: { labels: 'sensor=commonEventDetailsFillerUnknownFields' }
+            select: { group_by_labels: [ sum, type ], alias: 'audit {{type}}' }
+        display: { empty: false, sort: decreasing }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Events Size
+        templates: [ { name: percentile, groupLines: true, format: solomon, sensor: raw } ]
+        queries:
+          - params: { labels: 'sensor=eventsSize' }
+        yAxes: [ { min: 0, format: decbytes } ]
+      - type: graph
+        title: Events Size Too Much
+        queries:
+          - params: { labels: 'sensor=eventDistributorUnparsed, validationErrorType=BAD_EVENT_SIZE' }
+            select: { group_by_labels: [ sum, eventService ], alias: '{{eventService}}' }
+        yAxes: [ { min: 0 } ]
+
+  - title: Ingest API GRPC Server
+    drilldowns:
+      - uid: yc-trail-prp-host-server
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+                'prp-myt-1',
+                'prp-sas-1',
+                'prp-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+    panels:
+      - type: graph
+        title: 'RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'sensor=grpc_requests, app=cloud-trail-preparer_server, method=*, meter_type=count' }
+
+      - type: graph
+        title: 'Errors (by type)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'sensor=grpc_statuses, app=cloud-trail-preparer_server, method=*, status!=OK' }
+            groupByTime: { max: 'default' }
+            select: { drop_below: '0', group_by_labels: ['sum', 'status'], alias: '{{status}}' }
+        display: { decimals: 0, empty: false }
+
+      - type: graph
+        title: 'Durations'
+        templates: { name: percentile, groupLines: true, format: solomon, sensor: raw  }
+        queries:
+          - params: { labels: 'sensor=grpc_durations, app=cloud-trail-preparer_server, method=*' }
+
+      - type: graph
+        title: 'GRPC Thread Pool: Task Count'
+        queries:
+          - params: { labels: 'sensor=cloud_trail_preparer_running, type=running' }
+            groupByTime: { max: default }
+            select: { group_lines: 'sum', alias: 'running now count' }
+          - params: { labels: 'sensor=cloud_trail_preparer_task, meter_type=count, type=*' }
+            groupByTime: { max: default }
+            select: { non_negative_derivative: [], group_by_labels: ['sum', 'type'], alias: '{{type}} RPS' }
+        yAxes: [{ decimals: 0, format: short, min: 0 }, { decimals: 1, format: short, min: 0 }]
+        draw: [{ alias: '/.* RPS/', at: right }]
+
+      - type: graph
+        title: 'GRPC Thread Pool: Task Duration'
+        templates: { name: percentile, groupLines: true, format: solomon, sensor: raw  }
+        queries:
+          - params: { labels: 'sensor=cloud_trail_preparer_timings, type=duration' }
+
+      - type: graph
+        title: 'GRPC Thread Pool: Idle Time'
+        templates: { name: percentile, groupLines: true, format: solomon, sensor: raw  }
+        queries:
+          - params: { labels: 'sensor=cloud_trail_preparer_timings, type=idle' }
+
+  - title: Since Preparer Job
+    panels:
+      - type: graph
+        title: Since Preparer Job Read
+        queries:
+          - params: { labels: 'sensor=preparerJobMsSinceLastRead, host=!cluster*, worker!=e2e-*' }
+            select: { group_by_labels: [ min, worker ], alias: '{{worker}}' }
+        yAxes: [ { min: 0, format: ms } ]
+        display: { empty: false, sort: decreasing }
+      - type: graph
+        title: Since Preparer Job Finish
+        queries:
+          - params: { labels: 'sensor=preparerJobMsSinceLastFinish, host=!cluster*, worker!=e2e-*' }
+            select: { group_by_labels: [ min, worker ], alias: '{{worker}}' }
+        yAxes: [ { min: 0, format: ms } ]
+        display: { empty: false, sort: decreasing }
+      - type: graph
+        title: Since Preparer Job Running
+        queries:
+          - params: { labels: 'sensor=preparerJobMsSinceLastStarted, host=!cluster*, worker!=e2e-*' }
+            select: { group_by_labels: [ min, worker ], alias: '{{worker}}' }
+        yAxes: [ { min: 0, format: ms } ]
+        display: { empty: false, sort: decreasing }
+
+  - title: Cache
+    panels:
+      - type: graph
+        title: Cache Cleanup Critical Failures
+        queries:
+          - params: { labels: 'sensor=cacheCleanupCriticalFailures' }
+            select: { group_by_labels: [ sum, sensor ], integrate_fn: [ ], diff: [ ], drop_below: '0', alias: 'fails' }
+        draw:
+          - { color: '#a22', alias: 'fails' }
+        display: { empty: false }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Persistent Cache Hit/miss
+        queries:
+          - params: { labels: 'sensor=distributedCacheHits' }
+            select: { group_by_labels: [ sum, sensor ], integrate_fn: [ ], diff: [ ], drop_below: '0', alias: 'hits' }
+          - params: { labels: 'sensor=distributedCacheMisses' }
+            select: { group_by_labels: [ sum, sensor ], integrate_fn: [ ], diff: [ ], drop_below: '0', alias: 'misses' }
+        draw:
+          - { color: '#3e3', alias: hits }
+          - { color: '#e33', alias: misses }
+        display: { stack: false }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Persistent Cache Hit/miss by Type
+        queries:
+          - params: { labels: 'sensor=distributedCacheHits' }
+            select: { group_by_labels: [ sum, type ], integrate_fn: [ ], diff: [ ], drop_below: '0', alias: 'hits {{type}}' }
+          - params: { labels: 'sensor=distributedCacheMisses' }
+            select: { group_by_labels: [ sum, type ], integrate_fn: [ ], diff: [ ], drop_below: '0', alias: 'misses {{type}}' }
+        display: { stack: false }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Cache Record Lifetime Unknown Types
+        queries:
+          - params: { labels: 'sensor=cacheRecordLifetimeUnknownType' }
+            select: { group_by_labels: [ sum, sensor ], integrate_fn: [ ], diff: [ ], drop_below: '0', alias: 'fails' }
+        display: { empty: false }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Local Cache Last Refresh Start Time
+        queries:
+          - params: { labels: 'sensor=localCacheLastLastRefreshStartTime, host=!cluster*' }
+            select: { drop_below: '1600000000', math: [ '* 1000' ] }
+        display: { stack: false }
+        yAxes: [ { format: dateTimeAsIsoNoDateIfToday } ]
+      - type: graph
+        title: Local Cache Last Expire Start Time
+        queries:
+          - params: { labels: 'sensor=localCacheLastLastExpireStartTime, host=!cluster*' }
+            select: { drop_below: '1600000000', math: [ '* 1000' ] }
+        display: { stack: false }
+        yAxes: [ { format: dateTimeAsIsoNoDateIfToday } ]
+      - type: graph
+        title: Local Cache Hit/miss
+        queries:
+          - params: { labels: 'sensor=localCacheHits' }
+            select: { group_by_labels: [ sum, sensor ], integrate_fn: [ ], diff: [ ], drop_below: '0', alias: 'hits' }
+          - params: { labels: 'sensor=localCacheMisses' }
+            select: { group_by_labels: [ sum, sensor ], integrate_fn: [ ], diff: [ ], drop_below: '0', alias: 'misses' }
+        draw:
+          - { color: '#3e3', alias: hits }
+          - { color: '#e33', alias: misses }
+        display: { stack: false }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Local Cache Hit/miss by Type
+        queries:
+          - params: { labels: 'sensor=localCacheHits' }
+            select: { group_by_labels: [ sum, type ], integrate_fn: [ ], diff: [ ], drop_below: '0', alias: 'hits {{type}}' }
+          - params: { labels: 'sensor=localCacheMisses' }
+            select: { group_by_labels: [ sum, type ], integrate_fn: [ ], diff: [ ], drop_below: '0', alias: 'misses {{type}}' }
+        display: { stack: false }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Number of throttled Name Resolver calls
+        queries:
+          - params: { labels: 'sensor=namesResolverRmThrottled' }
+            select: { integrate_fn: [ ], diff: [ ], drop_below: '0', alias: 'rm' }
+          - params: { labels: 'sensor=namesResolverIamThrottled' }
+            select: { integrate_fn: [ ], diff: [ ], drop_below: '0', alias: 'iam' }
+        display: { stack: false }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Number of subjects with type different from expected
+        queries:
+          - params: { labels: 'sensor=namesResolverIamWrongSubjectType' }
+            select: { group_by_labels: [ sum, expected, actual ], integrate_fn: [ ], diff: [ ], drop_below: '0', alias: '{{actual}} instead {{expected}}' }
+        display: { stack: false }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Trails Cache Size
+        queries:
+          - params: { labels: 'sensor=trailsCacheSize' }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Organizations Cache Size
+        queries:
+          - params: { labels: 'sensor=cloudOrganizationCachedResolverCacheSize' }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Names Resolver Resource Not Found at External Services
+        queries:
+          - params: { labels: 'sensor=namesResolverNotFound' }
+            select: { group_by_labels: [ sum, resourceType ], integrate_fn: [ ], diff: [ ], drop_below: '0', alias: 'not found {{resourceType}}' }
+        display: { stack: false }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Wrong Trail Filter Root
+        queries:
+          - params: { labels: 'sensor=trailsCacheWrongFilterRoot' }
+            select: { group_by_labels: [ sum, type ], integrate_fn: [ ], diff: [ ], drop_below: '0', alias: '{{type}}' }
+        display: { stack: false }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Trail Filter Invalid Depth
+        queries:
+          - params: { labels: 'sensor=trailsCacheFiltersWithInvalidDepth' }
+            select: { group_lines: [ sum ], integrate_fn: [ ], diff: [ ], drop_below: '0', alias: 'trails' }
+        display: { stack: false }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Organization Not Found
+        queries:
+          - params: { labels: 'sensor=trailsCacheOrganizationNotFound' }
+            select: { group_lines: [ sum ], integrate_fn: [ ], diff: [ ], drop_below: '0', alias: 'trails' }
+        display: { stack: false }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Organization Not In Cache
+        queries:
+          - params: { labels: 'sensor=trailsCacheOrganizationNotInCache' }
+            select: { group_lines: [ sum ], integrate_fn: [ ], diff: [ ], drop_below: '0', alias: 'trails' }
+        display: { stack: false }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Organization Cache Expired
+        queries:
+          - params: { labels: 'sensor=trailsCacheOrganizationCacheExpired' }
+            select: { group_lines: [ sum ], integrate_fn: [ ], diff: [ ], drop_below: '0', alias: 'trails' }
+        display: { stack: false }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Organization Cache Used
+        queries:
+          - params: { labels: 'sensor=trailsCacheOrganizationCacheUsed' }
+            select: { group_lines: [ sum ], integrate_fn: [ ], diff: [ ], drop_below: '0', alias: 'trails' }
+        display: { stack: false }
+        yAxes: [ { min: 0 } ]
+
+  - title: API @grpc_method
+    repeat: grpc_method
+    drilldowns:
+      - uid: yc-trail-ingest-api-host-control
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values:
+              - 'prp-myt-1'
+              - 'prp-sas-1'
+              - 'prp-vla-1'
+        uiRepeat: host
+        labels: 'host=$host'
+
+    queryDefaults: { labels: 'app=cloud-trail-preparer_server' }
+    panels:
+
+      - type: graph
+        templates: { name: rps, rate: rps }
+        title: '@grpc_method rps ($cluster)'
+        queries:
+          - params: { labels: 'sensor=grpc_requests, meter_type=count, method=audittrails.v1.@grpc_method' }
+
+      - type: graph
+        title: 'Errors (by type)'
+        templates: { name: errors, sensor: raw }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'sensor=grpc_statuses, status=OK, method=audittrails.v1.@grpc_method' }
+          - params: { labels: 'sensor=grpc_statuses, status=@4xx, method=audittrails.v1.@grpc_method' }
+          - params: { labels: 'sensor=grpc_statuses, status=@5xx, method=audittrails.v1.@grpc_method' }
+          - params: { labels: 'sensor=grpc_statuses, status=@503, method=audittrails.v1.@grpc_method' }
+        draw:
+          - { alias: 'OK', color: '#131', at: right }
+          - { alias: '4xx', color: '#147', at: right }
+          - { alias: '5xx', color: '#b20', at: left }
+          - { alias: '503', color: '#da7', at: left }
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        templates: { name: percentile, format: solomon, groupLines: true, sensor: raw }
+        title: '@grpc_method response duration ($cluster)'
+        queries:
+          - params: { labels: 'sensor=grpc_durations, method=audittrails.v1.@grpc_method' }
+        yAxes: [{ min: 0 }]

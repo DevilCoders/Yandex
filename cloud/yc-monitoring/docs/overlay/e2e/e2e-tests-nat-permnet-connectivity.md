@@ -1,0 +1,3 @@
+[Алерт e2e-tests-nat-permnet-connectivity в джаглере](https://juggler.yandex-team.ru/aggregate_checks/?query=service%3De2e-tests-nat-permnet-connectivity)
+
+- **test_nat_ipv4_connectivity** — Тест проверяет внешню 4-ю связность через конкретный cgw-nat, запускается с самого cgw-nat раз в 300 сек. Для каждого cgw-nat заведена отдельная сеть и сабнет, rt которой принимает только этот cgw (rt сабнетов прописаны в bootstrap-templates). В ней заводится пермнет-вм, с которой пингуются внешние адреса. Таким образом проверяем работоспособность конкретно этого cgw-nat.

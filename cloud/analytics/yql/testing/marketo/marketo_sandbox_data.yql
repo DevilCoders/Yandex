@@ -1,0 +1,148 @@
+USE %SRC_YT_CLUSTER%;
+PRAGMA yt.InferSchema = '1';
+
+$marketo_export_prod = '%MARKETO_EXPORT_TABLES%';
+$marketo_export_sandbox = '%MARKETO_EXPORT_TABLES%/sandbox';
+$annon_pd = $marketo_export_prod || '/annon_pd';
+
+$lead = $marketo_export_prod || '/lead';
+$account = $marketo_export_prod || '/account';
+$opportunity = $marketo_export_prod || '/opportunity';
+$opportunity_role = $marketo_export_prod || '/opportunity_role';
+$ya_attend_event = $marketo_export_prod || '/ya_attend_event';
+$ya_click_email = $marketo_export_prod || '/ya_click_email';
+$ya_consumption_daily = $marketo_export_prod || '/ya_consumption_daily';
+$ya_fill_out_form = $marketo_export_prod || '/ya_fill_out_form';
+$ya_open_email = $marketo_export_prod || '/ya_open_email';
+$ya_send_email = $marketo_export_prod || '/ya_send_email';
+$ya_visit_webpage = $marketo_export_prod || '/ya_visit_webpage';
+
+$sandbox_lead = $marketo_export_sandbox || '/lead';
+$sandbox_account = $marketo_export_sandbox || '/account';
+$sandbox_opportunity = $marketo_export_sandbox || '/opportunity';
+$sandbox_opportunity_role = $marketo_export_sandbox || '/opportunity_role';
+$sandbox_ya_attend_event = $marketo_export_sandbox || '/ya_attend_event';
+$sandbox_ya_click_email = $marketo_export_sandbox || '/ya_click_email';
+$sandbox_ya_consumption_daily = $marketo_export_sandbox || '/ya_consumption_daily';
+$sandbox_ya_fill_out_form = $marketo_export_sandbox || '/ya_fill_out_form';
+$sandbox_ya_open_email = $marketo_export_sandbox || '/ya_open_email';
+$sandbox_ya_send_email = $marketo_export_sandbox || '/ya_send_email';
+$sandbox_ya_visit_webpage = $marketo_export_sandbox || '/ya_visit_webpage';
+
+
+-- Anonimize Personal Data
+INSERT INTO $annon_pd WITH TRUNCATE
+    SELECT
+        email,
+        Digest::Md5Hex(String::SplitToList(email, '@')[0]) || '@' || String::SplitToList(email, '@')[1] AS anon_email,
+        IF(last_name IS NOT NULL, Digest::Md5Hex(last_name)) AS anon_last_name,
+        IF(first_name IS NOT NULL, Digest::Md5Hex(first_name)) AS anon_first_name,
+        IF(address IS NOT NULL, Digest::Md5Hex(address)) AS anon_address,
+        IF(city IS NOT NULL, Digest::Md5Hex(city)) AS anon_city,
+        IF(company IS NOT NULL, Digest::Md5Hex(company)) AS anon_company,
+        IF(website IS NOT NULL, Digest::Md5Hex(website)) AS anon_website
+    FROM $lead
+;
+COMMIT;
+
+-- Leads
+INSERT INTO $sandbox_lead WITH TRUNCATE
+SELECT
+    annon_pd.anon_email AS email,
+    annon_pd.anon_last_name AS last_name,
+    annon_pd.anon_first_name AS first_name,
+    annon_pd.anon_address AS address,
+    annon_pd.anon_city AS city,
+    annon_pd.anon_company AS company,
+    annon_pd.anon_website AS website,
+    account_id, ba_created_at, ba_paid_at, ba_paid_real_consumption_prob, ba_paid_real_consumption_segment, ba_status, ba_trial_consumption_prob, ba_trial_consumption_segment, behavioral_segment, behavioral_segment_prob, billing_account_id, client_name, cloud_ba_prob, cloud_ba_segment, cloud_wallet, company_size, console_registration_date, country, crm_id, crm_status, crm_type, dwh_updated_at, email_type, first_consumption_date, first_paid_consumption_date, grant1_amount, grant1_burn_rate, grant1_end_date, grant1_id, grant1_remaining, grant1_start_date, grant1_type, grant2_amount, grant2_burn_rate, grant2_end_date, grant2_id, grant2_remaining, grant2_start_date, grant2_type, grant3_amount, grant3_burn_rate, grant3_end_date, grant3_id, grant3_remaining, grant3_start_date, grant3_type, industry, inferred_city, inferred_country, is_individual, lead_behaviour_score, lead_demographic_score, lead_product_score_ch, lead_product_score_compute, lead_product_score_datalens, lead_product_score_iam, lead_product_score_mdb, lead_product_score_mg, lead_product_score_mysql, lead_product_score_pg, lead_product_score_redis, lead_product_score_s3, lead_product_score_speechkit, lead_product_score_translate, lead_product_score_vpc, lead_scenario_score_analytics, lead_scenario_score_archive, lead_scenario_score_dr, lead_scenario_score_test_dev, lead_scenario_score_web, lead_score, lead_source, lead_status, mail_billing, mail_event, mail_feature, mail_info, mail_marketing, mail_promo, mail_support, mail_tech, mail_technical, mail_testing, passport_uid, person_id, product_segment, product_segment_prob, real_churn_segment, real_churn_segment_prob, real_consumption_payment_prob, real_consumption_payment_segment, role, sales_owner_email, sales_owner_first_name, sales_owner_job_title, sales_owner_last_name, sales_owner_phone, sales_person, segment, test_group_index, trial_churn_segment, trial_churn_segment_prob, trial_consumption_ba_paid_prob, trial_consumption_ba_paid_segment, user_settings_language
+FROM $lead AS l
+JOIN $annon_pd AS annon_pd
+    ON l.email = annon_pd.email
+ORDER BY dwh_updated_at, email;
+
+-- account
+INSERT INTO $sandbox_account WITH TRUNCATE SELECT * FROM $account ORDER BY dwh_updated_at;
+
+-- opportunity
+INSERT INTO $sandbox_opportunity WITH TRUNCATE SELECT * FROM $opportunity ORDER BY dwh_updated_at;
+
+-- opportunity_role
+INSERT INTO $sandbox_opportunity_role WITH TRUNCATE
+SELECT
+    annon_pd.anon_email AS email,
+    dwh_updated_at, external_created_date, external_opportunity_id, is_primary, role
+FROM $opportunity_role AS s
+JOIN $annon_pd AS annon_pd
+    ON s.email = annon_pd.email
+ORDER BY dwh_updated_at;
+
+-- ya_attend_event
+INSERT INTO $sandbox_ya_attend_event WITH TRUNCATE
+SELECT
+    annon_pd.anon_email AS email,
+    dwh_created_at, ya_activity_time, ya_activity_id, event_city, event_date, `datetime`, scenario, type_name, product, ya_campaign_id, audience_type, event_end_time, event_start_time, event_id, event_offline, event_type
+FROM $ya_attend_event AS s
+JOIN $annon_pd AS annon_pd
+    ON s.email = annon_pd.email
+ORDER BY dwh_created_at, email;
+
+-- ya_click_email
+INSERT INTO $sandbox_ya_click_email WITH TRUNCATE
+SELECT
+    annon_pd.anon_email AS email,
+    dwh_created_at, ya_activity_time, ya_activity_id, mailing_id, is_mobile_device, type_name, ya_campaign_id, device, ab_test_variant, link_id, link
+FROM $ya_click_email AS s
+JOIN $annon_pd AS annon_pd
+    ON s.email = annon_pd.email
+ORDER BY dwh_created_at, email;
+
+-- ya_consumption_daily
+INSERT INTO $sandbox_ya_consumption_daily WITH TRUNCATE
+SELECT
+    annon_pd.anon_email AS email,
+    dwh_created_at, ya_activity_time, ya_activity_id, avg_daily_consumption_in_last_period, compared_to_prev_period_percentage, amount_consumed, type_name, product, subproduct, compared_to_prev_period, is_grant
+FROM $ya_consumption_daily AS s
+JOIN $annon_pd AS annon_pd
+    ON s.email = annon_pd.email
+ORDER BY dwh_created_at, email;
+
+-- ya_fill_out_form
+INSERT INTO $sandbox_ya_fill_out_form WITH TRUNCATE
+SELECT
+    annon_pd.anon_email AS email,
+    dwh_created_at, ya_activity_time, ya_activity_id, form_json, `datetime`, scenario, type_name, product, ya_campaign_id, webform_id, url
+FROM $ya_fill_out_form AS s
+JOIN $annon_pd AS annon_pd
+    ON s.email = annon_pd.email
+ORDER BY dwh_created_at, email;
+
+-- ya_open_email
+INSERT INTO $sandbox_ya_open_email WITH TRUNCATE
+SELECT
+    annon_pd.anon_email AS email,
+    dwh_created_at, ya_activity_time, ya_activity_id, yaCampaignID, mailing_id, is_mobile_device, type_name, device, ab_test_variant
+FROM $ya_open_email AS s
+JOIN $annon_pd AS annon_pd
+    ON s.email = annon_pd.email
+ORDER BY dwh_created_at, email;
+
+-- ya_send_email
+INSERT INTO $sandbox_ya_send_email WITH TRUNCATE
+SELECT
+    annon_pd.anon_email AS email,
+    dwh_created_at, ya_activity_time, ya_activity_id, yaCampaignID, mailing_id, scenario, type_name, product, ab_test_variant
+FROM $ya_send_email AS s
+JOIN $annon_pd AS annon_pd
+    ON s.email = annon_pd.email
+ORDER BY dwh_created_at, email;
+
+-- ya_visit_webpage
+INSERT INTO $sandbox_ya_visit_webpage WITH TRUNCATE
+SELECT
+    annon_pd.anon_email AS email,
+    dwh_created_at, ya_activity_time, ya_activity_id, type, city, country, scenario, visit_source_id, product, ya_campaign_id, visit_source_type, search_query, time_spent, url
+FROM $ya_visit_webpage AS s
+JOIN $annon_pd AS annon_pd
+    ON s.email = annon_pd.email
+ORDER BY dwh_created_at, email;

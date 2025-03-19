@@ -1,0 +1,90 @@
+apiVersion: datadoghq.com/v1alpha1
+kind: ExtendedDaemonSet
+metadata:
+  name: nbs-blockstore-server
+  namespace: nbs
+  label: nbs
+spec:
+  strategy:
+    canary:
+      replicas: 1
+      autoFail:
+        enabled: False
+  template:
+    metadata:
+      labels:
+        name: nbs-blockstore-server
+    spec:
+      nodeSelector:
+        nbs: "debug"
+      hostNetwork: true
+      containers:
+      - name: nbs-blockstore-server
+        image: cr.yandex/yc-bootstrap/blockstore-server-with-tools:57.tags.releases.nbs.stable-20-6-3-1
+        command: ['bash', '-c', 'source /Berkanavt/nbs-server/cfg/nbs_server.cfg && /usr/bin/blockstore-server ${nbs_arg}']
+        securityContext:
+          capabilities:
+            add:
+              - SYS_PTRACE
+              - SYS_ADMIN
+        volumeMounts:
+          - mountPath: /Berkanavt/nbs-server/cfg
+            name: cfg-path
+            # TODO remove log dirs after infra pods for this services will be added CLOUD-67552
+          - mountPath: /var/log
+            name: var-log
+            readOnly: false
+
+      volumes:
+      # cfg-path
+      - name: cfg-path
+        hostPath:
+          type: DirectoryOrCreate
+          path: /Berkanavt/nbs-server/cfg/
+      # var-log
+      - name: var-log
+        hostPath:
+          type: Directory
+          path: /var/log/
+      # for push-client
+      #   common secret for push-client
+      - name: push-client-secret
+        hostPath:
+          type: File
+          path: /usr/share/yc-secrets/3b7c9527-1522-11ea-bda9-a8a77dca4466/tvm.secret/1/tvm.secret
+      #  common config for push-client
+      - name: push-client-config
+        configMap:
+          name: nbs-infrapod-configmap
+          items:
+          - key: "push-client.yaml"
+            path: "push-client.yaml"
+      #   push-client for blockstore
+      - name: blockstore-push-client-state
+        hostPath:
+          type: DirectoryOrCreate
+          path: /var/lib/nbs/push-client/blockstore
+      - name: blockstore-push-client-logs
+        hostPath:
+          type: DirectoryOrCreate
+          path: /var/log/nbs/blockstore/
+
+       # common solomon agent for pod
+      - name: solomon-agent-config
+        configMap:
+          name: nbs-infrapod-configmap
+          items:
+            - key: "solomon-agent.conf"
+              path: "agent.conf"
+      # common juggler client for pod
+      - name: juggler-client-config
+        configMap:
+          name: nbs-infrapod-configmap
+          items:
+            - key: "juggler-client.conf"
+              path: "client.conf"
+
+      - name: journal-data
+        emptyDir:
+          medium: Memory
+

@@ -1,0 +1,36 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro prog() %}
+
+let value = avg(
+    group_lines("max", {
+        cluster='{{ env }}',
+        project='{{ project }}',
+        service='{{ service }}',
+        name='system.StealTime',
+        cpu='*'
+    })
+);
+
+let is_red = value > {{ alarm_limit }};
+let is_yellow = value > {{ warn_limit }};
+
+alarm_if(is_red);
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+    "name": "{{ unit }} CPU StealTime @ {{ env }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "host": "{{ host }}",
+        "tags": "Solomon",
+        "cpu_steal_time": "[[expression.value]]",
+        "crit_avail_perc": "{{ alarm_limit }}",
+        "warn_avail_perc": "{{ warn_limit }}",
+        "service": "{{ unit }}-cpu-steal-time",
+        "description": "{{ unit }} CPU StealTime. If goes WARN/CRIT, check for services CPU overload (Compute Node CPU throttling)"
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

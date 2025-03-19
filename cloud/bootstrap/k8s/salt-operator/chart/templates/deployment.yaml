@@ -1,0 +1,138 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    app.kubernetes.io/instance: salt-operator
+    app.kubernetes.io/name: salt-operator
+    control-plane: salt-operator-controller-manager
+  {{- include "chart.labels" . | nindent 4 }}
+  name: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "chart.fullname" . }}-controller-manager
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/instance: salt-operator
+    app.kubernetes.io/name: salt-operator
+    control-plane: salt-operator-controller-manager
+  {{- include "chart.labels" . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "chart.fullname" . }}-controller-manager
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/instance: salt-operator
+    app.kubernetes.io/name: salt-operator
+    control-plane: salt-operator-controller-manager
+  {{- include "chart.labels" . | nindent 4 }}
+spec:
+  strategy:
+    type: {{ .Values.controllerManager.strategyType }}
+  replicas: {{ .Values.controllerManager.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: salt-operator
+      app.kubernetes.io/name: salt-operator
+      control-plane: salt-operator-controller-manager
+    {{- include "chart.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: salt-operator
+        app.kubernetes.io/name: salt-operator
+        control-plane: salt-operator-controller-manager
+      {{- include "chart.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - args:
+        - --leader-elect
+        - --config=controller_manager_config.yaml
+        command:
+        - /salt-operator-manager
+        env:
+        - name: KUBERNETES_SERVICE_HOST
+          valueFrom:
+            configMapKeyRef:
+              key: kubernetesServiceHost
+              name: {{ include "chart.fullname" . }}-envs
+        - name: BOOTSTRAP_HOST
+          valueFrom:
+            configMapKeyRef:
+              key: bootstrapHost
+              name: {{ include "chart.fullname" . }}-envs
+        - name: SALT_RUNNER_CLIENT
+          valueFrom:
+            configMapKeyRef:
+              key: saltRunnerClient
+              name: {{ include "chart.fullname" . }}-envs
+        - name: SALT_RUNNER_SOCKET_DIR
+          valueFrom:
+            configMapKeyRef:
+              key: saltRunnerSocketDir
+              name: {{ include "chart.fullname" . }}-envs
+        - name: SALT_RUNNER_SOCKET_NAME
+          valueFrom:
+            configMapKeyRef:
+              key: saltRunnerSocketName
+              name: {{ include "chart.fullname" . }}-envs
+        - name: YDB_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              key: ydbEndpoint
+              name: {{ include "chart.fullname" . }}-envs
+        - name: YDB_DATABASE
+          valueFrom:
+            configMapKeyRef:
+              key: ydbDatabase
+              name: {{ include "chart.fullname" . }}-envs
+        - name: YDBLOCK_PREFIX
+          valueFrom:
+            configMapKeyRef:
+              key: ydblockPrefix
+              name: {{ include "chart.fullname" . }}-envs
+        - name: YC_METADATA_URL
+          valueFrom:
+            configMapKeyRef:
+              key: ycMetadataURL
+              name: {{ include "chart.fullname" . }}-envs
+        - name: LOCK_TIMEOUT
+          valueFrom:
+            configMapKeyRef:
+              key: lockTimeout
+              name: {{ include "chart.fullname" . }}-envs
+        image: {{ .Values.controllerManager.manager.image.repository }}:{{ .Values.controllerManager.manager.image.tag
+          | default .Chart.AppVersion }}
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8083
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        name: manager
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8083
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources: {}
+        securityContext: {}
+        volumeMounts:
+        - mountPath: /controller_manager_config.yaml
+          name: manager-config
+          subPath: controller_manager_config.yaml
+      hostNetwork: true
+      nodeSelector:
+        salt-operator: "1"
+      securityContext: {}
+      serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
+      terminationGracePeriodSeconds: 10
+      volumes:
+      - configMap:
+          name: {{ include "chart.fullname" . }}-manager-config
+        name: manager-config

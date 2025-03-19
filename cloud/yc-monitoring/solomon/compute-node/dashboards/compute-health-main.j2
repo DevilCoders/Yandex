@@ -1,0 +1,57 @@
+{% extends "../../base/dashboard.j2" %}
+
+{% set parameters = (
+    ("service", "compute_health"),
+    ("cluster", "cloud_" + env + "_compute_health"),
+    ("host", "cluster")
+) %}
+
+{% macro simple_graph(title, sensor) %}
+    {{ render_panel_query_parts(title, cluster="[[cluster]]", service="[[service]]", query_parts=["l.name=" + sensor, "l.host=[[host]]", "graph=auto"]) }}
+{% endmacro %}
+
+{% macro per_host_graph(title, sensor) %}
+    {{ render_panel_query_parts(title, cluster="[[cluster]]", service="[[service]]", query_parts=["l.name=" + sensor, "l.host=!cluster", "graph=auto"]) }}
+{% endmacro %}
+
+{% macro saved_graph(title, graph) %}
+    {{ render_panel_query_parts(title, cluster="[[cluster]]", service="", query_parts=["graph="+ graph, "host=[[host]]"]) }}
+{% endmacro %}
+
+{% block rows %}
+[
+    {
+      "panels": [
+        {{ simple_graph("Events read", "reader_new_events") }},
+        {},
+        {{ simple_graph("Errors", "reader_errors|reader_parse_errors|calc_errors|registration_errors|coordinator_errors") }}
+      ]
+    },
+    {
+      "panels": [
+        {{ simple_graph("Targets in mem", "calc_targets_in_mem") }},
+        {{ simple_graph("Events in mem", "calc_events_in_mem") }}
+      ]
+    },
+    {
+      "panels": [
+        {{ simple_graph("Calc new events", "calc_new_events") }},
+        {{ simple_graph("Calc new targets", "calc_new_targets") }}
+      ]
+    },
+    {
+      "panels": [
+        {{ per_host_graph("Coordinator node", "node_is_coordinator") }},
+        {{ per_host_graph("Raw reader node", "node_is_raw_event_reader") }},
+        {{ per_host_graph("Calculator nodes", "node_is_calculator") }}
+      ]
+    },
+    {
+      "panels": [
+        {{ saved_graph("CPU Usage", "compute-sys-ua-cpu") }},
+        {{ saved_graph("Memory", "compute-sys-ua-mem") }}
+      ]
+    }
+
+]
+{% endblock %}

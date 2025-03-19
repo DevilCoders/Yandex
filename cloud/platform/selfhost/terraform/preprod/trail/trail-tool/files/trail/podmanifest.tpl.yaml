@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: application
+  namespace: kube-system
+  labels:
+    role: api
+  annotations:
+    scheduler.alpha.kubernetes.io/critical-pod: ""
+spec:
+  priority: 2000000001
+  priorityClassName: system-cluster-critical
+  hostNetwork: true
+  containers:
+  - name: trail-tool
+    image: cr.yandex/crpij8i2mnr7bpbup1c5/trail-tool:${application_version}
+    command: ["sleep", "infinity"]
+    resources:
+      requests:
+        memory: ${application_container_max_memory}
+      limits:
+        memory: ${application_container_max_memory}
+    env:
+    - name: APPLICATION_YAML
+      value: /etc/trail/application.yaml
+    - name: APPLICATION_LOG_DIR
+      value: /var/log/trail
+    - name: APPLICATION_LOG_FILE_MAX_FILES
+      value: "3"
+    - name: APPLICATION_ACCESS_LOG_FILE_MAX_FILES
+      value: "3"
+    - name: JAVA_TOOL_OPTIONS
+      value: "-Djdk.tls.client.protocols=TLSv1.2 -Xmx${application_jvm_xmx} -XX:-UseContainerSupport -Djava.net.preferIPv6Addresses=true -Dfile.encoding=UTF-8 -Xlog:gc*:file=/var/log/trail/gc.log::filecount=10,filesize=100M"
+    - name: YANDEX_CLOUD_LOG_LEVEL
+      value: ${app_log_level}
+    volumeMounts:
+    - name: trail-configs
+      mountPath: /etc/trail
+      readOnly: true
+    - name: var-trail
+      mountPath: /var/trail
+      terminationGracePeriodSeconds: 30
+    - name: var-log-trail
+      mountPath: /var/log/trail
+    - name: run-trail
+      mountPath: /run/trail
+  volumes:
+  - name: all-configs
+    hostPath:
+      path: /etc
+      type: DirectoryOrCreate
+  - name: trail-configs
+    hostPath:
+      path: /etc/trail
+      type: DirectoryOrCreate
+  - name: var-trail
+    hostPath:
+      path: /var/trail
+      type: DirectoryOrCreate
+  - name: var-log-trail
+    hostPath:
+      path: /var/log/trail
+      type: DirectoryOrCreate
+  - name: run-trail
+    hostPath:
+      path: /run/trail
+      type: DirectoryOrCreate

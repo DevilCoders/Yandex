@@ -1,0 +1,36 @@
+{% extends "../../../base/alert.j2" %}
+
+{% set windowSecs = windowSecs | default(600) %}
+{% set checkExpression = "" %}
+
+{% macro prog() %}
+let ts = moving_avg(series_max({
+    project='kikimr'
+    ,cluster='yandexcloud_{{ env }}_logbroker_global'
+    ,service='quoter_service'
+    ,resource='write-quota'
+    ,host='cluster'
+    ,quoter='{{ quoter[env] }}'
+    ,sensor='QuotaConsumed'
+}), 10m);
+
+let quota_consumed = ceil(max(ts) / 1024);
+
+alarm_if(quota_consumed > {{ alarm_limit }});
+warn_if(quota_consumed > {{ warn_limit }});
+{% endmacro %}
+
+{% block main %}
+    "name": "{{ team }} Logbroker QuotaConsumed @{{ env | upper }}",
+    "annotations": {
+        "topic": "[[labels.TopicPath]]",
+        "current_value": "[[expression.messages]]",
+        "service": "{{ service|default(config_name.replace('_', '-')) }}",
+        "host": "{{ host }}",
+        "description": "More information: https://logbroker.yandex-team.ru/docs/reference/metrics#QuotaConsumed",
+        "wiki": "{{ wiki_url }}#{{ config_name.replace('_', '-') }}",
+        "dashboard": "{{ dashboard_url }}"
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

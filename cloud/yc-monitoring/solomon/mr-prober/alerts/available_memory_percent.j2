@@ -1,0 +1,47 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro prog() %}
+{# Note that Solomon graph uses SI units, Giga will be counted as 10^9 in there #}
+let Gb = 1024 * 1024 * 1024;
+
+let mem_available = avg({
+    cluster='{{ env }}',
+    project='{{ project }}',
+    service='{{ service }}',
+    name='memory.MemAvailable'
+});
+
+let mem_available_gb = mem_available / Gb;
+
+let mem_all = avg({
+    cluster='{{ env }}',
+    project='{{ project }}',
+    service='{{ service }}',
+    name='memory.MemTotal'
+}) ;
+
+let value = mem_available / mem_all * 100;
+
+let is_red = value < {{ alarm_limit }};
+let is_yellow = value < {{ warn_limit }};
+
+alarm_if(is_red);
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+    "name": "{{ unit }} percent of available memory @ {{ env }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "host": "{{ host }}",
+        "tags": "Solomon",
+        "mem_available_gb": "[[expression.mem_available_gb]]",
+        "mem_available_perc": "[[expression.value]]",
+        "crit_avail_perc": "{{ alarm_limit }}",
+        "warn_avail_perc": "{{ warn_limit }}",
+        "service": "{{ unit }}-memory-available",
+        "description": "{{ unit }} svm percent of available memory (free + cached). If goes WARN/CRIT, check for services mem overload or configure svm total memory"
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

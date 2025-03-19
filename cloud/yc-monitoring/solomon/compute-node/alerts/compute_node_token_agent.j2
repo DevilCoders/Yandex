@@ -1,0 +1,39 @@
+{% extends "base_alert.j2" %}
+
+{% set name = "Compute node token-agent" %}
+{% set jugglerService = "compute-node-token-agent" %}
+{% set description = "https://docs.yandex-team.ru/yc-monitoring/compute-node/compute-node-token-agent" %}
+{% set isComputeNode = True %}
+{% set windowSecs = 20 * 60 %}
+
+{% macro prog() %}
+let outdated_tokens_hist = {
+    project='{{ project_id }}',
+    cluster='cloud_{{ env }}_compute',
+    service='compute_node',
+    sensor='token_agent_client_token_past_refresh'
+};
+let token_refresh_delay_ts = histogram_percentile(99, 'bin', group_by_time(20s, 'max', outdated_tokens_hist));
+let token_refresh_delay = max(token_refresh_delay_ts);
+let token_refresh_delay_human = to_fixed(token_refresh_delay, 3);
+
+alarm_if(token_refresh_delay > 10 * 60);
+warn_if(token_refresh_delay > 2 * 60);
+
+let client_errors = group_lines('sum', {
+    project='{{ project_id }}',
+    cluster='cloud_{{ env }}_compute',
+    service='compute_node',
+    sensor='token_agent_client_latency_count',
+    error_type!='OK'
+});
+
+let client_errors_count = sum(client_errors);
+let client_errors_count_human = to_fixed(client_errors_count, 3);
+warn_if(client_errors_count > 0);
+{% endmacro %}
+
+{% set annotations = [
+    ("token_refresh_delay", "[[expression.token_refresh_delay_human]] seconds"),
+    ("client_errors_count", "[[expression.client_errors_count_human]]")
+] %}

@@ -1,0 +1,40 @@
+{% extends "../../base/alert.j2" %}
+
+{#
+При количестве сетей больше 7000 наблюдались следующие проблемы:
+  - rndc reconfig для BIND-а делается дольше: см. https://nda.ya.ru/t/S9ANr3LI3Vwasy
+  - сервисы контрейла (ifmap, contrail-control, ...) начинают потреблять слишком много памяти: см. https://nda.ya.ru/t/lStIjjD93Vwasf
+В рамках https://st.yandex-team.ru/CLOUD-59949 решили поднять границу до 10К для изучения возможных спецэффектов.
+3 февраля 2021 года договорились поднять до 15 000.
+30 апреля 2021 года - живем на новом ifmap, спецеффектов от большого кол-ва сетей не наблюдаем, поднимем до 30000.
+#}
+{% set threshold = 30000 if env == "prod" else 1000 %}
+
+{% set windowSecs = 3600 %}
+
+{% block main %}
+    "name": "oct virtual-networks count @ {{ env }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "tags": "Solomon",
+        "host": "{{ svm_fqdn() }}",
+        "service": "oct-virtual-networks-count"
+    },
+    "description": "Если большое количество сетей вызывает проблемы, запустить https://wiki.yandex-team.ru/cloud/devel/sdn/duty/dematerialization/",
+    "type": {
+        "threshold": {
+          "selectors": "{project='{{ project_id }}', cluster='cloud_{{ env }}_oct', service='oct_confdb_objects', host='*', metric='virtual-network', node='-'}",
+          "timeAggregation": "LAST_NON_NAN",
+          "predicate": "GT",
+          "threshold": {{ threshold }},
+          "predicateRules": [
+            {
+              "thresholdType": "LAST_NON_NAN",
+              "comparison": "GT",
+              "threshold": {{ threshold }},
+              "targetStatus": "ALARM"
+            }
+          ]
+        }
+    }
+{% endblock %}

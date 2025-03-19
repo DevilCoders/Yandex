@@ -1,0 +1,35 @@
+definitions:
+  - &alert_id "{{.ID}}_nbs_ydb_stats_database_size"
+  - &alert_name "{{.Name}} NBS YDB Stats database size"
+  - &alert_annotations_tag "yc-{{.Cluster}}-nbs-solomon"
+  - &alert_annotations_host "cloud_{{.Cluster}}_nbs"
+  - &alert_annotations_service "solomon_alert_nbs_ydb_stats_database_size"
+  - &alert_juggler_description "(doc: https://nda.ya.ru/t/UOshpvZt5Fo23d)"
+  - &alert_window_secs 300
+  - &alert_delay_secs 0
+alerts:
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_juggler_description
+    window_secs: *alert_window_secs
+    delay_secs: *alert_delay_secs
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - prod
+    expression:
+      program: |-
+        let limit = {project="kikimr", cluster="yandexcloud_prod_global", service="ydb", database="/global/yc.nbs.cloud/etnm5nd9k8iue3e8vc0r", host="cluster", name="resources.storage.limit_bytes"};
+        let used = {project="kikimr", cluster="yandexcloud_prod_global", service="ydb", database="/global/yc.nbs.cloud/etnm5nd9k8iue3e8vc0r", host="cluster", name="resources.storage.used_bytes"};
+
+        let avg_usage = avg(used);
+        let avg_limit = avg(limit);
+
+        alarm_if(avg_usage >= avg_limit * 0.9);
+        warn_if(avg_usage >= avg_limit * 0.8);
+

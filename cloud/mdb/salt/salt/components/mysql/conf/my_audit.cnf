@@ -1,0 +1,27 @@
+{% from "components/mysql/map.jinja" import mysql with context %}
+
+
+[mysqld]
+{% if salt['pillar.get']('data:mysql:config:audit_log', 0) %}
+plugin_load_add = 'audit_log.so'
+loose-audit_log_file = /var/log/mysql/audit.log
+loose-audit_log_format = JSON
+loose-audit_log_policy = {{ salt['pillar.get']('data:mysql:audit_log_policy', 'LOGINS') }}
+
+{% set audit_accounts = [] -%}
+{%- set audit_hosts = ['%'] + salt['mdb_mysql.resolve_allowed_hosts']('__cluster__') -%}
+{%- for user in ['admin', 'repl', 'monitor'] -%}
+    {%- for host in audit_hosts -%}
+        {%- do audit_accounts.append(user + '@' + host) -%}
+    {%- endfor -%}
+{%- endfor %}
+loose-audit_log_exclude_accounts = {{ audit_accounts|join(',') or "''" }}
+
+{% set audit_databases = salt['pillar.get']('data:mysql:config:audit_log_include_databases') -%}
+{% if not audit_databases %}
+loose-audit_log_exclude_databases = "mysql,sys,performance_schema,information_schema"
+{% else %}
+loose-audit_log_include_databases = {{ audit_databases|join(',') or "''" }}
+{% endif %}
+
+{% endif %}

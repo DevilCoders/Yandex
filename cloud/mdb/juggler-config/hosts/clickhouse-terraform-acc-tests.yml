@@ -1,0 +1,29 @@
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    host: mdb-terraform-acc-tests
+    ttl: 86400
+    refresh_time: 90
+
+  tasks:
+    - juggler_facts: jserver_api=http://juggler-api.search.yandex.net:8998/api
+    - include_vars: ../configs/analytic_dbs_resps.yml
+    - include_vars: ../configs/notifications_worktime.yml
+    - juggler_check:
+        host: "{{ host }}"
+        service: terraform-acc-tests-clickhouse
+        namespace: dbaas.clickhouse
+        aggregator: logic_or
+        notifications: "{{ notifications_sms }}"
+        refresh_time: "{{ refresh_time }}"
+        ttl: "{{ ttl }}"
+        children:
+            - host: yc-terraform-acc-tests-sweeper
+              service: mdb-clickhouse
+            - host: yc-terraform-acc-tests-runner
+              service: mdb-clickhouse
+        __force__: True
+        meta:
+          urls:
+            - { title: "How to handle?", url: "https://wiki.yandex-team.ru/mdb/internal/operations/duty-howto/handling-alerts/terraform-acceptance-tests/", type: "mdb" }

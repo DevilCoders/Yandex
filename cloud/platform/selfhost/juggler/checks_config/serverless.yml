@@ -1,0 +1,616 @@
+---
+- hosts:        localhost
+  gather_facts: false
+  pre_tasks:
+  - juggler_facts: jserver_api={{ jserver_api }}
+    tags:
+    - always
+  post_tasks:
+  - juggler_cleanup:
+
+  tasks:
+
+  ################################# MDB Proxy ###################################
+  - name: ycf-mdbproxy__preprod
+    include_role:
+        name: serverless-mdbproxy
+    vars:
+        app:                  "mdbproxy"
+        env:                  "preprod"
+        cgroup:               "{{ v.conductor_group }}"
+        unreachable_host:     "{{ v.hosts }}"
+        children:
+          - 'YC_DNS%{{ v.hosts }}'
+        service_responsibles: "{{ responsibles.serverless }}"
+        tags:
+            - "yc-serverless"
+            - "yc-serverless-{{ env }}"
+            - "yc-serverless-{{ env }}-mdbproxy"
+            - "yc-serverless-{{ env }}-mdbproxy-{{ v.tag_suffix }}"
+            - "yc-notify" #will be notified (via call) about these checks
+    loop_control:
+        loop_var: v
+    with_items:
+        - conductor_group: cloud_preprod_serverless_mdbproxy_postgres
+          hosts: postgres-*.mdbproxy.serverless.cloud-preprod.yandex.net@tenant={{ env }}
+          tag_suffix:      postgres
+        - conductor_group: cloud_preprod_serverless_mdbproxy_clickhouse 
+          hosts: clickhouse-*.mdbproxy.serverless.cloud-preprod.yandex.net@tenant={{ env }}
+          tag_suffix:      clickhouse
+        - conductor_group: cloud_preprod_serverless_mdbproxy_cpl
+          hosts: cpl-*.mdbproxy.serverless.cloud-preprod.yandex.net@tenant={{ env }}
+          tag_suffix:      cpl
+
+  - name: ycf-mdbproxy__prod
+    include_role:
+        name: serverless-mdbproxy
+    vars:
+        app:                  "mdbproxy"
+        env:                  "prod"
+        cgroup:               "{{ v.conductor_group }}"
+        unreachable_host:     "{{ v.hosts }}"
+        children:
+          - 'YC_DNS%{{ v.hosts }}'
+        service_responsibles: "{{ responsibles.serverless }}"
+        tags:
+            - "yc-serverless"
+            - "yc-serverless-{{ env }}"
+            - "yc-serverless-{{ env }}-mdbproxy"
+            - "yc-serverless-{{ env }}-mdbproxy-{{ v.tag_suffix }}"
+            - "yc-notify" #will be notified (via call) about these checks
+    loop_control:
+        loop_var: v
+    with_items:
+        - conductor_group: cloud_prod_serverless_mdbproxy_postgres
+          hosts: postgres-*.mdbproxy.serverless.cloud.yandex.net@tenant={{ env }}
+          tag_suffix:      postgres
+        - conductor_group: cloud_prod_serverless_mdbproxy_clickhouse 
+          hosts: clickhouse-*.mdbproxy.serverless.cloud.yandex.net@tenant={{ env }}
+          tag_suffix:      clickhouse
+        - conductor_group: cloud_prod_serverless_mdbproxy_cpl
+          hosts: cpl-*.mdbproxy.serverless.cloud.yandex.net@tenant={{ env }}
+          tag_suffix:      cpl
+
+  ################################## TRIGGERS ###################################
+  - name: triggers-infra__preprod
+    include_role:
+      name: infra
+    vars:
+      host:                 triggers-preprod
+      env:                  "preprod"
+      service:              "{{v.service}}"
+      service_responsibles: "{{ responsibles.serverless }}"
+      tags:
+      - "yc-triggers"
+      - "yc-triggers-{{ env }}"
+      - "yc-triggers-{{ env }}-infra"
+      - "yc-triggers-{{ env }}-infra-{{ v.service }}"
+      flap: { stable: 0, critical: 0 }
+    loop_control:
+      loop_var: v
+    with_items:
+    - service: "minor-maintenance"
+    - service: "minor-issue"
+    - service: "major-maintenance"
+    - service: "major-issue"
+  - name: triggers-infra__prod
+    include_role:
+      name: infra
+    vars:
+      host:                 triggers-prod
+      env:                  "prod"
+      service:              "{{v.service}}"
+      service_responsibles: "{{ responsibles.serverless }}"
+      tags:
+      - "yc-triggers"
+      - "yc-triggers-{{ env }}"
+      - "yc-triggers-{{ env }}-infra"
+      - "yc-triggers-{{ env }}-infra-{{ v.service }}"
+      flap: { stable: 0, critical: 0 }
+    loop_control:
+      loop_var: v
+    with_items:
+    - service: "minor-maintenance"
+    - service: "minor-issue"
+    - service: "major-maintenance"
+    - service: "major-issue"
+
+  - name: ycf-triggers__preprod
+    include_role:
+        name: serverless-triggers
+    vars:
+        app:                  "triggers"
+        env:                  "preprod"
+        cgroup:               "{{ v.conductor_group }}"
+        unreachable_host:     "{{ v.conductor_group }}"
+        service_responsibles: "{{ responsibles.serverless }}"
+        tags:
+            - "yc-serverless"
+            - "yc-serverless-{{ env }}"
+            - "yc-serverless-{{ env }}-triggers"
+            - "yc-serverless-{{ env }}-triggers-{{ v.tag_suffix }}"
+            - "yc-notify" #will be notified (via call) about these checks
+    loop_control:
+        loop_var: v
+    with_items:
+        - conductor_group: cloud_preprod_ycf_triggers_ymq
+          tag_suffix:      ymq
+        - conductor_group: cloud_preprod_ycf_triggers_queue
+          tag_suffix:      queue
+        - conductor_group: cloud_preprod_ycf_triggers_logqueue
+          tag_suffix:      logqueue
+        - conductor_group: cloud_preprod_ycf_triggers_loggingqueue
+          tag_suffix:      loggingqueue
+        - conductor_group: cloud_preprod_ycf_triggers_iot
+          tag_suffix:      iot
+        - conductor_group: cloud_preprod_ycf_triggers_ce
+          tag_suffix:      ce
+        - conductor_group: cloud_preprod_ycf_triggers_logs
+          tag_suffix:      logs
+        - conductor_group: cloud_preprod_ycf_triggers_yds
+          tag_suffix:      yds
+        - conductor_group: cloud_preprod_ycf_triggers_logging
+          tag_suffix:      logging
+        - conductor_group: cloud_preprod_ycf_triggers_cpl
+          tag_suffix:      cpl
+
+  - name: ycf-triggers__prod
+    include_role:
+        name: serverless-triggers
+    vars:
+        app:                  "triggers"
+        env:                  "prod"
+        cgroup:               "{{ v.conductor_group }}"
+        unreachable_host:     "{{ v.conductor_group }}"
+        service_responsibles: "{{ responsibles.serverless }}"
+        tags:
+            - "yc-serverless"
+            - "yc-serverless-{{ env }}"
+            - "yc-serverless-{{ env }}-triggers"
+            - "yc-serverless-{{ env }}-triggers-{{ v.tag_suffix }}"
+            - "yc-notify" #will be notified (via call) about these checks
+    loop_control:
+        loop_var: v
+    with_items:
+        - conductor_group: cloud_prod_ycf_triggers_ymq
+          tag_suffix:      ymq
+        - conductor_group: cloud_prod_ycf_triggers_queue
+          tag_suffix:      queue
+        - conductor_group: cloud_prod_ycf_triggers_logqueue
+          tag_suffix:      logqueue
+        - conductor_group: cloud_prod_ycf_triggers_loggingqueue
+          tag_suffix:      loggingqueue
+        - conductor_group: cloud_prod_ycf_triggers_iot
+          tag_suffix:      iot
+        - conductor_group: cloud_prod_ycf_triggers_iotqueue
+          tag_suffix:      iotqueue
+        - conductor_group: cloud_prod_ycf_triggers_ce
+          tag_suffix:      ce
+        - conductor_group: cloud_prod_ycf_triggers_logs
+          tag_suffix:      logs
+        - conductor_group: cloud_prod_ycf_triggers_logging
+          tag_suffix:      logging
+        - conductor_group: cloud_prod_ycf_triggers_cpl
+          tag_suffix:      cpl
+        - conductor_group: cloud_prod_ycf_triggers_yds
+          tag_suffix:      yds
+
+  - name: ycf-triggers-trail-events__prod
+    include_role:
+        name: serverless-trail
+    vars:
+        app:                  "triggers"
+        env:                  "prod"
+        eventType:            "serverless.triggers"
+        project:              "serverless"
+
+  - name: ycf-triggers-trail-events__preprod
+    include_role:
+        name: serverless-trail
+    vars:
+        app:                  "triggers"
+        env:                  "preprod"
+        eventType:            "serverless.triggers"
+        project:              "serverless"
+
+  ################################# FUNCTIONS ###################################
+
+  - name: serverless-common__preprod
+    include_role:
+      name: serverless-common
+    vars:
+      env:                  "preprod"
+      app:                  "{{ v.application }}"
+      check_port:           "{{ v.check_port }}"
+      check_type:           "{{ v.check_type }}"
+      cgroup:               "{{ v.conductor_group }}"
+      unreachable_host:     "{{ v.conductor_group }}"
+      service_responsibles: "{{ responsibles.serverless }}"
+      tags:
+      - "yc-serverless"
+      - "yc-serverless-{{ env }}"
+      - "yc-serverless-{{ env }}-functions"
+      - "yc-serverless-{{ env }}-functions-{{ v.tag_suffix }}"
+      - "yc-notify" #will be notified (via call) about these checks
+      flap: { stable: 0, critical: 0 }
+    loop_control:
+      loop_var: v
+    with_items:
+    - application:     function_router
+      check_port:      8443
+      check_type:      tls
+      conductor_group: cloud_preprod_ycf_router-l3
+      tag_suffix:      router
+
+    - application:     function_scheduler
+      check_port:      443
+      check_type:      tls
+      conductor_group: cloud_preprod_ycf_scheduler
+      tag_suffix:      scheduler
+
+    - application:     function_java
+      check_port:      443
+      check_type:      tls
+      conductor_group: cloud_preprod_ycf_cpl
+      tag_suffix:      java
+
+    - application:     function_packer
+      check_port:      443
+      check_type:      tls
+      conductor_group: cloud_preprod_ycf_packer
+      tag_suffix:      packer
+
+    - application:     api_gateway
+      check_port:      443
+      check_type:      tls
+      conductor_group: cloud_preprod_ycf_apigateway
+      tag_suffix:      apigw
+
+    - application:     api_gateway_als
+      check_port:      80
+      check_type:      http
+      conductor_group: cloud_preprod_ycf_api-gateway-als
+      tag_suffix:      apigw-als
+
+  - name: functions_conn_quota_prod
+    juggler_check: ''
+    args:          "{{ default_check | hash_merge( default_timed_limits, item ) }}"
+    vars:
+        env: "prod"
+        app: "functions"
+    with_items:
+        - service: yc_sls_conn_quota
+          namespace: ycloud
+          host: ycf_prod
+          children:
+              - host: "service=raw_vm_conn_quota & host=ycf_*"
+                service: all
+                instance: all
+                type: EVENTS
+          tags:
+              - "yc-serverless"
+              - "yc-serverless-prod"
+              - "yc-serverless-prod-functions"
+              - "yc-serverless-prod-functions-conn-quota"
+              - "yc-notify" #will be notified (via call) about these checks
+
+  - name: serverless-infra__preprod
+    include_role:
+      name: infra
+    vars:
+      host:                 serverless-preprod
+      env:                  "preprod"
+      service:              "{{v.service}}"
+      service_responsibles: "{{ responsibles.serverless }}"
+      tags:
+      - "yc-serverless"
+      - "yc-serverless-{{ env }}"
+      - "yc-serverless-{{ env }}-infra"
+      - "yc-serverless-{{ env }}-infra-{{ v.service }}"
+      flap: { stable: 0, critical: 0 }
+    loop_control:
+      loop_var: v
+    with_items:
+    - service: "minor-maintenance"
+    - service: "minor-issue"
+    - service: "major-maintenance"
+    - service: "major-issue"
+
+  - name: serverless-common__prod
+    include_role:
+      name: serverless-common
+    vars:
+      env:                  "prod"
+      app:                  "{{ v.application }}"
+      check_port:           "{{ v.check_port }}"
+      check_type:           "{{ v.check_type }}"
+      cgroup:               "{{ v.conductor_group }}"
+      unreachable_host:     "{{ v.conductor_group }}"
+      service_responsibles: "{{ responsibles.serverless }}"
+      tags:
+      - "yc-serverless"
+      - "yc-serverless-{{ env }}"
+      - "yc-serverless-{{ env }}-functions"
+      - "yc-serverless-{{ env }}-functions-{{ v.tag_suffix }}"
+      - "yc-notify" #will be notified (via call) about these checks
+      flap: { stable: 0, critical: 0 }
+    loop_control:
+      loop_var: v
+    with_items:
+    - application:     function_router
+      check_port:      8443
+      check_type:      tls
+      conductor_group: cloud_prod_ycf_router_l3
+      tag_suffix:      router
+    - application:     function_scheduler
+      check_port:      443
+      check_type:      tls
+      conductor_group: cloud_prod_ycf_scheduler
+      tag_suffix:      scheduler
+    - application:     function_java
+      check_port:      443
+      check_type:      tls
+      conductor_group: cloud_prod_ycf_cpl
+      tag_suffix:      java
+    - application:     function_packer
+      check_port:      443
+      check_type:      tls
+      conductor_group: cloud_prod_ycf_packer
+      tag_suffix:      packer
+    - application:     api_gateway
+      check_port:      443
+      check_type:      tls
+      conductor_group: cloud_prod_ycf_apigateway
+      tag_suffix:      apigw
+    - application:     api_gateway_als
+      check_port:      80
+      check_type:      http
+      conductor_group: cloud_prod_ycf_api-gateway-als
+      tag_suffix:      apigw-als
+    - application:     function_integrator
+      check_port:      8443
+      check_type:      tls
+      conductor_group: cloud_prod_ycf_integrator
+      tag_suffix:      integrator
+
+  - name: ycf-functions-trail-events__prod
+    include_role:
+        name: serverless-trail
+    vars:
+        app:                  "functions"
+        env:                  "prod"
+        eventType:            "serverless.functions"
+        project:              "serverless"
+
+  - name: ycf-functions-trail-events__preprod
+    include_role:
+        name: serverless-trail
+    vars:
+        app:                  "functions"
+        env:                  "preprod"
+        eventType:            "serverless.functions"
+        project:              "serverless"
+
+  - name: ycf-apigw-trail-events__prod
+    include_role:
+        name: serverless-trail
+    vars:
+        app:                  "apigw"
+        env:                  "prod"
+        eventType:            "serverless.apigateway"
+        project:              "serverless"
+
+  - name: ycf-apigw-trail-events__preprod
+    include_role:
+        name: serverless-trail
+    vars:
+        app:                  "apigw"
+        env:                  "preprod"
+        eventType:            "serverless.apigateway"
+        project:              "serverless"
+
+
+  - name: serverless-infra__prod
+    include_role:
+      name: infra
+    vars:
+      host:                 serverless-prod
+      env:                  "prod"
+      service:              "{{v.service}}"
+      service_responsibles: "{{ responsibles.serverless }}"
+      tags:
+      - "yc-serverless"
+      - "yc-serverless-{{ env }}"
+      - "yc-serverless-{{ env }}-infra"
+      - "yc-serverless-{{ env }}-infra-{{ v.service }}"
+      flap: { stable: 0, critical: 0 }
+    loop_control:
+      loop_var: v
+    with_items:
+    - service: "minor-maintenance"
+    - service: "minor-issue"
+    - service: "major-maintenance"
+    - service: "major-issue"
+
+  #################################### E2E ######################################
+
+  - name:          serverless-e2e__preprod
+    juggler_check: ''
+    args:          "{{ default_check | hash_merge( default_timed_limits, item ) }}"
+    vars:
+      app:              "e2e"
+      env:              "preprod"
+      namespace:        "ycloud"
+      unreachable_host: "teamcity-yc-functions"
+      children:         "teamcity-yc-functions:e2e-preprod-serverless-functions"
+      tags:             "{{ item.tags }}"
+    with_items:
+    - service: e2e-preprod-yc-functions
+      host:    yc-serverless-teamcity
+      ttl:     9000
+      tags:
+      - "yc-serverless"
+      - "yc-serverless-teamcity"
+      - "yc-serverless-teamcity-{{ env }}"
+      - "yc-serverless-teamcity-{{ env }}-e2e"
+      - "yc-serverless-teamcity-{{ env }}-e2e-functions"
+
+  - name:          triggers-e2e__preprod
+    juggler_check: ''
+    args:          "{{ default_check | hash_merge( default_timed_limits, item ) }}"
+    vars:
+      app:              "e2e"
+      env:              "preprod"
+      namespace:        "ycloud"
+      children:
+      - "teamcity-yc-triggers-cpl:e2e-preprod-yc-triggers"
+      - "teamcity-yc-triggers-iot:e2e-preprod-yc-triggers"
+      - "teamcity-yc-triggers-s3:e2e-preprod-yc-triggers"
+      - "teamcity-yc-triggers-timers:e2e-preprod-yc-triggers"
+      - "teamcity-yc-triggers-ymq:e2e-preprod-yc-triggers"
+      - "teamcity-yc-triggers-cr:e2e-preprod-yc-triggers"
+      - "teamcity-yc-triggers-logs:e2e-preprod-yc-triggers"
+      tags:             "{{ item.tags }}"
+    with_items:
+    - service: e2e-preprod-yc-triggers
+      host:    yc-triggers-teamcity
+      ttl:     9000
+      tags:
+      - "yc-serverless"
+      - "yc-serverless-teamcity"
+      - "yc-serverless-teamcity-{{ env }}"
+      - "yc-serverless-teamcity-{{ env }}-e2e"
+      - "yc-serverless-teamcity-{{ env }}-e2e-triggers"
+
+  - name:          apigateway-e2e__preprod
+    juggler_check: ''
+    args:          "{{ default_check | hash_merge( default_timed_limits, item ) }}"
+    vars:
+      app:              "e2e"
+      env:              "preprod"
+      namespace:        "ycloud"
+      unreachable_host: "teamcity-yc-apigateways"
+      children:         "teamcity-yc-apigateways:e2e-preprod-serverless-apigateways"
+      tags:             "{{ item.tags }}"
+    with_items:
+    - service: e2e-preprod-yc-apigateways
+      host:    yc-serverless-teamcity
+      ttl:     9000
+      tags:
+      - "yc-serverless"
+      - "yc-serverless-teamcity"
+      - "yc-serverless-teamcity-{{ env }}"
+      - "yc-serverless-teamcity-{{ env }}-e2e"
+      - "yc-serverless-teamcity-{{ env }}-e2e-apigateways"
+
+  - name:          mdbproxy-e2e__preprod
+    juggler_check: ''
+    args:          "{{ default_check | hash_merge( default_timed_limits, item ) }}"
+    vars:
+      app:              "e2e"
+      env:              "preprod"
+      namespace:        "ycloud"
+      unreachable_host: "teamcity-yc-mdbproxies"
+      children:         "teamcity-yc-mdbproxies:e2e-preprod-serverless-mdbproxy"
+      tags:             "{{ item.tags }}"
+    with_items:
+    - service: e2e-preprod-yc-mdbproxy
+      host:    yc-serverless-teamcity
+      ttl:     9000
+      tags:
+      - "yc-serverless"
+      - "yc-serverless-teamcity"
+      - "yc-serverless-teamcity-{{ env }}"
+      - "yc-serverless-teamcity-{{ env }}-e2e"
+      - "yc-serverless-teamcity-{{ env }}-e2e-preprod-yc-mdbproxy"
+
+  - name:          serverless-e2e__prod
+    juggler_check: ''
+    args:          "{{ default_check | hash_merge( default_timed_limits, item ) }}"
+    vars:
+      app:              "e2e"
+      env:              "prod"
+      namespace:        "ycloud"
+      unreachable_host: "teamcity-yc-functions"
+      children:         "teamcity-yc-functions:e2e-prod-serverless-functions"
+      tags:             "{{ item.tags }}"
+    with_items:
+    - service: e2e-prod-yc-functions
+      host:    yc-serverless-teamcity
+      ttl:     9000
+      tags:
+      - "yc-serverless"
+      - "yc-serverless-teamcity"
+      - "yc-serverless-teamcity-{{ env }}"
+      - "yc-serverless-teamcity-{{ env }}-e2e"
+      - "yc-serverless-teamcity-{{ env }}-e2e-functions"
+
+  - name:          triggers-e2e__prod
+    juggler_check: ''
+    args:          "{{ default_check | hash_merge( default_timed_limits, item ) }}"
+    vars:
+      app:              "e2e"
+      env:              "prod"
+      namespace:        "ycloud"
+      children:
+      - "teamcity-yc-triggers-cpl:e2e-prod-yc-triggers"
+      - "teamcity-yc-triggers-iot:e2e-prod-yc-triggers"
+      - "teamcity-yc-triggers-s3:e2e-prod-yc-triggers"
+      - "teamcity-yc-triggers-timers:e2e-prod-yc-triggers"
+      - "teamcity-yc-triggers-ymq:e2e-prod-yc-triggers"
+      - "teamcity-yc-triggers-cr:e2e-prod-yc-triggers"
+      - "teamcity-yc-triggers-logs:e2e-prod-yc-triggers"
+      tags:             "{{ item.tags }}"
+    with_items:
+    - service: e2e-prod-yc-triggers
+      host:    yc-triggers-teamcity
+      ttl:     9000
+      tags:
+      - "yc-serverless"
+      - "yc-serverless-teamcity"
+      - "yc-serverless-teamcity-{{ env }}"
+      - "yc-serverless-teamcity-{{ env }}-e2e"
+      - "yc-serverless-teamcity-{{ env }}-e2e-triggers"
+
+  - name:          apigateway-e2e__prod
+    juggler_check: ''
+    args:          "{{ default_check | hash_merge( default_timed_limits, item ) }}"
+    vars:
+      app:              "e2e"
+      env:              "prod"
+      namespace:        "ycloud"
+      unreachable_host: "teamcity-yc-apigateways"
+      children:         "teamcity-yc-apigateways:e2e-prod-serverless-apigateways"
+      tags:             "{{ item.tags }}"
+    with_items:
+    - service: e2e-prod-yc-apigateways
+      host:    yc-serverless-teamcity
+      ttl:     9000
+      tags:
+      - "yc-serverless"
+      - "yc-serverless-teamcity"
+      - "yc-serverless-teamcity-{{ env }}"
+      - "yc-serverless-teamcity-{{ env }}-e2e"
+      - "yc-serverless-teamcity-{{ env }}-e2e-apigateways"
+
+  - name:          mdbproxy-e2e__prod
+    juggler_check: ''
+    args:          "{{ default_check | hash_merge( default_timed_limits, item ) }}"
+    vars:
+      app:              "e2e"
+      env:              "prod"
+      namespace:        "ycloud"
+      unreachable_host: "teamcity-yc-mdbproxies"
+      children:         "teamcity-yc-mdbproxies:e2e-prod-serverless-mdbproxy"
+      tags:             "{{ item.tags }}"
+    with_items:
+    - service: e2e-prod-yc-mdbproxy
+      host:    yc-serverless-teamcity
+      ttl:     9000
+      tags:
+      - "yc-serverless"
+      - "yc-serverless-teamcity"
+      - "yc-serverless-teamcity-{{ env }}"
+      - "yc-serverless-teamcity-{{ env }}-e2e"
+      - "yc-serverless-teamcity-{{ env }}-e2e-prod-yc-mdbproxy"
+

@@ -1,0 +1,123 @@
+[[tests]]
+name = "test_filter_out_garbage_is_filtering"
+no_outputs_from = ["filter_out_garbage"]
+
+[[tests.inputs]]
+insert_at = "filter_out_garbage"
+type = "log"
+
+[tests.inputs.log_fields]
+logger = "salt.transport.mixins.auth"
+message = "Decoding payload"
+
+[[tests.inputs]]
+insert_at = "filter_out_garbage"
+type = "log"
+
+[tests.inputs.log_fields]
+logger = "salt.utils.schedule"
+message = "==== evaluating schedule now"
+
+#############################################################
+
+[[tests]]
+name = "test_filter_out_garbage_is_passing_by"
+
+[[tests.inputs]]
+insert_at = "filter_out_garbage"
+type = "log"
+
+[tests.inputs.log_fields]
+logger = "some_logger"
+message = "some_message"
+
+[[tests.outputs]]
+extract_from = "filter_out_garbage"
+
+[[tests.outputs.conditions]]
+type = "vrl"
+source = """
+assert!(.logger == "some_logger")
+assert!(.message == "some_message")
+"""
+
+#############################################################
+
+[[tests]]
+name = "test_remap_remove_garbage_fields"
+
+[[tests.inputs]]
+insert_at = "remap_remove_garbage_fields"
+type = "log"
+
+[tests.inputs.log_fields]
+colorlevel = "colorlevel"
+colormsg = "colormsg"
+colorprocess = "colorprocess"
+colorname = "colorname"
+bracketlevel = "bracketlevel"
+bracketname = "bracketname"
+bracketprocess = "bracketprocess"
+
+[[tests.outputs]]
+extract_from = "remap_remove_garbage_fields"
+
+[[tests.outputs.conditions]]
+type = "vrl"
+source = """
+assert!(!exists(.colorlevel))
+assert!(!exists(.colormsg))
+assert!(!exists(.colorprocess))
+assert!(!exists(.colorname))
+assert!(!exists(.colorbracketlevel))
+assert!(!exists(.colorbracketname))
+assert!(!exists(.colorbracketprocess))
+"""
+
+#############################################################
+
+[[tests]]
+name = "test_remap_add_meta"
+
+[[tests.inputs]]
+insert_at = "remap_add_meta"
+type = "log"
+
+[tests.inputs.log_fields]
+message = "test_message"
+test_field = "test_value"
+
+[[tests.outputs]]
+extract_from = "remap_add_meta"
+
+[[tests.outputs.conditions]]
+type = "vrl"
+source = """
+assert!(exists(.vector_cp_from_dp))
+assert_eq!(.vector_cp_from_dp, true)
+
+assert!(exists(.raw))
+assert_eq!(.raw.message, "test_message")
+assert_eq!(.raw.test_field, "test_value")
+assert!(is_object(.meta))
+assert!(is_object(.meta.vector))
+
+assert!(.meta.record_id != "")
+assert!(.meta.record_id != null)
+assert_eq!(.meta.service, "salt-minion")
+assert_eq!(.meta.shard_id, "{{ salt['pillar.get']('data:dbaas:shard_id', None) }}")
+assert_eq!(.meta.shard_name, "{{ salt['pillar.get']('data:dbaas:shard_name', None) }}")
+assert_eq!(.meta.vtype, "{{ salt['pillar.get']('data:dbaas:vtype', None) }}")
+assert_eq!(.meta.vtype_id, "{{ salt['pillar.get']('data:dbaas:vtype_id', None) }}")
+assert_eq!(.meta.hostname, "{{ salt['dbaas.pillar']('data:dbaas:fqdn') }}")
+assert_eq!(.meta.cloud_region, "{{ salt['dbaas.pillar']('data:dbaas:region') }}")
+assert_eq!(.meta.cluster_id, "{{ salt['dbaas.pillar']('data:dbaas:cluster_id') }}")
+assert_eq!(.meta.cluster_type, "{{ salt['dbaas.pillar']('data:dbaas:cluster_type') }}")
+assert_eq!(.meta.cluster_name, "{{ salt['dbaas.pillar']('data:dbaas:cluster_name') }}")
+assert_eq!(.meta.cloud_provider, "{{ salt['dbaas.pillar']('data:dbaas:cloud_provider') }}")
+assert_eq!(.meta.subcluster_id, "{{ salt['dbaas.pillar']('data:dbaas:subcluster_id') }}")
+assert_eq!(.meta.subcluster_name, "{{ salt['dbaas.pillar']('data:dbaas:subcluster_name') }}")
+assert_eq!(.meta.cloud_ext_id, "{{ salt['dbaas.pillar']('data:dbaas:cloud:cloud_ext_id') }}")
+assert_eq!(.meta.folder_ext_id, "{{ salt['dbaas.pillar']('data:dbaas:folder:folder_ext_id') }}")
+assert!(is_timestamp(.meta.vector.in))
+"""

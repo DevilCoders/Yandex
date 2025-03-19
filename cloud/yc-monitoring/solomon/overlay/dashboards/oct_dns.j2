@@ -1,0 +1,36 @@
+{% extends "../../base/dashboard.j2" %}
+
+{% macro render_row_azs(query, title, az_aggregate=False) %}
+{
+  "panels": [
+    {% for az in zones_by_env[env] %}
+        {% if az_aggregate %}
+          {% set host = az.prefix[0].upper() + az.prefix[1:] %}
+        {% else %}
+          {% set host = compute_node_selector(az.prefix) %}
+        {% endif %}
+
+        {{ render_panel(title=title + " @ " + az.prefix|upper,
+                 cluster="cloud_" + env + "_compute",
+                 service="oct_vrouter", query="l.host=" + host + "&" + query) }}
+        {% if not loop.last %},{% endif %}
+    {% endfor %}
+  ]
+}
+{% endmacro %}
+
+{% set dns_info_query = "l.metric_group=DnsInfo&l.metric={}&graph=auto&asc=false&downsamplingAggr=max&overLinesTransform=SUMMARY&checks=-count&limit=5000" %}
+{% set dns_latency_query = "l.metric_group=DnsLatency&l.metric={}&graph=auto&asc=false&downsamplingAggr=max&checks=-count&overLinesTransform=WEIGHTED_PERCENTILE&bucketLabel=time_ms&scale=log&percentiles=50%2C90%2C99%2C99.9" %}
+
+{% block rows %}
+[
+    {{ render_row_azs(dns_info_query.format("dns_requests_per_second"), "DNS Requests/sec") }},
+    {{ render_row_azs(dns_info_query.format("dns_retransmit_reqs_per_second"), "DNS Retransmits/sec") }},
+    {{ render_row_azs(dns_info_query.format("dns_failures_per_second"), "DNS Failures (NXDOMAIN, ...)/sec") }},
+    {{ render_row_azs(dns_info_query.format("dns_resolved_per_second"), "DNS Resolved/sec") }},
+
+    {{ render_row_azs(dns_latency_query.format("server_response_time"), "Per-server response time", True) }},
+    {{ render_row_azs(dns_latency_query.format("client_response_time"), "Time to respond to client (vm)", True) }},
+    {{ render_row_azs(dns_latency_query.format("pending_time"), "Pending time", True) }}
+]
+{% endblock %}

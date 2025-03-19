@@ -1,0 +1,73 @@
+{% load lib.templatetags %}
+{% load deploy.templatetags %}
+<table id="states_table" class="table noodle-table noodle-table-sortable backstage-salt-changes-table">
+  <thead>
+    <tr>
+      <th>Num</th>
+      <th>Duration</th>
+      <th>Result</th>
+      <th>State / Component / Name</th>
+      <th>Changes</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for state in salt_result.states %}
+    <tr data-filter-result="{{ state.result }}" data-filter-requisite_failed="{{ state.requisite_failed }}" data-filter-possible_changes="{{ state.possible_changes }}">
+      <td>{{ state.run_num }}</td>
+      <td data-order="{{ state.duration }}">
+        {% if state.duration %}
+        {{ state.duration|salt_state_duration_to_seconds }}
+        {% else %}
+        &ndash;
+        {% endif %}
+      </td>
+      <td>{{ state.result|bool_label }}</td>
+      <td style="width: 400px; max-width: 400px;" class="{% if not state.result %}backstage-salt-state-error{% else %}{% if state.has_changes %}backstage-salt-state-has-changes{% else %}backstage-salt-state-no-changes{% endif %}{% endif %}">
+        <span class="backstage-salt-state">{{ state.state }}</span><br>
+        <span class="noodle-mono" style="overflow-wrap: break-word;">{{ state.name }}</span><br>
+        {{ state.sls|sls_url }}
+      </td>
+      <td>
+        {% if user_can_read_changes %}
+        {% if state.has_diff %}
+          {{ state.diff|to_html_diff }}<br>
+          {% if state.extra_diff %}
+            <strong>Extra diff:</strong> {{ state.extra_diff }}<br>
+          {% endif %}
+        {% else %}
+          {% if state.has_changes %}
+            {% if state.state == 'file.recurse' or state.state == 'file.managed' %}
+              {% for fname, fname_changes in state.changes.items %}
+                <span class="backstage-salt-filename">{{ fname }}</span><br>
+                <div style="padding-left:10px">
+                  {% for key, value in fname_changes.items %}
+                    {% if key == 'diff' and value != 'New file' %}
+                      {{ value|to_html_diff }}
+                    {% else %}
+                      {{ key }}: <span class="gray">{{ value }}</span>
+                    {% endif %}
+                    {% if not forloop.last %}<br>{% endif %}
+                  {% endfor %}
+                </div>
+                <br>
+              {% endfor %}
+            {% else %}
+              {% for key, value in state.changes.items %}
+              {{ key }}: <span class="noodle-mono gray">{{ value|wrap_if_newlines }}</span> <br>{% if forloop.last %}<br>{% endif %}
+              {% endfor %}
+            {% endif %}
+        {% endif %}
+        {% endif %}
+        {% if state.comment_is_traceback %}
+            {{ state.comment|to_html_traceback }}
+        {% else %}
+          <span class="noodle-mono gray">{{ state.comment|linebreaks }}</span>
+        {% endif %}
+        {% else %}
+        You have no permission to read changes
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>

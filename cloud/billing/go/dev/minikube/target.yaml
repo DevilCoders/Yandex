@@ -1,0 +1,123 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    app.kubernetes.io/name: logbroker
+    app.kubernetes.io/instance: dev
+  name: logbroker
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app.kubernetes.io/name: logbroker
+    app.kubernetes.io/instance: dev
+    app.kubernetes.io/part-of: logbroker
+  name: logbroker
+  namespace: logbroker
+
+---
+apiVersion: v1
+data:
+  topics: "topic1,topic2"
+  partitions-per-topic: "4"
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/name: logbroker
+    app.kubernetes.io/instance: dev
+    app.kubernetes.io/part-of: logbroker
+  name: logbroker-topics
+  namespace: logbroker
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: logbroker
+    app.kubernetes.io/instance: dev
+    app.kubernetes.io/part-of: logbroker
+  name: ydb
+  namespace: logbroker
+spec:
+clusterIP: None
+ports:
+  - port: 2145
+    appProtocol: yc/logbroker
+    name: logbroker
+    protocol: TCP
+    targetPort: 2145
+selector:
+  app.kubernetes.io/name: logbroker
+  app.kubernetes.io/instance: dev
+  app.kubernetes.io/component: ydb
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: logbroker
+    app.kubernetes.io/instance: dev
+    app.kubernetes.io/part-of: logbroker
+    app.kubernetes.io/component: ydb
+  name: logbroker
+  namespace: logbroker
+spec:
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: logbroker
+      app.kubernetes.io/instance: dev
+      app.kubernetes.io/component: ydb
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: ydb-client
+      labels:
+        app.kubernetes.io/name: logbroker
+        app.kubernetes.io/instance: dev
+        app.kubernetes.io/component: ydb
+    spec:
+      containers:
+        - name: logbroker
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: GRPC_PORT
+              value: "2145"
+            - name: LOGBROKER_CREATE_TOPICS
+              valueFrom:
+                configMapKeyRef:
+                  name: logbroker-topics
+                  key: topics
+            - name: LOGBROKER_TOPICS_PARTITIONS
+              valueFrom:
+                configMapKeyRef:
+                  name: logbroker-topics
+                  key: partitions-per-topic
+          image: for-minikube/dev-ydb:stable
+          imagePullPolicy: Never
+        - name: ydb-client
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          image: for-minikube/dev-ydb-client:stable
+          imagePullPolicy: Never
+      serviceAccountName: logbroker
+      hostname: server
+      subdomain: ydb
+      terminationGracePeriodSeconds: 0

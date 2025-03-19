@@ -1,0 +1,546 @@
+menu: "[OCT] Alerts"
+menu_type: admin
+api_path: /alerts/
+tags: ["oct"]
+entities:
+  # По умолчанию не создаем алерты для HW-LAB, чтобы не тратить
+  # время на их синхронизацию и не перегружать интерфейс
+  # Solomon лишними алертами.
+  cassandra_read_p999:
+    template: cassandra_read_999.j2
+    exclude:
+      env: &hw_labs [hw-cgw-ci-lab, hw-cgw-dev-lab, hw-load-lab, hw-mellanox-lab, hw-6dxlx-lab,
+                     hw1-lab, hw2-lab, hw3-lab, hw4-lab, hw6-lab, hw7-lab, hw9-lab, hw10-lab, hw11-lab]
+
+  threads_count:
+    template: threads_count.j2
+    exclude:
+      env: *hw_labs
+
+  oct_vnets:
+    template: oct_vnets.j2
+    exclude:
+      env: *hw_labs
+
+  bind_reconfig_timing:
+    template: bind_reconfig_timing.j2
+    exclude:
+      env: *hw_labs
+
+  vrouter_flows_created_per_second:
+    template: vrouter_flows_created_per_second.j2
+    exclude:
+      env: *hw_labs
+
+  # vrouter dropstats & short flows so many of them
+
+  vrouter_dropstats_l3_route_errors: &vrouter_dropstats
+    template: vrouter_dropstats.j2
+    exclude:
+      env: *hw_labs
+    context:
+      notificationChannels: ["juggler", "vrouter-release"]
+      category: l3_route_errors
+
+  vrouter_dropstats_l2_l3_minor_route_errors:
+    <<: *vrouter_dropstats
+    context:
+      category: l2_l3_minor_route_errors
+
+  vrouter_dropstats_route_inconsistency:
+    <<: *vrouter_dropstats
+    context:
+      category: route_inconsistency
+
+  vrouter_dropstats_flow_establish_errors:
+    <<: *vrouter_dropstats
+    context:
+      category: flow_establish_errors
+
+  # FIXME(CLOUD-61017): flaky errors should be merged with flow_establish_errors
+  # but we should investigate its flaps so we can remove smoothing for it.
+  vrouter_dropstats_flaky_flow_establish_errors:
+    <<: *vrouter_dropstats
+    context:
+      category: flaky_flow_establish_errors
+
+  vrouter_dropstats_clone_resize_failure:
+    <<: *vrouter_dropstats
+    context:
+      category: clone_resize_failure
+
+  vrouter_dropstats_internal_bugs:
+    <<: *vrouter_dropstats
+    context:
+      category: internal_bugs
+
+  vrouter_shortflows:
+    template: vrouter_shortflows.j2
+    exclude:
+      env: *hw_labs
+    context:
+      notificationChannels: ["juggler", "vrouter-release"]
+      noisy: false
+
+  vrouter_shortflows_noisy:
+    template: vrouter_shortflows.j2
+    exclude:
+      env: *hw_labs
+    context:
+      notificationChannels: ["juggler", "vrouter-release"]
+      noisy: true
+
+  vrouter_dns_requests_count:
+    template: vrouter_dns_requests_count.j2
+    exclude:
+      env: *hw_labs
+
+  vrouter_dns_response_latency:
+    template: vrouter_dns_response_latency.j2
+    exclude:
+      env: *hw_labs
+
+  vrouter_dns_unanswered_requests:
+    template: vrouter_dns_unanswered_requests.j2
+    exclude:
+      env: *hw_labs
+
+  contrail_api_response_time:
+    template: contrail_api_response_time.j2
+    exclude:
+      env: *hw_labs
+
+  contrail_api_response_size:
+    template: contrail_api_response_size.j2
+    exclude:
+      env: *hw_labs
+
+  contrail_api_errors:
+    template: contrail_api_errors.j2
+    exclude:
+      env: *hw_labs
+
+  cpu_idle_time:
+    template: cpu_idle_time.j2
+    exclude:
+      env: *hw_labs
+    context:
+      arg_crit_level:
+        prod: 3000
+        preprod: 500  # PRE-PROD is overloaded, to be fixed.
+      arg_warn_level:
+        prod: 6000
+
+  # CPU Alerts
+
+  contrail_vrouter_agent_cpu:
+    template: generic_cpu.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "contrail-vrouter-agent", warn_limit: 4, alarm_limit: 6, compute_node: True}
+
+  contrail_control_cpu:
+    template: generic_cpu.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "contrail-control", warn_limit: 6, alarm_limit: 8}
+
+  contrail_control_on_ctrl_cpu:
+    template: generic_cpu.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "contrail-control", warn_limit: 6, alarm_limit: 8, is_oct_ctrl: True}
+
+  contrail_api_cpu:
+    template: generic_cpu.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "contrail-api", warn_limit: 0.3, alarm_limit: 0.7}
+
+  contrail_discovery_cpu:
+    template: generic_cpu.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "contrail-discovery", warn_limit: 0.3, alarm_limit: 0.7}
+
+  contrail_dns_cpu:
+    template: generic_cpu.j2
+    exclude: {env: [hw.*lab, testing, preprod, prod]}
+    context: {unit: "contrail-dns", warn_limit: 0.8, alarm_limit: 1.2}
+
+  contrail_named_cpu:
+    template: generic_cpu.j2
+    exclude: {env: [hw.*lab, testing, preprod, prod]}
+    context: {unit: "contrail-named", warn_limit: 6, alarm_limit: 7}
+
+  contrail_schema_cpu:
+    template: generic_cpu.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "contrail-schema", warn_limit: 0.2, alarm_limit: 0.7}
+
+  contrail_webui_jobserver_cpu:
+    template: generic_cpu.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "contrail-webui-jobserver", warn_limit: 0.1, alarm_limit: 0.7}
+
+  contrail_webui_webserver_cpu:
+    template: generic_cpu.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "contrail-webui-webserver", warn_limit: 0.1, alarm_limit: 0.7}
+
+  ifmap_cpu:
+    template: generic_cpu.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "ifmap", warn_limit: 0.5, alarm_limit: 0.7, windowSecs: 1800}
+
+  zookeeper_cpu:
+    template: generic_cpu.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "zookeeper", warn_limit: 0.1, alarm_limit: 0.7}
+
+  cassandra_cpu:
+    template: generic_cpu.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "cassandra", warn_limit: 2.5, alarm_limit: 3.5}
+
+  rabbitmq_server_cpu:
+    template: generic_cpu.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "rabbitmq-server", warn_limit: 0.4, alarm_limit: 0.7, windowSecs: 900}
+
+  osqueryd_cpu:
+    template: generic_cpu.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "osqueryd", warn_limit: 0.9, alarm_limit: 1}
+
+  osqueryd_on_ctrl_cpu:
+    template: generic_cpu.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "osqueryd", warn_limit: 0.9, alarm_limit: 1, is_oct_ctrl: True}
+
+  # MEMORY alerts
+
+  oct_memory_available:
+    template: available_memory.j2
+    exclude: {env: *hw_labs}
+    context:
+      unit: "oct"
+      warn_limit:
+        prod: 10
+        preprod: 1.5
+        testing: 1.5
+        default: 3
+      alarm_limit:
+        prod: 5
+        default: 1
+
+  contrail_vrouter_agent_memory:
+    template: generic_memory.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "contrail-vrouter-agent", warn_limit: 8, alarm_limit: 16, compute_node: True}
+
+  network_flow_collector_memory:
+    template: generic_memory.j2
+    context:
+      unit: "yc-network-flow-collector"
+      warn_limit: 0.8
+      alarm_limit: 1.2
+      compute_node: True
+      resolvedEmptyPolicy: RESOLVED_EMPTY_ALARM
+      noPointsPolicy: NO_POINTS_ALARM
+
+  contrail_control_memory:
+    template: generic_memory.j2
+    exclude: {env: *hw_labs}
+    # 18.5 GiB ~= 20GB, 23.5GiB ~= 25GB
+    context: {unit: "contrail-control", warn_limit: 18.5, alarm_limit: 23.5}
+
+  contrail_control_on_ctrl_memory:
+    template: generic_memory.j2
+    exclude: {env: *hw_labs}
+    # 18.5 GiB ~= 20GB, 23.5GiB ~= 25GB
+    context:
+      unit: "contrail-control"
+      is_oct_ctrl: True
+      warn_limit:
+            default: 2
+            prod: 18.5
+            israel: 18.5
+      alarm_limit:
+            default: 2.5
+            prod: 23.5
+            israel: 23.5
+
+  contrail_api_memory:
+    template: generic_memory.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "contrail-api", warn_limit: 5.5, alarm_limit: 6.5}
+
+  contrail_discovery_memory:
+    template: generic_memory.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "contrail-discovery", warn_limit: 0.5, alarm_limit: 1}
+
+  contrail_dns_memory:
+    template: generic_memory.j2
+    exclude: {env: [hw.*lab, testing, preprod, prod]}
+    context: {unit: "contrail-dns", warn_limit: 3, alarm_limit: 4}
+
+  contrail_named_memory:
+    template: generic_memory.j2
+    exclude: {env: [hw.*lab, testing, preprod, prod]}
+    context: {unit: "contrail-named", warn_limit: 3, alarm_limit: 4}
+
+  contrail_schema_memory:
+    template: generic_memory.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "contrail-schema", warn_limit: 3, alarm_limit: 4}
+
+  contrail_webui_jobserver_memory:
+    template: generic_memory.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "contrail-webui-jobserver", warn_limit: 0.5, alarm_limit: 1}
+
+  contrail_webui_webserver_memory:
+    template: generic_memory.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "contrail-webui-webserver", warn_limit: 0.5, alarm_limit: 1}
+
+  ifmap_memory:
+    template: generic_memory.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "ifmap", warn_limit: 19, alarm_limit: 20}
+
+  zookeeper_memory:
+    template: generic_memory.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "zookeeper", warn_limit: 4, alarm_limit: 5}
+
+  cassandra_memory:
+    template: generic_memory.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "cassandra", warn_limit: 6, alarm_limit: 8}
+
+  rabbitmq_server_memory:
+    template: generic_memory.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "rabbitmq-server", warn_limit: 0.5, alarm_limit: 1}
+
+  osqueryd_memory:
+    template: generic_memory.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "osqueryd", warn_limit: 0.5, alarm_limit: 1}
+
+  osqueryd_on_ctrl_memory:
+    template: generic_memory.j2
+    exclude: {env: *hw_labs}
+    context: {unit: "osqueryd", warn_limit: 0.5, alarm_limit: 1, is_oct_ctrl: True}
+
+  network_flow_collector_stuck:
+    template: network_flow_collector_stuck.j2
+    context:
+      windowSecs: 60
+      warn_delay: 90
+      crit_delay: 600
+      resolvedEmptyPolicy: RESOLVED_EMPTY_ALARM
+      noPointsPolicy: NO_POINTS_NO_DATA
+
+  deploy_compute-dp-vpc:
+    template: deploy_compute-dp-vpc.j2
+    exclude: {env: *hw_labs}
+    context:
+      notificationChannels: ["juggler", "vrouter-release"]
+
+  eth0vf0_rxdrops:
+    template: eth0vf0_rxdrops.j2
+    exclude: {env: *hw_labs}
+
+  compute_metadata_error_rate:
+    template: metadata_error_rate.j2
+    exclude: {env: *hw_labs}
+    context:
+      red_threshold: 5
+      yellow_threshold: 1
+
+  network_cpus_overload:
+    template: network_cpus_overload.j2
+    exclude: {env: *hw_labs}
+
+  {% for az in zones_by_env[env] %}
+  control_routes_divergence_{{ az.prefix }}:
+    template: control_routes_divergence.j2
+    exclude: {env: *hw_labs}
+    context:
+      az: {{ az.prefix }}
+  {% endfor %}
+
+  control_routes_count_default:
+    template: control_routes_count.j2
+    exclude: {env: *hw_labs}
+    context:
+      class: vnet:default
+      class_name: default
+      warn_limit:
+        prod: 6000000
+        preprod: 150000
+        israel: 100000
+        default: 8000
+      alarm_limit:
+        prod: 7000000
+        preprod: 200000
+        israel: 120000
+        default: 10000
+
+  control_routes_count_l3vpn:
+    template: control_routes_count.j2
+    exclude: {env: *hw_labs}
+    context:
+      class: bgp:l3vpn
+      class_name: l3vpn
+      warn_limit:
+        prod: 600000
+        preprod: 20000
+        default: 10000
+      alarm_limit:
+        prod: 800000
+        preprod: 30000
+        default: 15000
+
+  contrail_snh_push_sensors:
+    template: contrail_snh_push_sensors.j2
+    exclude: {env: *hw_labs}
+
+{% if env in ["prod", "preprod"] %}
+  vpc_accounting_messages_read:
+    template: ../../common/alerts/logbroker/messages_read.j2
+    context: &accounting_logbroker
+      # Common parameters
+      team: VPC
+      windowSecs: 1800
+      host: yc_vpc_accounting_{{ env }}
+      account: yc.vpc.virtual-network
+      topic_path: yc.vpc.virtual-network/vpc-accounting/accounting
+      notification_channels:
+        - juggler
+      service: vpc-accounting-messages-read
+      alarm_limit: 100
+      warn_limit: 500
+
+  vpc_accounting_messages_written:
+    template: ../../common/alerts/logbroker/messages_written.j2
+    context:
+      <<: *accounting_logbroker
+      service: vpc-accounting-messages-written
+      alarm_limit:
+        prod: 800
+        preprod: 10
+        default: 10
+      warn_limit:
+        prod: 1000
+        preprod: 25
+        default: 25
+
+  vpc_accounting_partition_max_write_quota_used:
+    template: ../../common/alerts/logbroker/partition_max_write_quota_used.j2
+    context:
+      <<: *accounting_logbroker
+      service: vpc-accounting-partition-max-write-quota-used
+      alarm_limit: 100
+      warn_limit: 95
+
+  vpc_accounting_partition_write_quota_wait:
+    template: ../../common/alerts/logbroker/partition_write_quota_wait.j2
+    context:
+      <<: *accounting_logbroker
+      service: vpc-accounting-partition-write-quota-wait
+      alarm_limit: 60
+      warn_limit: 30
+
+  vpc_accounting_topic_write_quota_wait:
+    template: ../../common/alerts/logbroker/topic_write_quota_wait.j2
+    context:
+      <<: *accounting_logbroker
+      service: vpc-accounting-topic-write-quota-wait
+      alarm_limit: 10000
+      warn_limit: 5000
+
+  vpc_accounting_read_time_lag:
+    template: ../../common/alerts/logbroker/read_time_lag.j2
+    context:
+      <<: *accounting_logbroker
+      service: vpc-accounting-read-time-lag
+      topic_path: yc.vpc.virtual-network/vpc-accounting/accounting
+      consumer: yc.vpc.virtual-network/vpc-accounting/billing-consumer
+      alarm_limit: 180000
+      warn_limit: 60000
+
+  vpc_accounting_test_read_time_lag:
+    template: ../../common/alerts/logbroker/read_time_lag.j2
+    context:
+      <<: *accounting_logbroker
+      service: vpc-accounting-test-read-time-lag
+      topic_path: yc.vpc.virtual-network/vpc-accounting/accounting
+      consumer: yc.vpc.virtual-network/vpc-accounting/billing-test-consumer
+      alarm_limit: 180000
+      warn_limit: 60000
+{% endif %}
+
+{% if env in ["testing"] %}
+  vpccontrol_micro_operation_errors:
+    template: vpccontrol_micro_operation_errors.j2
+    exclude:
+      env: *hw_labs
+    context:
+      alarm_limit: 10
+      warn_limit: 0
+
+  vpccontrol_micro_operation_latency:
+    template: vpccontrol_micro_operation_latency.j2
+    exclude:
+      env: *hw_labs
+    context:
+      alarm_limit: 10
+      warn_limit: 3
+
+  vpccontrol_operation_retries:
+    template: vpccontrol_operation_retries.j2
+    exclude:
+      env: *hw_labs
+    context:
+      windowSecs: 600
+      alarm_limit: 15
+      warn_limit: 0
+
+  vpccontrol_grpc_server_errors:
+    template: vpccontrol_grpc_server_errors.j2
+    exclude:
+      env: *hw_labs
+    context:
+      windowSecs: 600
+
+  vpcnode_actors_active_ratio:
+    template: vpcnode_actor_active_ratio.j2
+    exclude:
+      env: *hw_labs
+    context:
+      windowSecs: 60
+      alarm_limit: 90
+      warn_limit: 99
+
+  vpcnode_long_actor_requests:
+    template: vpcnode_long_actor_requests.j2
+    exclude:
+      env: *hw_labs
+
+  vpcnode_sync_messages_ctx_errors:
+    template: vpcnode_sync_messages_ctx_errors.j2
+    exclude:
+      env: *hw_labs
+    context:
+      windowSecs: 600
+      alarm_limit: 15
+      warn_limit: 5
+
+  vpcnode_grpc_server_errors:
+    template: vpcnode_grpc_server_errors.j2
+    exclude:
+      env: *hw_labs
+    context:
+      windowSecs: 600
+
+{% endif %}

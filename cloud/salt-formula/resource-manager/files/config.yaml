@@ -1,0 +1,103 @@
+{% import "common/kikimr/init.sls" as vars with context %}
+
+{% set hostname = grains['nodename'] %}
+{% set base_role = grains['cluster_map']['hosts'][hostname]['base_role'] %}
+{% set environment = grains['cluster_map']['environment'] %}
+{% set endpoints = salt['grains.get']('cluster_map:load_balancer:endpoints') %}
+{% set resource_manager = pillar.get('resource-manager') %}
+
+{%- set kikimr_iam_host = 'localhost' if vars.subdomains|length > 1 else endpoints.iam_kikimr_grpc.host %}
+{%- set kikimr_iam_port = pillar['kikimr_tenant_ports'][vars.iam_database]['grpc_port'] if vars.subdomains|length > 1 or vars.base_role == 'cloudvm' else endpoints.iam_kikimr_grpc.port %}
+
+{% if yrm_id != "undefined" %}
+cluster:
+  clusterId: {{ yrm_id }}
+{% endif %}
+
+grpcServer:
+{% if base_role != 'cloudvm' %}
+  certificatePemFile: /etc/yc/resource-manager/server.pem
+{% endif %}
+  threadPoolSize: 4
+  queueSize: 256
+  reflectionEnabled: true
+  port: {{ resource_manager['grpcServer']['port'] }}
+
+kikimr:
+  host: {{ salt['grains.get']('overrides:kikimr_endpoint', kikimr_iam_host) }}
+  port: {{ salt['grains.get']('overrides:kikimr_endpoint', kikimr_iam_port) }}
+  tablespace: {{ vars.ydb_domain }}/{{ vars.iam_database }}/{{ grains['cluster_map']['stand_type'] }}/{{ salt['grains.get']('overrides:kikimr_id', salt['grains.get']('cluster_map:kikimr:shared_dir')) }}/
+
+authClient:
+  host: {{ endpoints.access_service_grpc.host }}
+  port: {{ endpoints.access_service_grpc.port }}
+{% if base_role == 'cloudvm' %}
+  usePlaintext: true
+{% else %}
+  usePlaintext: false
+{% endif %}
+
+metrics:
+  pullPort: 7380
+
+healthCheckServer:
+  port: 7381
+
+systemAccount:
+  configFile: /var/lib/yc/resource-manager/system_account.json
+
+taskProcessor:
+  pool: default
+  nThreads: 4
+  keepAliveInterval: 60000
+  taskPollInterval: 5000
+
+compute:
+  host: {{ endpoints.api_adapter.host }}
+  port: {{ endpoints.api_adapter.port }}
+  timeout: 10
+
+dryRun:
+  enabled: false
+
+cloudBlockingPolicy:
+  minDelay: PT1H
+
+{% if environment == 'prod' %}
+# Whitelisted resources are not affected by resource manager actions like blocking/unblocking
+whitelist:
+  cloudIds:
+    - b1g0000service0cloud
+    - b1g25j03s1ed40gd6bkc
+    - b1g4ej5ju4rf5kelpk4b
+    - b1g4h928siaiqujegntp
+    - b1g4vur7teek0iqk578s
+    - b1g57mvh0kc8e4lredl4
+    - b1g7usbinne7lipkpvc1
+    - b1g8ad42m6he1ooql78r
+    - b1gbkpesobgv2i2266vg
+    - b1gcb7rdsl0vrbv3buan
+    - b1gfcpod5hbd1ivs7dav
+    - b1ggh9onj7ljr7m9cici
+    - b1ggtku84hcpc9easvk2
+    - b1gh3a8gltptru5uumd8
+    - b1ghikt7vfcneppj9d5t
+    - b1ghv235429iim8rn4g3
+    - b1gjqgj3hhvjen5iqakp
+    - b1gk13pqp9f8lfi1ngqi
+    - b1glc055qh454ciijpst
+    - b1gmrhakmf7ar1i6l6f8
+    - b1gnk25c1cd5t13g6s6h
+    - b1gph5jh6bg8mjocuo4t
+    - b1grsgl6ht0sj5t93mpo
+    - b1gtdskmm5ck7oif4p5p
+    - b1gtvjv7oi8qj7mj08im
+    - b1gujjqdrkgjeedt8iaf
+    - b1gv6tg5521p4q6qqc3j
+    - b1gvlrnlei4l5idm9cbj
+    - b1gbs0dh1bcpo3q2egae
+    - b1gn6pdng0vflfqlu82f
+    - b1g4k7027i00asu7fjtl
+    - b1gfe4npcg647qq213du
+    - b1g53j8qbn7lp1d14083
+{% endif %}

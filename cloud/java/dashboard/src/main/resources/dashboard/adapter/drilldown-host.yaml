@@ -1,0 +1,61 @@
+id: 127910
+uid: GOSxKwCiz
+refresh: 3m
+title: API adapter drilldown (by host)
+
+pointerSharing: tooltip
+tags: [ 'ycp', 'ycp-adapter', 'ycp-duty', 'ycp-drilldown' ]
+
+variables:
+  ui:
+    cluster: { values: [prod, preprod] }
+  repeat:
+    adapter_host:
+      values: [
+        'cluster', '!cluster', '--',
+        '*-myt*', '*-sas*', '*-vla*',
+        '*-myt1', '*-sas1',  '*-vla1', '*-myt2', '*-sas2', '*-vla2'
+      ]
+  replacement:
+    !include ../include/errors.yaml
+
+graphDefaults:
+  datasource: Solomon
+  width: 8
+  height: 6
+queryDefaults: { labels: 'project=yandexcloud, cluster=cloud_${cluster}_api-adapter, service=api_adapter, app=cloud-api-adapter_server, method=all, host=@adapter_host' }
+
+rows:
+
+  - title: Rps
+    panels:
+      - type: graph
+        templates: [{ name: rps, sumLines: false }, { name: alias, alias: '{{host}}' }]
+        repeat: adapter_host
+        title: 'Adapter rps ($cluster - @adapter_host)'
+        display: { legend: false, stack: true }
+        queries:
+          - params: { labels: 'sensor=grpc_requests, meter_type=count' }
+
+  - title: Errors
+    queryDefaults: { defaultTimeWindow: '15s' }
+    panels:
+      - type: graph
+        templates: { name: errors }
+        repeat: adapter_host
+        title: 'Adapter errors ($cluster - @adapter_host)'
+        queries:
+          - params: { labels: 'sensor=grpc_statuses, status=@4xx' }
+          - params: { labels: 'sensor=grpc_statuses, status=@503' }
+          - params: { labels: 'sensor=grpc_statuses, status=@5xx' }
+        draw: [{ alias: '4xx', color: '#147', at: right }, { alias: '503', color: '#da7', at: left }, { alias: '5xx', color: '#b20', at: left }]
+
+  - title: Response duration
+    panels:
+      - type: graph
+        templates: { name: percentile, levels: [50, 75, 90, 99], groupLines: true }
+        repeat: adapter_host
+        display: { decimals: 1 }
+        title: 'Adapter response duration ($cluster - @adapter_host)'
+        queries:
+          - params: { labels: 'sensor=grpc_durations' }

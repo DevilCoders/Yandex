@@ -1,0 +1,9 @@
+RECURSE(
+    exemplar_joins
+    old_pipeline_data
+    records_files
+    yt_table
+    client_markup
+    s3_bucket
+    configure_imports_launcher
+)

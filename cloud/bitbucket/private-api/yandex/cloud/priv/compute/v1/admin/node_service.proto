@@ -1,0 +1,215 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.compute.v1.admin;
+
+import "google/protobuf/field_mask.proto";
+
+import "yandex/cloud/priv/compute/v1/admin/node.proto";
+import "yandex/cloud/priv/compute/v1/admin/sub_operation.proto";
+import "yandex/cloud/priv/compute/v1/validation.proto";
+import "yandex/cloud/priv/compute/v1/instance.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+import "yandex/cloud/api/operation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/compute/v1/admin;admin";
+
+service NodeService {
+  // Show compute node info
+  rpc Get(GetNodeRequest) returns (Node) ;
+
+  // Disable compute node
+  rpc Disable(DisableNodeRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "DisableNodeMetadata"
+      response: "Node"
+    };
+  }
+
+  // Enable compute node
+  rpc Enable(EnableNodeRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "EnableNodeMetadata"
+      response: "Node"
+    };
+  }
+
+  // List compute nodes
+  rpc List(ListNodesRequest) returns (ListNodesResponse) ;
+
+  // List instances controlled by Compute Node
+  rpc ListInstances(ListNodeInstancesRequest) returns (ListNodeInstancesResponse) ;
+
+  // Evacuate instances from dead node
+  rpc Evacuate(EvacuateNodeRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "EvacuateNodeMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+
+  // Migrate instances from alive node
+  rpc Migrate(MigrateNodeRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "MigrateNodeMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+
+  // List node operations (such as evacuate and migrate)
+  rpc ListOperations (ListNodeOperationsRequest) returns (ListNodeOperationsResponse) {
+  }
+
+  // Update node parameters
+  rpc Update (UpdateNodeRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateNodeMetadata"
+      response: "Node"
+    };
+  }
+
+  // Delete node from scheduler
+  rpc Delete (DeleteNodeRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeleteNodeMetadata",
+      response: "google.protobuf.Empty"
+    };
+  }
+}
+
+message UpdateNodeRequest {
+  string fqdn = 1 [(valid) = "hostname", (required) = true];
+  google.protobuf.FieldMask update_mask = 2;
+
+  repeated string host_groups = 3 [(valid) = "hostgroup"];
+  NodeStatus status = 4;
+  bool dedicated = 5;
+}
+
+message UpdateNodeMetadata {
+  string fqdn = 1;
+}
+
+message GetNodeRequest {
+  string fqdn = 1 [(valid) = "hostname", (required) = true];
+}
+
+message DisableNodeRequest {
+  string fqdn = 1 [(valid) = "hostname", (required) = true];
+
+  // ensure that scheduler's cache has been updated
+  bool ensure_cache = 2;
+}
+
+message DisableNodeMetadata {
+  string fqdn = 1;
+}
+
+message EnableNodeRequest {
+  string fqdn = 1 [(valid) = "hostname", (required) = true];
+}
+
+message EnableNodeMetadata {
+  string fqdn = 1;
+}
+
+message ListNodesRequest {
+  int64 page_size = 1 [(valid) = "page_size"];
+  string page_token = 2 [(valid) = "page_token"];
+
+  // https://wiki.yandex-team.ru/cloud/devel/api/filter_syntax/
+  string filter = 3;
+}
+
+message ListNodesResponse {
+  repeated Node nodes = 1;
+  string next_page_token = 2;
+}
+
+message ListNodeInstancesRequest {
+  string fqdn = 1 [(valid) = "hostname", (required) = true];
+
+  int64 page_size = 2 [(valid) = "page_size"];
+  string page_token = 3 [(valid) = "page_token"];
+}
+
+message ListNodeInstancesResponse {
+  repeated yandex.cloud.priv.compute.v1.Instance instances = 1;
+  string next_page_token = 2;
+}
+
+message EvacuateNodeRequest {
+  string fqdn = 1 [(valid) = "hostname", (required) = true];
+  bool skip_node_check = 2;   // evacuate even if host is reachable
+  bool force = 3;             // move not deallocatable instance
+
+  // decommission mode: run extra steps to make node ready for repair (total cleanup) by Infra team
+  // this includes, e.g. notification of MDB CMS that Local NVMe instances are lost forever
+  bool decommission = 4;
+  string decommission_ticket = 5;
+}
+
+message EvacuateNodeMetadata {
+  string fqdn = 1;
+  message InstanceInfo {
+    string id = 1;
+    SubOperation evacuate = 2;
+    SubOperation recover = 3;
+  }
+
+  repeated InstanceInfo instances = 2;
+}
+
+message MigrateNodeRequest {
+  string fqdn = 1 [(valid) = "hostname", (required) = true];
+  repeated string target_fqdns = 2 [(valid) = "hostname"];
+
+  // amount of instances to migrate in parallel
+  // if not set default value is 1
+  int64 batch_size = 3 [(value) = ">=0"];
+
+  // allow offline migrate instance
+  // if it is not online-migratable
+  bool allow_offline = 4;
+
+  // decommission mode: run extra steps to make node ready for repair (total cleanup) by Infra team
+  // this includes, e.g. moving ALL instances away or stopping them (even MDB Local NVMe, Underlay, GPU, ...)
+  bool decommission = 5;
+  string decommission_ticket = 6;
+}
+
+message MigrateNodeMetadata {
+  string fqdn = 1;
+
+  message InstanceInfo {
+    string id = 1;
+    oneof operation {
+      SubOperation live_migrate = 2;    // if instance was live-migrated by the task
+      SubOperation offline_migrate = 3; // if intance was offline-migrated by the task (e.g., serverless)
+      SubOperation stop = 4;            // if instances was stopped (e.g., preemptible)
+      SubOperation external_action = 5; // if we notified an external system (or person) and it (he)
+                                        // has stopped/deleted the instance
+      SubOperation skip = 6;            // if instance is not supported by this task and was skipped
+    }
+  }
+
+  repeated InstanceInfo instances = 2;
+}
+
+message DeleteNodeRequest {
+  string fqdn = 1 [(valid) = "hostname", (required) = true];
+}
+
+message DeleteNodeMetadata {
+  string fqdn = 1;
+}
+
+message ListNodeOperationsRequest {
+  string fqdn = 1 [(valid) = "hostname", (required) = true];
+  int64 page_size = 2 [(valid) = "page_size"];
+  string page_token = 3 [(valid) = "page_token"];
+}
+
+message ListNodeOperationsResponse {
+  repeated operation.Operation operations = 1;
+  string next_page_token = 2;
+}

@@ -1,0 +1,25 @@
+{%- set hostname = grains['nodename'] -%}
+{%- set base_role = grains['cluster_map']['hosts'][hostname]['base_role'] -%}
+{%- set generate_random_signature_key = salt['pillar.get']('secrets:metadata:generate_random_key', False) -%}
+{%- set environment = grains["cluster_map"]["environment"] -%}
+{%- set zone_id = grains['cluster_map']['hosts'][hostname]['zone_id'] -%}
+
+vsock:
+{% if zone_id == "ru-central1-a" and environment in ("testing", "pre-prod") %}
+  network: "vsock"
+  address: "host:6770"
+{% else %}
+  network: "tcp"
+  address: "localhost:6770"
+{% endif %}
+control:
+  address: "localhost:6771"
+compute_node_client:
+  url: "http://localhost:8000"
+compute_metadata_client:
+  url: "http://localhost:6778"
+{% if generate_random_signature_key %}
+  signature_key: {{ salt['grains.get_or_set_hash']('instance_id_signature_key', 32, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') }}
+{% else %}
+  signature_key: 'fake_random_value'
+{% endif %}

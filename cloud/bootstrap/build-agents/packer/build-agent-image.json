@@ -1,0 +1,259 @@
+{
+  "variables": {
+    "endpoint": "{{env `YC_ENDPOINT`}}",
+    "folder_id": "{{env `YC_FOLDER_ID`}}",
+    "subnet_id": "{{env `YC_SUBNET_ID`}}",
+    "zone": "{{env `YC_ZONE`}}",
+    "ssh_private_key_file": "{{env `SSH_PRIVATE_KEY_FILE`}}",
+    "commit_revision": "{{env `COMMIT_REVISION`}}",
+    "commit_author": "{{env `COMMIT_AUTHOR`}}",
+    "ssh_username": "{{ env `SSH_USER`}}",
+
+    "ssh_bastion_username": "{{ env `SSH_BASTION_USER`}}",
+    "ssh_bastion_host": "bastion2.cloud.yandex.net",
+    "ssh_bastion_port":     "22",
+
+    "teamcity_sbuild_script_pkg_version": "0.6.1-1.46",
+    "yc_ci_version": "0.1-1554.210121"
+  },
+  "min_packer_version": "1.6.6",
+  "builders": [
+    {
+      "type": "yandex",
+      "endpoint": "{{user `endpoint`}}",
+      "folder_id": "{{user `folder_id`}}",
+      "subnet_id": "{{user `subnet_id`}}",
+      "zone": "{{ user `zone` }}",
+      "labels": {
+      },
+      "metadata": {
+        "enable-oslogin": "true",
+        "user-data": "#cloud-config\n\npreserve_hostname: false\napt:\n  primary:\n      - arches: [default]\n        search: http://mirror.yandex.ru/ubuntu\n  #Generate sources_list RUNTIMECLOUD-8873\n  sources_list: |\n      deb http://mirror.yandex.ru/ubuntu xenial main restricted\n      deb http://mirror.yandex.ru/ubuntu xenial-updates main restricted\n      deb http://mirror.yandex.ru/ubuntu xenial universe\n      deb http://mirror.yandex.ru/ubuntu xenial-updates universe\n      deb http://mirror.yandex.ru/ubuntu xenial multiverse\n      deb http://mirror.yandex.ru/ubuntu xenial-updates multiverse\n      deb http://mirror.yandex.ru/ubuntu xenial-backports main restricted universe multiverse\n      deb http://mirror.yandex.ru/ubuntu xenial-security main restricted universe multiverse\n\npackage_update: false\nmanage_etc_hosts: true\ngrowpart:\n    mode: auto\n    devices: ['/']\n    ignore_growroot_disabled: false\nruncmd:\n  - [ cloud-init-per, once, update_mtu, bash, -c, 'sed -i \"s/8950/1450/g\" /etc/network/interfaces.d/10_yc_base_cfg' ]\n  - [ cloud-init-per, once, set_mtu, bash, -c, 'sudo ip link set dev eth0 mtu 1450' ]\n  - [ cloud-init-per, once, update_alternatives, bash, -c, 'update-alternatives --install /bin/sh sh /bin/bash 100' ]\n  - [ cloud-init-per, once, set_cloud_type, bash, -c, 'echo \"yandex-cloud\" > /etc/cloud_type' ]\n"
+      },
+      "use_ipv4_nat": false,
+      "use_ipv6": true,
+      "image_name": "build-agent-{{user `commit_revision`}}",
+      "image_family": "build-agent-base",
+      "image_description": "based on commit (https://a.yandex-team.ru/arc/commit/{{user `commit_revision`}}) by {{user `commit_author`}}",
+      "image_labels": {
+        "commit_revision": "{{user `commit_revision`}}",
+        "commit_author": "{{user `commit_author`}}"
+      },
+      "source_image_id": "fdvjejhjkln5j5otjk2q",
+      "source_image_folder_id":  "service-images",
+      "service_account_id": "yc.vpc.build-agents-sa",
+      "platform_id": "standard-v2",
+      "disk_type": "network-ssd",
+      "ssh_username":                 "{{ user `ssh_username`}}",
+      "ssh_agent_auth":               true,
+      "ssh_disable_agent_forwarding": true,
+
+      "ssh_bastion_host":       "{{ user `ssh_bastion_host` }}",
+      "ssh_bastion_port":       "{{ user `ssh_bastion_port` }}",
+      "ssh_bastion_username":   "{{ user `ssh_bastion_username` }}",
+      "ssh_bastion_agent_auth": true
+
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'image prepared by Packer at ' | sudo tee /etc/image_description",
+        "date --rfc-3339 sec | sudo tee -a /etc/image_description",
+        "echo 'deb http://common.dist.yandex.ru/common stable/all/'               | sudo tee -a /etc/apt/sources.list.d/common-stable.list",
+        "echo 'deb http://common.dist.yandex.ru/common stable/amd64/'               | sudo tee -a /etc/apt/sources.list.d/common-stable.list",
+        "echo 'deb http://yandex-cloud-secure.dist.yandex.ru/yandex-cloud-secure stable/all/'   | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-secure-stable.list",
+        "echo 'deb http://yandex-cloud-secure.dist.yandex.ru/yandex-cloud-secure stable/amd64/' | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-secure-stable.list",
+        "echo 'deb http://yandex-cloud-upstream-xenial-secure.dist.yandex.ru/yandex-cloud-upstream-xenial-secure stable/all/'   | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-upstream-secure-stable.list",
+        "echo 'deb http://yandex-cloud-upstream-xenial-secure.dist.yandex.ru/yandex-cloud-upstream-xenial-secure stable/amd64/'   | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-upstream-secure-stable.list",
+        "echo 'deb http://yandex-cloud-secure.dist.yandex.ru/yandex-cloud-secure stable/amd64/' | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-secure-stable.list",
+        "echo 'deb http://yandex-cloud.dist.yandex.ru/yandex-cloud stable/all/'   | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-stable.list",
+        "echo 'deb http://yandex-cloud.dist.yandex.ru/yandex-cloud stable/amd64/' | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-stable.list",
+        "echo 'deb http://yandex-cloud.dist.yandex.ru/yandex-cloud testing/all/'   | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-testing.list",
+        "echo 'deb http://yandex-cloud.dist.yandex.ru/yandex-cloud testing/amd64/' | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-testing.list",
+        "echo 'deb http://yandex-cloud.dist.yandex.ru/yandex-cloud unstable/all/'   | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-unstable.list",
+        "echo 'deb http://yandex-cloud.dist.yandex.ru/yandex-cloud unstable/amd64/' | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-unstable.list"
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'deb http://yandex-taxi-xenial.dist.yandex.ru/yandex-taxi-xenial stable/all/'   | sudo tee -a /etc/apt/sources.list.d/yandex-taxi-xenial-stable.list",
+        "echo 'deb http://yandex-taxi-xenial.dist.yandex.ru/yandex-taxi-xenial stable/amd64/' | sudo tee -a /etc/apt/sources.list.d/yandex-taxi-xenial-stable.list"
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'Add name for group id for robot-yc-ci'",
+        "sudo groupadd -g 54853 robot-yc-ci",
+        "sudo chown -R robot-yc-ci:robot-yc-ci /home/robot-yc-ci",
+        "echo 'robot-yc-ci ALL=(ALL) NOPASSWD: ALL' | sudo tee -a /var/google-sudoers.d/robot-yc-ci"
+      ]
+    },
+    {
+      "type": "shell",
+      "timeout": "30m",
+      "max_retries": 2,
+      "expect_disconnect": true,
+      "inline": [
+        "echo 'Cleanup image'",
+        "sudo rm -rf /var/log/yandex-selfdns-client /etc/yandex/selfdns-client /etc/cron.d/yandex-selfdns-client",
+        "SELFDNS_PID=$(pgrep -f /usr/bin/selfdns-client || echo )",
+        "[[ -n ${SELFDNS_PID} ]] && sudo kill -9 ${SELFDNS_PID}" ,
+        "sudo apt-get purge -y yandex-selfdns-client yc-selfdns-plugins yc-compute-metaproxy",
+        "sudo apt-get -y autoremove"
+      ]
+    },
+    {
+      "type": "shell",
+      "timeout": "30m",
+      "max_retries": 2,
+      "expect_disconnect": true,
+      "inline": [
+        "echo 'Install base soft for build agents'",
+        "export DEBIAN_FRONTEND=noninteractive",
+        "sudo apt-get update -qq",
+        "sudo apt-get install -y --allow-unauthenticated yandex-archive-keyring yandex-unbound=1.10.2 config-caching-dns teamcity-agent-sbuild-scripts={{ user `teamcity_sbuild_script_pkg_version` }} yc-ci={{ user `yc_ci_version` }} ncdu yandex-arc-launcher docker-compose git",
+        "sudo curl --retry 10  --retry-delay 2 -o /usr/local/bin/skm https://storage.cloud-preprod.yandex.net/skm/linux/skm",
+        "sudo chmod +x /usr/local/bin/skm",
+        "sudo cp /etc/skel/.bash* /etc/skel/.profile /home/robot-yc-ci/",
+        "sudo chown -R robot-yc-ci:robot-yc-ci /home/robot-yc-ci",
+        "sudo /usr/sbin/tca-sbuild-bootstrap users",
+        "sudo systemctl enable solomon-agent",
+        "sudo systemctl start solomon-agent",
+        "echo 'NAT64=\"yes\"' | sudo tee /etc/default/config-caching-dns",
+        "sudo config-caching-dns-update-configs"
+      ]
+    },
+    {
+        "type": "shell",
+        "inline": [
+        "sudo rm /etc/apt/sources.list.d/yandex-taxi-xenial-stable.list"
+        ]
+    },
+    {
+      "type": "shell",
+      "max_retries": 2,
+      "valid_exit_codes": [0, 1],
+      "inline": [
+        "echo 'Install YC'",
+        "curl https://storage.yandexcloud.net/yandexcloud-yc/install.sh | sudo su -l robot-yc-ci"
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'Enable arc auto-update'",
+        "systemctl --user enable --now arc-update.timer"
+      ]
+    },
+    {
+        "type": "shell",
+        "max_retries": 2,
+        "inline": [
+            "echo 'Configure yc'",
+            "sudo cp /home/robot-yc-ci/yandex-cloud/bin/yc /usr/local/bin/",
+            "sudo -i -u robot-yc-ci yc config profile create preprod",
+            "sudo -i -u robot-yc-ci yc config set instance-service-account true",
+            "sudo -i -u robot-yc-ci yc config set endpoint api.cloud-preprod.yandex.net:443",
+            "sudo -i -u robot-yc-ci yc config set format json",
+            "DISK_ID=$(sudo -i -u robot-yc-ci yc compute disk create build-agent-{{ user `commit_revision` }}-schroots --type network-ssd --size 100G --zone {{ user `zone` }} | jq -r .id)",
+            "sudo -i -u robot-yc-ci yc compute instance attach-disk --id $(hostname) --disk-id ${DISK_ID}"
+        ]
+    },
+    {
+      "type": "file",
+      "source": "files/skm-bundle.yaml",
+      "destination": "/tmp/skm-bundle.yaml"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "echo Decrypt secrets",
+        "sudo -E skm decrypt-bundle -d --bundle /tmp/skm-bundle.yaml"
+      ]
+    },
+    {
+      "type": "file",
+      "sources": ["files/gpg-setup.sh", "files/dist-setup.sh", "files/gpg-debsign.sh", "files/ssh-setup.sh", "files/dist-dupload.sh", "files/robot-ycloud-dev.ssh_config", "files/60-persistent-storage.rules"],
+      "destination": "/tmp/"
+    },
+    {
+        "type": "shell",
+        "environment_vars": [
+            "DIST_REPOS=yandex-cloud yandex-cloud-secure"
+        ],
+        "inline": [
+          "echo Set permissions for scripts and create dirs" ,
+          "sudo -u robot-yc-ci mkdir -p /home/robot-yc-ci/{ci-auth,.docker,.arc,.ssh}",
+          "sudo chmod +x /tmp/*.sh",
+          "sudo mv /tmp/*.sh /home/robot-yc-ci/",
+          "sudo mv /tmp/robot-ycloud-dev.ssh_config /home/robot-yc-ci/.ssh/",
+          "sudo chown -R robot-yc-ci:robot-yc-ci /home/robot-yc-ci/",
+          "sudo -i -u robot-yc-ci /home/robot-yc-ci/gpg-setup.sh",
+          "sudo -i -u robot-yc-ci /home/robot-yc-ci/ssh-setup.sh",
+          "sudo -E -i -u robot-yc-ci /home/robot-yc-ci/dist-setup.sh ${DIST_REPOS}",
+          "sudo chattr +i /home/robot-yc-ci/.config/yandex-cloud/config.yaml",
+          "sudo rm /home/robot-yc-ci/{gpg-setup.sh,ssh-setup.sh,dist-setup.sh} /home/robot-yc-ci/robot-yc-ci\\@yandex-team.ru.seckey",
+          "sudo find /home/robot-yc-ci/ -name 'script_*' -delete"
+        ]
+    },
+    {
+        "type": "shell",
+        "timeout": "1h",
+        "max_retries": 2,
+        "inline": [
+            "echo 'Prepare new disk for schroots'",
+            "sudo /usr/sbin/tca-sbuild-bootstrap yc_cgroups format-disk",
+            "echo 'Prepare schroots'",
+            "sudo /usr/sbin/tca-sbuild-bootstrap schroots",
+            "sudo /usr/sbin/tca-sbuild-bootstrap localrepo",
+            "sudo /usr/sbin/tca-sbuild-bootstrap update-chroots",
+            "sudo /usr/sbin/tca-sbuild-bootstrap derivatives",
+            "sudo pip install jproperties"
+        ]
+    },
+    {
+        "type": "shell",
+        "timeout": "10m",
+        "max_retries": 2,
+        "inline": [
+            "echo 'Create snapshot with schroots'",
+            "sudo umount /dev/vdb 2>/dev/null || echo 'Already unmounted'",
+            "DISK_ID=$(sudo -i -u robot-yc-ci yc compute disk get build-agent-{{ user `commit_revision` }}-schroots | jq -r .id)",
+            "sudo -i -u robot-yc-ci yc compute snapshot create --name build-agent-{{ user `commit_revision` }}-schroots-snapshot --disk-id ${DISK_ID}",
+            "SNAPSHOT_ID=$(sudo -i -u robot-yc-ci yc compute snapshot get --name build-agent-{{ user `commit_revision` }}-schroots-snapshot | jq -r .id)",
+            "echo 'Resulted snapshot '${SNAPSHOT_ID}",
+            "sudo -i -u robot-yc-ci yc compute instance detach-disk $(hostname) --disk-id ${DISK_ID}",
+            "sudo -i -u robot-yc-ci yc compute disk delete --id ${DISK_ID}"
+        ]
+    },
+    {
+        "type": "shell",
+        "inline": [
+          "echo Set udev rules" ,
+          "sudo mv /tmp/60-persistent-storage.rules /etc/udev/rules.d/60-persistent-storage.rules",
+          "sudo chattr +i /etc/udev/rules.d/60-persistent-storage.rules"
+        ]
+    }
+  ],
+  "error-cleanup-provisioner": {
+      "type": "shell",
+      "inline": [
+        "echo Cleanup second disk",
+        "sudo apt-get install -y jq",
+        "DISK_ID=$(sudo -i -u robot-yc-ci yc compute disk get build-agent-{{ user `commit_revision` }}-schroots | jq -r .id)",
+        "sudo -i -u robot-yc-ci yc compute instance detach-disk $(hostname) --disk-id ${DISK_ID} || exit 0",
+        "sudo -i -u robot-yc-ci yc compute disk delete --id ${DISK_ID}"
+      ]
+  },
+  "post-processors": [
+    {
+      "type": "manifest",
+      "output": "{{ pwd }}/manifest.json",
+      "strip_path": true
+    }
+  ]
+}

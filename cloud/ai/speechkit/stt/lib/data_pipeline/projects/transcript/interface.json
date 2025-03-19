@@ -1,0 +1,276 @@
+{
+    "view": {
+        "validation": {
+            "hint": "Удалите пробел на конце",
+            "type": "condition.not",
+            "condition": {
+                "type": "condition.schema",
+                "data": {
+                    "type": "data.output",
+                    "path": "text"
+                },
+                "schema": {
+                    "type": "string",
+                    "pattern": " $"
+                }
+            }
+        },
+        "type": "view.list",
+        "items": [
+            {
+                "type": "view.group",
+                "content": {
+                    "type": "view.audio",
+                    "url": {
+                        "type": "data.input",
+                        "path": "user_url"
+                    },
+                    "validation": {
+                        "type": "condition.played-fully",
+                        "hint": "Вы не прослушали запись до конца"
+                    }
+                }
+            },
+            {
+                "type": "view.group",
+                "label": "Текст транскрипции:",
+                "content": {
+                    "type": "field.textarea",
+                    "data": {
+                        "type": "data.output",
+                        "path": "text",
+                        "default": ""
+                    },
+                    "validation": {
+                        "type": "condition.all",
+                        "conditions": [
+                            {
+                                "type": "condition.schema",
+                                "schema": {
+                                    "type": "string",
+                                    "pattern": "{{text_re}}"
+                                },
+                                "hint": "{{text_re_hint}}"
+                            },
+                            {
+                                "type": "condition.not",
+                                "condition": {
+                                    "type": "condition.schema",
+                                    "schema": {
+                                        "type": "string",
+                                        "pattern": "^ +|  +"
+                                    },
+                                    "data": {
+                                        "type": "data.output",
+                                        "path": "text"
+                                    },
+                                    "hint": "Лишний пробел."
+                                }
+                            }
+                        ]
+                    }
+                },
+                "validation": {
+                    "hint": "Если ни одного слова нельзя разобрать выберете вариант \"Затрудняюсь ответить\", если речи нет совсем, то выделите пункт \"Я не слышу речи\". В обоих случаях текстовое поле оставьте пустым.",
+                    "type": "condition.not",
+                    "condition": {
+                        "type": "condition.all",
+                        "conditions": [
+                            {
+                                "type": "condition.equals",
+                                "to": "?",
+                                "data": {
+                                    "type": "data.output",
+                                    "path": "text"
+                                }
+                            },
+                            {
+                                "type": "condition.equals",
+                                "to": "sp",
+                                "data": {
+                                    "type": "data.output",
+                                    "path": "cls"
+                                }
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "type": "field.radio-group",
+                "data": {
+                    "type": "data.output",
+                    "path": "cls",
+                    "default": "sp"
+                },
+                "options": [
+                    {
+                        "label": "Речь",
+                        "value": "sp"
+                    },
+                    {
+                        "label": "Я не слышу речи",
+                        "value": "si"
+                    },
+                    {
+                        "label": "Затрудняюсь ответить",
+                        "value": "mis"
+                    }
+                ],
+                "validation": {
+                    "type": "condition.any",
+                    "conditions": [
+                        {
+                            "type": "condition.all",
+                            "conditions": [
+                                {
+                                    "type": "condition.empty",
+                                    "data": {
+                                        "type": "data.output",
+                                        "path": "text"
+                                    }
+                                },
+                                {
+                                    "type": "condition.not",
+                                    "condition": {
+                                        "type": "condition.equals",
+                                        "data": {
+                                            "type": "data.output",
+                                            "path": "cls"
+                                        },
+                                        "to": "sp"
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "type": "condition.all",
+                            "conditions": [
+                                {
+                                    "type": "condition.equals",
+                                    "data": {
+                                        "type": "data.output",
+                                        "path": "cls"
+                                    },
+                                    "to": "sp"
+                                },
+                                {
+                                    "type": "condition.not",
+                                    "condition": {
+                                        "type": "condition.empty",
+                                        "data": {
+                                            "type": "data.output",
+                                            "path": "text"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    "hint": "Выбранный вариант ответа не соответствует ответу в текстовом поле"
+                }
+            }
+        ]
+    },
+    "plugins": [
+        {
+            "type": "plugin.trigger",
+            "onChangeOf": {
+                "type": "data.output",
+                "path": "text"
+            },
+            "action": {
+                "type": "action.set",
+                "data": {
+                    "type": "data.output",
+                    "path": "text"
+                },
+                "payload": {
+                    "type": "helper.text-transform",
+                    "data": {
+                        "type": "data.output",
+                        "path": "text"
+                    },
+                    "transformation": "lowercase"
+                }
+            }
+        },
+        {
+            "type": "plugin.trigger",
+            "onChangeOf": {
+                "type": "data.output",
+                "path": "text"
+            },
+            "action": {
+                "type": "action.set",
+                "data": {
+                    "type": "data.output",
+                    "path": "text"
+                },
+                "payload": {
+                    "type": "helper.replace",
+                    "data": {
+                        "type": "data.output",
+                        "path": "text"
+                    },
+                    "find": "ë",
+                    "replace": "ё"
+                }
+            }
+        },
+        {
+            "0": {
+                "type": "action.play-pause",
+                "view": {
+                    "$ref": "view.items.0.content"
+                }
+            },
+            "1": {
+                "type": "action.set",
+                "data": {
+                    "type": "data.output",
+                    "path": "cls"
+                },
+                "payload": "sp"
+            },
+            "2": {
+                "type": "action.set",
+                "data": {
+                    "type": "data.output",
+                    "path": "cls"
+                },
+                "payload": "si"
+            },
+            "3": {
+                "type": "action.set",
+                "data": {
+                    "type": "data.output",
+                    "path": "cls"
+                },
+                "payload": "mis"
+            },
+            "type": "plugin.hotkeys"
+        },
+        {
+            "type": "plugin.toloka",
+            "layout": {
+                "kind": "scroll",
+                "taskWidth": 700
+            },
+            "notifications": [
+                {
+                    "type": "view.text",
+                    "content": "Перед выполнением проверьте, что все аудио загрузились."
+                },
+                {
+                    "type": "view.text",
+                    "content": "Если нет хотя бы одного аудио, перезагрузите страницу."
+                },
+                {
+                    "type": "view.text",
+                    "content": "Если перезагрузка не помогла, пропустите эту страницу.\nВы не сможете отправить страницу заданий, если хотя бы одно из аудио не загрузилось."
+                }
+            ]
+        }
+    ]
+}

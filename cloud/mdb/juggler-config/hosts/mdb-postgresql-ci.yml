@@ -1,0 +1,29 @@
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    namespace: dbaas.postgresql
+    host: mdb-postgresql-ci
+
+  tasks:
+    - juggler_facts: jserver_api=http://juggler-api.search.yandex.net:8998/api
+    - include_vars: ../configs/gendb_resps.yml
+    - include_vars: ../configs/notifications_nocalls.yml
+
+    - juggler_check:
+        host: "{{ host }}"
+        service: postgresql-master-ci
+        namespace: "{{ namespace }}"
+        aggregator: logic_or
+        aggregator_kwargs:
+          mode: 'WARN'
+        notifications: "{{ notifications }}"
+        refresh_time: 600
+        ttl: 3600
+        children:
+            host: ci01k.db.yandex.net
+            service: postgresql_master_ci
+        __force__: True
+
+  post_tasks:
+    - juggler_cleanup: jcheck_mark={{ host }}

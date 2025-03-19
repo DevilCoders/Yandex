@@ -1,0 +1,582 @@
+uid: instanceGroups
+refresh: 1m
+title: Instance Groups
+
+tags: [ 'ycp', 'ycp-ig', 'ycp-duty', 'ycp-top', 'ycp-drilldown' ]
+links:
+  - { title: 'YDB (Solomon)', vars: false, url: 'https://solomon.yandex-team.ru/?project=kikimr&cluster=yandexcloud_${cluster}_global&database=*%2Finstancegroup&dashboard=multitenant-client-database-diag' }
+  - { tags: [ 'ycp', 'ydb' ] }
+
+variables:
+  repeat:
+    tx_duration_sensor:
+      values: [ 'tx_attempt_duration_seconds', 'tx_total_duration_seconds' ]
+      titles: [ 'Tx Attempt Duration', 'Tx Total Duration' ]
+    jvm_memory_area:
+      values: [ 'heap', 'nonheap' ]
+      titles: [ 'Heap', 'Non-Heap' ]
+  ui:
+    cluster:
+      values: [ 'prod', 'preprod', 'gpn' ]
+    backend_application:
+      values: [ '*', 'control', 'config' ]
+    client_app:
+      multi: true
+      hidden: true
+      values: [ 'compute', 'vpc', 'ylb', 'healthcheck', 'auth', 'iam', 'token-service-client', 'resource-manager', 'platform_alb' ]
+      titles: [ 'Compute', 'VPC', 'YLB', 'Healthcheck', 'Auth', 'IAM', 'Token service', 'Resource Manager', 'Platform L7' ]
+    taskprocessor_pool:
+      multi: true
+      hidden: true
+      values: [ 'default' ]
+    backend_group: { values: [ "ds7ofv5q6vncmc75m64o|a5dpkk5edpiadg23vjrg|albhena3c8e0e57jpmm5" ], titles: [ "l7-balancer" ], hidden: true }
+    database: { values: [ '*/instancegroup' ], hidden: true } # to go to ydb.yaml
+  replacement:
+    !include ../include/errors.yaml
+
+graphDefaults:
+  datasource: 'Solomon Cloud'
+  width: 8
+  height: 6
+queryDefaults: { dropNan: true, labels: 'project=instance-group, cluster=${cluster}, host=*-*-${backend_application}*' }
+
+rows:
+
+  - title: IG - Gateway
+    queryDefaults: { dropNan: true, labels: 'project=platform, cluster=cloud_${cluster}_api-gateway, service=api_gateway_ma, grpc_type=*, grpc_service=yandex.cloud.compute.v1.instancegroup.*, system=*, host!=cluster' }
+    graphDefaults: { width: 8 }
+    panels:
+
+      - type: graph
+        title: 'IG Gateway RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=grpc_server_request_total, grpc_method!=all' }
+
+      - type: graph
+        title: 'IG Gateway 5xx Errors (incl. 503)'
+        templates: { name: errors, sumLines: true }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_server_response_total, grpc_code=@c5xx503, grpc_method!=all' }
+        draw: [ { alias: '5xx (incl. 503)' } ]
+
+      - type: graph
+        title: 'IG Gateway Response Duration'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'host=cluster, name=grpc_server_response_duration_seconds, bin=*' }
+
+  !include ../l7/include/l7-dashboard-row-template.yaml 'L7 balancer' '$backend_group' 'cloud_${cluster}_cpl' rps rps
+
+  - title: IG - Server
+    queryDefaults: { labels: 'service=backend' }
+    graphDefaults: { width: 5 }
+    panels:
+
+      - type: graph
+        title: 'IG API RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=grpc_requests, app=instance-groups_server, method=!microcosm.instancegroup.v1.autoscaling*, meter_type=count' }
+
+      - type: graph
+        title: 'IG API Non-OK Responses'
+        queries:
+          - params: { labels: 'name=grpc_statuses, app=instance-groups_server, method=!microcosm.instancegroup.v1.autoscaling*, status!=OK' }
+            groupByTime: { max: 'default' }
+            select: { nn_deriv: [ ], group_by_labels: [ 'sum', 'status' ], alias: '{{status}}' }
+        display: { decimals: 2, empty: false }
+        yAxes: [ { decimals: 1, format: short, min: 0 } ]
+
+      - type: graph
+        title: 'IG Durations'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'host=cluster, name=grpc_durations, app=instance-groups_server, method=!microcosm.instancegroup.v1.autoscaling*' }
+
+      - type: singlestat
+        title: 'Failed Tasks (from DB)'
+        value: { valueFontSize: 200%, valueFunction: current }
+        params: { width: 3 }
+        coloring:
+          colorValue: true
+          thresholds: [ 1, 10 ]
+          colorsList: [ green, red, maroon ]
+        query:
+          params: { labels: 'name=tasks_task_failed' }
+          select: { group_lines: [ 'max' ], alias: 'failed task count' }
+
+      - type: singlestat
+        title: 'Stuck Tasks (from DB)'
+        value: { valueFontSize: 200%, valueFunction: current }
+        params: { width: 3 }
+        coloring:
+          colorValue: true
+          thresholds: [ 1, 10 ]
+          colorsList: [ green, red, maroon ]
+        query:
+          params: { labels: 'name=tasks_task_stuck' }
+          select: { group_lines: [ 'max' ], alias: 'stuck task count' }
+
+      - type: singlestat
+        title: 'Long-Running Ops (from DB)'
+        value: { valueFontSize: 200%, valueFunction: current }
+        params: { width: 3 }
+        coloring:
+          colorValue: true
+          thresholds: [ 1, 10 ]
+          colorsList: [ green, red, maroon ]
+        query:
+          params: { labels: 'name=operations_op_last_long' }
+          select: { group_lines: [ 'max' ], alias: 'long running operation count' }
+
+      - type: graph
+        title: 'IG Log Levels (WARN+)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=log4j2_appender_total, level=warn|error|fatal' }
+            groupByTime: { max: 'default' }
+            select: { diff: [ ], drop_below: '0', group_by_labels: [ 'sum', 'level' ] }
+        display: { decimals: 0 }
+        yAxes: [ { decimals: 0, format: short, min: 0 } ]
+
+      - type: graph
+        title: 'GRPC Thread Pool: Task Count'
+        queries:
+          - params: { labels: 'name=instance_groups_running, type=running' }
+            groupByTime: { max: default }
+            select: { group_lines: 'sum', alias: 'running now count' }
+          - params: { labels: 'name=instance_groups_task, meter_type=count, type=*' }
+            groupByTime: { max: default }
+            select: { non_negative_derivative: [ ], group_by_labels: [ 'sum', 'type' ], alias: '{{type}} RPS' }
+        yAxes: [ { decimals: 0, format: short, min: 0 }, { decimals: 1, format: short, min: 0 } ]
+        draw: [ { alias: '/.* RPS/', at: right } ]
+
+      - type: graph
+        title: 'GRPC Thread Pool: Task Duration'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=instance_groups_timings, type=duration' }
+
+      - type: graph
+        title: 'GRPC Thread Pool: Idle Time'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=instance_groups_timings, type=idle' }
+
+  - title: 'Task Processor - ${taskprocessor_pool} Pool'
+    queryDefaults: { labels: 'service=backend' }
+    uiRepeat: 'taskprocessor_pool'
+    panels:
+
+      - type: graph
+        title: 'Task RPS'
+        templates: { name: rps, sumLines: false }
+        queries:
+          - params: { labels: 'name=taskprocessor_task_duration_count, pool=${taskprocessor_pool}' }
+        display: { empty: false }
+
+      - type: graph
+        title: 'Special Task States'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=taskprocessor_task_failed|taskprocessor_task_resurrected|taskprocessor_task_interrupted, meter_type=count, pool=${taskprocessor_pool}' }
+            groupByTime: { max: 'default' }
+            select: { nn_deriv: [ ], group_by_labels: [ 'sum', 'name' ] }
+
+      - type: graph
+        title: 'Task Start Delay'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=taskprocessor_task_delay, pool=${taskprocessor_pool}' }
+
+      - type: graph
+        title: 'Task Duration'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=taskprocessor_task_duration, pool=${taskprocessor_pool}' }
+
+  - title: 'JVM and System'
+    queryDefaults: { labels: 'service=backend' }
+    graphDefaults: { width: 8 }
+    panels:
+      - type: graph
+        title: '@{jvm_memory_area:title} Memory'
+        repeat: jvm_memory_area
+        queries:
+          - params: { labels: 'name=jvm_memory_bytes_used|jvm_memory_bytes_committed, area=@{jvm_memory_area}' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: [ 'avg', 'name' ] }
+        yAxes: [ { format: bytes } ]
+      - type: graph
+        title: 'Sys VM & RSS'
+        queries:
+          - params: { labels: 'name=process_virtual_memory_bytes|process_resident_memory_bytes' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: [ 'avg', 'name' ] }
+      - type: graph
+        title: 'File Descriptors'
+        queries:
+          - params: { labels: 'name=process_open_fds' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: [ 'max', 'name' ], alias: 'max FDs' }
+      - type: graph
+        title: 'Threads'
+        queries:
+          - params: { labels: 'name=jvm_threads_state, state=*' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: [ 'avg', 'state' ] }
+        display: { empty: false }
+      - type: graph
+        title: '% Cores'
+        queries:
+          - params: { labels: 'name=process_cpu_seconds_total' }
+            groupByTime: { max: default }
+            select: { non_negative_derivative: [ ] }
+        display: { empty: false }
+        yAxes: [ { format: percentunit, decimals: 0 } ]
+
+      - type: graph
+        title: 'la1'
+        description: 'Load Average – скользящее среднее System Load за 1m: https://en.wikipedia.org/wiki/Load_(computing)'
+        queries:
+          - params: { labels: 'service=node-exporter_ma, name=node_load1|system_n_cpus' }
+            select: { alias: '{{host}}' }
+        display: { empty: false }
+        yAxes: [ { format: short, min: 0 } ]
+
+      - type: graph
+        title: 'la15'
+        description: 'Load Average – скользящее среднее System Load за 15m: https://en.wikipedia.org/wiki/Load_(computing)'
+        queries:
+          - params: { labels: 'service=node-exporter_ma, name=node_load15|system_n_cpus' }
+            select: { alias: '{{host}}' }
+        display: { empty: false }
+        yAxes: [ { format: short, min: 0 } ]
+
+      - type: graph
+        title: 'cpu'
+        queries:
+          - params: { labels: 'service=node-exporter_ma, name=node_cpu_seconds_total, mode=*' }
+            select: { non_negative_derivative: [ ], moving_avg: [ 30s ], alias: '{{host}} {{mode}}' }
+        display: { legend: false, fill: 0 }
+        yAxes: [ { format: percentunit, decimals: 1 } ]
+      - type: graph
+        title: 'CPU'
+        templates:
+          - { name: patchSelect, before: last, add: { moving_avg: [ 30s ] } }
+        display: { legend: false, fill: 0 }
+        yAxes: [ { format: percentunit, decimals: 1 } ]
+        queryDefaults:
+          labels: 'service=node-exporter_ma, name=node_cpu_seconds_total, cpu=*'
+        queries:
+          - params: { labels: 'mode=user' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, host ], percentile_group_lines: "50", alias: user p50 }
+          - params: { labels: 'mode=user' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, host ],  percentile_group_lines: "99", alias: user p99 }
+          - params: { labels: 'mode=system' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, host ], percentile_group_lines: "50", alias: system p50 }
+          - params: { labels: 'mode=system' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, host ], percentile_group_lines: "99", alias: system p99 }
+          - params: { labels: 'mode=iowait' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, host ],  percentile_group_lines: "50", alias: iowait p50 }
+          - params: { labels: 'mode=iowait' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, host ],  percentile_group_lines: "99", alias: iowait p99 }
+          - params: { labels: 'mode=steal' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, host ],  percentile_group_lines: "50", alias: steal p50 }
+          - params: { labels: 'mode=steal' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, host ],  percentile_group_lines: "99", alias: steal p99 }
+      - type: graph
+        title: 'Memory'
+        display: { legend: false, fill: 0 }
+        yAxes: [ { format: decbytes, decimals: 1 } ]
+        queryDefaults:
+          labels: 'service=node-exporter_ma'
+        queries:
+          - params: { labels: 'name=node_memory_AnonPages_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "50", alias: AnonPages_bytes p50 }
+          - params: { labels: 'name=node_memory_AnonPages_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "99", alias: AnonPages_bytes p99 }
+          - params: { labels: 'name=node_memory_Cached_bytes|node_memory_Buffers_bytes|node_memory_Writeback_bytes|node_memory_Dirty_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "50", alias: Cached+Buffers+Writeback+Dirty_bytes p50 }
+          - params: { labels: 'name=node_memory_Cached_bytes|node_memory_Buffers_bytes|node_memory_Writeback_bytes|node_memory_Dirty_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "99", alias: Cached+Buffers+Writeback+Dirty_bytes p99 }
+          - params: { labels: 'name=node_memory_Slab_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "50", alias: Slab_bytes p50 }
+          - params: { labels: 'name=node_memory_Slab_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "99", alias: Slab_bytes p99 }
+          - params: { labels: 'name=node_memory_SUnreclaim_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "50", alias: SUnreclaim_bytes p50 }
+          - params: { labels: 'name=node_memory_SUnreclaim_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "99", alias: SUnreclaim_bytes p99 }
+      - type: graph
+        title: 'IO'
+        templates:
+          - { name: patchSelect, before: last, add: { moving_avg: [ 1m ] } }
+        display: { legend: false, fill: 0 }
+        yAxes: [ { format: s, decimals: 1 } ]
+        queryDefaults:
+          labels: 'service=node-exporter_ma,device=*'
+        queries:
+          - params: { labels: 'name=node_disk_read_time_seconds_total' }
+            groupByTime: { max: 'default' }
+            select: { diff: [ ], drop_below: "0", group_by_labels: [ sum, host ], percentile_group_lines: "50", alias: disk_read_time_seconds p50 }
+          - params: { labels: 'name=node_disk_read_time_seconds_total' }
+            groupByTime: { max: 'default' }
+            select: { diff: [ ], drop_below: "0", group_by_labels: [ sum, host ], percentile_group_lines: "99", alias: disk_read_time_seconds p99 }
+          - params: { labels: 'name=node_disk_write_time_seconds_total' }
+            groupByTime: { max: 'default' }
+            select: { diff: [ ], drop_below: "0", group_by_labels: [ sum, host ], percentile_group_lines: "50", alias: disk_write_time_seconds p50 }
+          - params: { labels: 'name=node_disk_write_time_seconds_total' }
+            groupByTime: { max: 'default' }
+            select: { diff: [ ], drop_below: "0", group_by_labels: [ sum, host ], percentile_group_lines: "99", alias: disk_write_time_seconds p99 }
+
+  - title: 'GC'
+    queryDefaults: { labels: 'service=backend, gc=G1 Young Generation' } # 'gc=*' can be more generic
+    collapsed: true
+    panels:
+      - type: graph
+        title: 'Total Counts'
+        queries:
+          - params: { labels: 'name=jvm_gc_collection_seconds_count' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [] }
+        display: { empty: false }
+      - type: graph
+        title: 'Total Durations'
+        queries:
+          - params: { labels: 'name=jvm_gc_collection_seconds_sum' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [] }
+        display: { empty: false }
+      - type: graph
+        title: 'Average Durations'
+        queries:
+          - expr: "replace_nan(
+                   non_negative_derivative(group_by_time(1m, 'max', {@labels, name='jvm_gc_collection_seconds_sum'}))
+                   / non_negative_derivative(group_by_time(1m, 'max', {@labels, name='jvm_gc_collection_seconds_count'}))
+                   , 0)"
+        display: { empty: false }
+
+  - title: YDB GRPC Client
+    queryDefaults: { labels: 'service=backend, app=kikimr_client, method=*' }
+    graphDefaults: { width: 8 }
+    panels:
+
+      - type: graph
+        title: 'KiKiMR Client Call RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=grpc_requests, meter_type=count' }
+
+      - type: graph
+        title: 'KiKiMR Client Errors (by type)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, status!=OK' }
+            groupByTime: { max: 'default' }
+            select: { diff: [ ], drop_below: '0', group_by_labels: [ 'sum', 'status' ], alias: '{{status}}' }
+        display: { decimals: 0, empty: false }
+
+      - type: graph
+        title: 'KiKiMR Client Call Durations'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=grpc_durations' }
+
+  - title: YDB Sessions
+    queryDefaults: { labels: 'service=backend, name=ydb_session_manager_pool_stats' }
+    graphDefaults: { width: 8 }
+    panels:
+      - type: graph
+        title: 'Acquired'
+        queries:
+          - params: { labels: 'type=acquired_count' }
+            groupByTime: { max: default }
+            select: { }
+
+      - type: graph
+        title: 'Idle'
+        queries:
+          - params: { labels: 'type=idle_count' }
+            groupByTime: { max: default }
+            select: { }
+
+      - type: graph
+        title: 'All hosts'
+        display: { stack: true }
+        queries:
+          - params: { labels: 'type=acquired_count|idle_count|disconnected_count|pending_acquire_count' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ 'sum', 'type' ] }
+
+  - title: YDB Tx
+    queryDefaults: { labels: 'service=backend' }
+    panels:
+
+      - type: graph
+        title: 'Tx Attempt Count'
+        templates: { name: percentile, groupLines: true, levels: [ "90", "99", "99.9", "100" ], format: solomon }
+        yAxes: [ { decimals: 1, format: short, min: 0 } ]
+        queries:
+          - params: { labels: 'tx_name=*, name=tx_attempts' }
+
+      - type: graph
+        repeat: tx_duration_sensor
+        title: '@{tx_duration_sensor:title}'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'tx_name=*, name=@{tx_duration_sensor}' }
+
+      - type: graph
+        title: 'Tx Result RPS'
+        queries:
+          - params: { labels: 'tx_name=*, name=tx_result, result=*' }
+            groupByTime: { max: default }
+            select: { nn_deriv: [ ], group_by_labels: [ 'sum', 'result' ], alias: '{{result}}' }
+
+      - type: graph
+        title: 'Tx Retry RPS (by reason)'
+        queries:
+          - params: { labels: 'tx_name=*, name=tx_retries, reason=*' }
+            groupByTime: { max: default }
+            select: { nn_deriv: [ ], group_by_labels: [ 'sum', 'reason' ], alias: '{{reason}}' }
+        display: { empty: false }
+
+      - type: graph
+        title: 'Tx Retry RPS (by tx)'
+        queries:
+          - params: { labels: 'name=tx_retries, reason=*' }
+            groupByTime: { max: default }
+            select: { nn_deriv: [ ], group_by_labels: [ 'sum', 'tx_name' ], alias: '{{tx_name}}' }
+        display: { empty: false }
+
+  - title: Solomon sensors pusher
+    queryDefaults: { labels: 'service=backend' }
+    panels:
+
+      - type: graph
+        title: 'Solomon client RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=user_solomon_pusher_requests' }
+
+      - type: graph
+        title: 'Solomon client errors RPS'
+        templates: { name: errors }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=user_solomon_pusher_errors' }
+        draw: [ { alias: '5xx', color: '#b20' } ]
+
+      - type: graph
+        title: 'Solomon pusher rejected sensors RPS'
+        templates: { name: errors }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=user_solomon_pusher_rejects' }
+        draw: [ { alias: '5xx', color: '#b20' } ]
+
+      - type: graph
+        title: 'Solomon pusher, not pushed after retries RPS'
+        templates: { name: errors }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=user_solomon_pusher_not_pushed' }
+        draw: [ { alias: '5xx', color: '#b20' } ]
+
+      - type: graph
+        title: 'Queue size'
+        queries:
+          - params: { labels: 'name=user_solomon_pusher_queue_size' }
+        display: { empty: false }
+
+      - type: graph
+        title: 'Solomon client Durations'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=user_solomon_pusher_durations' }
+
+  - title: Autoscaling
+    panels:
+      - type: graph
+        title: 'Autoscaling loop time (max)'
+        queries:
+          - params: { labels: 'project="instance-group", cluster="${cluster}", service="backend", name="autoscaling_loop_time""' }
+            select: { group_lines: [ 'max' ], alias: 'Autoscaling Loop Execution Time' }
+        yAxes: [ { format: ms } ]
+        display: { empty: false }
+
+      - type: graph
+        title: 'Autoscaling tx time'
+        templates: { name: percentile, groupLines: true, format: le}
+        queryDefaults: { defaultTimeWindow: 1m }
+        queries:
+          - params: { labels: 'project="instance-group", cluster="${cluster}", service="backend", name="autoscaling_batch_tx_time"' }
+
+  # GRPC Clients (IG dependencies)
+  - title: '${client_app} Client'
+    uiRepeat: client_app
+    queryDefaults: { labels: 'service=backend, app=${client_app}_client, method=*' }
+    graphDefaults: { width: 8 }
+    panels:
+
+      - type: graph
+        title: '${client_app} Client Call RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=grpc_requests, meter_type=count' }
+
+      - type: graph
+        title: '${client_app} Client Errors (by type)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, status!=OK' }
+            groupByTime: { max: 'default' }
+            select: { diff: [ ], drop_below: '0', group_by_labels: [ 'sum', 'status' ], alias: '{{status}}' }
+        display: { decimals: 0, empty: false }
+
+      - type: graph
+        title: '${client_app} Client Call Durations'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=grpc_durations' }
+  - title: 'Logbroker Client'
+    queryDefaults: { labels: 'service=backend' }
+    graphDefaults: { width: 8 }
+    panels:
+      - type: graph
+        title: 'Messages'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=search_event_send_messages_count' }
+      - type: graph
+        title: 'Results'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=search_event_send_results' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: '0', group_by_labels: ['sum', 'result'], alias: '{{result}}' }
+        display: { decimals: 0, empty: false }
+      - type: graph
+        title: 'Durations'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=search_event_send_duration_seconds' }

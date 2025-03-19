@@ -1,0 +1,24 @@
+info: Update Elasticsearch TLS Certificates
+repeatable: true
+env_order_disabled: true
+clusters_selection:
+    db: >-
+        SELECT c.cid FROM dbaas.clusters c
+          JOIN dbaas.subclusters USING (cid)
+          JOIN dbaas.hosts h USING (subcid)
+          JOIN dbaas.pillar p ON (h.fqdn = p.fqdn)
+        WHERE dbaas.string_to_iso_timestamptz(p.value ->> 'cert.expiration') < now() + INTERVAL '60 days'
+          AND p.fqdn IS NOT NULL
+          AND dbaas.visible_cluster_status(c.status)
+          AND c.type = 'elasticsearch_cluster'
+        GROUP BY c.cid
+pillar_change: SELECT 1
+worker:
+    operation_type: elasticsearch_cluster_modify
+    task_type: elasticsearch_cluster_maintenance
+    task_args:
+        update_tls: true
+        force_tls_certs: true
+    timeout: 4h
+max_delay_days: 21
+min_days: 7

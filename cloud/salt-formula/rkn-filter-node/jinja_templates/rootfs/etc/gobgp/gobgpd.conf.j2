@@ -1,0 +1,81 @@
+{% set location = grains["cluster_map"]["hosts"][grains['nodename']]["zone_id"] %}
+{% set generic_rfn_config = pillar["generic_rfn_config"] %}
+{% set rfn_fv_peering_loopback_ipv4_address = pillar["specific_rfn_config"][grains['nodename']]["rfn_fv_peering_loopback_ipv4_address"]%}
+global: 
+  config:
+      router-id: {{ rfn_fv_peering_loopback_ipv4_address }}
+      as: 13238
+      local-address-list: 
+        - {{ ipv4_upstream_address }}
+  apply-policy:
+      config:
+          import-policy-list:
+            - api-in
+          default-import-policy: reject-route
+          export-policy-list:
+            - tor-out
+          default-export-policy: reject-route
+defined-sets:
+  neighbor-sets:
+    - neighbor-set-name: tor
+      neighbor-info-list:
+        - 10.255.254.1
+  bgp-defined-sets:
+      community-sets:
+        - community-set-name: community-api-import
+          community-list:
+            - 65535:65282
+policy-definitions:
+- name: api-in
+  statements:
+    - conditions:
+          bgp-conditions:
+              as-path-length:
+                  operator: eq
+                  value: 0
+              match-community-set:
+                  community-set: community-api-import
+      actions:
+          bgp-actions:
+              set-community:
+                  options: remove
+                  set-community-method:
+                      communities-list:
+                        - 65535:65282
+          route-disposition: accept-route
+- name: tor-out
+  statements:
+    - conditions:
+          match-neighbor-set:
+              neighbor-set: tor
+      actions:
+          bgp-actions:
+              set-med: 1000
+              set-next-hop: self
+              set-community:
+                  options: ADD
+                  set-community-method:
+                      communities-list:
+                        - 13238:35999 ## cloud community
+                        - {{ pillar["generic_netinfra_config"]["geo_bgp_communities"][location] }}
+                        - {{ generic_rfn_config["transport_bgp_commuity"] }}
+          route-disposition: accept-route
+peer-groups:
+- config:
+      peer-group-name: tor
+      peer-as: {{ pillar["generic_netinfra_config"]["tor_bgp_asn"] }}
+      local-as: {{ generic_rfn_config["local_bgp_asn"] }}
+  as-path-options:
+      config:
+          allow-own-as: 5
+  ebgp-multihop:
+      config:
+        enabled: True
+        multihop-ttl: 64
+  afi-safis:
+    - config:
+          afi-safi-name: ipv4-labelled-unicast
+neighbors:
+- config:
+      neighbor-address: 10.255.254.1
+      peer-group: tor

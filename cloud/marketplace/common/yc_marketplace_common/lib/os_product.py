@@ -1,0 +1,540 @@
+import time
+from typing import List
+from typing import Optional
+from typing import Tuple
+from typing import Union  # noqa: F401
+
+from cloud.marketplace.common.yc_marketplace_common import lib
+from cloud.marketplace.common.yc_marketplace_common.db.models import categories_table
+from cloud.marketplace.common.yc_marketplace_common.db.models import marketplace_db
+from cloud.marketplace.common.yc_marketplace_common.db.models import ordering_table
+from cloud.marketplace.common.yc_marketplace_common.db.models import os_product_families_table
+from cloud.marketplace.common.yc_marketplace_common.db.models import os_product_family_versions_table
+from cloud.marketplace.common.yc_marketplace_common.db.models import os_products_table
+from cloud.marketplace.common.yc_marketplace_common.lib import Avatar
+from cloud.marketplace.common.yc_marketplace_common.lib import Eula
+from cloud.marketplace.common.yc_marketplace_common.lib.i18n import I18n
+from cloud.marketplace.common.yc_marketplace_common.models.category import Category
+from cloud.marketplace.common.yc_marketplace_common.models.os_product import OsProduct as OsProductScheme
+from cloud.marketplace.common.yc_marketplace_common.models.os_product import OsProductCreateRequest
+from cloud.marketplace.common.yc_marketplace_common.models.os_product import OsProductList
+from cloud.marketplace.common.yc_marketplace_common.models.os_product import OsProductMetadata
+from cloud.marketplace.common.yc_marketplace_common.models.os_product import OsProductOperation
+from cloud.marketplace.common.yc_marketplace_common.models.os_product import OsProductResponse
+from cloud.marketplace.common.yc_marketplace_common.models.os_product import OsProductUpdateRequest
+from cloud.marketplace.common.yc_marketplace_common.models.os_product_family import \
+    OsProductFamily as OsProductFamilyScheme
+from cloud.marketplace.common.yc_marketplace_common.models.os_product_family_version import \
+    OsProductFamilyVersion as OsProductFamilyVersionScheme  # noqa
+from cloud.marketplace.common.yc_marketplace_common.models.product_type import ProductType
+from cloud.marketplace.common.yc_marketplace_common.models.task import OsProductCreateOrUpdateParams
+from cloud.marketplace.common.yc_marketplace_common.utils.errors import OsProductIdError
+from cloud.marketplace.common.yc_marketplace_common.utils.filter import parse_filter_with_category
+from cloud.marketplace.common.yc_marketplace_common.utils.filter import parse_order_by
+from cloud.marketplace.common.yc_marketplace_common.utils.ids import generate_id
+from cloud.marketplace.common.yc_marketplace_common.utils.paging import page_query_args_with_complex_cursor
+from cloud.marketplace.common.yc_marketplace_common.utils.transactions import mkt_transaction
+from yc_common import config
+from yc_common import logging
+from yc_common.clients.kikimr import ColumnStrippingStrategy
+from yc_common.clients.kikimr import TransactionMode
+from yc_common.clients.kikimr.sql import SqlIn
+from yc_common.clients.marketplace_private import CheckUsagePermissionsResponse
+from yc_common.misc import drop_none
+from yc_common.misc import timestamp
+from yc_common.paging import page_handler
+from yc_common.validation import ResourceIdType
+
+log = logging.get_logger('yc_marketplace')
+
+_V_Status = OsProductFamilyVersionScheme.Status
+
+
+def get_default_category() -> str:
+    return config.get_value("marketplace.default_os_product_category",
+                            default="xxx00000000000000000")
+
+
+def with_default(ids: List[str] = None) -> List[str]:
+    default_category = get_default_category()
+    if ids is None:
+        ids = []
+    if default_category not in ids:
+        return [default_category] + ids
+    return ids
+
+
+class _OsProduct:
+    @staticmethod
+    @mkt_transaction()
+    def get(product_id: ResourceIdType, *, tx) -> OsProductScheme:
+        product = tx.with_table_scope(os_products_table).select_one(
+            "SELECT " + OsProductScheme.db_fields() + " " +
+            "FROM $table "
+            "WHERE id = ?", product_id,
+            model=OsProductScheme)
+
+        return product
+
+    @staticmethod
+    @mkt_transaction()
+    def rpc_get(product_id: ResourceIdType, *, tx) -> OsProductScheme:
+        product = OsProduct.get(product_id, tx=tx)
+
+        if product is None:
+            raise OsProductIdError()
+
+        return product
+
+    @staticmethod
+    @mkt_transaction()
+    def rpc_check_usage_permissions(endpoint, cloud_id, product_ids, *, tx):
+        all_free = lib.OsProductFamilyVersion.rpc_check_all_free(product_ids, tx=tx)
+
+        permission = True
+        if not all_free:
+            permission = lib.Billing.check_usage_permissions(endpoint, cloud_id)
+
+        return CheckUsagePermissionsResponse({"permission": permission}).to_api(False)
+
+    @staticmethod
+    @mkt_transaction()
+    def on_change_family(product_id, current, other_active, *, tx):
+        product = OsProduct.get(product_id)
+        if other_active is not None:
+            if product.primary_family_id == current.id and current.status != OsProductFamilyScheme.Status.ACTIVE:
+                tx.with_table_scope(os_products_table) \
+                    .update_object("UPDATE $table $set WHERE id = ?",
+                                   {
+                                       "status": OsProductScheme.Status.ACTIVE,
+                                       "primary_family_id": other_active.id,
+                                       "updated_at": timestamp(),
+                                   }, product_id)
+            return
+
+        if current.status == OsProductFamilyScheme.Status.ACTIVE:
+            tx.with_table_scope(os_products_table) \
+                .update_object("UPDATE $table $set WHERE id = ?",
+                               {
+                                   "status": OsProductScheme.Status.ACTIVE,
+                                   "primary_family_id": current.id,
+                                   "updated_at": timestamp(),
+                               }, product_id)
+        else:
+            tx.with_table_scope(os_products_table) \
+                .update_object("UPDATE $table $set WHERE id = ?",
+                               {
+                                   "status": OsProductScheme.Status.from_family(current),
+                                   "updated_at": timestamp(),
+                               }, product_id)
+
+
+class OsProduct(_OsProduct):
+    @staticmethod
+    @mkt_transaction()
+    def rpc_get_full(slug: Union[ResourceIdType, str], *, tx) -> OsProductResponse:
+        product_id = lib.ProductSlug.get_product(slug, tx=tx)
+
+        if product_id is None:
+            product_id = slug  # for backward compatibility
+
+        product = marketplace_db().with_table_scope(products=os_products_table,
+                                                    order=ordering_table,
+                                                    categories=categories_table).select_one(
+            "SELECT o.category_ids, p.* "
+            "FROM $products_table as p "
+            "LEFT JOIN (SELECT List(ord.category_id) as category_ids, ord.resource_id as os_product_id "
+            "FROM $order_table AS ord "
+            "JOIN $categories_table as c "
+            "ON c.id = ord.category_id "
+            "WHERE c.type == ? "
+            "GROUP BY ord.resource_id) as o "
+            "ON o.os_product_id = p.id "
+            "WHERE id = ?", Category.Type.PUBLIC, product_id,
+            model=OsProductResponse,
+            ignore_unknown=True,
+            strip_table_from_columns=ColumnStrippingStrategy.STRIP_AND_MERGE)
+
+        if product is None:
+            raise OsProductIdError()
+
+        product.slugs = lib.ProductSlug.get_product_slugs(product_id)
+        product.os_product_families = lib.OsProductFamily.get_by_product_id(product_id)
+        # clean up redundant ids
+        product.os_product_family_ids = None
+        return product
+
+    @staticmethod
+    @page_handler(items="os_products")
+    @mkt_transaction(tx_mode=TransactionMode.ONLINE_READ_ONLY_CONSISTENT)
+    def rpc_public_list(cursor: Optional[str],
+                        limit: Optional[int] = 100,
+                        *,
+                        tx,
+                        order_by: Optional[str] = None,
+                        filter_query: Optional[str] = None) -> OsProductList:
+        start_method_time = time.monotonic()
+        where_query, where_args = OsProduct._prepare_list_sql_conditions(cursor, filter_query, limit, order_by)
+
+        start_query_time = time.monotonic()
+
+        iterator = tx.with_table_scope(
+            product=os_products_table,
+            ordering=ordering_table,
+            category=categories_table,
+        ).select(
+            """
+            SELECT product.*, sub.category_ids, ordering.`order`
+            FROM $product_table as product
+            JOIN $ordering_table as ordering ON ordering.resource_id = product.id
+            LEFT JOIN (
+              SELECT List(sub_ordering.category_id) as category_ids, sub_ordering.resource_id as product_id
+              FROM $ordering_table AS sub_ordering
+              JOIN $category_table as category ON category.id = sub_ordering.category_id
+              WHERE category.type == ?
+              GROUP BY sub_ordering.resource_id
+            ) as sub ON sub.product_id = product.id """ + where_query,
+            Category.Type.PUBLIC,
+            *where_args,
+            model=OsProductResponse,
+            ignore_unknown=True,
+            strip_table_from_columns=ColumnStrippingStrategy.STRIP_AND_MERGE,
+        )
+
+        log.debug("Query rpc_public_list_1 time: %s ms" % (time.monotonic() - start_query_time))
+
+        product_list = OsProduct._enrich_product_list(iterator, limit)
+
+        log.debug("Method rpc_public_list time: %s ms" % (time.monotonic() - start_method_time))
+
+        return product_list
+
+    @staticmethod
+    @page_handler(items="os_products")
+    def rpc_list(cursor: Optional[str],
+                 limit: Optional[int] = 100,
+                 *,
+                 billing_account_id: ResourceIdType,
+                 order_by: Optional[str] = None,
+                 filter_query: Optional[str] = None) -> OsProductList:
+        where_query, where_args = OsProduct._prepare_list_sql_conditions(cursor, filter_query, limit, order_by, False)
+
+        iterator = marketplace_db().with_table_scope(families=os_product_families_table,
+                                                     products=os_products_table,
+                                                     order=ordering_table,
+                                                     categories=categories_table).select(
+            "SELECT  i.os_product_family_ids, sub.category_ids, product.*, ordering.`order` "
+            "FROM (SELECT * FROM $products_table WHERE billing_account_id = ?) as product "
+            "LEFT JOIN ( "
+            "    SELECT List(id) as os_product_family_ids, os_product_id as os_product_id "
+            "    FROM $families_table "
+            "    WHERE billing_account_id = ? "
+            "    GROUP BY os_product_id "
+            ") as i ON product.id = i.os_product_id "
+            "JOIN $order_table as ordering ON ordering.resource_id = product.id "
+            "LEFT JOIN ( "
+            "    SELECT List(ord.category_id) as category_ids, ord.resource_id as os_product_id "
+            "    FROM $order_table AS ord "
+            "    JOIN $categories_table as c ON c.id = ord.category_id "
+            "    WHERE c.type == ? "
+            "    GROUP BY ord.resource_id "
+            ") as sub "
+            "ON sub.os_product_id = product.id " + where_query, billing_account_id, billing_account_id,
+            Category.Type.PUBLIC,
+            *where_args, model=OsProductResponse, ignore_unknown=True,
+            strip_table_from_columns=ColumnStrippingStrategy.STRIP_AND_MERGE)
+
+        product_list = OsProduct._enrich_product_list(iterator, limit)
+
+        return product_list
+
+    @staticmethod
+    @mkt_transaction()
+    def _enrich_product_list(iterator, limit, *, tx):
+        start_method_time = time.monotonic()
+
+        products = iterator
+        p_ids = [p.id for p in products]
+
+        slug_dict = lib.ProductSlug.get_products_slugs(p_ids, tx=tx)
+        family_dict = lib.OsProductFamily.rpc_get_by_product_ids(p_ids, tx=tx)
+        product_list = OsProductList({
+            "os_products": products,
+        })
+
+        if limit is not None and len(products) == limit:
+            product_list.next_page_token = products[-1].id
+
+        for p in product_list.os_products:
+            p.os_product_families = family_dict.get(p.id, [])
+            p.slugs = slug_dict.get(p.id, [])
+
+            p.os_product_family_ids = None
+        log.debug("Method _enrich_product_list time: %s ms" % (time.monotonic() - start_method_time))
+
+        return product_list
+
+    @staticmethod
+    def _prepare_list_sql_conditions(cursor: Optional[ResourceIdType],
+                                     filter_query: Optional[str],
+                                     limit: Optional[int],
+                                     order_by: Optional[str],
+                                     active=True) -> Tuple[str, list]:
+        cursor_product = {}  # type: Union[dict, OsProductResponse]
+        filter_query_list, filter_args, category_id = parse_filter_with_category(filter_query, OsProductScheme)
+        mapping = {
+            "order": "ordering.`order`",
+            "id": "product.id",
+            "createdAt": "product.created_at",
+            "updatedAt": "product.updated_at",
+            "name": "product.name",
+            "description": "product.description",
+            "shortDescription": "product.short_description",
+            "status": "product.status",
+            "billingAccountId": "product.billing_account_id",
+        }
+        order_by = parse_order_by(order_by, mapping, "order")
+        if category_id is None:
+            category_id = get_default_category()
+        if cursor:
+            product = marketplace_db().with_table_scope(products=os_products_table,
+                                                        order=ordering_table).select_one(
+                "SELECT o.`order`, p.* "
+                "FROM $products_table as p "
+                "JOIN $order_table as o "
+                "ON o.resource_id = p.id "
+                "WHERE p.id = ? AND o.category_id = ? ", cursor, category_id,
+                model=OsProductResponse, ignore_unknown=True,
+                strip_table_from_columns=ColumnStrippingStrategy.STRIP_AND_MERGE)
+
+            if product is None:
+                raise OsProductIdError()
+
+            cursor_product = product
+
+        filter_query_list += ["ordering.category_id = ?"]
+        filter_args += [category_id]
+
+        if active:
+            filter_query_list += ["product.status = ?"]
+            filter_args += ["active"]
+
+        if filter_query_list is not None:
+            filter_query = " AND ".join(filter_query_list)
+
+        where_query, where_args = page_query_args_with_complex_cursor(
+            cursor,
+            cursor_product,
+            limit,
+            mapping,
+            id="id",
+            filter_query=filter_query,
+            filter_args=filter_args,
+            order_by=order_by,
+        )
+        return where_query, where_args
+
+    @staticmethod
+    @mkt_transaction()
+    def rpc_create(request: OsProductCreateRequest, *, tx) -> OsProductOperation:
+        meta = request.meta
+        request.meta = {}
+        lib.Publisher.check_state(request.billing_account_id)
+        product = OsProductScheme.from_request(request)
+
+        if request.slug is not None:
+            lib.ProductSlug.add_slug(request.slug, product.id, product_type=ProductType.OS, tx=tx)
+
+        for key in meta:
+            product.meta[key] = I18n.set("os_product.{}.meta.{}".format(product.id, key), meta[key])
+
+        for field in {"name", "description", "short_description", "vendor"}:
+            if hasattr(product, field):
+                setattr(product, field, (getattr(product, field) or "").format(id=product.id))
+
+        publish_logo = None
+        publish_eula = None
+        task_group_id = generate_id()
+        if product.logo_id is not None:
+            Avatar.capture_image(product.logo_id, product.id, tx=tx)
+            publish_logo = Avatar.task_publish(
+                product.logo_id,
+                product.id,
+                config.get_value("endpoints.s3.products_bucket"),
+                group_id=task_group_id,
+                tx=tx,
+            )
+        if product.eula_id is not None:
+            Eula.link_agreement(product.eula_id, product.id, tx=tx)
+            publish_eula = Eula.task_publish(
+                product.eula_id,
+                product.id,
+                config.get_value("endpoints.s3.eulas_bucket"),
+                group_id=task_group_id,
+            )
+
+        with marketplace_db().transaction() as tx:
+            tx.with_table_scope(os_products_table).insert_object("INSERT INTO $table", product)
+            lib.Ordering.set_order(product.id, with_default(request.category_ids), tx=tx)
+
+        product_create_task_deps = []
+        if publish_logo:
+            product_create_task_deps += [publish_logo.id]
+        if publish_eula:
+            product_create_task_deps += [publish_eula.id]
+
+        return OsProduct.task_create(
+            task_group_id=task_group_id,
+            product_id=product.id,
+            depends=product_create_task_deps)
+
+    @staticmethod
+    @mkt_transaction()
+    def rpc_update(request: OsProductUpdateRequest, *, tx) -> OsProductOperation:
+        product = OsProduct.rpc_get_full(request.os_product_id)
+        lib.Publisher.check_state(product.billing_account_id)
+
+        product_update = drop_none({
+            "labels": request.labels,
+            "name": request.name,
+            "description": request.description,
+            "short_description": request.short_description,
+            "logo_id": request.logo_id,
+            "eula_id": request.eula_id,
+            "primary_family_id": request.primary_family_id,
+            "vendor": request.vendor,
+            "meta": request.meta,
+        })
+
+        if request.slug is not None:
+            lib.ProductSlug.add_slug(request.slug, product.id, product_type=ProductType.OS, tx=tx)
+
+        publish_logo = None
+        publish_eula = None
+        task_group_id = generate_id()
+        if product_update:
+            for field in {"name", "description", "short_description", "vendor"}:
+                if field in product_update:
+                    product_update[field] = product_update[field].format(id=product.id)
+
+            if "meta" in product_update:
+                for key in product_update["meta"]:
+                    product_update["meta"][key] = I18n.set("os_product.{}.meta.{}".format(product.id, key),
+                                                           product_update["meta"][key])
+            if "logo_id" in product_update:
+                if "logo_id" not in product or product["logo_id"] != product_update["logo_id"]:
+                    if product_update["logo_id"] != "":
+                        Avatar.capture_image(product_update["logo_id"], product.id, tx=tx)
+                        # Product here has old id, so we need to pass logo id from update
+                        publish_logo = Avatar.task_publish(
+                            product_update["logo_id"],
+                            product.id,
+                            config.get_value("endpoints.s3.products_bucket"),
+                            group_id=task_group_id,
+                            rewrite=True,
+                        )
+                    else:
+                        product_update["logo_uri"] = ""
+            if "eula_id" in product_update:
+                if "eula_id" not in product or product["eula_id"] != product_update["eula_id"]:
+                    if product_update["eula_id"] != "":
+                        Eula.link_agreement(product_update["eula_id"], product.id, tx=tx)
+                        # Product here has old id, so we need to pass eula id from update
+                        publish_eula = Eula.task_publish(
+                            product_update["eula_id"],
+                            product.id,
+                            config.get_value("endpoints.s3.eulas_bucket"),
+                            group_id=task_group_id,
+                        )
+                    else:
+                        product_update["eula_uri"] = ""
+            tx.with_table_scope(os_products_table).update_object("UPDATE $table $set WHERE id = ?",
+                                                                 product_update,
+                                                                 request.os_product_id)
+
+        if request.category_ids is not None:
+            category_ids = with_default(request.category_ids)
+            lib.Ordering.set_order(product.id, category_ids, tx=tx)
+
+        product_update_task_deps = []
+        if publish_logo:
+            product_update_task_deps += [publish_logo.id]
+        if publish_eula:
+            product_update_task_deps += [publish_eula.id]
+
+        product_update_task = OsProduct.task_update(
+            task_group_id=task_group_id,
+            product_id=product.id,
+            depends=product_update_task_deps)
+        return product_update_task
+
+    @staticmethod
+    @mkt_transaction()
+    def rpc_set_logo_uri(product_id: ResourceIdType, uri: str, *, tx):
+        product_update = {
+            "logo_uri": uri,
+        }
+        tx.with_table_scope(os_products_table) \
+            .update_object("UPDATE $table $set WHERE id = ?",
+                           product_update,
+                           product_id)
+
+    @staticmethod
+    @mkt_transaction()
+    def task_create(*, task_group_id, product_id, depends, tx):
+        return lib.TaskUtils.create(
+            operation_type="os_product_create",
+            group_id=task_group_id,
+            params=OsProductCreateOrUpdateParams({"id": product_id}).to_primitive(),
+            depends=depends,
+            metadata=OsProductMetadata({"os_product_id": product_id}).to_primitive(),
+            tx=tx,
+        )
+
+    @staticmethod
+    @mkt_transaction()
+    def task_update(*, task_group_id, product_id, depends, tx):
+        return lib.TaskUtils.create(
+            operation_type="os_product_update",
+            group_id=task_group_id,
+            params=OsProductCreateOrUpdateParams({"id": product_id}).to_primitive(),
+            depends=depends,
+            metadata=OsProductMetadata({"os_product_id": product_id}).to_primitive(),
+            tx=tx,
+        )
+
+    @staticmethod
+    @mkt_transaction()
+    def rpc_get_batch(version_ids, *, tx):
+        data = tx.with_table_scope(products=os_products_table,
+                                   families=os_product_families_table,
+                                   versions=os_product_family_versions_table, ) \
+            .select("""SELECT *
+    FROM (
+        SELECT *
+        FROM $versions_table
+        WHERE ? AND ?
+    ) as v
+    JOIN $families_table as f ON f.id= v.os_product_family_id
+    JOIN $products_table as p ON p.id= f.os_product_id""",
+                    SqlIn("status", _V_Status.PUBLIC),
+                    SqlIn("id", version_ids))
+        result = {}
+        for row in data:
+            version_data = extract_entity_fields(row, "v.")
+            version = OsProductFamilyVersionScheme.from_kikimr(version_data).to_public()
+
+            family_data = extract_entity_fields(row, "f.")
+            family = OsProductFamilyScheme.from_kikimr(family_data).to_public()
+            family.version = version
+
+            product_data = extract_entity_fields(row, "p.")
+            product = OsProductScheme.from_kikimr(product_data).to_public()
+            product.os_product_families = [family]
+            result[version.id] = product.to_api(True)
+
+        return result
+
+
+def extract_entity_fields(row, prefix):
+    return {k[len(prefix):]: v for k, v in row.items() if k.startswith(prefix)}

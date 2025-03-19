@@ -1,0 +1,99 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.cdn.v1.console;
+
+import "google/protobuf/timestamp.proto";
+
+import "yandex/cloud/priv/validation.proto";
+import "yandex/cloud/priv/cdn/v1/console/resource_metrics.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/cdn/v1/console;cdn_console";
+
+//
+// ResourceMetricsService.
+//
+// Service for retrieving users metrics, e.g. edges incoming/outgoing traffic.
+//  
+service ResourceMetricsService {
+  // Get resource metrics.
+  rpc Get(GetResourceMetricsRequest) returns (ResourceMetricsResponse);
+
+  // List all folder's resources metrics.
+  rpc List(ListResourcesMetricsRequest) returns(ListResourcesMetricsResponse);
+
+  // GetFolderStats returns general folders stats.
+  rpc GetFolderStats(GetFolderStatsRequest) returns(GetFolderStatsResponse);
+}
+
+message ResourceMetricsParameter {
+  enum PredefinedPeriods {
+    PREDEFINED_PERIODS_UNSPECIFIED = 0;
+
+    PREDEFINED_PERIODS_DAY = 1;
+    PREDEFINED_PERIODS_WEEK = 2;
+    PREDEFINED_PERIODS_MONTH = 3;
+
+    PREDEFINED_PERIODS_ALL = 4;
+  }
+
+  message CustomPeriod {
+    google.protobuf.Timestamp start = 1;
+    google.protobuf.Timestamp finish = 2;
+  }
+
+  message RequestPeriod {
+    oneof period_variant {
+      CustomPeriod custom_period = 1;
+      PredefinedPeriods default_period = 2;
+    }
+  }
+
+  RequestPeriod period = 2;
+}
+
+message GetResourceMetricsRequest {
+  ResourceMetricsParameter parameters = 1;
+
+  string resource_id = 2 [(required) = true, (length) = "<=50"];
+}
+
+message ListResourcesMetricsRequest {
+  ResourceMetricsParameter parameters = 1;
+
+  string folder_id = 2 [(required) = true, (length) = "<=50"];
+}
+
+//
+// ResourceMetricsResponse
+//
+message ResourceMetricsResponse {
+  message Aggregates {
+    // Should be set at least one group.
+    ResourceMetricsAggregate interval = 1;
+
+    ResourceMetricsAggregate day = 2;
+    ResourceMetricsAggregate week = 3;
+    ResourceMetricsAggregate month = 4;
+  }
+
+  string folder_id = 1;
+  string resource_id = 2;
+
+  Aggregates aggregates = 3;
+}
+
+message ListResourcesMetricsResponse {
+  repeated ResourceMetricsResponse metrics = 1;
+}
+
+message GetFolderStatsRequest {
+  string folder_id = 1 [(required) = true, (length) = "<=50"];
+}
+
+message GetFolderStatsResponse {
+  string folder_id = 1 [(required) = true, (length) = "<=50"];
+
+  int64 resources_count = 2;
+
+  ResourceMetricsAggregate month_aggregates = 3;
+}

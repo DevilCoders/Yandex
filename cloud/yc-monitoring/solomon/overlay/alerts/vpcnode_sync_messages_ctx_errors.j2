@@ -1,0 +1,26 @@
+{% extends "../../base/alert.j2" %}
+{% macro prog() %}
+    let cnt = sum(group_lines('sum', diff({cluster='cloud_{{ env }}_compute', service="vpc-node", sensor="message_sync_ctx_error_count"})));
+    ok_if(cnt == 0);
+
+    let is_red = cnt > {{ alarm_limit }};
+    let is_yellow = cnt > {{ warn_limit }};
+    let trafficColor = is_red ? 'red' : (is_yellow ? 'yellow' : 'green');
+    let description = 'Context errors from sync messages: ' + cnt;
+    alarm_if(is_red);
+    warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+    "name": "vpc-node context errors from sync messages @ {{ env }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "tags": "Solomon",
+        "host": "{{ compute_node_fqdn() }}",
+        "service": "vpc-node-sync-messages-context-error",
+        "trafficLight.color": "[[expression.trafficColor]]",
+        "details": "[[expression.description]]"
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

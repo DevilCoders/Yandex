@@ -1,0 +1,213 @@
+apiVersion: v1
+kind: PodList
+items:
+  - apiVersion: v1
+    kind: Pod
+    metadata:
+      name: app-translation
+      namespace: kube-system
+      annotations:
+        config_digest: ${config_digest}
+        scheduler.alpha.kubernetes.io/critical-pod: ""
+    spec:
+      priority: 2000000001
+      priorityClassName: system-cluster-critical
+      hostNetwork: true
+      initContainers:
+        - name: deploy-configs
+          image: registry.yandex.net/cloud/api/metadata:${metadata_version}
+          volumeMounts:
+            - name: all-configs
+              mountPath: /etc
+              terminationGracePeriodSeconds: 30
+      containers:
+        - name: cadvisor
+          image:  cr.yandex/crppns4pq490jrka0sth/cadvisor:${cadvisor_version}
+          ports:
+            - containerPort: 17008
+          command:
+            [ /usr/bin/cadvisor, -logtostderr, --port=17008 ]
+          volumeMounts:
+            - name: root
+              mountPath: /rootfs
+              readOnly: true
+            - name: var-run
+              mountPath: /var/run
+              readOnly: true
+            - name: sys
+              mountPath: /sys
+              readOnly: true
+            - name: var-lib-docker
+              mountPath: /var/lib/docker
+              readOnly: true
+            - name: dev-disk
+              mountPath: /dev/disk
+              readOnly: true
+        - name: nvidia-dcgm-exporter
+          image: cr.yandex/crppns4pq490jrka0sth/nvidia/dcgm-exporter:${nvidia_dcgm_exporter_version}
+          volumeMounts:
+            - name: run-prometheus
+              mountPath: /run/prometheus
+        - name: translation-server
+          image: registry.yandex.net/cloud-ai/translation-server:${translation_server_version}
+          ports:
+            - containerPort: 17005
+          volumeMounts:
+            - name: var-log-translation-server
+              mountPath: /mt/log
+        - name: grpc-proxy
+          image: registry.yandex.net/cloud-ai/services-proxy:${services_proxy_version}
+          ports:
+            - containerPort: 443
+          env:
+            - name: CLOUD_INSTALLATION
+              value: "1"
+            - name: COLLECT_HW_METRICS
+              value: "1"
+            - name: ENVIRONMENT_TYPE
+              value: ${environment}
+            - name: ZOOKEEPER_SERVERS
+              value: ${zk_servers}
+          command:
+            [ /root/server ]
+          volumeMounts:
+            - name: var-log-yc-ai
+              mountPath: /var/log/yc/ai
+            - name: var-lib-billing
+              mountPath: /var/lib/billing
+            - name: run-prometheus
+              mountPath: /run/prometheus
+              readOnly: true
+        - name: solomon-agent
+          image: registry.yandex.net/cloud/platform/solomon-agent:${solomon_version}
+          resources:
+            requests:
+              memory: "384Mi"
+            limits:
+              memory: "384Mi"
+          volumeMounts:
+            - name: solomon-agent-config
+              mountPath: /etc/solomon-agent/
+              readOnly: true
+        - name: push-client
+          image: registry.yandex.net/cloud/platform/push-client:${push_client_version}
+          env:
+            - name: PUSH_CLIENT_TVM_SECRET
+              value: ${push_client_tvm_secret}
+          volumeMounts:
+            - name: var-log
+              mountPath: /var/log
+              terminationGracePeriodSeconds: 30
+            - name: var-spool
+              mountPath: /var/spool
+              terminationGracePeriodSeconds: 30
+            - name: push-client-config
+              mountPath: /etc/yandex/statbox-push-client
+              readOnly: true
+        - name: push-client-billing
+          image: registry.yandex.net/cloud/platform/push-client:${push_client_version}
+          env:
+            - name: PUSH_CLIENT_TVM_SECRET
+              value: ${push_client_tvm_secret_billing}
+          command:
+            [ /usr/bin/push-client, -f, -c, /etc/yandex/statbox-push-client/push-client-billing.yaml]
+          volumeMounts:
+            - name: var-lib-billing
+              mountPath: /var/lib/billing
+              terminationGracePeriodSeconds: 30
+            - name: var-spool
+              mountPath: /var/spool
+              terminationGracePeriodSeconds: 30
+            - name: push-client-config
+              mountPath: /etc/yandex/statbox-push-client
+              readOnly: true
+        - name: logrotate
+          image: cr.yandex/crppns4pq490jrka0sth/logrotate:${logrotate_version}
+          volumeMounts:
+            - name: var-log-translation-server
+              mountPath: /var/log/translation-server
+            - name: logrotate-config
+              mountPath: /etc/logrotate.d
+              readOnly: true
+      # - name: juggler-client
+      #   image: registry.yandex.net/cloud/platform/juggler-client:${juggler_version}
+      #   volumeMounts:
+      #   - name: juggler-bundle-manifest-file
+      #     mountPath: /juggler-bundle/MANIFEST.json
+      #     readOnly: true
+      #   - name: platform-http-check-json
+      #     mountPath: /juggler-bundle/platform-http-checks.json
+      #     readOnly: true
+      #   - name: juggler-client-config
+      #     mountPath: /home/monitor/juggler/etc/client.conf
+      #     readOnly: true
+      #   - name: juggler-client-log
+      #     mountPath: /var/log/juggler-client
+      #     terminationGracePeriodSeconds: 30
+      #   - name: var-log-fluent
+      #     mountPath: /var/log/fluent
+      #     terminationGracePeriodSeconds: 30
+      #     readOnly: true
+      #   - name: var-spool-push-client
+      #     mountPath: /var/spool/push-client
+      #     terminationGracePeriodSeconds: 30
+      #     readOnly: true
+      #   - name: push-client-config
+      #     mountPath: /etc/yandex/statbox-push-client
+      #     readOnly: true
+      #   - name: hostfs-mon
+      #     mountPath: /hostfs
+      #     readOnly: true
+      volumes:
+        - name: all-configs
+          hostPath:
+            path: /etc
+            type: DirectoryOrCreate
+        - name: var-log
+          hostPath:
+            path: /var/log
+        - name: var-log-yc-ai
+          hostPath:
+            path: /var/log/yc/ai
+        - name: var-lib-billing
+          hostPath:
+            path: /var/lib/billing
+        - name: var-log-translation-server
+          hostPath:
+            path: /var/log/translation-server
+        - name: var-spool
+          hostPath:
+            path: /var/spool
+        - name: var-log-fluent
+          hostPath:
+            path: /var/log/fluent
+        - name: var-spool-push-client
+          hostPath:
+            path: /var/spool/push-client
+        - name: push-client-config
+          hostPath:
+            path: /etc/yandex/statbox-push-client
+        - name: solomon-agent-config
+          hostPath:
+            path: /etc/solomon-agent
+        - name: logrotate-config
+          hostPath:
+            path: /etc/logrotate.d
+        - name: root
+          hostPath:
+            path: /
+        - name: var-run
+          hostPath:
+            path: /var/run
+        - name: sys
+          hostPath:
+            path: /sys
+        - name: var-lib-docker
+          hostPath:
+            path: /var/lib/docker
+        - name: dev-disk
+          hostPath:
+            path: /dev/disk
+        - name: run-prometheus
+          hostPath:
+            path: /run/prometheus

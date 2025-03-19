@@ -1,0 +1,4 @@
+RECURSE(
+    recipe
+    server
+)

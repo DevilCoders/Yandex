@@ -1,0 +1,105 @@
+definitions:
+  - &alert_id "{{.ID}}_nbs_requests_max_time_hdd"
+  - &alert_name "{{.Name}}[HDD] NBS Requests Max Time"
+  - &alert_window_secs 600
+  - &alert_annotations_tag "yc-{{.Cluster}}-nbs-solomon"
+  - &alert_annotations_host "{{`{{labels.host}}`}}.{{.HostDomain}}"
+  - &alert_annotations_service "solomon_alert_nbs_requests_max_time_hdd"
+  - &alert_juggler_description "(doc: https://nda.ya.ru/t/EAL4_pLH5Fnitp)"
+alerts:
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_juggler_description
+    window_secs: *alert_window_secs
+    group_by_labels:
+      - host
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - preprod
+      - prod_vla
+      - prod_sas
+      - prod_myt
+      - israel
+    expression:
+      program: |-
+        let hdd_r = {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        request='ReadBlocks',
+        type='hdd',
+        sensor='MaxTime',
+        host='{{.Hosts}}'
+        };
+        let hdd_w = {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        request='WriteBlocks',
+        type='hdd',
+        sensor='MaxTime',
+        host='{{.Hosts}}'
+        };
+        let hdd_z = {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        request='ZeroBlocks',
+        type='hdd',
+        sensor='MaxTime',
+        host='{{.Hosts}}'
+        };
+
+        let reassign_count = integrate_fn(group_lines('sum', {
+          project="{{.SolomonProjectID}}",
+          cluster="{{.SolomonCluster}}",
+          service="server",
+          host="{{.Hosts}}",
+          sensor="AppCriticalEvents/ReassignTablet"
+        }));
+
+        let reassign_count_before = integrate_fn(group_lines('sum', shift({
+          project="{{.SolomonProjectID}}",
+          cluster="{{.SolomonCluster}}",
+          service="server",
+          host="{{.Hosts}}",
+          sensor="AppCriticalEvents/ReassignTablet"
+        }, -10m)));
+        let reassign_count_after = integrate_fn(group_lines('sum', shift({
+          project="{{.SolomonProjectID}}",
+          cluster="{{.SolomonCluster}}",
+          service="server",
+          host="{{.Hosts}}",
+          sensor="AppCriticalEvents/ReassignTablet"
+        }, 10m)));
+
+        no_data_if(
+        count(hdd_r) == 0 ||
+        count(hdd_w) == 0 ||
+        count(hdd_z) == 0);
+
+        let total_reassign_count = max(reassign_count) + max(reassign_count_before) + max(reassign_count_after);
+
+        let reassign_gauge_hdd = total_reassign_count > 0 ? 12.0 : 1;
+
+        let last_hdd_r = last(hdd_r);
+        let last_hdd_w = last(hdd_w);
+        let last_hdd_z = last(hdd_z);
+
+        let hdd_threshold = 15000000 * reassign_gauge_hdd;
+
+        alarm_if(
+        (avg(hdd_r) >= hdd_threshold && last_hdd_r >= hdd_threshold) ||
+        (avg(hdd_w) >=hdd_threshold && last_hdd_w >= hdd_threshold) ||
+        (avg(hdd_z) >= hdd_threshold &&  last_hdd_z >= hdd_threshold));
+
+        warn_if(
+        (avg(hdd_r) >= hdd_threshold && last_hdd_r < hdd_threshold) ||
+        (avg(hdd_w) >=hdd_threshold && last_hdd_w < hdd_threshold) ||
+        (avg(hdd_z) >= hdd_threshold &&  last_hdd_z < hdd_threshold));

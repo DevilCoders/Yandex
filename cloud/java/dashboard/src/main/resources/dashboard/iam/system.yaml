@@ -1,0 +1,135 @@
+id: 445505
+uid: iam-system
+title: IAM System
+folderId: 412692
+refresh: 1m
+
+tags: [ 'iam', 'iam-system' ]
+links:
+  !include shared/links.yaml system
+
+graphDefaults: { datasource: '${ds}', width: 8, height: 6 }
+queryDefaults:
+  labels: 'project=yc.iam.service-cloud, service=SYS, cluster=${service}-${cluster}, host=${host:pipe}'
+  dropNan: true
+  defaultTimeWindow: '1m'
+
+variables:
+  ui:
+    service:
+      values: [ access-service, iam-control-plane, mfa-service, openid-server, org-service, quota-manager, rm-control-plane, reaper, token-service, identity ]
+      titles: [ 'Access Service', 'IAM Control Plane', 'MFA Service', 'OpenID Server', 'Organization Service', 'Quota Manager', 'RM Control Plane', 'Resource Reaper', 'Token Service', 'Identity' ]
+    !include shared/datasources.yaml
+  uiQuery:
+    !include shared/clusters.yaml '${service}'
+    host:
+      labels: 'host=@all_hosts'
+      multi: true
+  replacement:
+    !include shared/replacements.yaml
+
+rows:
+  - title: 'IAM System'
+    drilldowns:
+      - subUid: dd-iam-system-by-host
+        title: 'IAM System by Hosts'
+        tags: [ 'iam-duty', 'iam-system', 'iam-system-host' ]
+        ui:
+          service: service
+          ds: ds
+        uiQuery:
+          cluster: cluster
+          host: host
+        uiRepeat: host
+        labels: 'host=${host}'
+    panels:
+      - type: graph
+        title: 'FreeMem and LA'
+        queries:
+          - params: { labels: 'path=/Memory/MemFree' }
+            select: { group_lines: ['min'], alias: 'Free Memory' }
+          - params: { labels: 'path=/Proc/LoadAverage1min' }
+            select: { group_lines: ['max'], alias: 'Load Average (1 min)' }
+        draw:
+          - { alias: 'Free Memory', color: '#7EB26D', at: left }
+          - { alias: 'Load Average (1 min)', color: '#6ED0E0', at: right }
+        yAxes:
+          - { format: bytes, min: 0 }
+          - { format: short, min: 0 }
+
+      - type: graph
+        title: 'Network Bytes'
+        queryDefaults: { labels: 'intf=eth*|ip6*' }
+        queries:
+          - params: { labels: 'path=/Net/Ifs/RxBytes' }
+            select: { group_by_labels: ['sum', 'intf'], alias: 'Rx {{intf}}' }
+          - params: { labels: 'path=/Net/Ifs/TxBytes' }
+            select: { group_by_labels: ['sum', 'intf'], alias: 'Tx {{intf}}' }
+        display: { stack: true, sort: decreasing }
+        yAxes: [ { format: bytes, min: 0 } ]
+
+      - type: graph
+        title: 'IO Bytes'
+        queries:
+          - params: { labels: 'path=/Io/Disks/ReadBytes' }
+            select: { group_by_labels: ['sum', 'disk'], alias: 'reads {{disk}}' }
+          - params: { labels: 'path=/Io/Disks/WriteBytes' }
+            select: { group_by_labels: ['sum', 'disk'], alias: 'writes {{disk}}' }
+        display: { stack: true, sort: decreasing }
+        yAxes: [ { format: bytes, min: 0 } ]
+
+      - type: graph
+        title: 'Page Faults'
+        queries:
+          - params: { labels: 'path=/Memory/MajorPageFaults' }
+            select: { group_lines: ['max'] }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: 'Network Packets'
+        queryDefaults: { labels: 'intf=eth*|ip6*' }
+        queries:
+          - params: { labels: 'path=/Net/Ifs/RxPackets' }
+            select: { group_by_labels: ['sum', 'intf'], alias: 'Rx {{intf}}' }
+          - params: { labels: 'path=/Net/Ifs/TxPackets' }
+            select: { group_by_labels: ['sum', 'intf'], alias: 'Tx {{intf}}' }
+        display: { stack: true, sort: decreasing }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: 'IO Ops'
+        queries:
+          - params: { labels: 'path=/Io/Disks/Reads' }
+            select: { group_by_labels: ['sum', 'disk'], alias: 'reads {{disk}}' }
+          - params: { labels: 'path=/Io/Disks/Writes' }
+            select: { group_by_labels: ['sum', 'disk'], alias: 'writes {{disk}}' }
+        display: { stack: true, sort: decreasing }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: 'Max Memory'
+        queries:
+          - params: { labels: 'path=/Memory/ActiveAnon' }
+            select: { group_lines: ['max'], alias: 'anon' }
+          - params: { labels: 'path=/Memory/ActiveFile' }
+            select: { group_lines: ['max'], alias: 'file' }
+          - params: { labels: 'path=/Memory/MemTotal' }
+            select: { group_lines: ['max'], alias: 'total' }
+        yAxes: [ { format: bytes, min: 0 } ]
+
+      - type: graph
+        title: 'Free Space'
+        queries:
+          - params: { labels: 'path=/Filesystem/FreeB, mountpoint=/' }
+            select: { group_lines: ['min'], alias: 'space' }
+        yAxes: [ { format: bytes, min: 0 } ]
+
+      - type: graph
+        title: 'IO Waits'
+        queries:
+          - params: { labels: 'path=/Io/Disks/ReadWaitMillisec' }
+            select: { group_by_labels: ['max', 'disk'], alias: 'reads {{disk}}' }
+          - params: { labels: 'path=/Io/Disks/WriteWaitMillisec' }
+            select: { group_by_labels: ['max', 'disk'], alias: 'writes {{disk}}' }
+        display: { stack: true, sort: decreasing }
+        yAxes: [ { format: ms, min: 0 } ]

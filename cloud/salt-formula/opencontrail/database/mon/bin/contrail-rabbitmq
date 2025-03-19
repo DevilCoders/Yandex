@@ -1,0 +1,66 @@
+#!/usr/bin/env python
+# -*-coding: utf-8 -*-
+# vim: sw=4 ts=4 expandtab ai
+
+import subprocess
+import re
+import sys
+import os
+import introspect
+
+"""Monitoring for OpenContrail rabbitmq service"""
+
+class ParseError(Exception):
+    pass
+
+def parse_rabbitctl_output(lines):
+    if len(lines.split('\n')) <= 1:
+        raise ParseError()
+
+    host_line = lines.split('\n')[0]
+    current_node = re.findall(r'Cluster status of node (\S*)', host_line)
+    nodes_string = re.findall(r'nodes,\[\{disc,\[(.+?)\]\}\]{1}', lines, re.DOTALL)
+    running_nodes_string = re.findall(r'running_nodes,\[(.+?)\]\},{1}', lines, re.DOTALL)
+
+    if len(current_node) and len(nodes_string) and len(running_nodes_string):
+        current_node = current_node[0].strip().strip("'")
+        nodes = [node.strip().strip("'") for node in nodes_string[0].split(",")]
+        running_nodes = [node.strip().strip("'") for node in running_nodes_string[0].split(",")]
+        return current_node, nodes, running_nodes
+    else:
+        raise ParseError()
+
+def get_service_status(config):
+    RABBITCTL_STATUS = "rabbitmqctl cluster_status"
+    FNULL = open(os.devnull, 'w')
+    try:
+        proc = subprocess.Popen(RABBITCTL_STATUS, stderr=FNULL, shell=True, stdout=subprocess.PIPE)
+        lines = proc.stdout.read()
+        current_node, nodes, running_nodes = parse_rabbitctl_output(lines)
+
+        if current_node not in running_nodes:
+            return introspect.STATUS_CRIT, 'Current node is not in running state'
+
+        if len(nodes) != config['nodes_in_cluster']:
+            return introspect.STATUS_CRIT, 'Cluster is broken: too few nodes in cluster'
+
+        if len(running_nodes) < config['crit_on_less_than_running_nodes']:
+            return introspect.STATUS_CRIT, 'Cluster is broken: too few running nodes in cluster'
+
+        return introspect.STATUS_OK, None
+    except OSError as e:
+        return introspect.STATUS_CRIT, 'Service is unavailable ({}) '.format(e.strerror)
+    except ParseError as e:
+        return introspect.STATUS_CRIT, "Can't parse rabbitmqctl output: rabbitmq is probably down"
+
+def main():
+    try:
+        config = introspect.load_config('contrail-rabbitmq.conf')
+        status, messages = get_service_status(config)
+        introspect.print_for_monitoring('contrail-rabbitmq', status, messages)
+    except IOError:
+        introspect.print_for_monitoring('contrail-rabbitmq', introspect.STATUS_CRIT, 'Can\'t load config file for monitoring')
+    sys.exit(0)
+
+if __name__ == '__main__':
+    main()

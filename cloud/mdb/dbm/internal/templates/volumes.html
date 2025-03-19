@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+
+{% block styles %}
+{{ super() }}
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/v/bs/dt-1.10.15/b-1.3.1/b-colvis-1.3.1/se-1.2.2/datatables.min.css"/>
+<!--    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/bootstrap-suggest.css') }}"/> -->
+    <style type="text/css">
+td.details-control {
+    background: url("{{ url_for('static', filename='img/details_open.png') }}") no-repeat center center;
+    cursor: pointer;
+}
+tr.shown td.details-control {
+    background: url("{{ url_for('static', filename='img/details_close.png') }}") no-repeat center center;
+}
+    </style>
+{% endblock %}
+
+{% block nav_elements %}
+{{ super() }}
+            <li><a href="/containers">Containers</a></li>
+            <li class="active"><a href="#">Volumes</a></li>
+            <li><a href="/transfers">Transfers</a></li>
+            <li><a href="/volume_backups">Volume backups</a></li>
+{% endblock %}
+
+{% block content %}
+{{ super() }}
+    <br/><br/><br/><br/>
+    <div class="container">
+    <form>
+      <div class="form-group row">
+        <div class="col-sm-11">
+          <input type="text" class="form-control" id="inputQueryString"
+          placeholder="I.e.: dom0=man1-; dom0_path=/data; space_limit>=2TB; limit=100500; order_by=space_limit DESC"
+          autocomplete="off" autofocus=true>
+        </div>
+        <div class="col-sm-1">
+            <button type="submit" class="btn btn-primary" id="showVolumes">Поиск</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col-sm-11">
+          <div id="alertResult"></div>
+        </div>
+      </div>
+
+      <div class="row">
+      <div class="col-sm-12">
+        <table id="volumesTable" class="table table-striped table-bordered table-hover" cellspacing="0" width="100%">
+                <thead>
+                    <tr>
+                        <th>Dom0</th>
+                        <th>Dom0 path</th>
+                        <th>Container</th>
+                        <th>Path</th>
+                        <th>Space</th>
+                        <th>Inode</th>
+                        <th>Backend</th>
+                        <th>Writable</th>
+                    </tr>
+                </thead>
+            </table>
+      </div>
+      </div>
+
+    </form>
+    </div>
+
+    <div class="modal fade" id="modalEditVolumes" tabindex="-1" role="dialog" aria-labelledby="modalEditVolumesLabel">
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            <h4 class="modal-title" id="modalEditVolumesLabel">Edit volumes</h4>
+            <div style="font-size: small" id="modalEditVolumesSmall"></div>
+          </div>
+          <div class="modal-body">
+
+            <form class="form-horizontal">
+              <div class="form-group">
+                <label for="inputDom0Path" class="col-sm-4 control-label">Dom0 path</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputDom0Path">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="inputPath" class="col-sm-4 control-label">Path</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputPath">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="inputSpaceGuarantee" class="col-sm-4 control-label text-success">Space guarantee</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputSpaceGuarantee">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="inputSpaceLimit" class="col-sm-4 control-label text-warning">Space limit</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputSpaceLimit">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="inputInodeGuarantee" class="col-sm-4 control-label text-success">Inode guarantee</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputInodeGuarantee">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="inputInodeLimit" class="col-sm-4 control-label text-warning">Inode limit</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputInodeLimit">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="inputBackend" class="col-sm-4 control-label">Backend</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputBackend">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="inputReadOnly" class="col-sm-4 control-label">Read only</label>
+                <div class="col-sm-8">
+                    <div class="btn-group" data-toggle="buttons" id="inputReadOnly">
+                      <label class="btn btn-default active" id="inputVolumeRW">
+                        <input type="radio" name="options" autocomplete="off" value="false"> RW
+                      </label>
+                      <label class="btn btn-default" id="inputVolumeRO">
+                        <input type="radio" name="options" autocomplete="off" value="true"> RO
+                      </label>
+                    </div>
+                </div>
+              </div>
+            </form>
+
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+            <button type="button" class="btn btn-primary" id="btnSaveVolumes">Save changes</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="modalDeleteVolume" tabindex="-1" role="dialog" aria-labelledby="modalDeleteVolumeLabel">
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            <h4 class="modal-title" id="modalDeleteVolumeLabel">Delete volume</h4>
+          </div>
+          <div class="modal-body">
+            <p>Next volume will be deleted <b>from database</b>:</p>
+            <form class="form-horizontal">
+              <div class="form-group">
+                <label for="inputFQDNDelete" class="col-sm-2 control-label">Container</label>
+                <div class="col-sm-10">
+                  <input class="form-control" id="inputFQDNDelete" disabled="disabled">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="inputPathDelete" class="col-sm-2 control-label">Path</label>
+                <div class="col-sm-10">
+                  <input class="form-control" id="inputPathDelete" disabled="disabled">
+                </div>
+              </div>
+            </form>
+            <p>Data on dom0 host will not be touched.</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+            <button type="button" class="btn btn-danger" id="btnDeleteVolume">Delete volume</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="modalAddVolume" tabindex="-1" role="dialog" aria-labelledby="modalAddVolume">
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            <h4 class="modal-title" id="modalAddVolumeLabel">Adding volume</h4>
+            <div style="font-size: small" id="modalAddVolumeSmall"></div>
+          </div>
+          <div class="modal-body">
+
+            <form class="form-horizontal">
+              <div class="form-group">
+                <label for="inputFQDNAdd" class="col-sm-4 control-label">Container</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputFQDNAdd">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="inputPathAdd" class="col-sm-4 control-label">Path</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputPathAdd">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="inputDom0PathAdd" class="col-sm-4 control-label">Dom0 path</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputDom0PathAdd">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="inputSpaceGuaranteeAdd" class="col-sm-4 control-label text-success">Space guarantee</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputSpaceGuaranteeAdd">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="inputSpaceLimitAdd" class="col-sm-4 control-label text-warning">Space limit</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputSpaceLimitAdd">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="inputInodeGuaranteeAdd" class="col-sm-4 control-label text-success">Inode guarantee</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputInodeGuaranteeAdd">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="inputInodeLimitAdd" class="col-sm-4 control-label text-warning">Inode limit</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputInodeLimitAdd">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="selectVolumeBackendAdd" class="col-sm-4 control-label">Backend</label>
+                <div class="col-sm-8">
+                  <select class="selectpicker selectVolumeBackendAdd form-control" title="native" id="selectVolumeBackendAdd">
+                      <option selected>native</option>
+                      <option>bind</option>
+                      <option>loop</option>
+                      <option>overlay</option>
+                      <option>plain</option>
+                      <option>quota</option>
+                      <option>rbd</option>
+                      <option>tmpfs</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="inputReadOnlyAdd" class="col-sm-4 control-label">Read only</label>
+                <div class="col-sm-8">
+                    <div class="btn-group" data-toggle="buttons" id="inputReadOnlyAdd">
+                      <label class="btn btn-default active" id="inputVolumeRWAdd">
+                        <input type="radio" name="options" autocomplete="off" value="false"> RW
+                      </label>
+                      <label class="btn btn-default" id="inputVolumeROAdd">
+                        <input type="radio" name="options" autocomplete="off" value="true"> RO
+                      </label>
+                    </div>
+                </div>
+              </div>
+            </form>
+
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+            <button type="button" class="btn btn-primary" id="btnAddVolume">Add volume</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+    <script type="text/javascript" src="https://cdn.datatables.net/v/bs/dt-1.10.15/b-1.3.1/b-colvis-1.3.1/se-1.2.2/datatables.min.js"></script>
+<!--    <script src="{{ url_for('static', filename='js/bootstrap-typeahead.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/bootstrap-suggest.js')}}"></script> -->
+    <script src="{{ url_for('static', filename='js/volumes.js') }}"></script>
+{% endblock %}

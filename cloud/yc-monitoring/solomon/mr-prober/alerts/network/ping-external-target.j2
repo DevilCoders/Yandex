@@ -1,0 +1,57 @@
+{% extends "../../../base/alert.j2" %}
+
+{% set idc="network-ping-external-target" %}
+{% set description="Кластеры meeseeks и world-*, пробер network-ping.\\n\\n" +
+"Алерт на то, что с большого количества хостов в одной AZ неоднократно недоступен внешний таргет." %}
+
+{% set windowSecs=600 %}
+{% set delaySecs=60 %}
+{% set resolvedEmptyPolicy="RESOLVED_EMPTY_NO_DATA" %}
+{% set checkExpression="" %}
+
+{% macro prog() %}
+let fails = {project="{{ project_id }}", cluster="*", service="metrics", host="{{ az_names }}", metric="fail", cluster_slug="meeseeks|world-*", prober_slug="network-ping", matrix_host!="10.*|172.*|192.168.*"};
+
+// Раз в 30 секунд агенты отправляют keep-alive. Сгруппируем эти метрики и возьмём максимум из числа агентов за последние 10 минут (evaluation window).
+let hosts_count = max(group_by_time(30s, 'sum', {project="{{ project_id }}", cluster="*", service="metrics", host="{{ az_names }}", metric="keep_alive", cluster_slug="meeseeks|world-*", matrix_host="-"}));
+
+let cluster_slug = get_label(fails, "cluster_slug");
+let window = cluster_slug == "meeseeks" ? 1m : 20s;
+let window_text = cluster_slug == "meeseeks" ? "1m" : "20s";
+// Группируем фейлы внутри AZ
+let groupped_fails = group_by_time(window, 'sum', fails);
+// Считаем, на скольких хостах проверка горела одновременно
+let fails_count = max(groupped_fails);
+// Считаем, сколько раз проверка горела хотя бы на 1 хосте
+let fails_length = count(drop_below(groupped_fails, 1));
+
+// 2 hosts should be affected in small cluster for at least 10 times
+alarm_if(hosts_count <= 10 && fails_count >= 2 && fails_length >= 10);
+
+// 5% of hosts should be affected in large cluster
+alarm_if(hosts_count > 10 && fails_count / hosts_count >= 0.05 && fails_length >= 8);
+
+warn_if(fails_count >= 2 || fails_length >= 3);
+{% endmacro %}
+
+{% block main %}
+    "name": "[meeseeks/world-*] ICMP availability of specific external target",
+    "groupByLabels": [
+        "cluster",
+        "cluster_slug",
+        "matrix_host",
+        "host"
+	],
+    "annotations": {
+        "host": "[[labels.host]].[[labels.cluster_slug]].[[labels.cluster]].mr_prober.cloud",
+        "stand": "[[labels.cluster]]",
+        "service": "ping-[[labels.matrix_host]]",
+        "cluster": "[[labels.cluster_slug]]",
+        "fails graph": "{{ solomon_endpoint }}/admin/projects/{{ project_id }}/autoGraph?stack=true&downsamplingFill=previous&expression=group_by_time%28[[expression.window_text]]%2C+%27sum%27%2C%7Bcluster%3D%22[[labels.cluster]]%22%2C+service%3D%22metrics%22%2C+metric%3D%22fail%22%2C+prober_slug%3D%22network-ping%22%2C+host%3D%22[[labels.host]]%22%2C+cluster_slug%3D%22[[labels.cluster_slug]]%22%2C+matrix_host%3D%22[[labels.matrix_host]]%22%7D%29&b=1h",
+        "logs": "{{ s3_viewer_url }}/mr-prober-logs?key=[[labels.cluster]]%2Fprobers%2F[[labels.cluster_slug]]%2F",
+        "target": "[[labels.matrix_host]]",
+        "failed hosts": "[[expression.fails_count]]",
+        "total hosts": "[[expression.hosts_count]]"
+    },
+    "type": {{ type_expression() }}
+{% endblock %}

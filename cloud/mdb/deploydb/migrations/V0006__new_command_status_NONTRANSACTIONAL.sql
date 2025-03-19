@@ -1,0 +1,1 @@
+ALTER TYPE deploy.command_status ADD VALUE 'CANCELED';

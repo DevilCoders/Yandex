@@ -1,0 +1,52 @@
+{
+  "variables": {
+    "endpoint": "api.cloud.yandex.net:443",
+    "service_account_key_file": "service_account.json",
+    "subnet_id": "e9b8hk8l7ju8kcpch1ud",
+    "zone": "ru-central1-a",
+    "folder_id": "b1g3b7m8hnu0lq8f91ef",
+    "password": "eVyPlY+n6K]#w>O"
+  },
+  "builders": [
+    {
+      "type": "yandex",
+      "endpoint": "{{user `endpoint`}}",
+      "folder_id": "{{user `folder_id`}}",
+      "subnet_id": "{{user `subnet_id`}}",
+      "zone": "{{user `zone`}}",
+      "labels": {},
+      "use_ipv4_nat": true,
+      "service_account_key_file": "{{user `service_account_key_file`}}",
+      "instance_name": "kms-auto-builder",
+      "instance_cores": "4",
+      "instance_mem_gb": "8",
+      "metadata": {
+        "user-data": "#ps1\nnet user Administrator {{user `password`}}\nls \"C:\\Program Files\\Cloudbase Solutions\\Cloudbase-Init\\LocalScripts\" | rm\nRemove-Item -Path WSMan:\\Localhost\\listener\\listener* -Recurse\nRemove-Item -Path Cert:\\LocalMachine\\My\\*\n$DnsName = Invoke-RestMethod -Headers @{\"Metadata-Flavor\"=\"Google\"} \"http://169.254.169.254/computeMetadata/v1/instance/hostname\"\n$HostName = Invoke-RestMethod -Headers @{\"Metadata-Flavor\"=\"Google\"} \"http://169.254.169.254/computeMetadata/v1/instance/name\"\n$Certificate = New-SelfSignedCertificate -CertStoreLocation Cert:\\LocalMachine\\My -DnsName $DnsName -Subject $HostName\nNew-Item -Path WSMan:\\LocalHost\\Listener -Transport HTTP -Address * -Force\nNew-Item -Path WSMan:\\LocalHost\\Listener -Transport HTTPS -Address * -Force -HostName $HostName -CertificateThumbPrint $Certificate.Thumbprint\n& netsh advfirewall firewall add rule name=\"WINRM-HTTPS-In-TCP\" protocol=TCP dir=in localport=5986 action=allow profile=any"
+      },
+      "image_name": "windows-kms-{{timestamp}}",
+      "image_family": "windows-kms",
+      "image_labels": {},
+      "image_description": "windows kms server",
+      "source_image_family": "windows-2019-gvlk",
+      "disk_size_gb": 50,
+      "disk_type": "network-ssd",
+      "communicator": "winrm",
+      "winrm_username": "Administrator",
+      "winrm_password": "{{user `password`}}",
+      "winrm_use_ssl": "true",
+      "winrm_insecure": "true",
+      "winrm_use_ntlm": "true"
+    }
+  ],
+  "provisioners": [
+        {
+            "type": "powershell",
+            "elevated_user": "Administrator",
+            "elevated_password": "{{user `password`}}",
+            "elevated_execute_command": "powershell -executionpolicy bypass \"& { {Set-Variable -Name ProgressPreference -Value 'Stop'};. {{.Vars}}; &'{{.Path}}'; exit $LastExitCode }\"",
+            "scripts": [
+                "./provision_kms.ps1"
+            ]
+        }
+    ]
+}

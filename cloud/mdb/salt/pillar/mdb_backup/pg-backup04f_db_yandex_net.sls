@@ -1,0 +1,3 @@
+data:
+    walg-server:
+        clusters: []

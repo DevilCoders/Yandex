@@ -1,0 +1,158 @@
+{%- import "common/kikimr/init.sls" as vars with context -%}
+
+{%- set endpoints = salt['grains.get']('cluster_map:load_balancer:endpoints') -%}
+{%- set access_service = pillar.get('access-service') -%}
+{%- set cache_reload = access_service['cache_reload'] -%}
+
+accessServer:
+  maxClockSkew: PT10M
+
+{% if 'monitoring_endpoint' in access_service -%}
+{%- set monitoring_endpoint = access_service['monitoring_endpoint'] -%}
+healthCheckServer:
+  host: {{ monitoring_endpoint['host']}}
+  port: {{ monitoring_endpoint['port']}}
+  path: {{ monitoring_endpoint['path']}}
+{%- endif %}
+
+repository:
+  init: false
+  retryCount: 1
+  isolationLevel: ONLINE_CONSISTENT_READ_ONLY
+
+grpcServer:
+  certificatePemFile: /etc/yc/access-service/server.pem
+  threadPoolSize: 24
+  queueSize: 256
+  reflectionEnabled: true
+  port: {{ access_service['grpcServer']['port'] }}
+
+kikimr:
+  host: {{ endpoints.iam_kikimr_grpc.host }}
+  port: {{ endpoints.iam_kikimr_grpc.port }}
+  tablespace: {{ vars.ydb_domain }}/{{ vars.iam_database }}/{{ grains['cluster_map']['stand_type'] }}/{{ salt['grains.get']('overrides:kikimr_id', salt['grains.get']('cluster_map:kikimr:shared_dir')) }}/
+
+metrics:
+  pullPort: 9990
+
+scms:
+  masterKeyFile: /var/lib/yc/access-service/master.key
+
+##########
+# caches #
+##########
+
+#
+# Parameters batchSize and pageSize are limited to kikimr _ResultRowsLimit
+# with default value of 1000 rows
+#
+
+# 2K bytes per item
+accessKeyCache:
+  expire: P7D
+  maxSize: 196608
+  reload:
+    interval: {{ cache_reload.interval }}
+    batchSize: {{ cache_reload.batch_size }}
+    shardBatchSize: {{ cache_reload.shard_batch_size }}
+
+# 2K bytes per item
+apiKeyCache:
+  expire: P7D
+  maxSize: 196608
+  reload:
+    interval: {{ cache_reload.interval }}
+    batchSize: {{ cache_reload.batch_size }}
+    shardBatchSize: {{ cache_reload.shard_batch_size }}
+
+# 128 bytes per item
+cloudCache:
+  expire: P7D
+  maxSize: 1048576
+  reload:
+    interval: {{ cache_reload.interval }}
+    batchSize: {{ cache_reload.batch_size }}
+    shardBatchSize: {{ cache_reload.shard_batch_size }}
+
+# 2K bytes per item
+encryptionKeyCache:
+  expire: P7D
+  maxSize: 196608
+  reload:
+    interval: {{ cache_reload.immutable_interval }}
+    batchSize: {{ cache_reload.batch_size }}
+    shardBatchSize: {{ cache_reload.shard_batch_size }}
+
+# 128 bytes per item
+folderCache:
+  expire: P7D
+  maxSize: 1048576
+  reload:
+    interval: {{ cache_reload.interval }}
+    batchSize: {{ cache_reload.batch_size }}
+    shardBatchSize: {{ cache_reload.shard_batch_size }}
+
+# 2K bytes per item
+keyCache:
+  expire: P7D
+  maxSize: 196608
+  reload:
+    interval: {{ cache_reload.interval }}
+    batchSize: {{ cache_reload.batch_size }}
+    shardBatchSize: {{ cache_reload.shard_batch_size }}
+
+# 64 bytes per item
+permissionCache:
+  expire: P7D
+  maxSize: 16777216
+  reload:
+    interval: {{ cache_reload.immutable_interval }}
+    batchSize: {{ cache_reload.batch_size }}
+    shardBatchSize: {{ cache_reload.shard_batch_size }}
+
+# 256 bytes per item
+resourcePermissionsCache:
+  expire: P7D
+  maxSize: 16777216
+  reload:
+    interval: {{ cache_reload.interval }}
+    batchSize: {{ cache_reload.batch_size }}
+    shardBatchSize: {{ cache_reload.shard_batch_size }}
+    pageSize: {{ cache_reload.page_size }}
+
+# 128 bytes per item
+rolePermissionsCache:
+  expire: P7D
+  maxSize: 16777216
+  reload:
+    interval: {{ cache_reload.immutable_interval }}
+    pageSize: {{ cache_reload.page_size }}
+
+# 128 bytes per item
+serviceAccountCache:
+  expire: P7D
+  maxSize: 1048576
+  reload:
+    interval: {{ cache_reload.interval }}
+    batchSize: {{ cache_reload.batch_size }}
+    shardBatchSize: {{ cache_reload.shard_batch_size }}
+
+# local cache, never reload
+tokenCache:
+  expire: PT12H
+  maxSize: 1048576
+
+#########
+# pools #
+#########
+
+aesGcmCipherPool:
+  maxTotal: 128
+
+hmacPool:
+  maxTotal: 65536
+  maxTotalPerKey: 64
+
+signaturePool:
+  maxTotal: 65536
+  maxTotalPerKey: 64

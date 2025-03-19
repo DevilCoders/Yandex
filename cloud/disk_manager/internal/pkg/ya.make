@@ -1,0 +1,22 @@
+OWNER(g:cloud-nbs)
+
+RECURSE(
+    accounting
+    auth
+    client
+    clients
+    common
+    dataplane
+    grpc
+    headers
+    logging
+    monitoring
+    performance
+    persistence
+    resources
+    services
+    tasks
+    types
+    url
+    util
+)

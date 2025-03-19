@@ -1,0 +1,26 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro svm_fqdn() -%}
+    [[labels.host]].{{ svm_domains[env] }}
+{%- endmacro %}
+
+{% macro prog() %}
+let successes = sum({project='{{ project_id }}', cluster='{{ cluster_override | default("cloud_" + env + "_" + cluster) }}', service='yc-k8s-ta-plugin', name='successes', host='*'});
+let total = sum({project='{{ project_id }}', cluster='{{ cluster_override | default("cloud_" + env + "_" + cluster) }}', service='yc-k8s-ta-plugin', name='successes|failures', host='*'});
+
+let is_red = (successes / total) < 1;
+
+alarm_if(is_red);
+{% endmacro %}
+
+{% block main %}
+    "name": "yc-k8s-ta-plugin @ {{ env }}/{{ cluster }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "host": "{{ host }}",
+        "tags": "yc-k8s-ta-plugin, {{ env }}, {{ cluster }}",
+        "service": "yc-k8s-ta-plugin-success-rate"
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

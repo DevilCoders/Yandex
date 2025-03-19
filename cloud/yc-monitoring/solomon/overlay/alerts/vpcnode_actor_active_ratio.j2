@@ -1,0 +1,27 @@
+{% extends "../../base/alert.j2" %}
+{% macro prog() %}
+    let all = group_lines('sum', {cluster='cloud_{{ env }}_compute', service="vpc-node", sensor="actor_object_count"});
+    let running = group_lines('sum', {cluster='cloud_{{ env }}_compute', service="vpc-node", sensor="actor_active_count"});
+    let ratio = min(running/all * 100);
+
+    let is_red = ratio < {{ alarm_limit }};
+    let is_yellow = ratio < {{ warn_limit }};
+    let trafficColor = is_red ? 'red' : (is_yellow ? 'yellow' : 'green');
+    let description = 'Running actor percent: ' + to_fixed(ratio, 2) + '%';
+    alarm_if(is_red);
+    warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+    "name": "vpc-node running actor ratio @ {{ env }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "tags": "Solomon",
+        "host": "{{ compute_node_fqdn() }}",
+        "service": "vpc-node-actor-active-ratio",
+        "trafficLight.color": "[[expression.trafficColor]]",
+        "details": "[[expression.description]]"
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

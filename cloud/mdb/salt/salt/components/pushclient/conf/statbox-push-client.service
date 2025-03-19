@@ -1,0 +1,27 @@
+[Unit]
+Description=Push client service
+After=network-online.target remote-fs.target time-sync.target
+
+[Service]
+User=statbox
+Group=statbox
+RuntimeDirectory=statbox
+RuntimeDirectoryMode=755
+PIDFile=/var/run/statbox/push-client.pid
+
+Environment='DAEMON_CONF=/etc/yandex/statbox-push-client/push-client.yaml'
+Environment='DAEMON_OPTS=-f -w --pid /var/run/statbox/push-client.pid'
+
+ExecStart=/bin/bash -c 'test -f /etc/default/push-client && . /etc/default/push-client; \
+                        for conf in $DAEMON_CONF; \
+                            do DAEMON_OPTS="$DAEMON_OPTS -c $conf "; \
+                            done; \
+                        exec /usr/bin/push-client $DAEMON_OPTS'
+
+ExecReload=/bin/kill -HUP $MAINPID
+
+LimitCORE={{ salt['pillar.get']('data:pushclient:limit_core', 0) }}
+TimeoutStopSec=5
+
+[Install]
+WantedBy=multi-user.target

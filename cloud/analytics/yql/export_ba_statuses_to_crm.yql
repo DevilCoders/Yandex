@@ -1,0 +1,30 @@
+USE hahn;
+PRAGMA yt.InferSchema = '1';
+
+$billing_source_folder = '//home/logfeller/logs/yc-billing-export-billing-accounts/1h';
+$crm_export_table = '//home/cloud_analytics/export/crm/leads_info/ba_suspended';
+
+$latest_table = (
+    SELECT LIST(Path)
+    FROM (
+        SELECT
+            Path,
+            CAST(Yson::LookupInt64(Attributes, "row_count") AS Uint64) AS row_count
+        FROM FOLDER($billing_source_folder, "row_count")
+        WHERE
+            Type = "table"
+            AND Yson::LookupInt64(Attributes, "row_count") > 0
+        ORDER BY row_count DESC
+        LIMIT 1
+        )
+);
+
+INSERT INTO $crm_export_table WITH TRUNCATE
+    SELECT
+        id AS ba_id,
+        state,
+        updated_at
+    FROM each($latest_table)
+    WHERE state='suspended'
+    ORDER BY updated_at
+;

@@ -1,0 +1,26 @@
+let goroutines = asap({cluster='<< health_cluster_name >>', service='<< health_service_id >>', project='<< project_id >>', node=by_dc, name='mdb_*_go_goroutines_ammv'});
+let threads = asap({cluster='<< health_cluster_name >>', service='<< health_service_id >>', project='<< project_id >>', node=by_dc, name='mdb_*_go_threads_ammv'});
+
+let expect_goroutines = 500;
+let expect_threads = 100;
+let warn_multiplier = 1.5;
+let alarm_multiplier = 2.5;
+
+let goroutines_warn_over = drop_nan(drop_below(goroutines, expect_goroutines * warn_multiplier));
+let threads_warn_over = drop_nan(drop_below(threads, expect_threads * warn_multiplier));
+let goroutines_alarm_over = drop_nan(drop_below(goroutines, expect_goroutines * alarm_multiplier));
+let threads_alarm_over = drop_nan(drop_below(threads, expect_threads * alarm_multiplier));
+
+let warn_count = sum(map(goroutines_warn_over, x -> count(x))) + sum(map(threads_warn_over, x -> count(x)));
+let alarm_count = sum(map(goroutines_alarm_over, x -> count(x))) + sum(map(threads_alarm_over, x -> count(x)));
+
+let is_yellow = warn_count > 0;
+let is_red = alarm_count > 0;
+
+let goroutines_out = map(goroutines, x -> max(x));
+let threads_out = map(threads, x -> max(x));
+let goroutines_over = map(is_red ? goroutines_alarm_over : goroutines_warn_over, x -> max(x));
+let threads_over = map(is_red ? threads_alarm_over : threads_warn_over, x -> max(x));
+
+alarm_if(is_red);
+warn_if(is_yellow);

@@ -1,0 +1,298 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.compute.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/field_mask.proto";
+import "yandex/cloud/api/operation.proto";
+import "yandex/cloud/priv/compute/v1/disk.proto";
+import "yandex/cloud/priv/compute/v1/validation.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+import "yandex/cloud/priv/compute/v1/snapshot_schedule.proto";
+import "yandex/cloud/priv/reference/reference.proto";
+import "yandex/cloud/priv/billing/v1/light_metric.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/compute/v1;compute";
+option java_outer_classname = "PDS";
+
+service DiskService {
+
+  rpc Get (GetDiskRequest) returns (Disk) {
+    option (google.api.http) = { get: "/compute/v1/disks/{disk_id}" };
+  }
+
+  rpc List (ListDisksRequest) returns (ListDisksResponse) {
+    option (google.api.http) = { get: "/compute/v1/disks" };
+  }
+
+  rpc Create (CreateDiskRequest) returns (operation.Operation) {
+    option (google.api.http) = { post: "/compute/v1/disks" body: "*" };
+    option (yandex.cloud.api.operation) = {
+      metadata: "CreateDiskMetadata"
+      response: "Disk"
+    };
+  }
+
+  rpc Update (UpdateDiskRequest) returns (operation.Operation) {
+    option (google.api.http) = { patch: "/compute/v1/disks/{disk_id}" body: "*" };
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateDiskMetadata"
+      response: "Disk"
+    };
+  }
+
+  rpc Delete (DeleteDiskRequest) returns (operation.Operation) {
+    option (google.api.http) = { delete: "/compute/v1/disks/{disk_id}" };
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeleteDiskMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+
+  rpc GetRemoved (GetRemovedDiskRequest) returns (RemovedDisk) {}
+
+  rpc ListRemoved (ListRemovedDisksRequest) returns (ListRemovedDisksResponse) {}
+
+  rpc DeleteRemoved (DeleteRemovedDiskRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeleteRemovedDiskMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+
+  rpc ClearRemoved (ClearRemovedDisksRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "ClearRemovedDisksMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+
+  rpc Resurrect (ResurrectDiskRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "ResurrectDiskMetadata"
+      response: "Disk"
+    };
+  }
+
+  rpc ListOperations (ListDiskOperationsRequest) returns (ListDiskOperationsResponse) {
+    option (google.api.http) = { get: "/compute/v1/disks/{disk_id}/operations" };
+  }
+
+  rpc UpdateReferences (UpdateDiskReferencesRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateDiskReferencesMetadata"
+      response: "UpdateDiskReferencesResponse"
+    };
+  }
+
+  rpc ListReferences (ListDiskReferencesRequest) returns (ListDiskReferencesResponse);
+
+  rpc SimulateBillingMetrics (CreateDiskRequest) returns (billing.v1.ConsoleLightMetricsListResponse);
+
+  rpc Move(MoveDiskRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "MoveDiskMetadata"
+      response: "Disk"
+    };
+  }
+
+  rpc Relocate(RelocateDiskRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "RelocateDiskMetadata"
+      response: "Disk"
+    };
+  }
+
+  // List snapshot schedules containing the disk
+  rpc ListSnapshotSchedules (ListDiskSnapshotSchedulesRequest) returns (ListDiskSnapshotSchedulesResponse);
+}
+
+message GetDiskRequest {
+  string disk_id = 1 [(valid) = "resource_id", (required) = true];
+}
+
+message GetRemovedDiskRequest {
+  string disk_id = 1 [(valid) = "resource_id", (required) = true];
+}
+
+message ListDisksRequest {
+  string folder_id = 1 [(valid) = "resource_id", (required) = true];
+  int64 page_size = 2 [(valid) = "page_size"];
+  string page_token = 3 [(valid) = "page_token"];
+  string filter = 4;
+  string name = 5 [(valid) = "resource_name"];	// legacy, for backward compatibility
+
+  // By which column the listing should be ordered and in which direction,
+  // format is "createdAt desc". "id asc" if omitted.
+  string order_by = 6 [(valid) = "order_by"];
+}
+
+message ListDisksResponse {
+  repeated Disk disks = 1;
+  string next_page_token = 2;
+}
+
+message ListRemovedDisksRequest {
+  // one can filter by cloud_id, folder_id or instance_id
+  //
+  // if instance_id is used returns disks that were deleted with instance
+  // with auto delete flag enabled
+  string filter = 1;
+
+  int64 page_size = 2 [(valid) = "page_size"];
+  string page_token = 3 [(valid) = "page_token"];
+}
+
+message ListRemovedDisksResponse {
+  repeated RemovedDisk disks = 1;
+  string next_page_token = 2;
+}
+
+message DeleteRemovedDiskRequest {
+  string disk_id = 1 [(valid) = "resource_id", (required) = true];
+}
+
+message DeleteRemovedDiskMetadata {
+  string disk_id = 1;
+}
+
+message ClearRemovedDisksRequest {
+  string cloud_id = 1 [(valid) = "resource_id", (required) = true];
+  string type_id = 2 [(valid) = "disk_type", (required) = true];
+
+  // limit for remaining removed disks size
+  int64 limit = 3 [(value) = ">=0"];
+}
+
+message ClearRemovedDisksMetadata {
+  string cloud_id = 1;
+}
+
+message CreateDiskRequest {
+  string folder_id = 1 [(valid) = "resource_id", (required) = true];
+  string name = 2 [(valid) = "resource_name"];
+  string description = 3 [(valid) = "description"];
+  map<string, string> labels = 4 [(valid) = "labels"];
+  string type_id = 5 [(valid) = "disk_type"];
+  string zone_id = 6 [(valid) = "zone_id", (required) = true];
+  int64 size = 7 [(required) = true];
+  int64 block_size = 10;
+  oneof source {
+    string image_id = 8 [(valid) = "resource_id"];
+    string snapshot_id = 9 [(valid) = "resource_id"];
+  }
+  DiskPlacementPolicy disk_placement_policy = 11;
+  repeated string snapshot_schedule_ids = 12 [(valid) = "resource_id", (length) = "<=1000"];
+
+  // private fields
+  repeated reference.Reference references = 100 [(required) = true];
+}
+
+message CreateDiskMetadata {
+  string disk_id = 1;
+  double progress_percentage = 2;
+}
+
+message UpdateDiskRequest {
+  string disk_id = 1 [(valid) = "resource_id", (required) = true];
+  google.protobuf.FieldMask update_mask = 2;
+
+  string name = 3 [(valid) = "resource_name"];
+  string description = 4 [(valid) = "description"];
+  map<string, string> labels = 5 [(valid) = "labels"];
+  int64 size = 6;
+  //  oneof source { // restore disk will be later
+  //    string image_id = 7;
+  //    string snapshot_id = 8;
+  //  }
+  DiskPlacementPolicy disk_placement_policy = 9;
+}
+
+message UpdateDiskMetadata {
+  string disk_id = 1;
+}
+
+message DeleteDiskRequest {
+  string disk_id = 1 [(valid) = "resource_id", (required) = true];
+  bool safe_delete = 2;
+}
+
+message DeleteDiskMetadata {
+  string disk_id = 1;
+}
+
+message ResurrectDiskRequest {
+  string disk_id = 1 [(valid) = "resource_id", (required) = true];
+}
+
+message ResurrectDiskMetadata {
+  string disk_id = 1;
+}
+
+message ListDiskOperationsRequest {
+  string disk_id = 1 [(valid) = "resource_id", (required) = true];
+  int64 page_size = 2 [(valid) = "page_size"];
+  string page_token = 3 [(valid) = "page_token"];
+}
+
+message ListDiskOperationsResponse {
+  repeated operation.Operation operations = 1;
+  string next_page_token = 2;
+}
+
+message UpdateDiskReferencesRequest {
+  string disk_id = 1 [ (valid) = "resource_id", (required) = true];
+  repeated reference.Reference reference_additions = 2 [(required) = true];
+  repeated reference.Reference reference_deletions = 3 [(required) = true];
+}
+
+message UpdateDiskReferencesMetadata {
+  string disk_id = 1;
+}
+
+message UpdateDiskReferencesResponse {
+}
+
+message ListDiskReferencesRequest {
+  string disk_id = 1 [(valid) = "resource_id", (required) = true];
+  int64 page_size = 2 [(valid) = "page_size"];
+  string page_token = 3 [(valid) = "page_token"];
+}
+
+message ListDiskReferencesResponse {
+  repeated reference.Reference references = 1;
+  string next_page_token = 2;
+}
+
+message MoveDiskRequest {
+  string disk_id = 1 [(valid) = "resource_id", (required) = true];
+  string destination_folder_id = 2 [(valid) = "resource_id", (required) = true];
+}
+
+message MoveDiskMetadata {
+  string disk_id = 1;
+  string source_folder_id = 2;
+  string destination_folder_id = 3;
+}
+
+message RelocateDiskRequest {
+  string disk_id = 1 [(valid) = "resource_id", (required) = true];
+  string destination_zone_id = 2 [(valid) = "zone_id", (required) = true];
+}
+
+message RelocateDiskMetadata {
+  string disk_id = 1;
+  string source_zone_id = 2;
+  string destination_zone_id = 3;
+}
+
+message ListDiskSnapshotSchedulesRequest {
+  string disk_id = 1 [(valid) = "resource_id", (required) = true];
+  int64 page_size = 2 [(valid) = "page_size"];
+  string page_token = 3 [(valid) = "page_token"];
+}
+
+message ListDiskSnapshotSchedulesResponse {
+  repeated SnapshotSchedule snapshot_schedules = 1;
+  string next_page_token = 2;
+}

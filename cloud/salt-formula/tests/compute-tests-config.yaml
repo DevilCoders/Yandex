@@ -1,0 +1,92 @@
+{%- import "common/kikimr/init.sls" as vars with context %}
+
+{%- set lb_endpoints = grains['cluster_map']['load_balancer']['endpoints'] -%}
+{% set hostname = grains['nodename'] %}
+
+{%- set kikimr_ycloud_host = 'localhost' if vars.subdomains|length > 1 else lb_endpoints.ycloud_kikimr_grpc.host %}
+{%- set kikimr_ycloud_port = pillar['kikimr_tenant_ports'][vars.compute_database]['grpc_port'] if vars.subdomains|length > 1 or vars.base_role == 'cloudvm' else lb_endpoints.ycloud_kikimr_grpc.port %}
+{%- set kikimr_snapshot_host = 'localhost' if vars.subdomains|length > 1 else lb_endpoints.snapshot_kikimr_grpc.host %}
+{%- set kikimr_snapshot_port = pillar['kikimr_tenant_ports'][vars.compute_database]['grpc_port'] if vars.subdomains|length > 1 or vars.base_role == 'cloudvm' else lb_endpoints.snapshot_kikimr_grpc.port %}
+{%- set generate_random_instance_id_signature_key = salt['pillar.get']('secrets:metadata:generate_random_key', False) %}
+
+{% if generate_random_instance_id_signature_key %}
+metadata_instance_id_signature_key: {{ salt['grains.get_or_set_hash']('instance_id_signature_key', 32, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') }}
+{% else %}
+metadata_instance_id_signature_key: 'fake_random_value'
+{% endif %}
+
+images:
+  default: https://local-lb.cloud-lab.yandex.net:9123/image.img
+  big: https://local-lb.cloud-lab.yandex.net:9123/big.img
+
+endpoints:
+  compute:
+    url: http://{{ lb_endpoints.compute.host }}:{{ lb_endpoints.compute.port }}/external
+  compute_private:
+    url: http://{{ lb_endpoints.compute.host }}:{{ lb_endpoints.compute.port }}/private
+  kikimr:
+    compute_global:
+      host: {{ salt['grains.get']('overrides:kikimr_endpoint', (kikimr_ycloud_host, kikimr_ycloud_port)|join(':')) }}
+      root: /{{ vars.ydb_domain }}/{{ vars.compute_database }}/{{ grains['cluster_map']['stand_type'] }}/{{ salt['grains.get']('overrides:kikimr_id', salt['grains.get']('cluster_map:kikimr:shared_dir')) }}/compute_global
+      ydb_client_version: 2
+      disable_pool: false
+      allow_autoprepare: true
+      enable_trace_ydb_session_leak: true
+
+    compute_az:
+      host: {{ salt['grains.get']('overrides:kikimr_endpoint', (kikimr_ycloud_host, kikimr_ycloud_port)|join(':')) }}
+      root: /{{ vars.ydb_domain }}/{{ vars.compute_database }}/{{ grains['cluster_map']['stand_type'] }}/{{ salt['grains.get']('overrides:kikimr_id', salt['grains.get']('cluster_map:kikimr:shared_dir')) }}/compute_az
+      ydb_client_version: 2
+      disable_pool: false
+      allow_autoprepare: true
+      enable_trace_ydb_session_leak: true
+
+    snapshot:
+      host: {{ salt['grains.get']('overrides:kikimr_endpoint', (kikimr_snapshot_host, kikimr_snapshot_port)|join(':')) }}
+      root: /{{ vars.ydb_domain }}/{{ vars.snapshot_database }}/{{ grains['cluster_map']['stand_type'] }}/{{ salt['grains.get']('overrides:kikimr_id', salt['grains.get']('cluster_map:kikimr:shared_dir')) }}/snapshot
+      ydb_client_version: 2
+      disable_pool: false
+      allow_autoprepare: true
+      enable_trace_ydb_session_leak: true
+
+  snapshot:
+    url: http://{{ lb_endpoints.snapshot.host }}:{{ lb_endpoints.snapshot.port }}
+  snapshot_grpc:
+    url: ip6-localhost:7627
+  network:
+    protocol: http
+    schema_version: '3.2'
+    zones:
+      {% for zone_id in grains.cluster_map.availability_zones | sort %}
+      - name: {{ zone_id }}
+        oct_clusters:
+          {% for cluster_id in grains.cluster_map.oct_clusters_by_az[zone_id] %}
+          - name: {{ cluster_id }}
+            host: oct-{{ cluster_id }}-balancer
+            port: 8082
+          {% endfor %}
+      {% endfor %}
+  gauthling_daemon:
+    url: gauthling.is.not.here.anymore:1234
+  nbs:
+    url: localhost:9766
+  identity:
+    url: http://{{ lb_endpoints.identity_public.host }}:{{ lb_endpoints.identity_public.port }}
+  identity_private:
+    url: http://{{ lb_endpoints.identity_public.host }}:{{ lb_endpoints.identity_public.port }}
+  health_check_ctrl:
+    url: hc.private-api.cloud-preprod.yandex.net:50051
+  load_balancer_ctrl:
+    url: lb.private-api.cloud-preprod.yandex.net:50052
+  network_load_balancer:
+    lb_asn: 65531
+    eggress_acl:
+      name: egress-lb-splitter
+      ri_name: lb-ri
+
+dns:
+  internal_zone: {{ pillar['dns']['virtual_dns']['internal_zone'] }}
+  region_name: {{ pillar['dns']['virtual_dns']['region_name'] }}
+  proxy_vdns_zone: {{ grains['cluster_map']['proxy_vdns_zone'] }}
+
+default_availability_zone: {{ pillar['placement']['dc'] }}

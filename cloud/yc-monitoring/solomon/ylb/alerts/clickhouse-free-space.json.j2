@@ -1,0 +1,42 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro prog() %}
+let free_space = {
+	cluster='mdb_{{ mdb_cluster_id }}',
+	service='yandexcloud_dbaas',
+	node='by_dc',
+	name='disk-free_bytes_/var/lib/clickhouse',
+	subcluster_name='clickhouse_subcluster'
+};
+
+let total_space = {
+	cluster='mdb_{{ mdb_cluster_id }}',
+	service='yandexcloud_dbaas',
+	node='by_dc',
+	name='disk-total_bytes_/var/lib/clickhouse',
+	subcluster_name='clickhouse_subcluster'
+};
+
+let free_perc = min(free_space) / min(total_space) * 100;
+let description = 'Free disk space in clickhouse cluster: ' + free_perc + '%';
+
+let is_red = free_perc < {{ red_threshold }};
+alarm_if(is_red);
+
+let is_yellow = free_perc < {{ yellow_threshold }};
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+	"id": "{{ id }}",
+	"name": "{{ name }}",
+	"description": "",
+	"groupByLabels": ["host"],
+	"annotations": {
+		"details": "[[expression.description]]",
+		"host": "ylb_logshatter_{{ env }}_clickhouse",
+		"service": "clickhouse-free-space-[[labels.dc]]",
+		"wiki": "https://docs.yandex-team.ru/yc-monitoring/cgw/clickhouse-free-space"
+	},
+	"type": {{ type_expression() }}
+{% endblock %}

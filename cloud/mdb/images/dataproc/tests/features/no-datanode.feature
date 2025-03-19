@@ -1,0 +1,58 @@
+@hadoop
+Feature: Minimal test with mapreduce and spark over yarn
+    Scenario: Hadoop cluster creates and working
+        # Given cluster is already created with ctx id `dp-uzxcgrzd`
+        Given cluster name "lightweight"
+        And cluster topology is lightweight
+        Given NAT network
+        And cluster with services: mapreduce, yarn, spark
+        When cluster created within 10 minutes
+
+    Scenario: Cluster considered lightweight by salt
+        When execute command `sudo salt-call ydputils.is_lightweight`
+        Then command finishes within 10 seconds
+        And command stdout contains
+        """
+        True
+        """
+
+    Scenario Outline: Service on masternodes works
+        Then service <service> on masternodes is running
+        Examples: masternode services
+            | service                        |
+            | hadoop-yarn@resourcemanager    |
+            | hadoop-yarn@timelineserver     |
+            | hadoop-mapred@historyserver    |
+            | spark@history-server           |
+            | dataproc-agent                 |
+            | telegraf                       |
+
+    Scenario Outline: Service on computenodes works
+        Then service <service> on computenodes is running
+        Examples: computenode services
+            | service                        |
+            | hadoop-yarn@nodemanager        |
+
+    @mapreduce
+    Scenario: mapreduce example org.apache.hadoop.examples.QuasiMonteCarlo works
+        When execute command
+        """
+        hadoop jar /usr/lib/hadoop-mapreduce/hadoop-mapreduce-examples.jar pi 2 100000
+        """
+        Then command finishes within 120 seconds
+        And command stdout contains
+        """
+        Pi is 3.14
+        """
+
+    @spark
+    Scenario: spark example org.apache.spark.examples.SparkPi works
+        When execute command
+        """
+        spark-submit --class org.apache.spark.examples.SparkPi /usr/lib/spark/examples/jars/spark-examples.jar 1000
+        """
+        Then command finishes within 120 seconds
+        And command stdout contains
+        """
+        Pi is roughly 3.14
+        """

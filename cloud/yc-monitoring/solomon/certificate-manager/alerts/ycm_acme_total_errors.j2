@@ -1,0 +1,31 @@
+{% extends "./base_alert.j2" %}
+
+{% set checkExpression = "diff > " + diff_limit %}
+{% set description = "YCM " + env | upper + " ACME Total Errors" %}
+{% set windowSecs = 300 %}
+
+{% macro prog() %}
+let data = group_by_time(1m, 'max', {
+    project='{{ project_id }}',
+    service='{{ solomon_service }}',
+    cluster='cloud_{{ env }}_ycm_cluster',
+    host='cluster',
+    {{ sensor_label }}='acmeServiceTotalErrors'
+});
+let derivative = derivative(data);
+let diff = sum(derivative);
+let diffStr = diff > 0 ? '(+' + to_fixed(diff, 0) + ') ' : '';
+let value = max(data);
+{% endmacro %}
+
+{% block main %}
+  "name": "YCM {{ env | upper }} ACME Total Errors",
+  "groupByLabels": ["cluster"],
+  "annotations": {
+    "jugglerService": "[[labels.cluster]]--acme-total-errors",
+    "description": "[[expression.value]] acme errors on [[labels.cluster]]",
+    "wikiUrl": "https://nda.ya.ru/t/ToDXhbRg4mwHPZ",
+    "jugglerTags" : "{{ jugglerTags }}"
+  },
+  "type": {{ type_expression() }}
+{% endblock %}

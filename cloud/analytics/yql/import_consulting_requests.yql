@@ -1,0 +1,110 @@
+USE hahn;
+PRAGMA yt.InferSchema = '1';
+-- To be able to cast null values in $get_form_answer(src.questions, "marketo_lead_id") to 0
+PRAGMA yson.DisableStrict;
+PRAGMA File('libcrypta_identifier_udf.so', 'yt://hahn/home/crypta/public/udfs/stable/libcrypta_identifier_udf.so');
+PRAGMA Udf('libcrypta_identifier_udf.so');
+
+$stat_tables = '//statbox/forms-statistics-log';
+$dst_table = '//home/cloud_analytics/import/forms/consulting_request';
+$billing_accounts = '//home/logfeller/logs/yc-billing-export-billing-accounts/1h';
+$send_email = '//home/cloud_analytics/import/marketo/send_email';
+$iam = '//home/cloud_analytics/import/iam/cloud_owners/1h';
+
+$survey_id='10012382';
+$src_lookup_interval = DateTime::IntervalFromDays(3);
+
+DEFINE SUBQUERY $last_non_empty_table($path) AS
+    $max_path = (
+        SELECT MAX(Path) AS Path
+        FROM FOLDER($path, 'row_count')
+        WHERE Type = 'table'
+            AND Yson::LookupInt64(Attributes, 'row_count') > 0
+    );
+    SELECT * FROM CONCAT($max_path);
+END DEFINE;
+
+$email_to_canonical = ($email) -> {
+    RETURN Identifiers::NormalizeEmail($email);
+};
+
+$filter_src_table = ($table_name) -> {
+    return $table_name > CAST(
+        DateTime::MakeDate(
+            CurrentUtcTimestamp() - $src_lookup_interval
+        )
+        AS String
+    );
+};
+
+$src = (
+    SELECT * FROM FILTER(
+      $stat_tables,
+      $filter_src_table
+    )
+);
+
+$billing_accounts = (
+    SELECT
+      email,
+      MAX_BY(billing.id, billing.created_at) AS ba_id
+    FROM $last_non_empty_table($iam) AS iam
+        LEFT JOIN $last_non_empty_table($billing_accounts) AS billing
+        ON iam.passport_uid = billing.owner_id
+    GROUP BY $email_to_canonical(iam.user_settings_email) AS email
+);
+
+$sent_emails = (
+    SELECT
+        lead_id,
+        MAX_BY(email, created) AS email
+    FROM $send_email
+    GROUP BY lead_id
+);
+
+$last_sync_ts = (
+    SELECT
+    COALESCE(
+        MAX(DateTime::FromSeconds(CAST(`timestamp` AS Uint32))),
+        DateTime::FromSeconds(0)
+    )
+    FROM $dst_table
+);
+
+$answer_to_index = (SELECT AsDict(
+    AsTuple("first_name", 0),
+    AsTuple("last_name", 1),
+    AsTuple("phone", 2),
+    AsTuple("date", 3),
+    AsTuple("time", 4),
+    AsTuple("pd_agree", 5),
+    AsTuple("marketo_lead_id", 6),
+));
+
+$get_form_answer = ($field, $answer) -> {
+    RETURN Yson::ParseJson($field)[UnWrap(DictLookup($answer_to_index, $answer))]['answer']
+};
+
+$delta_items = (
+    SELECT
+        CAST(src.unixtime AS Uint64) AS `timestamp`,
+        src.login AS yandex_login,
+        src.uid AS yandex_puid,
+        Yson::ConvertToString($get_form_answer(src.questions, "first_name")) AS user_firstName,
+        Yson::ConvertToString($get_form_answer(src.questions, "last_name")) AS user_lastName,
+        Yson::ConvertToString($get_form_answer(src.questions, "phone")) AS user_phone,
+        'Заявка на индивидуальную консультацию специалиста Яндекс.Облака \n Звонить '
+        || Yson::ConvertToString($get_form_answer(src.questions, "date"))
+        || ' ' || Yson::ConvertToString($get_form_answer(src.questions, "time")) AS message,
+        sent_emails.email AS user_email,
+        billing_accounts.ba_id AS ba_id
+    FROM $src AS src
+    LEFT JOIN $sent_emails AS sent_emails
+        ON Yson::ConvertToUint64($get_form_answer(src.questions, "marketo_lead_id")) = sent_emails.lead_id
+    LEFT JOIN $billing_accounts AS billing_accounts
+        ON sent_emails.email = billing_accounts.email
+    WHERE survey_id = $survey_id
+        AND DateTime::FromSeconds(CAST(src.unixtime AS Uint32)) > $last_sync_ts
+);
+
+INSERT INTO $dst_table SELECT * FROM $delta_items;

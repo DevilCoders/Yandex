@@ -1,0 +1,65 @@
+{
+  "variables": {
+    "endpoint": "api.cloud.yandex.net:443",
+    "service_account_key_file": "/home/mrdracon/tools/mktbase/service_account.json",
+    "subnet_id": "b0cc9i9dh2d7aqjrbfps",
+    "zone": "ru-central1-c",
+    "folder_id": "b1g9dapghac3s4tkhv24",
+    "dirty_images_folder_id": "b1g8fqssmhljjerknber"
+  },
+  "builders": [
+    {
+      "type": "yandex",
+      "platform_id": "standard-v2",
+      "endpoint": "{{user `endpoint`}}",
+      "folder_id": "{{user `folder_id`}}",
+      "subnet_id": "{{user `subnet_id`}}",
+      "use_ipv6": true,
+      "zone": "{{user `zone`}}",
+      "labels": {},
+      "service_account_key_file": "{{user `service_account_key_file`}}",
+      "image_name": "mkt-ubuntu-1604-{{timestamp}}",
+      "image_family": "mkt-ubuntu-1604",
+      "image_labels": {},
+      "image_description": "mkt image ubuntu 16.04 dhcpv6",
+      "source_image_folder_id": "{{user `dirty_images_folder_id`}}",
+      "source_image_name": "mktbase-ubuntu1604",
+      "disk_size_gb": 10,
+      "disk_type": "network-ssd",
+      "ssh_username": "ubuntu"
+    }
+  ],
+  "provisioners": [
+        {
+            "type": "shell",
+            "inline": [
+                "while [ ! -f /var/lib/cloud/instance/boot-finished ]; do echo 'Waiting for cloud-init...'; sleep 5; done"
+            ]
+        },
+        {
+            "type": "shell",
+            "execute_command": "sudo {{ .Vars }} bash '{{ .Path }}'",
+            "pause_before": "5s",
+            "scripts": [
+                "install.sh",
+                "packages.sh",
+                "cleanup.sh"
+            ]
+        }
+  ],
+  "post-processors": [
+    {
+      "type": "yandex-export",
+      "folder_id": "{{user `folder_id`}}",
+      "subnet_id": "{{user `subnet_id`}}",
+      "zone": "ru-central1-c",
+
+      "service_account_id": "ajegchjdfdvr2nj0bjnd",
+
+      "paths": [
+        "s3://bootstrap-image-bucket/mkt-gpn-ubuntu-1604.qcow2"
+      ],
+      "keep_input_artifact": true
+    }
+  ]
+}

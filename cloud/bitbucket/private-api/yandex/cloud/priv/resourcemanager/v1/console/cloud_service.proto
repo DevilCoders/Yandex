@@ -1,0 +1,185 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.resourcemanager.v1.console;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "yandex/cloud/api/operation.proto";
+import "yandex/cloud/api/tools/options.proto";
+import "yandex/cloud/priv/access/access.proto";
+import "yandex/cloud/priv/console/v1/resource_settings.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+import "yandex/cloud/priv/resourcemanager/v1/folder.proto";
+import "yandex/cloud/priv/resourcemanager/v1/cloud.proto";
+import "yandex/cloud/priv/servicecontrol/v1/resource.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/resourcemanager/v1/console;resourcemanager_console";
+option java_outer_classname = "PCCS";
+
+service CloudService {
+
+  rpc Get (GetCloudRequest) returns (GetCloudResponse);
+
+  rpc Create (CreateCloudRequest) returns (operation.Operation) {
+    option (google.api.http) = { post: "/yrm/v1/console/clouds" body: "*" };
+    option (yandex.cloud.api.operation) = {
+      metadata: "CreateCloudMetadata"
+      response: "yandex.cloud.priv.resourcemanager.v1.Cloud"
+    };
+  }
+
+  rpc GetQuotas (GetCloudQuotasRequest) returns (CloudQuotas) {
+    option (google.api.http) = { get: "/yrm/v1/console/clouds/{cloud_id}:getQuotas" };
+  }
+
+  rpc AddMember (AddCloudMemberRequest) returns (AddCloudMemberResponse) {
+    option (google.api.http) = { get: "/yrm/v1/console/clouds/{cloud_id}:addMember" };
+    option (yandex.cloud.api.tools.method).lint_skip.http_verb = true;
+  }
+
+  rpc RemoveMember (RemoveCloudMemberRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { post: "/yrm/v1/console/clouds/{cloud_id}:removeMember" body: "*" };
+  }
+
+  rpc ListAllAccessBindings (ListAllAccessBindingsRequest) returns (ListAllAccessBindingsResponse) {
+    option (google.api.http) = { get: "/yrm/v1/console/clouds/{cloud_id}:listAllAccessBindings" };
+  }
+
+  // Get authenticated user membership info.
+  rpc GetMembershipInfo (google.protobuf.Empty) returns (MembershipInfoResponse);
+
+  rpc GetTree (GetTreeRequest) returns (GetTreeResponse);
+
+  rpc ListOwners (ListOwnersRequest) returns (ListOwnersResponse);
+
+  rpc GetSettings (yandex.cloud.priv.console.v1.GetResourceSettingsRequest) returns (yandex.cloud.priv.console.v1.ResourceSettingsResponse);
+
+  rpc UpdateSettings (yandex.cloud.priv.console.v1.UpdateResourceSettingsRequest) returns (yandex.cloud.priv.console.v1.ResourceSettingsResponse);
+}
+
+message GetCloudRequest {
+  string cloud_id = 1 [(required) = true, (length) = "<=50"];
+}
+
+message GetCloudResponse {
+  yandex.cloud.priv.resourcemanager.v1.Cloud cloud = 1;
+  repeated Restriction restrictions = 2;
+
+  message Restriction {
+    string type_id = 1;
+    string name = 2;
+    string description = 3;
+    google.protobuf.Timestamp added_at = 4;
+  }
+}
+
+message CreateCloudRequest {
+  string name = 1 [(required) = true, (pattern) = "[a-z]([-a-z0-9]{0,61}[a-z0-9])?"];
+  string description = 2 [(length) = "<=256"];
+  reserved 3;
+  reserved "monetary_offer_id";
+  string billing_account_id = 4 [(length) = "<=50"];
+  string referral_code_id = 5 [(length) = "<=50"];
+  string organization_id = 6 [(length) = "<=50"];
+  map<string, string> labels = 7 [(priv.size) = "<=64", (length) = "<=63", (pattern) = "[-_0-9a-z]*", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_0-9a-z]*"];
+}
+
+message CreateCloudMetadata {
+  string cloud_id = 1;
+}
+
+message GetCloudQuotasRequest {
+  string cloud_id = 1 [(length) = "1-50"];
+}
+
+message CloudQuotas {
+  message Quota {
+    int64 total = 1;
+    int64 used = 2;
+  }
+
+  Quota folder_quota = 1;
+}
+
+message AddCloudMemberRequest {
+  string cloud_id = 1 [(length) = "1-50"];
+  string email = 2 [(length) = "1-256"];
+}
+
+message AddCloudMemberResponse {
+  string user_account_id = 1 [(length) = "1-50"];
+}
+
+message RemoveCloudMemberRequest {
+  string cloud_id = 1 [(length) = "1-50"];
+  string user_account_id = 2 [(length) = "1-50"];
+}
+
+message ListAllAccessBindingsRequest {
+  string cloud_id = 1 [(length) = "1-50"];
+  int64 page_size = 2 [(value) = "0-1000"];
+  string page_token = 3 [(length) = "<=100"];
+}
+
+message AccessBinding {
+  string role_id = 1;
+  access.Subject subject = 2;
+  servicecontrol.v1.Resource resource = 3;
+}
+
+message ListAllAccessBindingsResponse {
+  repeated AccessBinding access_bindings = 1 [(size) = "<=1000"];
+  string next_page_token = 2 [(length) = "<=100"];
+}
+
+message MembershipInfoResponse {
+  bool is_member_of_cloud = 1;
+  // ID of the running operation of creating a default user cloud (if there is an operation).
+  // In most cases this field is empty, non empty operation id is returned when `is_member_of_cloud` is false and console page is refreshed.
+  string create_cloud_operation_id = 2;
+}
+
+message GetTreeRequest {
+  int64 page_size = 1 [(value) = "0-1000"];
+  string page_token = 2 [(length) = "<=100"];
+  string organization_id = 3 [(length) = "<=50"];
+}
+
+message GetTreeResponse {
+  repeated Cloud clouds = 1 [(size) = "<=1000"];
+  string next_page_token = 2 [(length) = "<=100"];
+
+  // lightweight version of yandex.cloud.priv.organizationmanager.v1.Organization
+  message CloudOrganization {
+    string id = 1;
+    string name = 3;
+    string title = 6;
+  }
+
+  message Cloud {
+    string id = 1;
+    string name = 2;
+    string description = 3;
+    string settings_json = 4;
+    google.protobuf.Timestamp created_at = 5;
+    yandex.cloud.priv.resourcemanager.v1.Cloud.Status status = 6;
+
+    repeated yandex.cloud.priv.resourcemanager.v1.Folder folders = 7;
+    CloudOrganization organization = 8;
+
+    bool has_restrictions = 9;
+  }
+}
+
+message ListOwnersRequest {
+  string cloud_id = 1 [(length) = "1-50"];
+  int64 page_size = 2 [(value) = "0-1000"];
+  string page_token = 3 [(length) = "<=100"];
+}
+
+message ListOwnersResponse {
+  repeated access.Subject owners = 1 [(size) = "<=1000"];
+  string next_page_token = 2 [(length) = "<=100"];
+}

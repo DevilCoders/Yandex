@@ -1,0 +1,64 @@
+{% from "components/mongodb/walg/map.jinja" import walg, s3 with context %}
+{% set mongodb = salt.slsutil.renderer('salt://components/mongodb/defaults.py?saltenv=' ~ saltenv) %}
+
+{%- set user = "admin" %}
+{% set password = mongodb.users.get(user).password %}
+{% if mongodb.services_deployed|length > 1 and mongodb.services_deployed[0] == 'mongos' %}
+{%   set srv = mongodb.services_deployed[1] %}
+{% else %}
+{%   set srv = mongodb.services_deployed[0] %}
+{% endif %}
+{% set host = salt.grains.get('id') %}
+{% set port = mongodb.config.get(srv).net.port %}
+{% set dbname = 'admin' %}
+
+{% set mongodb_uri = "mongodb://{user}:{password}@{host}:{port}/?authSource={dbname}&connect=direct&socketTimeoutMS=60000&connectTimeoutMS=10000{ssl_opts}".format(user=user, password=password, host=host, port=port, dbname=dbname, ssl_opts=mongodb.config.get(srv).cli.ssl_uri_args) %}
+{% set mongorestore_args = "--numParallelCollections={} --numInsertionWorkersPerCollection={}".format(walg.mongorestore_numParallelCollections, walg.mongorestore_numInsertionWorkersPerCollection) %}
+{% if walg.mongorestore_oplogReplay %}
+{%   set mongorestore_args = mongorestore_args + " --oplogReplay" %}
+{% endif %}
+{% if walg.mongorestore_batchSize is not none %}
+{%   set mongorestore_args = mongorestore_args + " --batchSize={}".format(walg.mongorestore_batchSize) %}
+{% endif %}
+{% set def_walg_coroutines = salt.pillar.get('data:dbaas:flavor:cpu_guarantee', salt.pillar.get('data:walg:parallel_workers', 1)) %}
+{% if def_walg_coroutines < 4 %}
+{%   set walg_coroutines = 1 %}
+{% else %}
+{%   set walg_coroutines = def_walg_coroutines %}
+{% endif %}
+{% set compression = salt.pillar.get('data:walg:compression', 'brotli') %}
+
+AWS_ACCESS_KEY_ID:           {{ s3.restore_access_key_id }}
+AWS_SECRET_ACCESS_KEY:       {{ s3.restore_access_secret_key }}
+AWS_ENDPOINT:                {{ s3.endpoint }}
+AWS_S3_FORCE_PATH_STYLE:     {{ (not salt.pillar.get('data:s3:virtual_addressing_style', False)) | json }}
+AWS_REGION:                  {{ s3.region }}
+WALG_PGP_KEY_PATH:           {{ walg.restore_confdir}}/PGP_KEY
+WALG_S3_PREFIX:              {{ s3.restore_path }}
+S3_MAX_PART_SIZE:            '{{s3.multipart_chunk_size}}'
+WALG_S3_RANGE_BATCH_ENABLED: {{ 'true' if walg.s3_range_batch_enabled else 'false' }}
+WALG_S3_RANGE_MAX_RETRIES:   {{ walg.s3_range_max_retries | int }}
+
+GOMAXPROCS:                  {{ (walg_coroutines + 1) | int }}
+
+WALG_LOG_LEVEL:              'DEVEL'
+WALG_COMPRESSION_METHOD:     '{{ compression }}'
+
+WALG_SENTINEL_USER_DATA:     '{"shard_name": "{{walg.replset_identifier}}"}'
+
+MONGODB_URI:                 '{{ mongodb_uri }}'
+WALG_STREAM_RESTORE_COMMAND: 'mongorestore --verbose=5 --archive {{ mongorestore_args }} {{ mongodb.config.get(srv).cli.ssl_mongodump_args }} --drop --uri="{{ mongodb_uri }}"'
+
+HTTP_LISTEN:                '127.0.0.1:8090'
+HTTP_EXPOSE_PPROF:          'true'
+HTTP_EXPOSE_EXPVAR:         'true'
+
+{% if walg.replay_ignore_update_dups %}
+OPLOG_REPLAY_IGNORE_ERROR_CODES: '{"u": [11000, 11001, 12582, 16460], "i": [11000, 11001, 12582, 16460]}'
+{% endif %}
+{% if walg.replay_app_mode is not none %}
+OPLOG_REPLAY_OPLOG_APPLICATION_MODE: '{{walg.replay_app_mode}}'
+{% endif %}
+{% if walg.replay_always_upsert is not none %}
+OPLOG_REPLAY_OPLOG_ALWAYS_UPSERT: '{{walg.replay_always_upsert}}'
+{% endif %}

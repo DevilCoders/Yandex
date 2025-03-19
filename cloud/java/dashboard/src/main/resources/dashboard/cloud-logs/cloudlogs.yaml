@@ -1,0 +1,187 @@
+uid: ycpCloudLogs
+refresh: 1m
+title: Cloud Logs
+
+variables:
+  ui:
+    cluster:
+      values: ['prod', 'preprod']
+  repeat:
+    jvm_memory_area:
+      values: ['heap', 'nonheap']
+      titles: ['Heap', 'Non-Heap']
+  replacement:
+    !include ../include/errors.yaml
+
+graphDefaults:
+  datasource: 'Solomon Cloud'
+  height: 6
+queryDefaults: { labels: 'project=cloudlogs' }
+
+rows:
+
+  - title: GRPC
+    queryDefaults: { labels: 'host=cloudlogs-log-*' }
+    graphDefaults: { width: 12 }
+    panels:
+
+      - type: graph
+        title: 'GRPC RPS'
+        templates: { name: rps, sumLines: [host] }
+        queries:
+          - params: { labels: 'name=grpc_requests, app=cloud-logs_server, meter_type=count, service=cloudlogs_groups, cluster=groups_${cluster}' }
+          - params: { labels: 'name=grpc_server_request_total, grpc_method=Read, service=events, cluster=events_${cluster}' }
+
+      - type: graph
+        title: 'GRPC Errors'
+        templates: { name: errors }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, app=cloud-logs_server, service=cloudlogs_groups, cluster=groups_${cluster}, status=@5xx' }
+          - params: { labels: 'name=grpc_statuses, app=cloud-logs_server, service=cloudlogs_groups, cluster=groups_${cluster}, status=@503' }
+          - params: { labels: 'name=grpc_statuses, app=cloud-logs_server, service=cloudlogs_groups, cluster=groups_${cluster}, status=@4xx' }
+          - params: { labels: 'name=grpc_server_response_total, service=events, cluster=events_${cluster}, grpc_code=@c5xx, grpc_method!=Check' }
+          - params: { labels: 'name=grpc_server_response_total, service=events, cluster=events_${cluster}, grpc_code=@c503, grpc_method!=Check' }
+          - params: { labels: 'name=grpc_server_response_total, service=events, cluster=events_${cluster}, grpc_code=@c4xx, grpc_method!=Check' }
+        draw: [{ alias: 'Log groups 5xx', color: '#b20', at: left }, { alias: 'Log groups 503', color: '#da7', at: left }, { alias: 'Log groups 4xx', color: '#147', at: left }, { alias: 'Log events 5xx', color: '#f00', at: left }, { alias: 'Log events 503', color: '#ff0', at: left }, { alias: 'Log events 4xx', color: '#00f', at: left }]
+
+      - type: graph
+        title: 'Log Groups Durations'
+        templates: { name: percentile, groupLines: true }
+        queries:
+          - params: { labels: 'name=grpc_durations, app=cloud-logs_server, service=cloudlogs_groups, cluster=groups_${cluster}' }
+      
+      - type: graph
+        title: 'Log Events Durations'
+        templates: { name: percentile, groupLines: true }
+        queries:
+          - params: { labels: 'name=grpc_server_response_duration_seconds, service=events, cluster=events_${cluster}' }
+
+      - type: graph
+        title: 'Log Groups Threads'
+        queries:
+          - params: { labels: 'name=jvm_threads_current, service=cloudlogs_groups, cluster=groups_${cluster}' }
+        display:
+          stack: true
+      
+      - type: graph
+        title: 'Log Events throughput'
+        queries:
+          - params: { labels: 'path=/Net/Ifs/RxBytes, intf=eth0, host=cloudlogs-log-events-*, service=events, cluster=events_${cluster}' }
+            select: {group_lines: [sum], alias: "throughput"}
+        yAxes: [{ format: bytes, min: 0 }]
+      
+  - title: System
+    queryDefaults: { labels: 'host=cloudlogs-log-*' }
+    graphDefaults: { width: 8 }
+    panels:
+      
+      - type: graph
+        title: 'LA Groups'
+        queries:
+          - params: { labels: 'path=/Proc/La, cluster=groups_${cluster}, service=cloudlogs_groups' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', alias: '{{host}}' }
+        yAxes: [{ min: 0, decimals: 1 }]
+      
+      - type: graph
+        title: 'Available memory'
+        queries:
+          - params: { labels: 'path=/Memory/MemAvailable, cluster=events_${cluster}, service=events' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', alias: '{{host}}' }
+          - params: { labels: 'path=/Memory/MemAvailable, cluster=groups_${cluster}, service=cloudlogs_groups' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', alias: '{{host}}' }
+        yAxes: [{ format: bytes, min: 0 }]
+      
+      - type: graph
+        title: 'Free Space'
+        queries:
+          - params: { labels: 'path=/Filesystem/FreeB, mountpoint=*, cluster=events_${cluster}, service=events' }
+            select: {group_by_labels: [sum, host]}
+          - params: { labels: 'path=/Filesystem/FreeB, mountpoint=*, cluster=groups_${cluster}, service=cloudlogs_groups' }
+            select: {group_by_labels: [sum, host]}
+        yAxes: [{ format: bytes, min: 0 }]
+
+      - type: graph
+        title: 'LA Events'
+        queries:
+          - params: { labels: 'path=/Proc/La, cluster=events_${cluster}, service=events' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', alias: '{{host}}' }
+        yAxes: [{ min: 0, decimals: 1 }]
+
+      - type: graph
+        title: 'User time'
+        queries:
+          - params: { labels: 'path=/System/UserTime, cluster=events_${cluster}, service=events' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: ['sum', 'host'], alias: '{{host}}' }
+          - params: { labels: 'path=/System/UserTime, cluster=groups_${cluster}, service=cloudlogs_groups' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: ['sum', 'host'], alias: '{{host}}' }
+        yAxes: [{ format: ms, min: 0, decimals: 0 }]
+
+      - type: graph
+        title: 'System time'
+        queries:
+          - params: { labels: 'path=/System/SystemTime, cluster=events_${cluster}, service=events' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: ['sum', 'host'], alias: '{{host}}' }
+          - params: { labels: 'path=/System/SystemTime, cluster=groups_${cluster}, service=cloudlogs_groups' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: ['sum', 'host'], alias: '{{host}}' }
+        yAxes: [{ format: ms, min: 0, decimals: 0 }]
+
+  - title: Log Groups JVM and process resident memory
+    queryDefaults: { labels: 'service=cloudlogs_groups, cluster=groups_${cluster}' }
+    graphDefaults: { width: 8 }
+
+    panels:
+      - type: graph
+        title: '@{jvm_memory_area:title} Memory used'
+        repeat: jvm_memory_area
+        queries:
+          - params: { labels: 'name=jvm_memory_bytes_used, area=@{jvm_memory_area}' }
+            groupByTime: { max: default }
+            select: { drop_below: '0' }
+        yAxes: [{ format: bytes, min: 0 }]
+
+      - type: graph
+        title: 'Resident memory'
+        queries:
+          - params: { labels: 'name=process_resident_memory_bytes' }
+            groupByTime: { max: default }
+            select: { drop_below: '0' }
+        yAxes: [{ format: bytes, min: 0 }]
+  
+  - title: YDB Sender
+    queryDefaults: { labels: 'project=serverless, service=ydb-sender-go, cluster=logs-${cluster}' }
+    graphDefaults: { width: 8 }
+
+    panels:
+      - type: graph
+        title: 'Messages'
+        templates: { name: rps, sumLines: [host] }
+        queries:
+          - params: { labels: 'name=messages_*' }
+      
+      - type: graph
+        title: 'YDB requests stats'
+        templates: { name: rps, sumLines: [host] }
+        queries:
+          - params: { labels: 'name=ydb_*' }
+      
+      - type: graph
+        title: 'Inflight batches'
+        queries:
+          - params: { labels: 'name=inflight' }
+            select: { group_by_labels: [sum, host] }
+
+      - type: graph
+        title: 'TotalTimeLagMsByLastRead (${cluster})'
+        params: { width: 24, datasource: 'Solomon' }
+        queries:
+          - params: { labels: 'project=kikimr, cluster=lbk, service=pqtabletAggregatedCounters, user_counters=PersQueue, sensor=TotalTimeLagMsByLastRead, host=*, TopicPath=yc-serverless-logs/${cluster}/yc-logs, OriginDC=*, Important=*, ConsumerPath=yc-serverless-logs/${cluster}/ydb-sender, Account=yc-serverless-logs' }
+            select: { alias: 'max@{{host}}' }

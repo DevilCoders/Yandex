@@ -1,0 +1,50 @@
+{% extends "../../base/alert.j2" %}
+
+{% set windowSecs = 600 %}
+
+{% from "../common/dropstats.j2" import dropstats %}
+
+{#
+    NOTE: for now there are still too many flaps in some metrics, so we use smoothing
+#}
+
+{% macro prog() %}
+let drops = {
+    cluster='cloud_{{ env }}_compute',
+    service='oct_vrouter_snh',
+    name='drop.packets_per_second',
+    reason='{{ dropstats[category].snh_reasons|join('|') }}'
+};
+
+let points_crit = heaviside(drops - {{ 5 * dropstats[category].multiplier }});
+let points_warn = heaviside(drops - {{ 1 * dropstats[category].multiplier }});
+
+{% if dropstats[category].smooth %}
+let points_crit = moving_avg(points_crit, 1m);
+let points_warn = moving_avg(points_warn, 1m);
+{% endif %}
+
+let top_reason = get_label(top_max(1, points_crit), "reason");
+let is_red = any_of(map(points_crit, v -> max(v) > 0.95));
+let is_yellow = any_of(map(points_warn, v -> max(v) > 0.95));
+
+alarm_if(is_red);
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+  "name": "VPC VRouter drops: {{ dropstats[category].title }} @ {{ env|upper }}",
+  "groupByLabels": [
+    "host"
+  ],
+  "annotations": {
+     "host": "{{ compute_node_fqdn() }}",
+     "cause": "{{ dropstats[category].cause }}",
+     "top_reason": "[[expression.top_reason]]",
+     "dashboard": "{{ compute_node_network_metrics_url() }}",
+     "service": "vrouter-dropstats-{{ category|replace('_', '-') }}",
+     "tags": "Solomon"
+  },
+  "description": "https://wiki.yandex-team.ru/cloud/devel/sdn/dropstats/",
+  "type": {{ type_expression() }}
+{% endblock %}

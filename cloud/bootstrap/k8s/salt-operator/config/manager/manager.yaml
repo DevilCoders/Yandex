@@ -1,0 +1,97 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    control-plane: controller-manager
+  name: system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller-manager
+  namespace: system
+  labels:
+    control-plane: controller-manager
+spec:
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+  replicas: 1
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        control-plane: controller-manager
+    spec:
+      hostNetwork: true
+      securityContext:
+        {}
+      containers:
+      - command:
+        - /salt-operator-manager
+        args:
+        - --leader-elect
+        - "--config=controller_manager_config.yaml"
+        image: controller:latest
+        imagePullPolicy: IfNotPresent
+        env:
+          - name: KUBERNETES_SERVICE_HOST
+            valueFrom:
+              configMapKeyRef:
+                name: salt-operator-envs
+                key: kubernetesServiceHost
+          - name: BOOTSTRAP_HOST
+            valueFrom:
+              configMapKeyRef:
+                name: salt-operator-envs
+                key: bootstrapHost
+          - name: BASE_ROLE_LABEL
+            valueFrom:
+              configMapKeyRef:
+                name: salt-operator-envs
+                key: baseRoleLabel
+          - name: SALT_RUNNER_CLIENT
+            valueFrom:
+              configMapKeyRef:
+                name: salt-operator-envs
+                key: saltRunnerClient
+          - name: SALT_RUNNER_SOCKET_DIR
+            valueFrom:
+              configMapKeyRef:
+                name: salt-operator-envs
+                key: saltRunnerSocketDir
+          - name: SALT_RUNNER_SOCKET_NAME
+            valueFrom:
+              configMapKeyRef:
+                name: salt-operator-envs
+                key: saltRunnerSocketName
+        name: manager
+        volumeMounts:
+        - name: manager-config
+          mountPath: /controller_manager_config.yaml
+          subPath: controller_manager_config.yaml
+        securityContext:
+          {}
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8083
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8083
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          {}
+      volumes:
+      - name: manager-config
+        configMap:
+          name: manager-config
+      serviceAccountName: controller-manager
+      terminationGracePeriodSeconds: 10
+      nodeSelector:
+        salt-operator: "1"

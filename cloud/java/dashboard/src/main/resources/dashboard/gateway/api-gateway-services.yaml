@@ -1,0 +1,95 @@
+uid: tFIbKjoWk
+refresh: 30s
+title: Api-Gateway Services
+
+tags: [ 'ycp', 'ycp-gateway', 'ycp-duty', 'ycp-drilldown', 'ycp-api-gateway-services' ]
+
+variables:
+  replacement:
+    !include ../include/errors.yaml
+  ui:
+    cluster: { values: [prod, preprod] }
+    apiGwServicesUI:
+      multi: true
+      hidden: false
+      values:
+        - yandex.cloud.compute.*
+        - yandex.cloud.compute.v1.instancegroup.*
+        - yandex.cloud.containerregistry.*
+        - yandex.cloud.dataproc.*
+        - yandex.cloud.iam.*
+        - yandex.cloud.iot.*
+        - yandex.cloud.k8s.*
+        - yandex.cloud.loadbalancer.*
+        - yandex.cloud.logs.*
+        - yandex.cloud.mdb.*
+        - yandex.cloud.operation.*
+        - yandex.cloud.resourcemanager.*
+        - yandex.cloud.serverless.*
+        - yandex.cloud.vpc.*
+        - yandex.cloud.ydb.*
+      titles:
+        - compute
+        - instancegroup
+        - containerregistry
+        - dataproc
+        - iam
+        - iot
+        - k8s
+        - loadbalancer
+        - logs
+        - mdb
+        - operation
+        - resourcemanager
+        - serverless
+        - vpc
+        - ydb
+
+graphDefaults: { width: 6, height: 5, datasource: 'Solomon Cloud' }
+queryDefaults: { labels: 'project=platform, cluster=cloud_${cluster}_api-gateway, service=api_gateway_ma, host!=cluster' }
+
+rows:
+- title: API-Gateway Services Rate
+  panels:
+
+  - type: graph
+    templates:
+      - { name: rps, rate: ui }
+      - { name: patchSelect, before: last, add: { asap: [] } }
+    uiRepeat: apiGwServicesUI
+    queryDefaults: { dropNan: true, labels: 'name=grpc_server_request_total, system=*, grpc_type=*, grpc_method!=all, grpc_service=${apiGwServicesUI}' }
+    title: '${apiGwServicesUI} $rateUnit ($cluster)'
+    display: { legend: false, fill: 0 }
+    yAxes: [ { min: 0, decimals: 1 } ]
+    queries: [ {} ]
+
+- title: API-Gateway Services Errors
+  panels:
+
+  - type: graph
+    title: '${apiGwServicesUI} errors ($cluster)'
+    display: { fill: 0 }
+    uiRepeat: apiGwServicesUI
+    queryDefaults: { dropNan: true, labels: 'name=grpc_server_response_total, grpc_code=@c5xx503, system=*, grpc_type=*, grpc_method!=all, grpc_service=${apiGwServicesUI}' }
+    yAxes: [ { min: 0, decimals: 1 } ]
+    queries:
+    - params: { labels: 'upstream_error=true' }
+      groupByTime: { max: 'default' }
+      select: { diff: [], drop_below: "0", group_lines: [sum], alias: upstream errors }
+    - params: { labels: 'upstream_error=false' }
+      groupByTime: { max: 'default' }
+      select: { diff: [], drop_below: "0", group_lines: [sum], alias: gw errors }
+
+- title: API-Gateway Services Duration
+  panels:
+
+  - type: graph
+    title: '${apiGwServicesUI} duration ($cluster)'
+    templates:
+      - { groupLines: true, name: percentile, format: solomon }
+      - { name: patchSelect, before: last, add: { asap: [] } }
+    display: { fill: 0 }
+    uiRepeat: apiGwServicesUI
+    queryDefaults: { dropNan: true, labels: 'name=grpc_server_response_duration_seconds, bin=*, grpc_service=${apiGwServicesUI}' }
+    yAxes: [ { min: 0, decimals: 1 } ]
+    queries: [ {} ]

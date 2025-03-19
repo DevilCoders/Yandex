@@ -1,0 +1,23 @@
+$parse_labels = ($labels) -> { RETURN Yson::ConvertToDict(Yson::ParseJson($labels)); };
+$get_labels = ($labels, $field) -> {
+    $parsed_labels = $parse_labels($labels);
+    RETURN Yson::ConvertToStringDict(DictLookup($parsed_labels, $field));
+};
+$get_system_labels = ($labels) -> {RETURN $get_labels($labels, "system_labels");};
+$get_user_labels = ($labels) -> {RETURN $get_labels($labels, "user_labels");};
+$get_folder_id = ($labels) -> { $system_labels = $get_labels($labels, "system_labels"); RETURN IF(DictContains($system_labels, "folder_id"), DictLookup($system_labels, "folder_id"));};
+
+-- please, keep alphabetical order by alias
+
+$result = (SELECT
+    billing_account_id                              AS billing_account_id,
+    $get_folder_id(labels_json)                     AS folder_id,
+    labels_hash                                     AS labels_hash,
+    labels_json                                     AS labels_json,
+    shard_id                                        AS shard_id,
+    $get_system_labels(labels_json)                 AS system_labels,
+    $get_user_labels(labels_json)                   AS user_labels,
+
+
+    FROM $labels_map_table
+);

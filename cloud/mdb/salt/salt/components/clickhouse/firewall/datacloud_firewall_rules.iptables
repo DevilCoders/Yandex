@@ -1,0 +1,42 @@
+{% set open_ports = salt['mdb_clickhouse.open_ports']() |join(' ') %}
+table filter {
+    chain INPUT {
+        # user access lists
+{% for cidr_block in salt['pillar.get']('data:access:ipv4_cidr_blocks', []) %}
+        proto tcp saddr {{ cidr_block['value'] }} dport ({{ open_ports }})  ACCEPT;
+{% endfor %}
+
+        # user network
+{% for cidr in salt['pillar.get']('data:access:user_net_ipv4_cidrs', []) %}
+        proto all saddr '{{ cidr }}' ACCEPT;
+{% endfor %}
+
+{% if salt['pillar.get']('data:access:data_lens', False) %}
+        # datalens nets
+{%   for net in salt['pillar.get']('data:access:projects:datalens_nets', []) %}
+        proto tcp saddr {{ net }} dport ({{ open_ports }})  ACCEPT;
+{%   endfor %}
+{% endif %}
+    }
+}
+
+domain ip6 {
+    table filter {
+        chain INPUT {
+            # user access lists
+{% for cidr_block in salt['pillar.get']('data:access:ipv6_cidr_blocks', []) %}
+            proto tcp saddr {{ cidr_block['value'] }} dport ({{ open_ports }}) ACCEPT;
+{% endfor %}
+
+            # datatransfer nets, now included by default
+{% for net in salt['pillar.get']('data:access:projects:datatransfer_nets', []) %}
+            proto tcp saddr {{ net }} dport ({{ open_ports }})  ACCEPT;
+{% endfor %}
+
+            # user network
+{% for cidr in salt['pillar.get']('data:access:user_net_ipv6_cidrs', []) %}
+            proto all saddr '{{ cidr }}' ACCEPT;
+{% endfor %}
+        }
+    }
+}

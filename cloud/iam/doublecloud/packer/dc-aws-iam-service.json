@@ -1,0 +1,97 @@
+{
+  "variables": {
+    "aws_account_id": "785415555008",
+    "aws_region": "eu-central-1",
+    "app_service_name": "{{env `YC_IAM_SERVICE`}}",
+    "image_family": "dc-aws-iam-{{env `YC_IAM_SERVICE`}}",
+    "docker_token": "{{env `DOCKER_TOKEN`}}"
+  },
+  "builders": [
+    {
+      "type": "amazon-ebs",
+      "region": "{{user `aws_region`}}",
+
+      "ami_name": "{{user `image_family`}}-{{isotime | clean_resource_name}}",
+
+      "source_ami": "ami-0762b85dca6cb4618",
+
+      "instance_type": "t3.small",
+      "subnet_id": "subnet-05cdff2fafb886bda",
+      "ssh_username": "ubuntu",
+      "iam_instance_profile": "iam_packer"
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'image prepared by Packer at ' | sudo tee /etc/image_description",
+        "date --rfc-3339 sec | sudo tee -a /etc/image_description",
+        "sudo systemctl stop kubelet"
+      ]
+    },
+
+    {
+      "type": "shell-local",
+      "command": "echo 'Coping all needed files'"
+    },
+    {
+      "type": "file",
+      "source": "./files/{{user `app_service_name`}}/configs",
+      "destination": "/tmp/{{user `app_service_name`}}"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "sudo mkdir -p /etc/yc/{{user `app_service_name`}}/",
+        "sudo mv /tmp/{{user `app_service_name`}}/* /etc/yc/{{user `app_service_name`}}/"
+      ]
+    },
+    {
+      "type": "shell-local",
+      "command": "echo 'Coping pod_manifests'"
+    },
+    {
+      "type": "file",
+      "source": "./files/{{user `app_service_name`}}/pod_manifests",
+      "destination": "/tmp/{{user `app_service_name`}}"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "sudo mkdir -p /etc/kubelet.d/",
+        "sudo mv /tmp/{{user `app_service_name`}}/pod_manifests/*.yaml /etc/kubelet.d/"
+      ]
+    },
+    {
+      "type": "shell-local",
+      "command": "echo 'Loading docker images'"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "echo {{user `docker_token`}} | sudo docker login --username AWS --password-stdin {{user `aws_account_id`}}.dkr.ecr.{{user `aws_region`}}.amazonaws.com",
+        "for filename in /etc/kubelet.d/*.yaml; do python -c 'import sys, yaml, json; json.dump(yaml.load(sys.stdin), sys.stdout, indent=4)' < ${filename} | jq  -r '.. |.image? | select(. != null)'; done | sort | uniq > /tmp/containers",
+        "for image in $(cat /tmp/containers); do sudo docker pull $image; done",
+        "sudo docker logout {{user `aws_account_id`}}.dkr.ecr.{{user `aws_region`}}.amazonaws.com"
+      ]
+    },
+    {
+      "type": "shell-local",
+      "command": "echo 'Remove temporary files'"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "rm -rf /tmp/{{user `app_service_name`}}"
+      ]
+    }
+  ],
+  "post-processors": [
+    {
+      "type": "manifest",
+      "output": "{{ pwd }}/{{user `image_family`}}-builder-manifest.json",
+      "strip_path": true
+    }
+  ]
+}

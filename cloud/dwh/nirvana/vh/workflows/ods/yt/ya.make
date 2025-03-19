@@ -1,0 +1,15 @@
+RECURSE(
+    billing
+    cloud_analytics
+    compute
+    compute_disks_usage_by_billing
+    crm
+    iam
+    nbs
+    solomon
+    staff
+    startrek
+    statbox
+    support
+    yandex_connect
+)

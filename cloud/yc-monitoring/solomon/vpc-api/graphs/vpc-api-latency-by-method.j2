@@ -1,0 +1,39 @@
+{% extends "vpc-api-base.j2" %}
+
+{% set id_suffix = 'latency_by_method' %}
+{% set name = 'vpc api latency by method' %}
+{% set transform = 'NONE' %}
+
+{% macro prog() %}
+group_by_labels(
+    {
+    sensor='grpc_durations',
+    hist_type='bin'
+    },
+    'method',
+    v -> histogram_percentile(95, 'le', group_by_labels(v, 'le', v -> diff(group_lines('sum', v))))
+)
+{% endmacro %}
+
+{% block additional_params %}
+    ,{
+        "name": "host",
+        "value": "*"
+    }
+    ,{
+        "name": "zone",
+        "value": "{{ az_zones_for_parameter }}"
+    }
+    ,{
+        "name": "app",
+        "value": "*"
+    }
+    ,{
+        "name": "method",
+        "value": "*"
+    }
+{% endblock %}
+
+{% block elements %}
+    {{ render_element("[[method]]", prog() | to_prog, area="true", stack="true") }}
+{% endblock %}

@@ -1,0 +1,290 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.mdb.greenplum.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "google/type/timeofday.proto";
+
+import "yandex/cloud/api/tools/options.proto";
+import "yandex/cloud/priv/validation.proto";
+
+import "yandex/cloud/priv/mdb/greenplum/v1/config.proto";
+import "yandex/cloud/priv/mdb/greenplum/v1/maintenance.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/mdb/greenplum/v1;greenplum";
+option java_outer_classname = "GPC";
+
+
+// A Greenplum Cluster resource. For more information, see the
+message Cluster {
+  // Deployment environment.
+  enum Environment {
+    ENVIRONMENT_UNSPECIFIED = 0;
+
+    // Stable environment with a conservative update policy:
+    // only hotfixes are applied during regular maintenance.
+    PRODUCTION = 1;
+
+    // Environment with more aggressive update policy: new versions
+    // are rolled out irrespective of backward compatibility.
+    PRESTABLE = 2;
+  }
+
+  enum Health {
+    option (cloud.api.tools.enumeration).lint_skip.unspecified_value = true;
+
+    // State of the cluster is unknown ([Host.health] for every host in the cluster is UNKNOWN).
+    HEALTH_UNKNOWN = 0;
+
+    // Cluster is alive and well ([Host.health] for every host in the cluster is ALIVE).
+    ALIVE = 1;
+
+    // Cluster is inoperable ([Host.health] for every host in the cluster is DEAD).
+    DEAD = 2;
+
+    // Cluster is working below capacity ([Host.health] for at least one host in the cluster is not ALIVE).
+    DEGRADED = 3;
+
+    // Cluster is working below capacity ([Host.health] for at least one host in the cluster is UNBALANCED).
+    UNBALANCED = 4;
+  }
+
+  enum Status {
+    option (cloud.api.tools.enumeration).lint_skip.unspecified_value = true;
+
+    // Cluster state is unknown.
+    STATUS_UNKNOWN = 0;
+
+    // Cluster is being created.
+    CREATING = 1;
+
+    // Cluster is running normally.
+    RUNNING = 2;
+
+    // Cluster encountered a problem and cannot operate.
+    ERROR = 3;
+
+    // Cluster is being updated.
+    UPDATING = 4;
+
+    // Cluster is stopping.
+    STOPPING = 5;
+
+    // Cluster stopped.
+    STOPPED = 6;
+
+    // Cluster is starting.
+    STARTING = 7;
+  }
+
+  // ID of the Greenplum cluster.
+  // This ID is assigned by MDB at creation time.
+  string id = 1;
+
+  // ID of the folder that the Greenplum cluster belongs to.
+  string folder_id = 2;
+
+  // Creation timestamp in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+  google.protobuf.Timestamp created_at = 3;
+
+  // Name of the Greenplum cluster.
+  // The name is unique within the folder. 1-63 characters long.
+  string name = 4;
+
+  // Greenplum cluster config
+  GreenplumConfig config = 5;
+
+  // Description of the Greenplum cluster. 0-256 characters long.
+  string description = 6;
+
+  // Custom labels for the Greenplum cluster as `key:value` pairs. Maximum 64 per resource.
+  map<string, string> labels = 7;
+
+  // Deployment environment of the Greenplum cluster.
+  Environment environment = 8;
+
+  // Description of monitoring systems relevant to the Greenplum cluster.
+  repeated Monitoring monitoring = 9;
+
+  // Configuration of the Greenplum master subcluster.
+  MasterSubclusterConfig master_config = 10;
+
+  // Configuration of the Greenplum segment subcluster.
+  SegmentSubclusterConfig segment_config = 11;
+
+  // Number of hosts of the master subcluster
+  int64 master_host_count = 12;
+
+  // Number of hosts of the segment subcluster
+  int64 segment_host_count = 13;
+
+  // Number of segments in the host
+  int64 segment_in_host = 14;
+
+  // ID of the network that the cluster belongs to.
+  string network_id = 15;
+
+  // Aggregated cluster health.
+  Health health = 16;
+
+  // Current state of the cluster.
+  Status status = 17;
+
+  // Window of maintenance operations.
+  MaintenanceWindow maintenance_window = 18;
+
+  // Maintenance operation planned at nearest maintenance_window.
+  MaintenanceOperation planned_operation = 19;
+
+  // User security groups
+  repeated string security_group_ids = 20;
+
+  // Owner user name
+  string user_name = 21;
+
+  // Deletion Protection inhibits deletion of the cluster
+  bool deletion_protection = 22;
+
+  // Host groups hosting VMs of the cluster.
+  repeated string host_group_ids = 23;
+
+  // ID of placement group
+  string placement_group_id = 24;
+
+  // Greenplum and Odyssey configuration;
+  ClusterConfigSet cluster_config = 25;
+}
+
+// Monitoring system metadata.
+message Monitoring {
+  // Name of the monitoring system.
+  string name = 1;
+
+  // Description of the monitoring system.
+  string description = 2;
+
+  // Link to the monitoring system charts for the Greenplum cluster.
+  string link = 3;
+}
+
+message GreenplumConfig {
+  // Version of the Greenplum server software.
+  string version = 1;
+
+  // Time to start the daily backup, in the UTC timezone.
+  google.type.TimeOfDay backup_window_start = 2;
+
+  // Access policy for external services.
+  Access access = 3;
+
+  // ID of the availability zone where the host resides.
+  // To get a list of available zones, use the [yandex.cloud.compute.v1.ZoneService.List] request.
+  string zone_id = 4 [(length) = "<=50"];
+
+  // ID of the subnet that the host should belong to. This subnet should be a part
+  // of the network that the cluster belongs to.
+  // The ID of the network is set in the field [Cluster.network_id].
+  string subnet_id = 5 [(length) = "<=50"];
+
+  // Whether the host should get a public IP address on creation.
+  //
+  // After a host has been created, this setting cannot be changed. To remove an assigned public IP, or to assign
+  // a public IP to a host without one, recreate the host with [assign_public_ip] set as needed.
+  //
+  // Possible values:
+  // * false - don't assign a public IP to the master hosts.
+  // * true - the master hosts should have a public IP address.
+  bool assign_public_ip = 6;
+
+  // Enable or disabe segment mirroring (default true)
+  // https://gpdb.docs.pivotal.io/43330/admin_guide/highavail/topics/g-enabling-segment-mirroring.html
+  google.protobuf.BoolValue segment_mirroring_enable = 7;
+
+  // Enable or disabe automatic rebalancing of segments when the cluster changes or after failures (default true)
+  // https://docs.greenplum.org/6-0/utility_guide/ref/gprecoverseg.html
+  google.protobuf.BoolValue segment_auto_rebalance = 8;
+}
+
+message ClusterConfigSet {
+  oneof greenplum_config {
+    GreenplumConfigSet6_17 greenplum_config_set_6_17 = 1 [json_name="greenplumConfigSet_6_17"];
+    GreenplumConfigSet6_19 greenplum_config_set_6_19 = 2 [json_name="greenplumConfigSet_6_19"];
+  }
+
+  // Odyssey pool settings
+  ConnectionPoolerConfigSet pool = 4;
+}
+
+message GreenplumRestoreConfig {
+  // Time to start the daily backup, in the UTC timezone.
+  google.type.TimeOfDay backup_window_start = 1;
+
+  // Access policy for external services.
+  Access access = 2;
+
+  // ID of the availability zone where the host resides.
+  // To get a list of available zones, use the [yandex.cloud.compute.v1.ZoneService.List] request.
+  string zone_id = 3 [(length) = "<=50"];
+
+  // ID of the subnet that the host should belong to. This subnet should be a part
+  // of the network that the cluster belongs to.
+  // The ID of the network is set in the field [Cluster.network_id].
+  string subnet_id = 4 [(length) = "<=50"];
+
+  // Whether the host should get a public IP address on creation.
+  //
+  // After a host has been created, this setting cannot be changed. To remove an assigned public IP, or to assign
+  // a public IP to a host without one, recreate the host with [assign_public_ip] set as needed.
+  //
+  // Possible values:
+  // * false - don't assign a public IP to the master hosts.
+  // * true - the master hosts should have a public IP address.
+  bool assign_public_ip = 5;
+
+  // TODO: may be add segment_auto_rebalance, segment_mirroring_enable
+}
+
+message Access {
+  // Allow to export data from the cluster to Yandex DataLens.
+  bool data_lens = 1;
+
+  // Allow SQL queries to the cluster databases from the Yandex.Cloud management console.
+  bool web_sql = 2;
+
+  // Allow access for DataTransfer.
+  bool data_transfer = 3;
+
+  // Allow access for Serverless.
+  // NOTE: Do not propagate to public API until Serverless integration is required.
+  bool serverless = 4;
+}
+
+message RestoreResources {
+  // ID of the preset for computational resources available to a host (CPU, memory etc.).
+  string resource_preset_id = 1;
+
+  // Volume of the storage available to a host.
+  int64 disk_size = 2;
+}
+
+message RestoreHints {
+  // Required. Source cluster environment
+  Cluster.Environment environment = 1;
+  // Required. Source cluster network_id
+  string network_id = 2;
+  // Required. Source master subcluster resources
+  RestoreResources master_resources = 3;
+  // Required. Source segment subcluster resources
+  RestoreResources segment_resources = 4;
+  // Required. Source cluster Greenplum version
+  string version = 5;
+  // Required. Minimal restore time
+  google.protobuf.Timestamp time = 6;
+  // Required. Number of hosts of the source master subcluster
+  int64 master_host_count = 7;
+  // Required. Number of hosts of the source segment subcluster
+  int64 segment_host_count = 8;
+  // Required. Number of segments in the host
+  int64 segment_in_host = 9;
+}

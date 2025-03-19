@@ -1,0 +1,109 @@
+uid: 'yc-lockbox-@{environment}-basics'
+title: '@{title}'
+refresh: 1m
+
+tags: [ 'yc-lockbox-@{environment}' ]
+
+variables:
+  replacement:
+    !include ../../include/errors.yaml
+    title: '@1'
+    datasource: '@2'
+    environment: '@3'
+    project: '@4'
+
+links:
+  - { title: 'Dashboards', tags: ['yc-lockbox-@{environment}'] }
+
+graphDefaults: { datasource: '@{datasource}', width: 8, height: 6 }
+
+rows:
+  - title: 'Data Plane'
+    drilldowns:
+      - subUid: 'data'
+        #tags: [ 'yc-lockbox-@{environment}' ]
+        uiQuery:
+          host:
+            labels: 'project=@{project}, cluster=lockbox, service=service, host=lockbox-data-*, app=lockbox-data-plane_server'
+            multi: true
+        uiRepeat: host
+        labels: 'host=$host'
+
+    queryDefaults: { labels: 'project=@{project}, cluster=lockbox, service=service, host=lockbox-data-*, app=lockbox-data-plane_server' }
+    panels:
+      - type: graph
+        templates: { name: rps, rate: rps }
+        title: 'API rps'
+        queries:
+          - params: { labels: 'sensor=grpc_requests, meter_type=count' }
+
+      - type: graph
+        templates: { name: errors, sensor: rate }
+        title: 'API 4xx errors'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'sensor=grpc_statuses, status=@{4xx}' }
+        draw: [{ alias: '4xx', color: '#147' }]
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        templates: { name: errors, sensor: rate }
+        title: 'API 5xx errors'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'sensor=grpc_statuses, status=@{503}' }
+          - params: { labels: 'sensor=grpc_statuses, status=@{5xx}' }
+        draw: [{ alias: '503', color: '#da7' }, { alias: '5xx', color: '#b20' }]
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        templates: { name: percentile, format: solomon, groupLines: true, sensor: rate }
+        title: 'API response duration'
+        queries:
+          - params: { labels: 'sensor=grpc_durations' }
+        yAxes: [{ min: 0 }]
+
+  - title: 'Control Plane'
+    drilldowns:
+      - subUid: 'control'
+        #tags: [ 'yc-lockbox-@{environment}' ]
+        uiQuery:
+          host:
+            labels: 'project=@{project}, cluster=lockbox, service=service, host=lockbox-control-*, app=lockbox-control-plane_server'
+            multi: true
+        uiRepeat: host
+        labels: 'host=$host'
+
+    queryDefaults: { labels: 'project=@{project}, cluster=lockbox, service=service, host=lockbox-control-*, app=lockbox-control-plane_server' }
+    panels:
+      - type: graph
+        templates: { name: rps, rate: rps }
+        title: 'API rps'
+        queries:
+          - params: { labels: 'sensor=grpc_requests, meter_type=count' }
+
+      - type: graph
+        templates: { name: errors, sensor: rate }
+        title: 'API 4xx errors'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'sensor=grpc_statuses, status=@{4xx}' }
+        draw: [{ alias: '4xx', color: '#147', at: right }]
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        templates: { name: errors, sensor: rate }
+        title: 'API 5xx errors'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'sensor=grpc_statuses, status=@{503}' }
+          - params: { labels: 'sensor=grpc_statuses, status=@{5xx}' }
+        draw: [{ alias: '503', color: '#da7' }, { alias: '5xx', color: '#b20' }]
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        templates: { name: percentile, format: solomon, groupLines: true, sensor: rate }
+        title: 'API response duration'
+        queries:
+          - params: { labels: 'sensor=grpc_durations' }
+        yAxes: [{ min: 0 }]

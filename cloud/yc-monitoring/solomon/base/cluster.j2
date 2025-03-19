@@ -1,0 +1,68 @@
+{% set conductor_group_prefix = conductor_group_prefix_overrides.get(env, "cloud_" + env) %}
+{% set conductor_group_suffix = "" if config_name == "_ALL" else "_" + config_name %}
+{% set conductor_group = conductor_group_prefix + (conductor_group_suffix_override or conductor_group_suffix) %}
+{% set name = "cloud_" + (env if config_name == "_ALL" else env + "_" + config_name) %}
+
+{% set id_prefix = "" if no_project_id_prefix else project_id + "_" %} {# Legacy, should not be used in new projects #}
+{% set cluster_id = id_override | default(id_prefix + name) %}
+
+{%- macro render_cloud_dns_element(env_name, resource_name) %}
+{
+    "env": "{{ env_name }}",
+    "name": "{{ resource_name }}",
+    "labels": [
+        {% for label in labels %}
+            "{{ label }}"{% if not loop.last %},{% endif %}
+        {% endfor %}
+    ]
+}
+{%- endmacro %}
+
+{%- macro render_host_urls(resource_name) %}
+{
+    "url": "{{ resource_name.url }}",
+    "ignorePorts": {{ resource_name.ignore_ports|default(False)|lower }},
+    "labels": [
+        {% for label in labels %}
+            "{{ label }}"{% if not loop.last %},{% endif %}
+        {% endfor %}
+    ]
+}
+{%- endmacro %}
+
+{
+    "id": "{{ cluster_id }}",
+    "projectId": "{{ project_id }}",
+    "name": "{{ name_override|default(name) }}",
+    {% if not push_only %}
+      {% if add_conductor_group or (env not in cloud_dns and env not in host_urls) %}
+      "conductorGroups": [
+          {
+              "group": "{{ conductor_group }}",
+              "labels": [
+                  {% for label in labels %}
+                      "{{ label }}"{% if not loop.last %},{% endif %}
+                  {% endfor %}
+              ]
+          }
+      ],
+      {% endif %}
+    {% endif %}
+    {% if env in cloud_dns %}"cloudDns": [
+        {% for name in cloud_dns[env] %}
+            {% if name is string %}
+                {{ render_cloud_dns_element(cloud_dns_env_names[env], name) }}{% if not loop.last %},{% endif %}
+            {% else %}
+                {{ render_cloud_dns_element(name["env"], name["pattern"]) }}{% if not loop.last %},{% endif %}
+            {% endif %}
+        {% endfor %}
+    ],{% endif %}
+    {% if env in host_urls %}"hostUrls": [
+        {% for name in host_urls[env] %}
+        {{ render_host_urls(name) }}{% if not loop.last %},{% endif %}
+        {% endfor %}
+    ],{% endif %}
+    {% if sensorsTtlDays %}"sensorsTtlDays": {{ sensorsTtlDays }},{% endif %}  {# Overrides metrics TTL from service #}
+    "useFqdn": {{ use_fqdn|default(False)|lower }},
+    "tvmDestId": ""
+}

@@ -1,0 +1,65 @@
+id: 82127 # 127910
+uid: N8bieBliz #GOSxKwCiz
+refresh: 3m
+title: API adapter drilldown (by method)
+
+pointerSharing: tooltip
+tags: [ 'ycp', 'ycp-adapter', 'ycp-duty', 'ycp-drilldown' ]
+
+variables:
+  ui:
+    cluster: { values: [prod, preprod] }
+  repeat:
+    adapter_method:
+      values: [
+        'all', '--', '--',
+        'compute.*', 'iam.*', 'loadbalancer.*',
+        'mdb.*', 'resourcemanager.*', 'vpc.*'
+      ]
+  replacement:
+    !include ../include/errors.yaml
+
+graphDefaults:
+  datasource: Solomon
+  width: 8
+  height: 6
+queryDefaults: { labels: 'project=yandexcloud, cluster=cloud_${cluster}_api-adapter, service=api_adapter, app=cloud-api-adapter_server, host=cluster, method=@adapter_method' }
+
+rows:
+
+  - title: Rps
+    panels:
+
+      - type: graph
+        templates: [{ name: rps, sumLines: true }, { name: alias, alias: '{{method}}' }]
+        repeat: adapter_method
+        title: 'Adapter rps ($cluster - @adapter_method)'
+        display: { legend: false }
+        queries:
+          - params: { labels: 'sensor=grpc_requests, meter_type=count' }
+
+  - title: Errors
+    queryDefaults: { defaultTimeWindow: '15s' }
+    panels:
+
+      - type: graph
+        templates: { name: errors }
+        repeat: adapter_method
+        display: { legend: false }
+        title: 'Adapter errors ($cluster - @adapter_method)'
+        queries:
+          - params: { labels: 'sensor=grpc_statuses, status=@4xx' }
+          - params: { labels: 'sensor=grpc_statuses, status=@503' }
+          - params: { labels: 'sensor=grpc_statuses, status=@5xx' }
+        draw: [{ alias: '4xx', color: '#147', at: right }, { alias: '503', color: '#da7', at: left }, { alias: '5xx', color: '#b20', at: left }]
+
+  - title: Response duration
+    panels:
+
+      - type: graph
+        templates: { name: percentile, levels: [50, 75, 90, 99], groupLines: true }
+        repeat: adapter_method
+        display: { decimals: 1, legend: false }
+        title: 'Adapter response duration ($cluster - @adapter_method)'
+        queries:
+          - params: { labels: 'sensor=grpc_durations' }

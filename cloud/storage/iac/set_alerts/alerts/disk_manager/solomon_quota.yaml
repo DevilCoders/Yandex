@@ -1,0 +1,39 @@
+definitions:
+  - &alert_id "quota-solomon"
+  - &alert_name "Solomon quota"
+alerts:
+  - id: *alert_id
+    name: *alert_name
+    description: "Sensors quota reached: https://solomon.yandex-team.ru/?project=solomon&cluster=production&service=coremon&l.sensor=engine.fileSensors*&l.host=cluster&l.projectId=yc-disk-manager&l.shardId=yc-disk-manager_*&graph=auto&stack=false&b=1h&e=&min=0"
+    delay_secs: 60
+    window_secs: 300
+    group_by_labels:
+      - shardId
+      - host
+    clusters:
+      - prod
+    expression:
+      program: |-
+        let limit = {
+            project="solomon",
+            cluster="production",
+            service="coremon",
+            host="???",
+            sensor="engine.fileSensorsLimit",
+            projectId="yc-disk-manager",
+            shardId="yc-disk-manager_*"};
+
+        let usage = {
+            project="solomon",
+            cluster="production",
+            service="coremon",
+            host="???",
+            sensor="engine.fileSensors",
+            projectId="yc-disk-manager",
+            shardId="yc-disk-manager_*"};
+
+        let avg_usage = avg(usage);
+        let avg_limit = avg(limit);
+
+        alarm_if(avg_usage/avg_limit > 0.9);
+        warn_if(avg_usage/avg_limit > 0.8);

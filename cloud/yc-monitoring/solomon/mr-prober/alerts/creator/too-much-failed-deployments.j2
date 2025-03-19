@@ -1,0 +1,40 @@
+{% extends "../../../base/alert.j2" %}
+
+{% set idc="creator-too-much-failed-deployments" %}
+{% set description="Check that FAILED deployments are happened not so often." %}
+{% set noPointsPolicy="NO_POINTS_OK" %}
+
+{% set windowSecs=36000 %}
+{% set delaySecs=0 %}
+
+{% block main %}
+    "name": "[Creator] Too much failed deployments",
+    "groupByLabels": [
+        "cluster",
+        "host",
+        "cluster_slug"
+	],
+    "annotations": {
+        "host": "[[labels.host]]",
+        "description": "Looks like cluster \"[[labels.cluster_slug]]\" is failed to deploy too often. Check logs in Object Storage and fix your recipe or cluster.",
+        "service": "creator-too-much-failed-deployments-[[labels.cluster_slug]]",
+        "deployments graph": "{{ solomon_endpoint }}/?project={{ project_id }}&cluster=[[labels.cluster]]&service=creator&host=[[labels.host]]&l.metric=deployment&l.cluster_slug=[[labels.cluster_slug]]&graph=auto&b=10h&e=",
+        "logs": "{{ s3_viewer_url }}/mr-prober-logs?key=[[labels.cluster]]%2Fcreator%2F[[labels.cluster_slug]]%2F"
+    },
+    "type": {
+        "threshold": {
+            "selectors": "{cluster='*', service='creator', metric='deployment', status!='COMPLETED*'}",
+            "timeAggregation": "SUM",
+            "predicate": "GTE",
+            "threshold": 10,
+            "predicateRules": [
+                {
+                    "thresholdType": "SUM",
+                    "comparison": "GTE",
+                    "threshold": 10,
+                    "targetStatus": "ALARM"
+                }
+            ]
+        }
+    }
+{% endblock %}

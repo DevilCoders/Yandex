@@ -1,0 +1,105 @@
+#!/bin/bash
+
+set -e
+
+YANDEX_INTERNAL_ROOT_CA_PATH="/etc/ssl/certs/YandexInternalRootCA.pem"
+YANDEX_INTERNAL_ROOT_CA_PATH_INSIDE_CONTAINER="$YANDEX_INTERNAL_ROOT_CA_PATH"
+YANDEX_INTERNAL_ROOT_CA_URL="https://crls.yandex.net/YandexInternalRootCA.crt"
+
+function inside_of_arcadia() {
+    arc status > /dev/null
+}
+
+function check_fuse_user_allow_other() {
+    if [[ "$OSTYPE" == "darwin"*  ]]
+    then
+        echo "[!] macOS detected. If yc-mr-prober-synchronize can not access arcadia tree, try running following command and re-mount arcadia"
+        echo "  sysctl -w vfs.generic.macfuse.tunables.allow_other=1"
+    else
+        if ! grep -q -e '^user_allow_other' /etc/fuse.conf
+        then
+            echo "ERROR: option 'user_allow_other' not found in /etc/fuse.conf.
+
+See tools/synchronize/README.md for details, add this option to /etc/fuse.conf and re-mount arcadia with --allow-root:
+
+arc mount --allow-root <other options...>"
+            exit 1
+        fi
+    fi
+
+    if [[ "$OSTYPE" == "darwin"* ]]
+    then
+        # macOS version of 'pgrep' doesn't have -f option
+        ARC_PID=$(ps aux | grep 'arc mount' | grep -v grep | awk '{print $2}')
+    else
+        ARC_PID=$(pgrep -f 'arc mount')
+    fi
+
+    if [ -z $ARC_PID ]
+    then
+        echo "ERROR: Can not find running arc process, check it with "
+        echo "  ps aux | grep 'arc mount'"
+        exit 1
+    fi
+
+    if ! ps -p $ARC_PID | grep -q -- '--allow-'
+    then
+        echo "ERROR: arcadia is mounted without --allow-root option.
+See tools/synchronize/README.md for details, and re-mount arcadia with --allow-root:
+
+arc mount --allow-root <other options...>"
+        exit 1
+    fi
+}
+
+function check_yandex_internal_root_ca_certificate() {
+    if [ ! -f "$YANDEX_INTERNAL_ROOT_CA_PATH" ]
+    then
+        echo "[!] Downloading YandexInternalRootCA from $YANDEX_INTERNAL_ROOT_CA_URL, convert it and save it to ./YandexInternalRootCA.pem"
+        if ! eval "curl $YANDEX_INTERNAL_ROOT_CA_URL 2> /dev/null | openssl x509 -in /dev/stdin -out YandexInternalRootCA.pem -outform PEM"
+        then
+            echo "ERROR: $YANDEX_INTERNAL_ROOT_CA_PATH doesn't exist.
+Install it as described at https://wiki.yandex-team.ru/security/ssl/sslclientfix/"
+            exit 1
+        fi
+        YANDEX_INTERNAL_ROOT_CA_PATH="$PWD/YandexInternalRootCA.pem"
+
+    fi
+
+    CHECK_ISSUER_COMMAND="openssl x509 -in \"$YANDEX_INTERNAL_ROOT_CA_PATH\" -noout -issuer | grep -q YandexInternalRootCA"
+    if ! eval "$CHECK_ISSUER_COMMAND"
+    then
+        echo "ERROR: $YANDEX_INTERNAL_ROOT_CA_PATH contains invalid certificate or this certificate is not issued for YandexInternalRootCA.
+
+Debug with:
+  openssl x509 -in '$YANDEX_INTERNAL_ROOT_CA_PATH' -noout -text"
+        exit 1
+    fi
+
+    CHECK_EXPIRATION_COMMAND="openssl x509 -in '$YANDEX_INTERNAL_ROOT_CA_PATH' -noout -checkend 0"
+    if ! eval "$CHECK_EXPIRATION_COMMAND > /dev/null"
+    then
+       echo "ERROR: Certificate located at $YANDEX_INTERNAL_ROOT_CA_PATH is expired.
+Update it as described at https://wiki.yandex-team.ru/security/ssl/sslclientfix/.
+
+Debug with:
+  $CHECK_CHECK_EXPIRATION_COMMAND"
+        exit 1
+    fi
+}
+
+echo -n "[.] Is running inside of arcadia?... "
+if inside_of_arcadia
+then
+    echo "yes"
+    check_fuse_user_allow_other
+else
+    echo "no"
+fi
+
+echo "[.] Check if YandexInternalRootCA.pem is available..."
+check_yandex_internal_root_ca_certificate
+
+echo "[+] All checks passed. Running docker container with the tool."
+docker pull cr.yandex/crpni6s1s1aujltb5vv7/synchronize:latest
+docker run -v "$PWD:/config" --network host -e TERM -e "RICH_FORCE_TERMINAL=1" -v "$YANDEX_INTERNAL_ROOT_CA_PATH:$YANDEX_INTERNAL_ROOT_CA_PATH_INSIDE_CONTAINER" -w /config --rm -it cr.yandex/crpni6s1s1aujltb5vv7/synchronize:latest "$@"

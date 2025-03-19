@@ -1,0 +1,9 @@
+ycp_profile = "preprod"
+environment = "preprod"
+yc_endpoint = "api.cloud-preprod.yandex.net:443"
+cr_endpoint = "cr.cloud-preprod.yandex.net"
+hc_network_ipv6 = "2a0d:d6c0:2:ba:ffff::/80"
+logbroker_endpoint = "lb.cc8035oc71oh9um52mv3.ydb.mdb.cloud-preprod.yandex.net"
+logbroker_database = "/pre-prod_global/aoeb66ftj1tbt1b2eimn/cc8035oc71oh9um52mv3"
+region_id = "ru-central1"
+availability_zones = ["ru-central1-a", "ru-central1-b", "ru-central1-c"]

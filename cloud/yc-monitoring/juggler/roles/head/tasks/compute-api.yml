@@ -1,0 +1,373 @@
+---
+- name: 'juggler_check : e2e-tests-compute'
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, timed_limits_99perc_crit) }}"
+  with_items:
+    - service: e2e-tests-compute
+      refresh_time: 240
+
+- name: 'juggler_check: compute-head'
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, default_timed_limits_one_down_unreach_force_ok) }}"
+  with_items:
+    - service: compute-head
+      refresh_time: 60
+      ttl: 300  # 5 refreshes
+
+- name: 'juggler_check: compute-tasks'
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, default_timed_limits_one_down_unreach_force_ok) }}"
+  with_items:
+    - service: compute-tasks
+      refresh_time: 60
+      ttl: 300  # 5 refreshes
+
+- name: 'juggler_check: compute-head-latency'
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, timed_limits_50perc_crit) }}"  # Switches to CRIT if >50% of child checks are in CRIT state, including NO_DATA
+  with_items:
+    - service: compute-head-latency
+      refresh_time: 60
+      ttl: 300  # 5 refreshes
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-head-latency
+            type: wiki
+
+- name: 'juggler_check : compute-head-errors'
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, default_timed_limits_nodata_ok) }}"
+  with_items:
+    - service: compute-head-errors
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-api-errors
+            type: wiki
+
+- name: 'juggler_check : compute-head-errors-detailed'
+  juggler_check: ''
+  args: "{{ default_check_with_only_telegram_notification | hash_merge(item, default_timed_limits_nodata_ok) }}"
+  with_items:
+    - service: compute-head-errors-detailed
+      children:
+        - EVENTS%(host=yc_compute_head_{{ env }}_*)&(tag=compute-head-errors-detailed)
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-api-errors-with-details
+            type: wiki
+  tags: ["compute-head-errors-detailed"]
+
+- name: 'juggler_check: compute-head-token'
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, default_timed_limits_nodata_ok) }}"
+  with_items:
+    - service: compute-head-token
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-head-token
+            type: wiki
+  tags: ["compute-tokens"]
+
+- name: 'juggler_check : compute-head-private-errors'
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, default_timed_limits_nodata_ok) }}"
+  with_items:
+    - service: compute-head-private-errors
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-head-private-errors
+            type: wiki
+
+- name: 'juggler_check : compute-head-private-latency'
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, timed_limits_50perc_crit) }}"  # Switches to CRIT if >50% of child checks are in CRIT state, including NO_DATA
+  with_items:
+    - service: compute-head-private-latency
+      refresh_time: 60
+      ttl: 300  # 5 refreshes
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-head-private-latency
+            type: wiki
+
+- name: 'juggler_check: compute-tasks-token'
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, default_timed_limits_nodata_ok) }}"
+  with_items:
+    - service: compute-tasks-token
+  tags: ["compute-tokens"]
+
+- name: 'juggler_check: compute-accounting'
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, default_timed_limits) }}"
+  with_items:
+    - service: compute-accounting-disks
+      children:
+        - type: HOST
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-accounting-latency
+            type: wiki
+    - service: compute-accounting-images
+      children:
+        - type: HOST
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-accounting-latency
+            type: wiki
+    - service: compute-accounting-snapshots
+      children:
+        - type: HOST
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-accounting-latency
+            type: wiki
+    - service: compute-accounting-host-groups
+      children:
+        - type: HOST
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-accounting-latency
+            type: wiki
+  tags: ["acct"]
+
+- name: 'juggler_check: compute-gc'
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, default_timed_limits) }}"
+  with_items:
+    - service: compute-removed-disks-age
+      children:
+        - type: HOST
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-removed-disks-age
+            type: wiki
+    - service: compute-completed-tasks-age
+      children:
+        - type: HOST
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-completed-tasks-age
+            type: wiki
+    - service: compute-completed-operations-age
+      children:
+        - type: HOST
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-completed-operations-age
+            type: wiki
+    - service: compute-idempotence-tokens-age
+      children:
+        - type: HOST
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-idempotence-tokens-age
+            type: wiki
+  tags: ["compute-gc"]
+
+- name: 'juggler_check : compute-search-index'
+  tags: ["compute-index"]
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, default_timed_limits) }}"
+  with_items:
+    - service: compute-search-index-disks
+      children:
+        - type: HOST
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-index-tasks
+            type: wiki
+    - service: compute-search-index-instances
+      children:
+        - type: HOST
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-index-tasks
+            type: wiki
+  when: env not in ["testing"]  # Skip https://st.yandex-team.ru/CLOUD-73417#60dd8b9497f7913d211bbf9f
+
+- name: 'juggler_check : compute-disk-events'
+  tags: ["compute-disk-events"]
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, default_timed_limits) }}"
+  with_items:
+    - service: compute-disk-events
+      children:
+        - type: HOST
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-disk-events
+            type: wiki
+  when: env not in ["testing", "israel"]  # Skip https://st.yandex-team.ru/CLOUD-73417#60dd8b9497f7913d211bbf9f, https://st.yandex-team.ru/CLOUD-99109
+
+- name: 'juggler_check: certificates-validity'
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, default_timed_limits_unreach_force_ok) }}"
+  with_items:
+    - service: certificates-validity
+
+- name: 'juggler_check: compute-operations'
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, default_timed_limits_nodata_ok) }}"
+  with_items:
+    - service: compute-failed-operations
+      children:
+        - type: HOST
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-failed-operations
+            type: wiki
+  tags: ["compute-operations"]
+
+- name: 'juggler_check: compute-hanging-operations'
+  juggler_check: ''
+  args: "{{ default_check_with_only_telegram_notification | hash_merge(item, default_timed_limits_nodata_ok) }}"
+  with_items:
+    - service: compute-hanging-operations
+      children:
+        - EVENTS%(host=yc_compute_head_{{ env }}-*)&(tag=compute-hanging-operations)
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-hanging-operations
+            type: wiki
+  tags: ["compute-operations"]
+
+- name: 'juggler_check: compute-hanging-tasks'
+  juggler_check: ''
+  args: "{{ default_check_with_only_telegram_notification | hash_merge(item, default_timed_limits_nodata_ok) }}"
+  with_items:
+    - service: compute-hanging-tasks
+      children:
+        - EVENTS%(host=yc_compute_head_{{ env }}-*)&(tag=compute-hanging-tasks)
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-hanging-tasks
+            type: wiki
+  tags: ["compute-tasks"]
+
+- name: 'juggler_check: compute-tasks'
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, default_timed_limits_nodata_ok) }}"
+  with_items:
+    - service: compute-failed-tasks
+      children:
+        - EVENTS%(host=yc_compute_head_{{ env }}_*)&(tag=compute-failed-tasks)
+    - service: compute-pending-tasks
+      children:
+        - type: HOST
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-failed-tasks
+            type: wiki
+  tags: ["compute-tasks"]
+
+- name: 'juggler_check: compute-solomon-fetch-status'
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, default_timed_limits_nodata_ok) }}"
+  with_items:
+      - service: compute-api-solomon-fetch-status
+        children:
+            - EVENTS%(host=yc_compute_solomon_{{ env }}-*)&(tag=yc-compute-api-team)
+        meta:
+            urls:
+                - title: "[?] Инструкция по алерту"
+                  url: https://docs.yandex-team.ru/yc-monitoring/shared/solomon-fetch-status
+                  type: wiki
+  tags: ["compute-solomon"]
+
+- name: 'juggler_check: compute-api-solomon-agent-bytes-evicted'
+  juggler_check: ''
+  args: "{{ silent_check | hash_merge(item, default_timed_limits_nodata_ok) }}"
+  with_items:
+      - service: solomon-agent-bytes-evicted
+        meta:
+            urls:
+                - title: "[?] Инструкция по алерту"
+                  url: https://docs.yandex-team.ru/yc-monitoring/shared/solomon-agent-bytes-evicted
+                  type: wiki
+  tags: ["compute-solomon"]
+
+- name: 'juggler_check: compute-head-solomon-quotas'
+  juggler_check: ''
+  args: "{{ default_check_with_only_telegram_notification | hash_merge(item, default_timed_limits) }}"
+  with_items:
+      - service: compute-head-solomon-quotas
+        refresh_time: 60
+        ttl: 180
+        children:
+            - host: "vpc-infra-{{ env }}"
+              service: yandexcloud_cloud_{{ env }}_head_compute_head-solomon-quotas
+              type: HOST
+            - host: "vpc-infra-{{ env }}"
+              service: yandexcloud_cloud_{{ env }}_head_compute_tasks-solomon-quotas
+              type: HOST
+            - host: "vpc-infra-{{ env }}"
+              service: yandexcloud_cloud_{{ env }}_head_sys-solomon-quotas
+              type: HOST
+            - host: "vpc-infra-{{ env }}"
+              service: yandexcloud_cloud_{{ env }}_head_solomon_agent-solomon-quotas
+              type: HOST
+        meta:
+            urls:
+                - title: "[?] Инструкция по алерту"
+                  url: https://docs.yandex-team.ru/yc-monitoring/shared/solomon-quotas
+                  type: wiki
+
+- name: 'juggler_check: compute-head-memory'
+  juggler_check: ''
+  args: "{{ default_check_with_only_telegram_notification | hash_merge(item, default_timed_limits_unreach_skip_nodata_ok) }}"
+  with_items:
+      - service: compute-head-memory
+        refresh_time: 60
+        ttl: 180
+        children:
+            - host: "cloud_{{ env }}_head"
+              service: compute-head-memory
+              type: CGROUP
+        meta:
+          urls:
+              - title: "[?] Инструкция по алерту"
+                url: https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-tasks-memory
+                type: wiki
+  tags: ["compute-head"]
+  when: env in ["prod", "preprod", "testing"]  # conductor is not accessible in IL
+
+- name: 'juggler_check: compute-tasks-memory'
+  juggler_check: ''
+  args: "{{ default_check_with_only_telegram_notification | hash_merge(item, default_timed_limits_unreach_skip_nodata_ok) }}"
+  with_items:
+      - service: compute-tasks-memory
+        refresh_time: 60
+        ttl: 180
+        children:
+            - host: "cloud_{{ env }}_head"
+              service: compute-tasks-memory
+              type: CGROUP
+        meta:
+          urls:
+              - title: "[?] Инструкция по алерту"
+                url: https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-tasks-memory
+                type: wiki
+  tags: ["compute-tasks"]
+  when: env in ["prod", "preprod", "testing"]  # conductor is not accessible in IL

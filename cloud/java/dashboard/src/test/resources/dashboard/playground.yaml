@@ -1,0 +1,38 @@
+#id: 140665
+#uid: szxJZaqik
+uid: ycp_ssytnik_playground
+refresh: 10m
+time: 6h
+title: Test ssytnik playground (тест)
+
+variables:
+  ui: # dynamic value is selected at the UI, refer to it as $cluster, ${cluster} or [[cluster]] in labels and graph titles
+    cluster: { values: [prod, preprod] }
+
+graphDefaults:
+  datasource: 'Solomon Cloud'
+  width: 12 # of 24
+  height: 7 # *30 px
+queryDefaults: # both 'Grafana' ('url') and 'Solomon' (via copy button) label formats are supported – see 'labels:' below
+  #labels: 'project=yandexcloud&cluster=cloud_preprod_api-adapter&service=api_adapter'
+  labels: 'project="api-adapter", cluster="preprod", service="core"'
+
+rows:
+  - title: Row 1b (adapter, with overridden graph defaults)
+    graphDefaults: { width: 8, height: 5 }
+    panels:
+
+      - type: graph
+        templates: [ { name: rps, sumLines: false }, { name: patchSelect, after: last, add: { top: [ 3, avg ] } } ]
+        title: 'RPS on all $cluster''s hosts'
+        queries:
+          - params: { labels: 'cluster="${cluster}", host!="cluster", name="grpc_requests", meter_type="count", app="cloud-api-adapter_server", method="all"' }
+        #display: { } # none | 0 | off | no | false (default); increasing | 1 | on | yes | true; decreasing | 2
+
+      - type: graph
+        title: 'Heap Memory ($cluster)'
+        queries:
+          - params: { labels: 'name=jvm_memory_bytes_used|jvm_memory_bytes_committed, area=heap' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: ['avg', 'name'] }
+        yAxes: [{ format: bytes }]

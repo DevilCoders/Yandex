@@ -1,0 +1,46 @@
+#!/bin/bash -e
+
+function get_ic_port() {
+    source /Berkanavt/nbs-server/cfg/nbs_server.cfg
+    echo $((nbs_ic_port + 3))
+}
+
+usage="$(basename "$0") [-n] [-h] -- script to run nbs2 for blue-green
+where:
+    -n  no auth
+    -h  show this help text"
+
+AUTH=true
+
+while getopts 'nh' flag;
+do
+    case "${flag}" in
+        n) AUTH=false;;
+        h)
+          echo "$usage"
+          exit 0
+          ;;
+    esac
+done
+
+nbs_arg="${nbs_arg} --temporary-server"
+nbs_arg="${nbs_arg} --server-port 9771"
+
+if $AUTH; then
+  nbs_arg="${nbs_arg} --secure-server-port 9772"
+fi
+
+nbs_ic_port=`get_ic_port`
+
+source /Berkanavt/nbs-server/cfg/nbs_server.cfg
+
+nbs_command="/usr/bin/blockstore-server ${nbs_arg}"
+
+if [ -v nbs_breakpad_arg ]; then
+    nbs_breakpad_command="/usr/bin/yc-storage-breakpad-launcher ${nbs_breakpad_arg}"
+    nbs_command="${nbs_breakpad_command} -- ${nbs_command}"
+fi
+
+nbs_command="prlimit --nofile=65536 ${nbs_command}"
+
+exec $nbs_command

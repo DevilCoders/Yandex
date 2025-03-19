@@ -1,0 +1,28 @@
+[Unit]
+Description=MDB DBM
+
+[Service]
+KillMode=mixed
+Type=simple
+ExecStart=/opt/yandex/mdb-dbm/bin/dbm.wsgi --strict /etc/yandex/mdb-dbm/uwsgi.ini
+# Clear out a Prometheus Python client multiprocessing directory
+ExecStartPre=-+/bin/rm --recursive --force /var/run/mdb-dbm/prometheus
+ExecStartPre=+/bin/mkdir --mode 755 --parents /var/run/mdb-dbm/prometheus
+ExecStartPre=+/bin/chown web-api:www-data /var/run/mdb-dbm/prometheus
+WorkingDirectory=/etc/yandex/mdb-dbm
+Restart=always
+RestartSec=15
+TimeoutStartSec=15
+TimeoutStopSec=15
+User=web-api
+Environment="DBM_CONF=/etc/yandex/mdb-dbm/app.yaml"
+Environment="PROMETHEUS_MULTIPROC_DIR=/var/run/mdb-dbm/prometheus"
+# It's not a bug that here specified lower and upper case PROMETHEUS_MULTIPROC_DIR variable variants.
+# Current a.y-t python-prometheus-client use lower case variable name,
+# in 'master@github' it was renamed to upper case.
+Environment="prometheus_multiproc_dir=/var/run/mdb-dbm/prometheus"
+LimitNOFILE=65536
+ExecReload=/bin/kill -HUP $MAINPID
+
+[Install]
+WantedBy=multi-user.target

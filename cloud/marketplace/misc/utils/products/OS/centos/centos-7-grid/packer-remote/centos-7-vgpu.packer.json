@@ -1,0 +1,80 @@
+{
+  "variables": {
+    "endpoint": "{{env `YC_ENDPOINT`}}",
+    "service_account_key_file": "{{env `YC_BUILD_SERVICE_ACCOUNT_SECRET`}}",
+    
+    "source_image_name": "centos-7-dirty",
+    "source_image_folder_id": "{{env `YC_DIRTY_IMAGES_FOLDER_ID`}}",
+    "platform": "vgpu-standard-v1",
+    "ssh_username": "centos",
+
+    "image_family": "centos-7-grid",
+    "image_description": "centos 7 with Nvidia grid drivers",
+
+    "folder_id": "{{env `YC_BUILD_FOLDER_ID`}}",
+    "zone": "{{env `YC_ZONE`}}",
+    "subnet_id": "{{env `YC_BUILD_SUBNET`}}"
+  },
+  "builders": [
+    {
+      "type": "yandex",
+      "name": "{{user `image_family`}}",
+      "endpoint": "{{user `endpoint`}}",
+      "service_account_key_file": "{{user `service_account_key_file`}}",
+
+      "source_image_name": "{{user `source_image_name`}}",
+      "source_image_folder_id": "{{user `source_image_folder_id`}}",
+      
+      "image_name": "{{user `image_family`}}-v{{isotime \"20060102-0304\"}}",
+      "image_family": "{{user `image_family`}}",
+      "image_description": "{{user `image_description`}}",
+
+      "folder_id": "{{user `folder_id`}}",
+      "instance_name": "{{build_name}}-v{{isotime \"20060102-0304\"}}",
+      "platform_id": "{{user `platform`}}",
+      "instance_cores": "4",
+      "instance_mem_gb": "12",
+      "instance_gpus": "1",
+      "disk_size_gb": 10,
+      "disk_type": "network-hdd",
+      "zone": "{{user `zone`}}",
+      "subnet_id": "{{user `subnet_id`}}",
+      "use_ipv4_nat": true,
+      "use_internal_ip": true,
+      
+      "ssh_clear_authorized_keys": true,
+      "ssh_username": "{{user `ssh_username`}}"
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "shell",
+      "inline": [
+        "while [ ! -f /var/lib/cloud/instance/boot-finished ]; do echo 'Waiting for cloud-init...'; sleep 5; done"
+      ]
+    },
+    {
+      "type": "shell",
+      "execute_command": "sudo {{ .Vars }} bash '{{ .Path }}'",
+      "pause_before": "20s",
+      "scripts": [ "update-kernel.sh" ],
+      "expect_disconnect": true
+    },
+    {
+      "type": "shell",
+      "execute_command": "sudo {{ .Vars }} bash '{{ .Path }}'",
+      "pause_before": "5s",
+      "scripts": [ 
+        "install.sh",
+        "cleanup.sh"
+      ]
+    }
+  ],
+  "post-processors": [
+    {
+      "type": "manifest",
+      "output": "{{ pwd }}/manifest.json",
+      "strip_path": true
+    }
+  ]
+}

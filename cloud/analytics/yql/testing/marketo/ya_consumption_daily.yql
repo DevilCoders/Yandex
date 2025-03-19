@@ -1,0 +1,247 @@
+USE hahn;
+PRAGMA yt.InferSchema = '1';
+PRAGMA File('libcrypta_identifier_udf.so', 'yt://hahn/home/crypta/public/udfs/stable/libcrypta_identifier_udf.so');
+PRAGMA Udf('libcrypta_identifier_udf.so');
+
+$days_to_calc_avg_consumption = 7;
+
+$export_table = '//home/cloud_analytics/export/marketo_testing/ya_consumption_daily';
+$leads_table = '//home/cloud_analytics/export/marketo_testing/lead';
+$usage_reports_tbl = '//home/logfeller/logs/yc-billing-export-usage-reports/1h';
+$iam_cloud_owners_tbl = '//home/cloud_analytics/import/iam/cloud_owners/1h';
+$sku_tbl = '//home/logfeller/logs/yc-billing-export-sku/1h';
+$date_format = '%Y-%m-%d';
+
+DEFINE SUBQUERY $last_non_empty_table($path) AS
+    $max_path = (
+        SELECT MAX(Path) AS Path
+        FROM FOLDER($path, 'row_count')
+        WHERE Type = 'table'
+            AND Yson::LookupInt64(Attributes, 'row_count') > 0
+    );
+    SELECT * FROM CONCAT($max_path);
+END DEFINE;
+
+$extract_service1 = ($sku) -> {
+    RETURN String::SplitToList($sku, "."){0};
+};
+$to_double = ($amount) -> {
+    RETURN CAST($amount AS Double);
+};
+$email_to_canonical = ($email) -> {
+    RETURN Identifiers::NormalizeEmail($email);
+};
+
+-- Temporary hack to avoid problems with missing records in the last table
+$usage_reports_table = (
+SELECT LIST(Path)
+FROM (
+    SELECT
+        Path,
+        CAST(Yson::LookupInt64(Attributes, 'row_count') AS Uint64) AS row_count
+    FROM FOLDER($usage_reports_tbl, 'row_count')
+    WHERE Type ='table'
+        AND Yson::LookupInt64(Attributes, 'row_count') > 0
+    ORDER BY row_count DESC
+    LIMIT 1
+    )
+);
+
+$export_date = DateTime::ToStringFormat(CurrentUtcTimestamp() - Interval('P1DT0H'), $date_format);
+$last_period_end_point = CurrentUtcTimestamp() - DateTime::GetTimeOfDay(CurrentUtcTimestamp());
+$last_period_start_point = $last_period_end_point - Interval('P1DT0H') * $days_to_calc_avg_consumption;
+$previous_period_start_point = $last_period_start_point - Interval('P1DT0H') * $days_to_calc_avg_consumption;
+
+$consumption_by_products = (
+    SELECT
+        created_at,
+        $email_to_canonical(email) AS email,
+        product,
+        date,
+        (SUM($to_double(usage.cost)) > 0 AND SUM($to_double(usage.cost)) = -SUM($to_double(usage.credit))) AS is_grant,
+        SUM($to_double(usage.cost)) AS amount_consumed
+    FROM EACH($usage_reports_table) AS usage
+    JOIN $last_non_empty_table($iam_cloud_owners_tbl) AS cloud_owners
+        ON usage.cloud_id = cloud_owners.cloud_id
+    JOIN $last_non_empty_table($sku_tbl) AS sku
+        ON usage.sku_id = sku.id
+    GROUP BY
+        $extract_service1(sku.name) AS product,
+        cloud_owners.user_settings_email AS email,
+        usage.created_at AS created_at,
+        usage.date AS date
+);
+
+$consumption_total = (
+    SELECT
+        created_at,
+        email,
+        'all_products' AS product,
+        date,
+        BOOL_OR(is_grant) AS is_grant,
+        SUM(amount_consumed) AS amount_consumed
+    FROM $consumption_by_products
+    GROUP BY
+        email,
+        created_at,
+        date
+);
+
+$consumption_by_products_with_total = (
+    SELECT * FROM $consumption_by_products
+        UNION ALL
+    SELECT * FROM $consumption_total
+);
+
+$avg_consumption_for_last_period = (
+    SELECT
+        email,
+        product,
+        SUM(amount_consumed) / $days_to_calc_avg_consumption AS avg_day_consumption
+    FROM $consumption_by_products_with_total
+    WHERE
+        DateTime::TimestampFromSeconds(created_at) BETWEEN $last_period_start_point AND $last_period_end_point
+    GROUP BY email, product
+);
+
+$avg_consumption_for_prev_period = (
+    SELECT
+        email,
+        product,
+        SUM(amount_consumed) / $days_to_calc_avg_consumption AS avg_day_consumption
+    FROM $consumption_by_products_with_total
+    WHERE
+        DateTime::TimestampFromSeconds(created_at) BETWEEN $previous_period_start_point AND $last_period_start_point
+    GROUP BY email, product
+);
+
+$consumption_history = (
+    SELECT
+        usage.created_at AS created_at,
+        usage.email AS email,
+        usage.product AS product,
+        usage.is_grant AS is_grant,
+        $to_double(usage.amount_consumed) AS amount_consumed,
+        0.0 AS avg_daily_consumption_in_last_period,
+        '' AS type_name,
+        '' AS subproduct,
+        0.0 AS compared_to_prev_period,
+        0.0 AS compared_to_prev_period_percentage
+    FROM $consumption_by_products_with_total AS usage
+    WHERE
+        DateTime::TimestampFromStringFormat(usage.date, $date_format) < $last_period_end_point
+        AND usage.date != $export_date
+);
+
+$consumption_latest = (
+    SELECT
+        usage.created_at AS created_at,
+        usage.email AS email,
+        usage.product AS product,
+        usage.is_grant AS is_grant,
+        $to_double(usage.amount_consumed) AS amount_consumed,
+        avg_last.avg_day_consumption AS avg_daily_consumption_in_last_period,
+        '' AS type_name,
+        '' AS subproduct,
+        avg_last.avg_day_consumption - avg_prev.avg_day_consumption AS compared_to_prev_period,
+        CASE
+            WHEN avg_prev.avg_day_consumption != 0.0
+            THEN 100.0 * (avg_last.avg_day_consumption / avg_prev.avg_day_consumption - 1.0)
+            ELSE 0.0
+        END AS compared_to_prev_period_percentage
+    FROM $consumption_by_products_with_total AS usage
+    JOIN $avg_consumption_for_last_period as avg_last
+        ON usage.email = avg_last.email AND usage.product = avg_last.product
+    LEFT JOIN $avg_consumption_for_prev_period as avg_prev
+        ON usage.email = avg_prev.email AND usage.product = avg_prev.product
+    WHERE usage.date = $export_date
+);
+
+-- INSERT INTO $export_table WITH TRUNCATE
+--     SELECT
+--         Unwrap(LIST(consumption.created_at){0}) AS dwh_created_at,
+--         Unwrap(LIST(consumption.created_at){0}) AS ya_activity_time,
+--         ya_activity_id,
+--         Unwrap(LIST(consumption.email){0}) AS email,
+--         LIST(consumption.avg_daily_consumption_in_last_period){0} AS avg_daily_consumption_in_last_period,
+--         LIST(consumption.compared_to_prev_period_percentage){0} AS compared_to_prev_period_percentage,
+--         LIST(consumption.amount_consumed){0} AS amount_consumed,
+--         LIST(consumption.type_name){0} AS type_name,
+--         LIST(consumption.product){0} AS product,
+--         LIST(consumption.subproduct){0} AS subproduct,
+--         LIST(consumption.compared_to_prev_period){0} AS compared_to_prev_period,
+--         LIST(consumption.is_grant){0} AS is_grant
+--     FROM (
+--         SELECT * FROM $consumption_history
+--         UNION ALL
+--         SELECT * FROM $consumption_latest
+--     ) AS consumption
+--     INNER JOIN $leads_table AS leads
+--         ON leads.email = consumption.email
+--     GROUP BY
+--         Digest::Md5Hex(
+--             Unwrap(CAST(consumption.created_at AS String)) ||
+--             Unwrap(consumption.email) ||
+--             Unwrap(CAST(consumption.is_grant AS String)) ||
+--             Unwrap(consumption.product) ||
+--             Unwrap(consumption.subproduct) ||
+--             Unwrap(consumption.type_name)
+--         ) AS ya_activity_id
+--     ORDER BY dwh_created_at, email;
+
+$export_diff = $export_table || '_diff';
+
+$export_data = (
+    SELECT
+        Unwrap(DateTime::ToSeconds(CurrentUtcTimestamp())) AS dwh_created_at,
+        Unwrap(LIST(consumption.created_at){0}) AS ya_activity_time,
+        ya_activity_id,
+        Unwrap(LIST(consumption.email){0}) AS email,
+        LIST(consumption.avg_daily_consumption_in_last_period){0} AS avg_daily_consumption_in_last_period,
+        LIST(consumption.compared_to_prev_period_percentage){0} AS compared_to_prev_period_percentage,
+        LIST(consumption.amount_consumed){0} AS amount_consumed,
+        LIST(consumption.type_name){0} AS type_name,
+        LIST(consumption.product){0} AS product,
+        LIST(consumption.subproduct){0} AS subproduct,
+        LIST(consumption.compared_to_prev_period){0} AS compared_to_prev_period,
+        LIST(consumption.is_grant){0} AS is_grant
+    FROM (
+        SELECT * FROM $consumption_history
+        UNION ALL
+        SELECT * FROM $consumption_latest
+    ) AS consumption
+    INNER JOIN $leads_table AS leads
+        ON leads.email = consumption.email
+    GROUP BY
+        Digest::Md5Hex(
+            Unwrap(CAST(consumption.created_at AS String)) ||
+            Unwrap(consumption.email) ||
+            Unwrap(CAST(consumption.is_grant AS String)) ||
+            Unwrap(consumption.product) ||
+            Unwrap(consumption.subproduct) ||
+            Unwrap(consumption.type_name)
+        ) AS ya_activity_id
+);
+
+INSERT INTO $export_diff WITH TRUNCATE
+    SELECT
+        dwh_created_at,
+        ya_activity_time,
+        ya_activity_id,
+        email,
+        avg_daily_consumption_in_last_period,
+        compared_to_prev_period_percentage,
+        amount_consumed,
+        type_name,
+        product,
+        subproduct,
+        compared_to_prev_period,
+        is_grant
+    FROM $export_data AS current_data
+    LEFT ONLY JOIN $export_table AS exp
+        ON current_data.ya_activity_id = exp.ya_activity_id
+ORDER BY dwh_created_at, email;
+
+COMMIT;
+INSERT INTO $export_table SELECT * FROM $export_diff;
+DROP TABLE $export_diff;

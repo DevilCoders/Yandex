@@ -1,0 +1,56 @@
+use hahn;
+PRAGMA yt.InferSchema = '1';
+
+$billing_transactions_tbl = '//home/logfeller/logs/yc-billing-export-transactions/1h';
+$export_to = '//home/cloud_analytics/export/crm/billing_account';
+
+$table_name_date_format = '%Y-%m-%dT%H:%M:%S';
+$field_date_format = "%Y-%m-%d";
+$datetime_parse = DateTime::Parse($table_name_date_format);
+$datetime_format = DateTime::Format($table_name_date_format);
+$date_format = DateTime::Format($field_date_format);
+$dst_table = $export_to || '/' || $datetime_format(CurrentUtcDatetime()) ?? '';
+$dst_cleanup_interval = DateTime::IntervalFromDays(31);
+
+$to_date = ($timestamp) -> {
+    RETURN $date_format(DateTime::FromSeconds(CAST($timestamp AS Uint32))); 
+};
+
+DEFINE SUBQUERY $last_non_empty_table($path) AS
+    $max_path = (
+        SELECT MAX(Path) as Path
+        FROM FOLDER($path, 'row_count')
+        WHERE Type = 'table'
+            AND Yson::LookupInt64(Attributes, 'row_count') > 0
+    );
+    SELECT * FROM CONCAT($max_path);
+END DEFINE;
+
+INSERT INTO $dst_table WITH TRUNCATE
+    (SELECT 
+        billing_account_id,
+        $to_date(min(created_at)) as first_consumption_date
+    FROM $last_non_empty_table($billing_transactions_tbl) 
+    WHERE status = 'ok'
+    GROUP BY 
+        billing_account_id
+    ORDER BY
+        billing_account_id ASC);
+        
+-- Чистим старые таблицы
+
+DEFINE ACTION $drop_table($table_path) AS
+    DROP TABLE $table_path;
+END DEFINE;
+
+$tables_to_delete = (
+    SELECT AGGREGATE_LIST(Path)
+    FROM FOLDER($export_to, 'row_count')
+    WHERE Type == 'table' AND (
+        DateTime::MakeTimestamp($datetime_parse(TableName(Path))) < CurrentUtcTimestamp() - $dst_cleanup_interval
+        OR Yson::LookupInt64(Attributes, 'row_count') = 0
+    )
+);
+
+EVALUATE FOR $tb_ts IN $tables_to_delete
+    DO $drop_table($tb_ts);

@@ -1,0 +1,91 @@
+{% from "local_lb/map.jinja" import create_locallb_alerts %}
+api_path: /alerts/
+menu: "[EngInfra] Alerts"
+menu_type: admin
+entities:
+  {% for az in zones_by_env[env] %}
+    {% for type in ["hw", "svm"] %}
+  eds_controller_leader_{{ az.prefix }}_{{ type }}:
+    template: eds_controller_leader.j2
+    context:
+      az: {{ az.prefix }}
+      type: {{ type }}
+    {% endfor %}
+  {% endfor %}
+
+{% if env != "israel" %}
+  {% for cluster in kubelet_clusters %}
+  yc-k8s-metadata-plugin-failures_{{ cluster }}:
+    template: yc_k8s_metadata_plugin_failures.j2
+    context:
+      cluster: {{ cluster }}
+
+  kubelet-client-requests-failures_{{ cluster }}:
+    template: kubelet_client_requests_failures.j2
+    context:
+      cluster: {{ cluster }}
+  {% endfor %}
+  {% for cluster in kubelet_hw_clusters %}
+  yc-k8s-ta-plugin-failures_{{ cluster }}:
+    template: yc_k8s_ta_plugin_failures.j2
+    context:
+      cluster: {{ cluster }}
+
+  kubelet-client-requests-failures_{{ cluster }}:
+    template: kubelet_client_requests_failures.j2
+    context:
+      cluster: {{ cluster }}
+  {% endfor %}
+  yc-k8s-metadata-plugin-failures_bootstrap_{{ env }}:
+    template: yc_k8s_metadata_plugin_failures.j2
+    context:
+      cluster_override: {{ "cloud_bootstrap" if env == "prod" else "cloud_bootstrap_" + env }}
+      env: bootstrap
+      cluster: {{ env }}
+
+  kubelet-client-requests-failures_bootstrap_{{ env }}:
+    template: kubelet_client_requests_failures.j2
+    context:
+      cluster_override: {{ "cloud_bootstrap" if env == "prod" else "cloud_bootstrap_" + env }}
+      env: bootstrap
+      cluster: {{ env }}
+{% endif %}
+
+  {% for az in zones_by_env[env] %}
+  xds_provider_services_errors_{{ az.prefix }}:
+    template: ./xds-provider/services_errors.j2
+    context:
+      az: {{ az.prefix }}
+
+  xds_provider_get_errors_{{ az.prefix }}:
+    template: ./xds-provider/get_errors.j2
+    context:
+      az: {{ az.prefix }}
+  xds_provider_dns_errors_{{ az.prefix }}:
+    template: ./xds-provider/dns_errors.j2
+    context:
+      az: {{ az.prefix }}
+  xds_provider_xds_errors_{{ az.prefix }}:
+    template: ./xds-provider/xds_errors.j2
+    context:
+      az: {{ az.prefix }}
+  {% endfor %}
+
+
+  k-rail-requests-failures:
+    template: ./k-rail/requests_failures.j2
+    context:
+      cluster: {{ "cloud_bootstrap" if env == "prod" else "cloud_bootstrap_" + env }}
+
+{% for base_role in locallb_clusters %}
+  {{ create_locallb_alerts(base_role, env, zones_by_env) }}
+{% endfor %}
+
+  build_agent_disk_space:
+    template: build_agent_disk_space.j2
+    exclude:
+      env: [prod, testing,
+            hw-cgw-ci-lab, hw-cgw-dev-lab, hw-load-lab, hw-mellanox-lab, hw-6dxlx-lab,
+            hw1-lab, hw2-lab, hw3-lab, hw4-lab, hw6-lab, hw7-lab, hw9-lab, hw10-lab, hw11-lab]
+    context:
+      notificationChannels: ["juggler"]

@@ -1,0 +1,112 @@
+{%- set hostname = grains['nodename'] %}
+{%- set host_roles = grains['cluster_map']['hosts'][hostname]['roles'] -%}
+{%- set peer_groups = {"downstream": downstream,
+                       "upstream4": upstream4|default({}),
+                       "upstream6": upstream6|default({})} %}
+{# We will stop using martians one day...#}
+{%- set martian_net = "198.18.0.0/15" %}
+log: {{ log }}
+{%- if 'cgw-nat' in host_roles %}
+tenant-asn: {{ vrf['tenant_route_targets'][0].split(':')[0] }}
+{%- else %}
+tenant-asn: {{ vrf['import_route_targets']['ip4'].split(':')[0] }}
+{%- endif %}
+{%- if 'loadbalancer-node' in host_roles %}
+loadbalancer: True
+vrf-per-client: True
+{%- endif %}
+yandex-aggregates:
+    community: {{ yaggr['community'] }}
+    rt-import: {{ yaggr['upstream_rt'] }}
+    rt-export: {{ yaggr['downstream_rt'] }}
+
+{%- if 'cgw-nat' in host_roles %}
+{#TODO(svartapetov) remove this ugliness after CLOUD-15512 #}
+{% set _ =  peer_groups.update({"reflector": reflector}) %}
+peers:
+{%- for pgroup, desc in peer_groups.iteritems() if desc and not desc.get('disabled', False) %}
+
+    {{ pgroup }}:
+        announces:
+{%-     for announce in desc['announces'] %}
+
+{%-     if 'nat' in announce %}
+{%-     set prefix = announce.split(' via ')[0] %}
+{%-     set community = "65000:9003" if salt['yavpp.prefix_overlaps'](prefix, martian_net) else "65000:9002" %}
+          - route: {{ prefix }}
+            community: {{ community }}
+{%-     else %}
+{%-     set prefix, rest = announce.split(' via ') %}
+          - route: {{ prefix }}
+{%-         if 'rt' in rest %}
+{%-         set rest, rt = rest.split(' rt ') %}
+            rt: {{ rt }}
+{%-         endif %}
+{%-         if 'comm' in rest %}
+{%-         set rest, community = rest.split(' comm ') %}
+            community: {{ community }}
+{%-         endif %}
+{%-         if 'label' in rest %}
+{%-         set rest, label = rest.split(' label ') %}
+            label: {{ label }}
+{%-         endif %}
+
+{%-     endif %}
+{%-     else %}
+{# empty for #}
+          []
+{%-     endfor %}
+{%- endfor %}
+
+{%- else %}
+
+peers:
+{%- for pgroup, desc in peer_groups.iteritems() if desc and not desc.get('disabled', False) %}
+
+    {{ pgroup }}:
+        announces:
+{%-     for announce in desc['announces'] %}
+          - {{ announce }}
+{%-     else %}
+{# empty for #}
+          []
+{%-     endfor %}
+{%- endfor %}
+{%- if reflector is defined and not reflector['disabled'] %}
+    reflector:
+        announces:
+{%- for announce in reflector['announces'] %}
+          - {{ announce }}
+{%- else %}
+          []
+{%- endfor %}
+{% endif %}
+{%- if cloud_border is defined and not cloud_border['disabled'] %}
+    cloud_border:
+        announces:
+{%- for announce in cloud_border['announces'] %}
+          - {{ announce }}
+{%- else %}
+          []
+{%- endfor %}
+{% endif %}
+
+## TODO: remove since vrfs are autocreated after CLOUD-15512.
+        vrfs:
+          - {{ vrf['export_route_targets']['ip4'].split(':')[1] }}
+{%- endif %}
+{%- if 'cgw-nat' in host_roles %}
+{%- set group_host_ifaces_map = {'downstream': 'DOWNSTREAM',
+                                 'upstream6': 'UPSTREAM_V6',
+                                 'upstream4': 'UPSTREAM_V4',
+                                }%}
+interfaces:
+{%- for pgroup, desc in peer_groups.iteritems() %}
+{%-   if desc and not desc.get('disabled', False) and group_host_ifaces_map.get(pgroup) %}
+    {{ pgroup }}:
+        address: {{ host['interfaces'][group_host_ifaces_map.get(pgroup)]['addr'].split("/")[0] }}
+{%-   endif %}
+{%- endfor %}
+    loopback: 
+        address: {{ host['loopback'].split("/")[0] }}
+{%- endif %}

@@ -1,0 +1,25 @@
+SELECT operation_id AS id,
+       target_id,
+       cluster_type,
+       env AS environment,
+       operation_type,
+       created_by,
+       created_at,
+       started_at,
+       modified_at,
+       status,
+       metadata,
+       hidden,
+       errors
+FROM code.get_operations(
+    i_folder_id             => %(folder_id)s,
+    i_cid                   => %(cid)s,
+    i_env                   => %(env)s,
+    i_cluster_type          => %(cluster_type)s,
+    i_type                  => %(operation_type)s,
+    i_created_by            => %(created_by)s,
+    i_page_token_id         => %(page_token_id)s,
+    i_page_token_create_ts  => %(page_token_create_ts)s,
+    i_limit                 => %(limit)s,
+    i_include_hidden        => %(include_hidden)s
+)

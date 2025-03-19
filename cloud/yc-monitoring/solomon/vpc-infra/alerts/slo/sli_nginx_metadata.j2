@@ -1,0 +1,21 @@
+{% extends "../base_alert.j2" %}
+{% macro prog() %}
+let rps = group_lines('sum', {project='{{ project_id }}', cluster='cloud_prod_compute', service='nginx', host='{{ host }}', name='rps', method='*', cached_request='*'});
+alarm_if(count(rps) == 0);
+let errors =  group_lines('sum', {project='{{ project_id }}', cluster='cloud_prod_compute', service='nginx', host='{{ host }}', name='rps', status='5*', cached_request='*'});
+let error_percent = max(errors/rps * 100);
+
+let is_red = error_percent >= 5;
+let trafficColor = is_red ? 'red' : 'green';
+let description = 'Nginx metadata error rate is too high';
+{% endmacro %}
+
+{% block main %}
+    "name": "{{ alert_name | default(config_name) }}",
+    "annotations": {
+        "trafficLight.color": "[[expression.trafficColor]]",
+        "details": "[[expression.description]]"
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

@@ -1,0 +1,36 @@
+use chyt.hahn/cloud_analytics;
+INSERT INTO "<append=%false>//home/cloud_analytics/emailing/sender/ba-activation"
+SELECT
+    t0.*,
+    language
+FROM(
+    SELECT
+        multiIf(
+            user_settings_email LIKE '%@yandex.%' OR user_settings_email LIKE '%@ya.%',CONCAT(lower(replaceAll(splitByString('@',assumeNotNull(user_settings_email))[1], '.', '-')), '@yandex.ru'),
+            lower(user_settings_email)
+        ) as email,
+        toUInt64(puid) as puid,
+        cloud_id,
+        event_time as console_regstration_date,
+        multiIf(first_ba_created_datetime = '0000-00-00 00:00:00', '', first_ba_created_datetime) as ba_created,
+        mail_feature,
+        mail_info,
+        mail_promo,
+        toDate(NOW()) - toDate(console_regstration_date) as days_sinse_console_registration,
+        multiIf(
+            modulo(puid, 100) < 35, 'test',
+            modulo(puid, 100) > 44, 'test',
+            'control'
+        ) as group
+    FROM "//home/cloud_analytics/cubes/acquisition_cube/cube"
+    WHERE
+        event = 'cloud_created'
+        AND toDate(event_time) >= toDate('2020-06-01')
+) as t0
+ANY LEFT JOIN(
+    SELECT
+        cloud_id,
+        user_settings_language as language
+    FROM "//home/cloud_analytics/import/iam/cloud_owners_history"
+) as t1
+ON t0.cloud_id = t1.cloud_id

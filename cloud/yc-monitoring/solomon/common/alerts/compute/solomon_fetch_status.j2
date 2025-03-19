@@ -1,0 +1,87 @@
+{% extends "../../../base/alert.j2" %}
+
+{% set windowSecs = 600 %}
+{% set checkExpression = "" %}
+{% set cluster = "production" %}
+
+{% if solomon == "israel" %}
+  {% set host1 = "cluster" %}  {# FIXME: rework this #}
+  {% set host2 = "cluster" %}
+{% else %}
+  {% set host1 = "Vla" %}
+  {% set host2 = "Sas" %}
+{% endif %}
+
+{% set ignored_statuses = ["OK", "CONNECT_FAILURE", "UNKNOWN_HOST"] %}
+
+{% set id_prefix = "" if no_project_id_prefix else project_id + "_" %} {# Legacy, should not be used in new projects #}
+{% set shard_filter = [] %}
+
+{% for role, service_list in shards.items() %}
+  {% for service in service_list %}
+    {% set shard_filter = shard_filter.append(id_prefix + 'cloud_' + env + "_" + role + "_" + service) %}
+  {% endfor %}
+{% endfor %}
+{% set shard_filter = shard_filter | sort %}
+
+{% macro prog() %}
+
+let errors_vla = integrate(group_lines('sum', {
+    project='{{ solomon_project_id }}',
+    cluster='{{ cluster }}',
+    service='fetcher',
+    sensor='fetch.urlStatus',
+    projectId='{{ project_id }}',
+    type!='{{ ignored_statuses | join ("|") }}',
+    host='{{ host1 }}',
+    shardId='{{ shard_filter | join("|") }}'}));
+
+let errors_sas = integrate(group_lines('sum', {
+    project='{{ solomon_project_id }}',
+    cluster='{{ cluster }}',
+    service='fetcher',
+    sensor='fetch.urlStatus',
+    projectId='{{ project_id }}',
+    type!='{{ ignored_statuses | join ("|") }}',
+    host='{{ host2 }}',
+    shardId='{{ shard_filter | join("|") }}'}));
+
+let total_vla = integrate(group_lines('sum', {
+    project='{{ solomon_project_id }}',
+    cluster='{{ cluster }}',
+    service='fetcher',
+    sensor='fetch.urlStatus',
+    projectId='{{ project_id }}',
+    host='{{ host1 }}',
+    shardId='{{ shard_filter | join("|") }}'}));
+
+let total_sas = integrate(group_lines('sum', {
+    project='{{ solomon_project_id }}',
+    cluster='{{ cluster }}',
+    service='fetcher',
+    sensor='fetch.urlStatus',
+    projectId='{{ project_id }}',
+    host='{{ host2 }}',
+    shardId='{{ shard_filter | join("|") }}'}));
+
+let error_part_vla = errors_vla * 100 / total_vla;
+let error_part_sas = errors_sas * 100 / total_sas;
+
+let error_part_human = to_fixed((error_part_sas + error_part_vla) / 2, 2);
+
+alarm_if(error_part_vla > {{ alarm }} && error_part_sas > {{ alarm }});
+warn_if(error_part_vla > {{ warn }} && error_part_sas > {{ warn }});
+{% endmacro %}
+
+{% block main %}
+    "name": "Solomon fetch status for {{ service_name }} shards @{{ env | upper }}",
+    "groupByLabels": ["shardId"],
+    "annotations": {
+        "host": "yc_compute_solomon_{{ env }}-[[ labels.shardId ]]",
+        "tags": "{{ tags }}",
+        "service": "{{ service_name }}-solomon-fetch-status",
+        "details": "fetching from solomon-agent: [[expression.error_part_human]]% fetch requests have failed."
+    },
+    "description": "https://docs.yandex-team.ru/yc-monitoring/shared/solomon-fetch-status. Shard status page should be checked: {{ solomon_endpoint }}/admin/projects/{{ project_id }}/shards/<shardId>/status",
+    "type": {{ type_expression() }}
+{% endblock %}

@@ -1,0 +1,60 @@
+---
+driver:
+  name: docker
+  hostname: e2e-real.test-kitchen.cloud.yandex.net
+  use_cache: true
+  use_sudo: false
+  privileged: true
+
+
+platforms:
+- name: ubuntu-16.04
+  driver_config:
+    image: registry.yandex.net/cloud/ylb-salt-kitchen-runner:81076002-secure
+    run_command: /bin/systemd
+
+
+provisioner:
+  name: salt_solo
+  # we are already bootstraped in our docker image
+  salt_install: none
+  log_level: info
+  salt_env: ci
+  is_file_root: true
+  require_chef: false
+  salt_copy_filter:
+    - .docker
+    - .git
+    - .kitchen
+    - .kitchen.yml
+    - .*.swp
+    - .vagrant
+    - Gemfile
+    - Gemfile.lock
+    - Makefile
+  grains:
+    tracing:
+      jaeger:
+        agent: localhost:6831
+    endpoints:
+      jaegerCollector: localhost:6832
+    e2e_real:
+      version: 0.1-10562.210201
+  state_top:
+    ci:
+      "*":
+        - real
+        - jaeger-agent
+        - cloud-init
+suites:
+  - name: e2e-real
+    driver:
+      hostname: e2e-real.test-kitchen.cloud.yandex.net
+
+# Gloval verifier
+verifier:
+  name: shell
+  remote_exec: false
+  command: uptime
+
+# vim: ft=yaml sw=2 ts=2 sts=2 tw=125

@@ -1,0 +1,26 @@
+{%- import "common/kikimr/init.sls" as vars with context %}
+
+{% set endpoints = salt['grains.get']('cluster_map:load_balancer:endpoints') %}
+{% set iam_takeout_agent = pillar.get('iam-takeout-agent') %}
+
+{% set kikimr_iam_host = 'localhost' if vars.subdomains|length > 1 else endpoints.iam_kikimr_grpc.host %}
+{% set kikimr_iam_port = pillar['kikimr_tenant_ports'][vars.iam_database]['grpc_port'] if vars.subdomains|length > 1 or vars.base_role == 'cloudvm' else endpoints.iam_kikimr_grpc.port %}
+
+port: 8253
+certificate_file: /etc/yc/iam-takeout-agent/server.pem
+
+tvm:
+  client_id: {{ iam_takeout_agent['tvm']['client_id'] }}
+  client_secret_file: /var/lib/yc/iam-takeout-agent/tvm_client_secret
+  blackbox_instance: "{{ iam_takeout_agent['tvm']['blackbox_instance'] }}"
+  allowed_clients: {{ iam_takeout_agent['tvm']['allowed_clients'] }}
+
+access-service:
+  host: {{ endpoints.access_service_grpc.host }}
+  port: {{ endpoints.access_service_grpc.port }}
+
+endpoints:
+  kikimr:
+    identity:
+      host: "{{ salt['grains.get']('overrides:kikimr_endpoint', (kikimr_iam_host, kikimr_iam_port)|join(':')) }}"
+      root: "/{{ vars.ydb_domain }}/{{ vars.iam_database }}/{{ grains['cluster_map']['stand_type'] }}/{{ salt['grains.get']('overrides:kikimr_id', salt['grains.get']('cluster_map:kikimr:shared_dir')) }}/identity"

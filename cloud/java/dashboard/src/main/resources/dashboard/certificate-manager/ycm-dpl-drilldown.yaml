@@ -1,0 +1,611 @@
+uid: ycm-dpl-drilldown
+refresh: 1m
+title: YC Certificate Manager DPL Drilldown
+
+tags: [ 'yc-cert-manager', 'yc-cert-manager-dpl-drilldown' ]
+
+variables:
+  ui:
+    !include include/_datasources.yaml
+    !include include/_projects.yaml
+    !include include/_clusters.yaml
+    host:
+      multi: true
+      values: [
+        'cluster-dpl',
+        'dpl-myt-1',
+        'dpl-sas-1',
+        'dpl-vla-1']
+    client_app:
+      multi: true
+      hidden: true
+      values: ['auth', 'kms-crypto', 'resource-manager']
+      titles: ['Auth', 'KMS Crypto', 'Resource Manager']
+    taskprocessor_pool:
+      multi: true
+      hidden: true
+      values: ['default']
+  replacement:
+    !include ../include/errors.yaml
+  repeat:
+    tx_duration_sensor:
+      values: ['tx_attempt_duration_seconds', 'tx_total_duration_seconds']
+      titles: ['Tx Attempt Duration', 'Tx Total Duration']
+    jvm_memory_area:
+      values: ['heap', 'nonheap']
+      titles: ['Heap', 'Non-Heap']
+
+links:
+  - { title: 'Dashboards', tags: ['yc-cert-manager'] }
+
+graphDefaults:
+  datasource: '${datasource}'
+  width: 8
+  height: 6
+
+queryDefaults: { labels: 'project=${project}, cluster=${cluster}, service=core, host=${host}' }
+
+rows:
+  - title: Private L7
+    drilldowns:
+      - uid: yc-cert-manager-dpl-private-l7-hostdata
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+        uiQuery:
+          host:
+            multi: true
+        uiRepeat: host
+        labels: 'host=$host'
+
+    graphDefaults: { width: 8 }
+    queryDefaults: { labels: 'service=private_envoy' }
+    panels:
+      - type: graph
+        title: 'Private L7 RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=envoy_http_downstream_rq_total, envoy_http_conn_manager_prefix=ingress_http' }
+
+      - type: graph
+        title: 'Private L7 Errors'
+        templates: { name: errors, sumLines: true }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=envoy_http_downstream_rq_xx, envoy_http_conn_manager_prefix=ingress_http, envoy_response_code_class=4' }
+          - params: { labels: 'name=envoy_http_downstream_rq_xx, envoy_http_conn_manager_prefix=ingress_http, envoy_response_code_class=5' }
+        draw:
+          - { color: '#147', alias: '4xx' }
+          - { color: '#da7', alias: '5xx' }
+        display: { stack: true }
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        title: 'Private L7 Upstream Errors'
+        templates: { name: errors, sumLines: true }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=envoy_cluster_upstream_rq_xx, envoy_response_code_class=4' }
+          - params: { labels: 'name=envoy_cluster_upstream_rq_xx, envoy_response_code_class=5' }
+          - params: { labels: 'name=envoy_cluster_upstream_rq, envoy_response_code=503' }
+        draw:
+          - { color: '#147', alias: '4xx' }
+          - { color: '#da7', alias: '5xx' }
+          - { color: '#b20', alias: '503' }
+        display: { stack: true }
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        title: 'Private L7 Response Duration'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=envoy_cluster_upstream_rq_time' }
+        yAxes: [{ format: 'ms' }]
+
+      - type: graph
+        title: 'Private L7 Failed Healthcheck'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=envoy_cluster_health_check_failure' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'failures' }
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        title: 'Private L7 Outlier Detection'
+        queries:
+          - params: { labels: 'name=envoy_cluster_outlier_detection_ejections_active' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'ejections' }
+        yAxes: [{ min: 0 }]
+
+  - title: Public L7
+    drilldowns:
+      - uid: yc-cert-manager-data-public-l7-host-data
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+        uiQuery:
+          host:
+            multi: true
+        uiRepeat: host
+        labels: 'host=$host'
+
+    graphDefaults: { width: 8 }
+    queryDefaults: { labels: 'service=public_envoy, cluster=${cluster}' }
+    panels:
+      - type: graph
+        title: 'Public L7 RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=envoy_http_downstream_rq_total, envoy_http_conn_manager_prefix=frontend_*' }
+
+      - type: graph
+        title: 'Public L7 Errors'
+        templates: { name: errors, sumLines: true }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=envoy_http_downstream_rq_xx, envoy_http_conn_manager_prefix=frontend_*, envoy_response_code_class=4' }
+          - params: { labels: 'name=envoy_http_downstream_rq_xx, envoy_http_conn_manager_prefix=frontend_*, envoy_response_code_class=5' }
+        draw:
+          - { color: '#147', alias: '4xx' }
+          - { color: '#da7', alias: '5xx' }
+        display: { stack: true }
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        title: 'Public L7 Response Duration'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=envoy_cluster_upstream_rq_time' }
+        yAxes: [{ format: 'ms' }]
+
+  - title: Certificate Manager DPL Server
+    drilldowns:
+      - uid: yc-cert-manager-dpl-host-server
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'dpl-myt-1',
+              'dpl-sas-1',
+              'dpl-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+    panels:
+      - type: graph
+        title: 'RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=grpc_requests, app=certificate-manager-data-plane_server, method=*, meter_type=count' }
+
+      - type: graph
+        title: 'Errors (by type)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, app=certificate-manager-data-plane_server, method=*, status!=OK' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: '0', group_by_labels: ['sum', 'status'], alias: '{{status}}' }
+        display: { decimals: 0, empty: false }
+
+      - type: graph
+        title: 'Durations'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=grpc_durations, app=certificate-manager-data-plane_server, method=*' }
+
+      - type: graph
+        title: 'GRPC Thread Pool: Task Count'
+        queries:
+          - params: { labels: 'name=certificate_manager_data_plane_running, type=running' }
+            groupByTime: { max: default }
+            select: { group_lines: 'sum', alias: 'running now count' }
+          - params: { labels: 'name=certificate_manager_data_plane_task, meter_type=count, type=*' }
+            groupByTime: { max: default }
+            select: { non_negative_derivative: [], group_by_labels: ['sum', 'type'], alias: '{{type}} RPS' }
+        yAxes: [{ decimals: 0, format: short, min: 0 }, { decimals: 1, format: short, min: 0 }]
+        draw: [{ alias: '/.* RPS/', at: right }]
+
+      - type: graph
+        title: 'GRPC Thread Pool: Task Duration'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=certificate_manager_data_plane_timings, type=duration' }
+
+      - type: graph
+        title: 'GRPC Thread Pool: Idle Time'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=certificate_manager_data_plane_timings, type=idle' }
+
+  - title: 'YCM DPL JVM and System'
+    drilldowns:
+      - uid: yc-cert-manager-dpl-host-sys
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'dpl-myt-1',
+              'dpl-sas-1',
+              'dpl-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+    panels:
+      - type: graph
+        title: 'Instances'
+        queries:
+          - params: { labels: 'name=jvm_info, host=dpl-*' }
+        display: { empty: false, stack: true }
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        title: 'JVM @{jvm_memory_area:title} Memory'
+        repeat: jvm_memory_area
+        queries:
+          - params: { labels: 'name=jvm_memory_bytes_used|jvm_memory_bytes_committed, area=@{jvm_memory_area}' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'] }
+        yAxes: [{ format: bytes }]
+      - type: graph
+        title: 'Sum JVM @{jvm_memory_area:title} Memory'
+        repeat: jvm_memory_area
+        queries:
+          - params: { labels: 'name=jvm_memory_bytes_used|jvm_memory_bytes_committed, area=@{jvm_memory_area}' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'] }
+        yAxes: [{ format: bytes }]
+      - type: graph
+        title: 'Sys VM & RSS'
+        queries:
+          - params: { labels: 'name=process_virtual_memory_bytes|process_resident_memory_bytes' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: ['avg', 'name'] }
+      - type: graph
+        title: '% Cores'
+        queries:
+          - params: { labels: 'name=process_cpu_seconds_total' }
+            groupByTime: { max: default }
+            select: { non_negative_derivative: [] }
+        display: { empty: false }
+        yAxes: [{ format: percentunit, decimals: 0 }]
+      - type: graph
+        title: 'Sum CPU time'
+        queries:
+          - params: { labels: 'service=sys, path=/System/IdleTime' }
+            groupByTime: { avg: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'idle' }
+          - params: { labels: 'service=sys, path=/System/IoWaitTime' }
+            groupByTime: { avg: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'iowait' }
+          - params: { labels: 'service=sys, path=/System/IrqTime' }
+            groupByTime: { avg: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'irq' }
+          - params: { labels: 'service=sys, path=/System/NiceTime' }
+            groupByTime: { avg: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'nice' }
+          - params: { labels: 'service=sys, path=/System/SystemTime' }
+            groupByTime: { avg: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'system' }
+          - params: { labels: 'service=sys, path=/System/UserTime' }
+            groupByTime: { avg: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'user' }
+        display: { stack: true }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'JVM Threads'
+        queries:
+          - params: { labels: 'name=jvm_threads_state, state=*' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'state'] }
+        display: { empty: false, stack: true }
+      - type: graph
+        title: 'Load Average (1 min)'
+        queries:
+          - params: { labels: 'service=sys, path=/Proc/LoadAverage1min' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'la' }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Sum Load Average (1 min)'
+        queries:
+          - params: { labels: 'service=sys, path=/Proc/LoadAverage1min' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'la' }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Memory'
+        queries:
+          - params: { labels: 'service=sys, path=/Memory/ActiveAnon' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'anon' }
+          - params: { labels: 'service=sys, path=/Memory/ActiveFile' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'file' }
+          - params: { labels: 'service=sys, path=/Memory/MemTotal' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'total' }
+        yAxes: [{ format: bytes, min: 0 }]
+      - type: graph
+        title: 'Sum Memory'
+        queries:
+          - params: { labels: 'service=sys, path=/Memory/ActiveAnon' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'anon' }
+          - params: { labels: 'service=sys, path=/Memory/ActiveFile' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'file' }
+          - params: { labels: 'service=sys, path=/Memory/MemTotal' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'total' }
+        yAxes: [{ format: bytes, min: 0 }]
+      - type: graph
+        title: 'Network Bytes'
+        queries:
+          - params: { labels: 'service=sys, path=/Net/Ifs/RxBytes, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'rx' }
+          - params: { labels: 'service=sys, path=/Net/Ifs/TxBytes, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'tx' }
+        display: { stack: true }
+        yAxes: [{ format: bytes, min: 0 }]
+      - type: graph
+        title: 'Network Packets'
+        queries:
+          - params: { labels: 'service=sys, path=/Net/Ifs/RxPackets, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'rx' }
+          - params: { labels: 'service=sys, path=/Net/Ifs/TxPackets, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'tx' }
+        display: { stack: true }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Network Drop & Err'
+        queries:
+          - params: { labels: 'service=sys, path=/Net/Ifs/RxDrop, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'rx drop' }
+          - params: { labels: 'service=sys, path=/Net/Ifs/TxDrop, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'tx drop' }
+          - params: { labels: 'service=sys, path=/Net/Ifs/RxErrs, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'rx errs' }
+          - params: { labels: 'service=sys, path=/Net/Ifs/TxErrs, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'tx errs' }
+        display: { stack: true }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'File Descriptors'
+        queries:
+          - params: { labels: 'name=process_open_fds' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: ['max', 'name'], alias: 'max FDs' }
+      - type: graph
+        title: 'Free Space'
+        queries:
+          - params: { labels: 'service=sys, path=/Filesystem/FreeB' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['min', 'name'], alias: 'space' }
+        yAxes: [{ format: bytes, min: 0 }]
+      - type: graph
+        title: 'IO Ops'
+        queries:
+          - params: { labels: 'service=sys, path=/Io/Disks/Reads' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'reads' }
+          - params: { labels: 'service=sys, path=/Io/Disks/Writes' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'writes' }
+        display: { stack: true }
+      - type: graph
+        title: 'IO Bytes'
+        queries:
+          - params: { labels: 'service=sys, path=/Io/Disks/ReadBytes' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'reads' }
+          - params: { labels: 'service=sys, path=/Io/Disks/WriteBytes' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'writes' }
+        display: { stack: true }
+        yAxes: [{ format: bytes }]
+      - type: graph
+        title: 'IO Waits'
+        queries:
+          - params: { labels: 'service=sys, path=/Io/Disks/ReadWaitMillisec' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'reads msec' }
+          - params: { labels: 'service=sys, path=/Io/Disks/WriteWaitMillisec' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'writes msec' }
+        display: { stack: true }
+
+  - title: 'YCM DPL KiKiMR GRPC Client'
+    queryDefaults: { labels: 'app=kikimr_client, method=*' }
+    drilldowns:
+      - uid: yc-cert-manager-dpl-kikimr-grpc
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'dpl-myt-1',
+              'dpl-sas-1',
+              'dpl-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+
+    panels:
+      - type: graph
+        title: 'KiKiMR Client Call RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=grpc_requests, meter_type=count' }
+
+      - type: graph
+        title: 'KiKiMR Client Errors (by type)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, status!=OK' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: '0', group_by_labels: ['sum', 'status'], alias: '{{status}}' }
+        display: { decimals: 0, empty: false }
+
+      - type: graph
+        title: 'KiKiMR Client Call Durations'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=grpc_durations' }
+
+  - title: 'YCM DPL KiKiMR Tx'
+    drilldowns:
+      - uid: yc-cert-manager-dpl-kikimr-tx
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'dpl-myt-1',
+              'dpl-sas-1',
+              'dpl-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+
+    panels:
+      - type: graph
+        title: 'Tx Attempt Count'
+        templates: { name: percentile, format: solomon, groupLines: true }
+        yAxes: [{ decimals: 1, format: short, min: 0 }]
+        queries:
+          - params: { labels: 'tx_name=*, name=tx_attempts' }
+
+      - type: graph
+        repeat: tx_duration_sensor
+        title: '@{tx_duration_sensor:title}'
+        templates: { name: percentile, format: solomon, groupLines: true }
+        queries:
+          - params: { labels: 'tx_name=*, name=@{tx_duration_sensor}' }
+
+      - type: graph
+        title: 'Tx Result RPS'
+        queries:
+          - params: { labels: 'tx_name=*, name=tx_result, result=*' }
+            groupByTime: { max: default }
+            select: { nn_deriv: [], group_by_labels: ['sum', 'result'], alias: '{{result}} RPS' }
+
+      - type: graph
+        title: 'Session Count'
+        queries:
+          - params: { labels: 'name=sessions_count, type=active|idle' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'type'] }
+        display: { stack: true }
+
+      - type: graph
+        title: 'Session Timings (Used)'
+        templates: { name: percentile, format: solomon, groupLines: true }
+        queries:
+          - params: { labels: 'name=sessions_timings, type=used' }
+
+  - title: 'YCM DPL Solomon sensors pusher'
+    drilldowns:
+      - uid: yc-cert-manager-dpl-host-pusher
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'dpl-myt-1',
+              'dpl-sas-1',
+              'dpl-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+    panels:
+      - type: graph
+        title: 'Solomon client RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=app_solomon_pusher_requests' }
+
+      - type: graph
+        title: 'Solomon client errors RPS'
+        templates: { name: errors }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=app_solomon_pusher_errors' }
+        draw: [ { alias: '5xx', color: '#b20' } ]
+
+      - type: graph
+        title: 'Solomon pusher rejected sensors RPS'
+        templates: { name: errors }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=app_solomon_pusher_rejects' }
+        draw: [ { alias: '5xx', color: '#b20' } ]
+
+      - type: graph
+        title: 'Solomon pusher, not pushed after retries RPS'
+        templates: { name: errors }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=app_solomon_pusher_not_pushed' }
+        draw: [ { alias: '5xx', color: '#b20' } ]
+
+      - type: graph
+        title: 'Queue size'
+        queries:
+          - params: { labels: 'name=app_solomon_pusher_queue_size' }
+        display: { empty: false }
+
+      - type: graph
+        title: 'Solomon client Durations'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=app_solomon_pusher_durations' }
+
+  - title: 'YCM DPL ${client_app} Client'
+    uiRepeat: client_app
+    queryDefaults: { labels: 'app=${client_app}_client, method=*' }
+    drilldowns:
+      - uid: yc-cert-manager-dpl-host-client
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'dpl-myt-1',
+              'dpl-sas-1',
+              'dpl-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+    panels:
+      - type: graph
+        title: '${client_app} Client Call RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=grpc_requests, meter_type=count' }
+
+      - type: graph
+        title: '${client_app} Client Errors (by type)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, status!=OK' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: '0', group_by_labels: ['sum', 'status'], alias: '{{status}}' }
+        display: { decimals: 0, empty: false }
+
+      - type: graph
+        title: '${client_app} Client Call Durations'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=grpc_durations' }

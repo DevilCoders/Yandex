@@ -1,0 +1,54 @@
+# folder to clean up databases in
+folder: {{ salt['pillar.get']('data:dbaas_metadb:cleaner_folder', 'mdb-junk') }}
+# label to filter out clusters from cleaning
+label_key: {{ salt['pillar.get']('data:dbaas_metadb:cleaner_label_key', 'null') }}
+label_value: {{ salt['pillar.get']('data:dbaas_metadb:cleaner_label_value', 'null') }}
+# delete strategy (delete or stop-delete)
+strategy: {{ salt['pillar.get']('data:dbaas_metadb:delete_strategy') }}
+# age of databases to consider them old and delete
+max_age: {{ salt['pillar.get']('data:dbaas_metadb:cleaner_max_age', '14 days') }}
+# controls whether to skip cleanup if MetaDB is in read-only mode or not
+skip_ro: True
+# maximum amount of time to wait for operation completion
+timeout: 10 hours
+# Meta DB connection settings
+metadb:
+  dbname: dbaas_metadb
+  host: localhost
+  port: 6432
+  user: dbaas_api
+  password: {{ salt['pillar.get']('data:config:pgusers:dbaas_api:password') }}
+# REST Internal API connection settings
+internal_api:
+  url: https://{{ salt['pillar.get']('data:dbaas_metadb:internal_api_url') }}
+  oauth_token: {{ salt['pillar.get']('data:dbaas_metadb:cleaner_token') }}
+  verify: /opt/yandex/dbaas-cleaner/CA.pem
+  identity_url: https://{{ salt['pillar.get']('data:dbaas_metadb:iam_url', 'iam.cloud.yandex-team.ru') }}/v1/tokens
+# gRPC Internal API connection settings
+grpc_api:
+  url: {{ salt['pillar.get']('data:grpc_internal_api:address') }}
+  cert_file: /opt/yandex/dbaas-cleaner/CA.pem
+# Logging settings
+logging:
+  version: 1
+  formatters:
+    standard:
+      format: '%(asctime)s %(levelname)s %(message)s'
+      datefmt: '%Y-%m-%d %H:%M:%S'
+  handlers:
+    file:
+      class : logging.FileHandler
+      formatter: standard
+      filename: /var/log/dbaas-cleaner.log
+  loggers:
+    '':
+      handlers: [file]
+      level: DEBUG
+cert_file: /opt/yandex/dbaas-cleaner/CA.pem
+app:
+  service_account:
+    id: {{ salt['mdb_clickhouse.pillar']('data:dbaas_metadb:cleaner:service_account:id') }}
+    key_id: {{ salt['mdb_clickhouse.pillar']('data:dbaas_metadb:cleaner:service_account:key_id') }}
+    private_key: {{ salt['mdb_clickhouse.pillar']('data:dbaas_metadb:cleaner:service_account:private_key') | yaml_encode }}
+  environment:
+    {{ salt['mdb_clickhouse.pillar']('data:environment') | yaml(False) | indent(4) }}

@@ -1,0 +1,23 @@
+RECURSE(
+    clouds
+    clouds_history
+    federated_users_history
+    federations
+    federations_history
+    folders
+    folders_history
+    organizations
+    organizations_history
+    passport_users
+    passport_users_history
+    quota_manager
+    resource_memberships
+    resource_memberships_history
+    role_bindings
+    role_bindings_history
+    service_accounts
+    service_accounts_history
+    subjects
+    subjects_history
+    users
+)

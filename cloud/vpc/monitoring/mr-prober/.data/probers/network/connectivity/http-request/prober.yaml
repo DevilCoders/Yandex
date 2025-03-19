@@ -1,0 +1,96 @@
+name: "[Network] HTTP Request"
+slug: http-request
+description: Send HTTP request
+runner:
+  type: BASH
+  command: curl --$VAR_ip_version --fail -v --connect-timeout 3 $VAR_url
+files: []
+configs:
+  - is_prober_enabled: true
+    # NOTE (andgein): There is a reference to this setting (interval_seconds: 60) in custom solomon alerts:
+    # https://bb.yandex-team.ru/projects/CLOUD/repos/yc-monitoring/browse/solomon/mr-prober/alerts/network/ping-internal-targets.j2.
+    # Keep it consistently.
+    interval_seconds: 60
+    timeout_seconds: 15
+    s3_logs_policy: FAIL
+    default_routing_interface: eth0
+    matrix:
+      url:
+        - http://10.1.250.250/ # target-ru-central1-a-1-v4.ru-central1.internal
+        - http://10.1.250.251/ # target-ru-central1-a-2-v4.ru-central1.internal
+        - http://10.2.250.250/ # target-ru-central1-b-1-v4.ru-central1.internal
+        - http://10.2.250.251/ # target-ru-central1-b-2-v4.ru-central1.internal
+        - http://10.3.250.250/ # target-ru-central1-c-1-v4.ru-central1.internal
+        - http://10.3.250.251/ # target-ru-central1-c-2-v4.ru-central1.internal
+    variables:
+      url: ${matrix.url}
+      ip_version: ipv4
+    clusters:
+      - clusters/testing/meeseeks/cluster.yaml
+      - clusters/preprod/meeseeks/cluster.yaml
+      - clusters/prod/meeseeks/cluster.yaml
+  - is_prober_enabled: true
+    interval_seconds: 60
+    timeout_seconds: 15
+    s3_logs_policy: FAIL
+    default_routing_interface: eth0
+    matrix:
+      url:
+        - http://10.1.250.250/ # target-il1-a-1-v4.ru-central1.internal
+        - http://10.1.250.251/ # target-il1-a-2-v4.ru-central1.internal
+    variables:
+      url: ${matrix.url}
+      ip_version: ipv4
+    clusters:
+      - clusters/israel/meeseeks/cluster.yaml
+  - is_prober_enabled: true
+    interval_seconds: 60
+    timeout_seconds: 15
+    s3_logs_policy: FAIL
+    default_routing_interface: eth0
+    matrix:
+      url:
+        # meeseeks-staging has only 1 target in each AZ
+        - http://10.1.250.250/ # target-ru-central1-a-1-v4.ru-central1.internal
+        - http://10.2.250.250/ # target-ru-central1-b-1-v4.ru-central1.internal
+        - http://10.3.250.250/ # target-ru-central1-c-1-v4.ru-central1.internal
+    variables:
+      url: ${matrix.url}
+      ip_version: ipv4
+    clusters:
+      - clusters/*/meeseeks-staging/cluster.yaml
+  - is_prober_enabled: true
+    # NOTE (andgein): There is a reference to this setting (interval_seconds: 60) in custom solomon alerts:
+    # https://bb.yandex-team.ru/projects/CLOUD/repos/yc-monitoring/browse/solomon/mr-prober/alerts/network/ping-external-targets.j2.
+    # Keep it consistently.
+    interval_seconds: 60
+    timeout_seconds: 15
+    s3_logs_policy: FAIL
+    default_routing_interface: eth0
+    matrix:
+      url:
+        - https://yandex.ru
+        - https://storage.yandexcloud.net/mr-prober-probes-test-data/download-s3-resource/data.txt
+        - https://www.google.com/
+      ip_version:
+        - ipv4
+        - ipv6
+    variables:
+      url: ${matrix.url}
+      ip_version: ${matrix.ip_version}
+    clusters:
+      - clusters/*/world/*/cluster.yaml
+  - is_prober_enabled: true
+    interval_seconds: 10
+    timeout_seconds: 5
+    s3_logs_policy: FAIL
+    default_routing_interface: eth0
+    matrix:
+      ip_version:
+        - ipv4
+        - ipv6
+    variables:
+      url: ${matrix.ip_version}.internal-nlb.${cluster.variables.dns_zone}
+      ip_version: ${matrix.ip_version}
+    clusters:
+      - clusters/*/internal-nlb/cluster.yaml

@@ -1,0 +1,235 @@
+apiVersion: v1
+kind: PodList
+items:
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: api-static
+    namespace: kube-system
+    labels:
+      role: api
+    annotations:
+      config_digest: ${config_digest}
+      scheduler.alpha.kubernetes.io/critical-pod: ""
+  spec:
+    priority: 2000000001
+    priorityClassName: system-cluster-critical
+    hostNetwork: true
+    initContainers:
+    - name: deploy-configs
+      image: cr.yandex/crp7nvlkttssi7kapoho/infra/metadata:${metadata_version}
+      volumeMounts:
+      - name: all-configs
+        mountPath: /etc
+        terminationGracePeriodSeconds: 30
+    containers:
+    - name: schecker-api
+      image: cr.yandex/crp2dqh2mcnp87a3uce6/schecker-api:${api_version}
+      resources:
+        requests:
+          memory: "1024Mi"
+        limits:
+          memory: "1024Mi"
+      env:
+      - name: SCHECKER_DB_HOST
+        value: "${schecker_db_host}"
+      - name: SCHECKER_DB_PORT
+        value: "${schecker_db_port}"
+      - name: SCHECKER_DB_NAME
+        value: "${schecker_db_name}"
+      - name: SCHECKER_DB_USER
+        value: "${schecker_db_user}"
+      volumeMounts:
+      - name: var-schecker
+        mountPath: /var/schecker
+        terminationGracePeriodSeconds: 30
+      - name: var-log-schecker
+        mountPath: /var/log/schecker
+      - name: etc-ssl-certs
+        mountPath: /etc/ssl/certs
+        readOnly: true
+    - name: schecker-parser
+      image: cr.yandex/crp2dqh2mcnp87a3uce6/schecker-parser:${parser_version}
+      resources:
+        requests:
+          memory: "3072Mi"
+        limits:
+          memory: "3072Mi"
+      env:
+      - name: SCHECKER_DB_HOST
+        value: "${schecker_db_host}"
+      - name: SCHECKER_DB_PORT
+        value: "${schecker_db_port}"
+      - name: SCHECKER_DB_NAME
+        value: "${schecker_db_name}"
+      - name: SCHECKER_DB_USER
+        value: "${schecker_db_user}"
+      volumeMounts:
+      - name: var-schecker
+        mountPath: /var/schecker
+        terminationGracePeriodSeconds: 30
+      - name: var-log-schecker
+        mountPath: /var/log/schecker
+      - name: etc-ssl-certs
+        mountPath: /etc/ssl/certs
+        readOnly: true
+    - name: schecker-swiss-knife
+      image: cr.yandex/crp2dqh2mcnp87a3uce6/schecker-swiss-knife:${swiss_knife_version}
+      resources:
+        requests:
+          memory: "25Gi"
+        limits:
+          memory: "25Gi"
+      env:
+      - name: SCHECKER_DB_HOST
+        value: "${schecker_db_host}"
+      - name: SCHECKER_DB_PORT
+        value: "${schecker_db_port}"
+      - name: SCHECKER_DB_NAME
+        value: "${schecker_db_name}"
+      - name: SCHECKER_DB_USER
+        value: "${schecker_db_user}"
+      - name: SCHECKER_SPLUNK_USERNAME
+        value: "${schecker_splunk_user}"
+      - name: SCHECKER_SMTP_USERNAME
+        value: "${schecker_smtp_user}"
+      volumeMounts:
+      - name: var-schecker
+        mountPath: /var/schecker
+        terminationGracePeriodSeconds: 30
+      - name: var-log-schecker
+        mountPath: /var/log/schecker
+      - name: etc-ssl-certs
+        mountPath: /etc/ssl/certs
+        readOnly: true
+    - name: schecker-syncer
+      image: cr.yandex/crp2dqh2mcnp87a3uce6/schecker-syncer:${syncer_version}
+      resources:
+        requests:
+          memory: "1024Mi"
+        limits:
+          memory: "1024Mi"
+      env:
+      - name: SCHECKER_DB_HOST
+        value: "${schecker_db_host}"
+      - name: SCHECKER_DB_PORT
+        value: "${schecker_db_port}"
+      - name: SCHECKER_DB_NAME
+        value: "${schecker_db_name}"
+      - name: SCHECKER_DB_USER
+        value: "${schecker_db_user}"
+      - name: SCHECKER_CONDUCTOR_URL
+        value: "${schecker_conductor_url}"
+      volumeMounts:
+      - name: var-schecker
+        mountPath: /var/schecker
+        terminationGracePeriodSeconds: 30
+      - name: var-log-schecker
+        mountPath: /var/log/schecker
+      - name: etc-ssl-certs
+        mountPath: /etc/ssl/certs
+        readOnly: true
+    volumes:
+    - name: all-configs
+      hostPath:
+        path: /etc
+        type: DirectoryOrCreate
+    - name: schecker-configs
+      hostPath:
+        path: /etc/schecker
+        type: DirectoryOrCreate
+    - name: usr-local
+      hostPath:
+       path: /usr/local
+       type: DirectoryOrCreate
+    - name: var-schecker
+      hostPath:
+        path: /var/schecker
+        type: DirectoryOrCreate
+    - name: var-log-schecker
+      hostPath:
+        path: /var/log/schecker
+        type: DirectoryOrCreate
+    - name: etc-ssl-certs
+      hostPath:
+        path: /etc/ssl/certs
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: api-infrastructure
+    namespace: kube-system
+    labels:
+      role: api
+    annotations:
+      config_digest: ${infra_config_digest}
+      scheduler.alpha.kubernetes.io/critical-pod: ""
+  spec:
+    priority: 2000000001
+    hostNetwork: true
+    hostPID: true
+    priorityClassName: system-cluster-critical
+    initContainers:
+      - name: deploy-infra-configs
+        image: cr.yandex/crp7nvlkttssi7kapoho/infra/metadata:${metadata_version}
+        command:
+          - /usr/bin/metadata
+          - --attribute-name
+          - infra-configs
+        imagePullPolicy: Always
+        volumeMounts:
+          - name: all-configs
+            mountPath: /etc
+            terminationGracePeriodSeconds: 30
+          - name: run
+            mountPath: /run
+            terminationGracePeriodSeconds: 30
+    containers:
+      - name: push-client-yc-logbroker
+        image: cr.yandex/crp2dqh2mcnp87a3uce6/push-client:${push_client_version}
+        command: [ "/usr/bin/push-client", "-f", "-c", "/etc/push-client/push-client.yaml" ]
+        resources:
+          requests:
+            memory: "256Mi"
+          limits:
+            memory: "257Mi"
+        volumeMounts:
+          - name: var-log
+            mountPath: /var/log
+            terminationGracePeriodSeconds: 30
+          - name: var-spool-push-client
+            mountPath: /var/spool/push-client
+            terminationGracePeriodSeconds: 30
+          - name: push-client-config
+            mountPath: /etc/push-client
+            readOnly: true
+          - name: run-push-client
+            mountPath: /run/push-client
+            readOnly: true
+          - name: etc-ssl-certs
+            mountPath: /etc/ssl/certs
+            readOnly: true
+    volumes:
+      - name: all-configs
+        hostPath:
+          path: /etc
+          type: DirectoryOrCreate
+      - name: run
+        hostPath:
+          path: /run
+          type: DirectoryOrCreate
+      - name: push-client-config
+        hostPath:
+          path: /etc/push-client
+      - name: var-log
+        hostPath:
+          path: /var/log
+          type: DirectoryOrCreate
+      - name: var-spool-push-client
+        hostPath:
+          path: /var/spool/push-client
+      - name: etc-ssl-certs
+        hostPath:
+          path: /etc/ssl/certs
+      - name: run-push-client
+        hostPath:
+          path: /run/push-client

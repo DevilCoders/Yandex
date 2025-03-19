@@ -1,0 +1,157 @@
+# Mr. Prober Control Plane 
+
+- include: api.yml
+  tags: ["mr-prober", "mr-prober-control-plane", "mr-prober-api"]
+  vars:
+    check_tags: ['yc-mr-prober', 'yc-mr-prober-control-plane', 'yc-mr-prober-api']
+    host: "yc_network_mr_prober_api_{{ env }}"
+    unreachable_host: "yc_network_mr_prober_api_{{ env }}"
+    flap: null
+    telegram_chat_id: ""
+    children: "YC_DNS%*.{{ 'api.' + mr_prober_control_plane_dns_zone if mr_prober_control_plane_dns_zone|default('') else 'api.prober.' + env_dns_zone }}@tenant={{ mr_prober_control_plane_environment | default(env) }}"
+  when: env in ['prod', 'preprod', 'testing', 'israel']
+
+- include: creator.yml
+  tags: ["mr-prober", "mr-prober-control-plane", "mr-prober-creator"]
+  vars:
+    check_tags: ['yc-mr-prober', 'yc-mr-prober-control-plane', 'yc-mr-prober-creator']
+    host: "yc_network_mr_prober_creator_{{ env }}"
+    unreachable_host: "yc_network_mr_prober_creator_{{ env }}"
+    flap: null
+    telegram_chat_id: ""
+    creator_fqdn: "{{ 'creator.' + mr_prober_control_plane_dns_zone if mr_prober_control_plane_dns_zone|default('') else 'creator.prober.' + env_dns_zone }}"
+    children: "{{ 'creator.' + mr_prober_control_plane_dns_zone if mr_prober_control_plane_dns_zone|default('') else 'creator.prober.' + env_dns_zone }}"
+  when: env in ['prod', 'preprod', 'testing', 'israel']
+
+# Meeseeks cluster
+- include: meeseeks_per_host.yml
+  tags: ["network", "mr-prober", "mr-prober-meeseeks"]
+  vars:
+    check_tags: ['yc-network', 'yc-overlay', 'yc-mr-prober', 'yc-mr-prober-meeseeks', 'yc-dc-{{ dc|default("unknown") }}']
+    host: "yc_network_mr_prober_meeseeks_{{ env }}{% if dc is defined and 'omit_place_holder' not in dc %}_{{ dc }}{% endif %}"
+    unreachable_host: "yc_network_mr_prober_meeseeks_{{ env }}{% if dc is defined and 'omit_place_holder' not in dc %}_{{ dc }}{% endif %}"
+    flap: null
+    telegram_chat_id: ""
+    children: "YC_DNS%{{ dc if dc is defined and 'omit_place_holder' not in dc else '' }}*.meeseeks.prober.{{ env_dns_zone }}@tenant={{ env }}"
+    meta:
+      urls:
+        - title: "[?] Инструкция по алерту"
+          url: https://docs.yandex-team.ru/yc-monitoring/overlay/meeseeks
+          type: wiki
+  with_items: "{{ datacenters|default(omit) }}"
+  loop_control:
+    loop_var: dc
+  when: env in ['prod', 'preprod', 'testing', 'israel']
+
+- include: meeseeks_per_dc.yml
+  tags: ["network", "mr-prober", "mr-prober-meeseeks"]
+  vars:
+    check_tags: ['yc-network', 'yc-overlay', 'yc-mr-prober', 'yc-mr-prober-meeseeks', 'yc-dc-{{ dc|default("unknown") }}']
+    host: "yc_network_mr_prober_meeseeks_{{ env }}{% if dc is defined and 'omit_place_holder' not in dc %}_{{ dc }}{% endif %}"
+    unreachable_host: "yc_network_mr_prober_meeseeks_{{ env }}{% if dc is defined and 'omit_place_holder' not in dc %}_{{ dc }}{% endif %}"
+    flap: null
+    telegram_chat_id: ""
+    children: "{{ dc | title }}.meeseeks.{{ env }}.mr_prober.cloud"
+    meta:
+      urls:
+        - title: "[?] Инструкция по алерту"
+          url: https://docs.yandex-team.ru/yc-monitoring/overlay/meeseeks
+          type: wiki
+  with_items: "{{ datacenters|default(omit) }}"
+  loop_control:
+    loop_var: dc
+  when: env in ['prod', 'preprod', 'testing', 'israel']
+
+- include: agent.yml
+  tags: ["network", "mr-prober", "mr-prober-meeseeks", "mr-prober-agent"]
+  vars:
+    check_tags: ['yc-network', 'yc-overlay', 'yc-mr-prober', 'yc-mr-prober-meeseeks', 'yc-mr-prober-agent', 'yc-dc-{{ dc|default("unknown") }}']
+    host: "yc_network_mr_prober_meeseeks_{{ env }}{% if dc is defined and 'omit_place_holder' not in dc %}_{{ dc }}{% endif %}"
+    unreachable_host: "yc_network_mr_prober_meeseeks_{{ env }}{% if dc is defined and 'omit_place_holder' not in dc %}_{{ dc }}{% endif %}"
+    flap: null
+    telegram_chat_id: ""
+    children: "YC_DNS%{{ dc if dc is defined and 'omit_place_holder' not in dc else '' }}*.meeseeks.prober.{{ env_dns_zone }}@tenant={{ env }}"
+  with_items: "{{ datacenters|default(omit) }}"
+  loop_control:
+    loop_var: dc
+  when: env in ['prod', 'preprod', 'testing', 'israel']
+
+
+# World Connectivity via Egress NAT cluster
+- include: world_per_host.yml
+  tags: ["network", "mr-prober", "mr-prober-world", "mr-prober-world-via-egress-nat"]
+  vars:
+    check_tags: ['yc-network', 'yc-overlay', 'yc-mr-prober', 'yc-mr-prober-world', 'yc-mr-prober-world-via-egress-nat', 'yc-dc-{{ dc|default("unknown") }}']
+    host: "yc_network_mr_prober_world_via_egress_nat_{{ env }}{% if dc is defined and 'omit_place_holder' not in dc %}_{{ dc }}{% endif %}"
+    unreachable_host: "yc_network_mr_prober_world_via_egress_nat_{{ env }}{% if dc is defined and 'omit_place_holder' not in dc %}_{{ dc }}{% endif %}"
+    flap: null
+    telegram_chat_id: ""
+    children: "YC_DNS%{{ dc if dc is defined and 'omit_place_holder' not in dc else '' }}*.world-via-egress-nat.prober.{{ env_dns_zone }}@tenant={{ env }}"
+    meta:
+      urls:
+        - title: "[?] Инструкция по алерту"
+          url: https://docs.yandex-team.ru/yc-monitoring/overlay/world
+          type: wiki
+  with_items: "{{ datacenters|default(omit) }}"
+  loop_control:
+    loop_var: dc
+  when: env in ['prod', 'preprod', 'testing', 'israel']
+
+- include: world_per_dc.yml
+  tags: ["network", "mr-prober", "mr-prober-world", "mr-prober-world-via-egress-nat"]
+  vars:
+    check_tags: ['yc-network', 'yc-overlay', 'yc-mr-prober', 'yc-mr-prober-world', 'yc-mr-prober-world-via-egress-nat', 'yc-dc-{{ dc|default("unknown") }}']
+    host: "yc_network_mr_prober_world_via_egress_nat_{{ env }}{% if dc is defined and 'omit_place_holder' not in dc %}_{{ dc }}{% endif %}"
+    unreachable_host: "yc_network_mr_prober_world_via_egress_nat_{{ env }}{% if dc is defined and 'omit_place_holder' not in dc %}_{{ dc }}{% endif %}"
+    flap: null
+    telegram_chat_id: ""
+    children: "{{ dc | title }}.world-via-egress-nat.{{ env }}.mr_prober.cloud"
+    meta:
+      urls:
+        - title: "[?] Инструкция по алерту"
+          url: https://docs.yandex-team.ru/yc-monitoring/overlay/world
+          type: wiki
+  with_items: "{{ datacenters|default(omit) }}"
+  loop_control:
+    loop_var: dc
+  when: env in ['prod', 'preprod', 'testing', 'israel']
+
+# World Connectivity via FIP cluster
+- include: world_per_host.yml
+  tags: ["network", "mr-prober", "mr-prober-world", "mr-prober-world-via-fip"]
+  vars:
+    check_tags: ['yc-network', 'yc-overlay', 'yc-mr-prober', 'yc-mr-prober-world', 'yc-mr-prober-world-via-fip', 'yc-dc-{{ dc|default("unknown") }}']
+    host: "yc_network_mr_prober_world_via_fip_{{ env }}{% if dc is defined and 'omit_place_holder' not in dc %}_{{ dc }}{% endif %}"
+    unreachable_host: "yc_network_mr_prober_world_via_fip_{{ env }}{% if dc is defined and 'omit_place_holder' not in dc %}_{{ dc }}{% endif %}"
+    flap: null
+    telegram_chat_id: ""
+    children: "YC_DNS%{{ dc if dc is defined and 'omit_place_holder' not in dc else '' }}*.world-via-fip.prober.{{ env_dns_zone }}@tenant={{ env }}"
+    meta:
+      urls:
+        - title: "[?] Инструкция по алерту"
+          url: https://docs.yandex-team.ru/yc-monitoring/overlay/world
+          type: wiki
+  with_items: "{{ datacenters|default(omit) }}"
+  loop_control:
+    loop_var: dc
+  when: env in ['prod', 'preprod', 'testing', 'israel']
+
+- include: world_per_dc.yml
+  tags: ["network", "mr-prober", "mr-prober-world", "mr-prober-world-via-fip"]
+  vars:
+    check_tags: ['yc-network', 'yc-overlay', 'yc-mr-prober', 'yc-mr-prober-world', 'yc-mr-prober-world-via-fip', 'yc-dc-{{ dc|default("unknown") }}']
+    host: "yc_network_mr_prober_world_via_fip_{{ env }}{% if dc is defined and 'omit_place_holder' not in dc %}_{{ dc }}{% endif %}"
+    unreachable_host: "yc_network_mr_prober_world_via_fip_{{ env }}{% if dc is defined and 'omit_place_holder' not in dc %}_{{ dc }}{% endif %}"
+    flap: null
+    telegram_chat_id: ""
+    children: "{{ dc | title }}.world-via-fip.{{ env }}.mr_prober.cloud"
+    meta:
+      urls:
+        - title: "[?] Инструкция по алерту"
+          url: https://docs.yandex-team.ru/yc-monitoring/overlay/world
+          type: wiki
+  with_items: "{{ datacenters|default(omit) }}"
+  loop_control:
+    loop_var: dc
+  when: env in ['prod', 'preprod', 'testing', 'israel']
+

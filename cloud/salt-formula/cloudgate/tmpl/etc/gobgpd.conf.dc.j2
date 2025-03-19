@@ -1,0 +1,243 @@
+{%- set ip4_capa = (capabilities['ip4'] or capabilities['nat44'] or capabilities['lb4'] or capabilities['dc4']) %}
+global:
+    config:
+        router-id: {{ router_id }}
+        # asn 64511 is reserved for documentation and can never be met in the wild
+        # ( https://www.iana.org/assignments/as-numbers/as-numbers.xhtml )
+        # it's just a placeholder 'cause we must to write a thing
+        # actual values are in peer-group configs
+        as: 64511
+    apply-policy:
+          config:
+              import-policy-list:
+{%- if capabilities['ip4'] or capabilities['nat44'] or capabilities['lb4'] %}
+                  - reflector-import
+{%- endif %}
+{%- if capabilities['dc4'] or capabilities['ip6'] %}
+                  - reflector-rt-import
+{%- endif %}
+                  - reflector-import-drop
+{%- if ip4_capa %}
+                  - downstream-ipv4-import
+{%- endif %}
+{%- if capabilities['ip6'] %}
+                  - downstream-ipv6-import
+{%- endif %}
+                  - downstream-import-drop
+                  - upstream4-import
+                  - api-import
+              default-import-policy: reject-route
+
+              export-policy-list:
+{%- if capabilities['ip4'] or capabilities['nat44'] or capabilities['lb4'] %}
+                  - reflector-export
+{%- endif %}
+{%- if capabilities['dc4'] or capabilities['ip6'] %}
+                  - reflector-rt-export
+{%- endif %}
+                  - downstream-rt-export
+                  - upstream4-export
+              default-export-policy: reject-route
+
+defined-sets:
+    neighbor-sets:
+{%- for name, desc in peers.iteritems() %}
+        - neighbor-set-name: {{ name }}
+          neighbor-info-list:
+{%- for peer in desc['peers']%}
+              - {{ peer }}
+{%- endfor %}
+{%- endfor %}
+
+    prefix-sets:
+        - prefix-set-name: l3vpn-ipv4-specifics
+          family: l3vpn-ipv4-unicast
+          prefix-list:
+              - ip-prefix: 0.0.0.0/0
+                masklength-range: 32..32
+        - prefix-set-name: l3vpn-ipv6-specifics
+          family: l3vpn-ipv6-unicast
+          prefix-list:
+              - ip-prefix: ::/0
+                masklength-range: 128..128
+
+    bgp-defined-sets:
+        ext-community-sets:
+{%- if downstream_ip4_import %}
+            - ext-community-set-name: downstream-ipv4-rt-import
+              ext-community-list:
+{%- for rt in downstream_ip4_import %}
+                - {{ rt }}
+{%- endfor %}
+{%- endif %}
+{%- if downstream_ip6_import %}
+            - ext-community-set-name: downstream-ipv6-rt-import
+              ext-community-list:
+{%- for rt in downstream_ip6_import %}
+                - {{ rt }}
+{%- endfor %}
+{%- endif %}
+{%- for direction, rtsets in rtargets.iteritems() %}
+{%- for name, rtlist in rtsets.iteritems() %}
+            - ext-community-set-name: {{ name }}-rt-{{ direction }}
+              ext-community-list:
+{%- for rt in rtlist %}
+                - {{ rt }}
+{%- endfor %}
+{%- endfor %}
+{%- endfor %}
+        community-sets:
+            - community-set-name: api-import
+              community-list:
+                - 65535:65282
+{%- for direction, commsets in communities.iteritems() %}
+{%- for name, commlist in commsets.iteritems() %}
+            - community-set-name: {{ name }}-{{direction}}
+              community-list:
+{%- for comm in commlist %}
+                - {{ comm }}
+{%- endfor %}
+{%- endfor %}
+{%- endfor %}
+
+policy-definitions:
+    - name: reflector-import-drop
+      statements:
+        - conditions:
+            match-neighbor-set:
+                neighbor-set: reflector
+          actions:
+            route-disposition: reject-route
+
+{%- if downstream_ip4_import %}
+    - name: downstream-ipv4-import
+      statements:
+          - conditions:
+              match-neighbor-set:
+                  neighbor-set: downstream
+              match-prefix-set:
+                  prefix-set: l3vpn-ipv4-specifics
+              bgp-conditions:
+                  match-ext-community-set:
+                    ext-community-set: downstream-ipv4-rt-import
+{%- if not capabilities['lb4'] %}
+                  as-path-length:
+                    operator: eq
+                    value: 1
+{%- endif %}
+            actions:
+              route-disposition: accept-route
+{%- endif %}
+
+{%- if downstream_ip6_import %}
+    - name: downstream-ipv6-import
+      statements:
+          - conditions:
+              match-neighbor-set:
+                  neighbor-set: downstream
+              match-prefix-set:
+                  prefix-set: l3vpn-ipv6-specifics
+              bgp-conditions:
+                  match-ext-community-set:
+                    ext-community-set: downstream-ipv6-rt-import
+{%- if not capabilities['lb6'] %}
+                  as-path-length:
+                    operator: eq
+                    value: 1
+{%- endif %}
+            actions:
+              route-disposition: accept-route
+{%- endif %}
+
+    - name: downstream-import-drop
+      statements:
+          - conditions:
+              match-neighbor-set:
+                neighbor-set: downstream
+            actions:
+              route-disposition: reject-route
+
+    - name: api-import
+      statements:
+        - conditions:
+            bgp-conditions:
+                as-path-length:
+                    operator: eq
+                    value: 0
+                match-community-set:
+                    community-set: api-import
+          actions:
+            bgp-actions:
+                set-community:
+                    options: remove
+                    set-community-method:
+                        communities-list:
+                            - 65535:65282
+            route-disposition: accept-route
+
+{%- for direction, rtsets in rtargets.iteritems() %}
+{%- for name in rtsets %}
+    - name: {{ name }}-rt-{{ direction }}
+      statements:
+        - conditions:
+            match-neighbor-set:
+                neighbor-set: {{ name }}
+            bgp-conditions:
+                match-ext-community-set:
+                  ext-community-set: {{ name }}-rt-{{ direction }}
+          actions:
+            route-disposition: accept-route
+{%- endfor %}
+{%- endfor %}
+
+{%- for direction, commsets in communities.iteritems() %}
+{%- for name in commsets %}
+    - name: {{ name }}-{{ direction }}
+      statements:
+        - conditions:
+            match-neighbor-set:
+                neighbor-set: {{ name }}
+            bgp-conditions:
+                match-community-set:
+                  community-set: {{ name }}-{{ direction }}
+          actions:
+            bgp-actions:
+                set-med: {{ peers[name]['med'] }}
+            route-disposition: accept-route
+{%- endfor%}
+{%- endfor %}
+
+
+peer-groups:
+{%- for group, desc in peers.iteritems() %}
+
+    - config:
+        peer-group-name: {{ group }}
+        peer-as: {{ desc['peer_as'] }}
+        local-as: {{ desc['local_as'] }}
+      ebgp-multihop:
+        config:
+          enabled: True
+          multihop-ttl: 64
+      timers:
+        config:
+          hold-time: 30
+          keepalive-interval: 10
+          connect-retry: 5
+      afi-safis:
+{%- for afisafi in desc['afisafi'] %}
+        - config:
+            afi-safi-name: {{ afisafi }}
+{%- endfor %}
+{%- endfor %}
+
+
+neighbors:
+{%- for group, desc in peers.iteritems() %}
+{%- for addr in desc['peer_addrs'] %}
+
+    - config:
+        neighbor-address: {{ addr }}
+        peer-group: {{ group }}
+{%- endfor %}
+{%- endfor %}

@@ -1,0 +1,89 @@
+USE hahn;
+PRAGMA yt.InferSchema = '1';
+PRAGMA File('libcrypta_identifier_udf.so', 'yt://hahn/home/crypta/public/udfs/stable/libcrypta_identifier_udf.so');
+PRAGMA Udf('libcrypta_identifier_udf.so');
+
+$export_table = '//home/cloud_analytics/export/marketo/ya_click_email';
+$leads_table = '//home/cloud_analytics/export/marketo/lead';
+$emails_status_tbl = '//home/cloud_analytics/emails_status';
+$metrika_tbl = '//home/cloud_analytics/import/metrika';
+
+$email_to_canonical = ($email) -> {
+    RETURN Identifiers::NormalizeEmail($email);
+};
+
+DEFINE SUBQUERY $last_non_empty_table($path) AS
+    $max_path = (
+        SELECT MAX(Path) AS Path
+        FROM FOLDER($path, 'row_count')
+        WHERE Type = 'table'
+            AND Yson::LookupInt64(Attributes, 'row_count') > 0
+    );
+    SELECT * FROM CONCAT($max_path);
+END DEFINE;
+
+$emails_status = (
+    SELECT
+        $email_to_canonical(receiver) AS email,
+        email_id,
+        email_type,
+        promocode
+    FROM $last_non_empty_table($emails_status_tbl)
+);
+$metrika = (
+    SELECT region_id, yandex_login, url, event_time
+    FROM $last_non_empty_table($metrika_tbl)
+);
+
+$export_diff = $export_table || '_diff';
+
+$export_data = (
+    SELECT
+        Unwrap(DateTime::ToSeconds(CurrentUtcTimestamp())) AS dwh_created_at,
+        Unwrap(LIST(DateTime::ToSeconds(DateTime::FromString(metrika.event_time))){0}) AS ya_activity_time,
+        ya_activity_id,
+        CAST(null as String) AS type_name,
+        Unwrap(LIST(emails_status.email){0}) AS email,
+        LIST(emails_status.email_id){0} AS mailing_id,
+        CAST(null as String) AS device,
+        CAST(null as Bool) AS is_mobile_device,
+        LIST(metrika.url){0} AS link,
+        CAST(null as String) AS link_id,
+        CAST(null as String) AS ab_test_variant,
+        LIST(emails_status.email_type){0} AS ya_campaign_id
+    FROM $emails_status AS emails_status
+    INNER JOIN $leads_table AS leads
+        ON leads.email = emails_status.email
+    JOIN $metrika AS metrika
+        ON Url::GetCGIParam(metrika.url, 'code') = emails_status.promocode
+    GROUP BY
+        Digest::Md5Hex(
+            Unwrap(emails_status.email) ||
+            Unwrap(emails_status.email_id) ||
+            -- ab_test_variant
+            Unwrap(metrika.event_time)
+        ) AS ya_activity_id
+);
+
+INSERT INTO $export_diff WITH TRUNCATE
+    SELECT
+        dwh_created_at,
+        ya_activity_time,
+        ya_activity_id,
+        type_name,
+        email,
+        mailing_id,
+        device,
+        is_mobile_device,
+        link,
+        link_id,
+        ab_test_variant,
+        ya_campaign_id
+    FROM $export_data AS current_data
+    LEFT ONLY JOIN $export_table AS exp
+        ON current_data.ya_activity_id = exp.ya_activity_id
+ORDER BY dwh_created_at, email;
+
+COMMIT;
+INSERT INTO $export_table SELECT * FROM $export_diff ORDER BY dwh_created_at, email;
+DROP TABLE $export_diff;

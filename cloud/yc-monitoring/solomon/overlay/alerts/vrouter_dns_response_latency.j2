@@ -1,0 +1,33 @@
+{% extends "../../base/alert.j2" %}
+
+{% set delaySecs = 30 %}
+
+{% macro prog() %}
+let p = percentile_group_lines(99, {
+  project='{{ project_id }}',
+  cluster='cloud_{{ env }}_compute',
+  service='oct_vrouter',
+  metric_group='DnsLatency',
+  metric='response_time|client_response_time'
+});
+
+let max = max(p);
+
+let is_red = max > 1000;
+{% endmacro %}
+
+
+{% block main %}
+    "name": "vrouter dns-response-latency @ {{ env }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "host": "{{ compute_node_fqdn() }}",
+        "tags": "Solomon",
+        "latency_p99": "[[expression.max]]",
+        "service": "dns-response-latency",
+        "description": "See {{ solomon_endpoint }}/?project={{ project_id }}&dashboard=compute_node_dns_{{ env }}"
+    },
+    "description": "See {{ solomon_endpoint }}/?project={{ project_id }}&dashboard=compute_node_dns_{{ env }}",
+    
+    "type": {{ type_expression() }}
+{% endblock %}

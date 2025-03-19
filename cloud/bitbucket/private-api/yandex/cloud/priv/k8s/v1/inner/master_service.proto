@@ -1,0 +1,112 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.k8s.v1.inner;
+
+import "google/protobuf/empty.proto";
+import "yandex/cloud/api/operation.proto";
+import "yandex/cloud/api/tools/options.proto";
+import "yandex/cloud/priv/k8s/v1/inner/common.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/k8s/v1/inner;k8s";
+option java_outer_classname = "PMKIMS";
+
+service MasterService {
+  rpc List(ListMastersRequest) returns (ListMastersResponse);
+  rpc SetMasterVersion(SetMasterVersionRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "k8s.v1.AutoUpgradeMasterMetadata"
+      response: "k8s.v1.Cluster"
+    };
+    option (yandex.cloud.api.tools.method).lint_skip.contains_resource_name = true;
+  };
+  rpc SetMasterReleaseChannel(SetMasterReleaseChannelRequest) returns (google.protobuf.Empty) {
+    option (yandex.cloud.api.tools.method).lint_skip.contains_resource_name = true;
+  };
+  rpc GetMasterResources(GetMasterResourcesRequest) returns (MasterResourcesSpec) {
+    option (yandex.cloud.api.tools.method).lint_skip.contains_resource_name = true;
+  }
+  // Cloud policy: no returns operation for inner functions
+  rpc ScaleMaster(ScaleMasterRequest) returns (google.protobuf.Empty) {
+    option (yandex.cloud.api.tools.method).lint_skip.contains_resource_name = true;
+  }
+}
+
+message ListMastersRequest {
+  repeated ComponentFilter filter = 1;
+
+  int64 page_size = 2 [(value) = "0-1000"];
+  string page_token = 3 [(length) = "<=100"];
+}
+
+message ListMastersResponse {
+  repeated MasterInfo masters = 1;
+  string next_page_token = 2;
+}
+
+message GetMasterResourcesRequest {
+  string id = 1 [(required) = true];
+}
+
+message SetMasterVersionRequest {
+  string id = 1 [(required) = true];
+  Version version = 2 [(required) = true];
+  // force forces version set regardless of user specified maintenance policy.
+  bool force = 3;
+}
+
+message SetMasterReleaseChannelRequest {
+  string id = 1 [(required) = true];
+  ReleaseChannel release_channel = 2 [(required) = true];
+  // force forces release channel set regardless of user specified maintenance policy.
+  bool force = 3;
+}
+
+message ScaleMasterRequest {
+  string id = 1 [(required) = true];
+  oneof value {
+    option (exactly_one) = true;
+    MasterResourcesSpec resource = 2;
+    ScaleMasterFactor factor = 3;
+  }
+}
+
+message ScaleMasterFactor {
+  // zero - nothing will be changed
+  double memory = 1 [(value) = ">=0"];
+  double core = 2 [(value) = ">=0"];
+  oneof disk_factor {
+    // all_disks equvalent to set all [disk] values to this value.
+    double all_disks = 3 [(value) = ">=0"];
+    ScaleMasterFactorDisk disk = 4;
+  }
+}
+
+message ScaleMasterFactorDisk {
+  double boot = 1 [(value) = ">=0"];
+  double data = 2 [(value) = ">=0"];
+  double log = 3 [(value) = ">=0"];
+  double events = 4 [(value) = ">=0"];
+}
+
+message MasterResourcesSpec {
+  int64 memory = 1 [(value) = ">=0"];
+  int64 cores = 2 [(value) = ">=0"];
+  int64 core_fraction = 3 [(value) = "0-100"];
+  // TODO: for upgrade from deprecated platforms.
+  // string platform = X;
+
+  message Disk {
+    int64 size = 1 [(value) = ">=0"];
+    // May support "network-hdd" <-> "network-ssd" upgrade through: instance stop + disk snapshot + create new disk from snapshot + instance start in future.
+    // string type_id = 2;
+  }
+
+  Disk boot_disk = 4;
+  Disk data_disk = 5;
+  // log_disk_size specifies log disk size. If it is not exists yet, then this size will be used after upgrade to version with log disk.
+  Disk log_disk = 6;
+  // events_disk_size specifies events disk size. If it is not exists yet, then this size will be used after upgrade to version with events disk.
+  Disk events_disk = 7;
+}

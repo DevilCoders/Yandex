@@ -1,0 +1,209 @@
+{% set location = grains["cluster_map"]["hosts"][grains['nodename']]["zone_id"] %}
+{% set specific_decap_config = pillar["specific_decap_config"][grains['nodename']] %}
+{% set generic_decap_config = pillar["generic_decap_config"] %}
+{% set generic_netinfra_config = pillar["generic_netinfra_config"] %}
+{% set deployment = specific_decap_config["deployment"] %}
+{% set decap_fv_peering_loopback_ipv4_address = specific_decap_config["decap_fv_peering_loopback_ipv4_address"]%}
+{% set decap_transport_bgp_community = generic_decap_config["transport_bgp_community"] %}
+{% set geo_bgp_community = generic_netinfra_config["geo_bgp_communities"][location] %}
+{% set common_transport_bgp_community = generic_netinfra_config["common_transport_bgp_community"] %}
+
+
+global: 
+    config:
+        router-id: {{ decap_fv_peering_loopback_ipv4_address }}
+        as: 13238
+    apply-policy:
+        config:
+            import-policy-list:
+              - api-in
+              - tor-in
+              - fvrr-in
+            default-import-policy: reject-route
+            export-policy-list:
+              - tor-out
+              - fvrr-out
+              - upstream6-out
+            default-export-policy: reject-route
+defined-sets:
+    neighbor-sets:
+      - neighbor-set-name: tor
+        neighbor-info-list:
+          - 10.255.254.1
+      - neighbor-set-name: fvrr
+        neighbor-info-list:
+{% for FVRR in generic_netinfra_config["fv_reflectors"][deployment] %}
+          - {{ FVRR.ipv4_address }}
+{% endfor %}
+      - neighbor-set-name: upstream6
+        neighbor-info-list:
+          - FE80::CD:1
+    bgp-defined-sets:
+        community-sets:
+          - community-set-name: community-api-import
+            community-list:
+              - 65535:65282
+    prefix-sets:
+      - prefix-set-name: default_only
+        prefix-list:
+          - ip-prefix: 0.0.0.0/0
+policy-definitions:
+  - name: api-in
+    statements:
+      - conditions:
+            bgp-conditions:
+                as-path-length:
+                    operator: eq
+                    value: 0
+                match-community-set:
+                    community-set: community-api-import
+        actions:
+            bgp-actions:
+                set-community:
+                    options: remove
+                    set-community-method:
+                        communities-list:
+                          - 65535:65282
+            route-disposition: accept-route
+  - name: tor-in
+    statements:
+      - conditions:
+            match-neighbor-set:
+                neighbor-set: tor
+        actions:
+            route-disposition: accept-route
+  - name: tor-out
+    statements:
+      - conditions:
+            match-neighbor-set:
+                neighbor-set: tor
+        actions:
+            bgp-actions:
+                set-med: 1000
+                set-next-hop: self
+                set-community:
+                    options: ADD
+                    set-community-method:
+                        communities-list:
+                          - {{common_transport_bgp_community}}
+                          - {{decap_transport_bgp_community}}
+                          - {{geo_bgp_community}}
+            route-disposition: accept-route
+  - name: fvrr-in
+    statements:
+      - conditions:
+            match-neighbor-set:
+                neighbor-set: fvrr
+        actions:
+            route-disposition: accept-route
+  - name: fvrr-out
+    statements:
+      - conditions:
+            match-neighbor-set:
+                neighbor-set: fvrr
+        actions:
+            bgp-actions:
+                set-med: 1000
+                set-next-hop: self
+                set-community:
+                    options: ADD
+                    set-community-method:
+                        communities-list:
+                          - {{geo_bgp_community}}
+            route-disposition: accept-route
+  - name: upstream6-out
+    statements:
+      - conditions:
+            match-neighbor-set:
+                neighbor-set: upstream6
+        actions:
+            bgp-actions:
+                set-next-hop: self
+                set-med: 1000
+                set-community:
+                    options: ADD
+                    set-community-method:
+                        communities-list:
+                          - {{geo_bgp_community}}
+                          - {{generic_decap_config["decap_anycast_community"]}}
+            route-disposition: accept-route
+peer-groups:
+  - config:
+        peer-group-name: tor
+        peer-as: {{generic_netinfra_config["tor_bgp_asn"] }}
+        local-as: {{ generic_decap_config["local_bgp_asn"] }}
+    as-path-options:
+        config:
+            allow-own-as: 5
+    ebgp-multihop:
+        config:
+            enabled: True
+            multihop-ttl: 64
+    afi-safis:
+      - config:
+            afi-safi-name: ipv4-labelled-unicast
+  - config:
+        peer-group-name: fvrr
+        peer-as: {{generic_netinfra_config["fv_reflector_bgp_asn"]}}
+        local-as: 65402
+    as-path-options:
+        config:
+            allow-own-as: 5
+    ebgp-multihop:
+        config:
+            enabled: True
+            multihop-ttl: 64
+    transport:
+        config:
+            local-address: {{ decap_fv_peering_loopback_ipv4_address }}
+    afi-safis:
+      - config:
+            afi-safi-name: ipv4-unicast
+  - config:
+        peer-group-name: upstream6
+        peer-as: {{generic_netinfra_config["tor_bgp_asn"] }}
+        local-as: 65402
+    ebgp-multihop:
+        config:
+            enabled: True
+            multihop-ttl: 64
+    as-path-options:
+        config:
+            allow-own-as: 5
+    ebgp-multihop:
+        config:
+            enabled: True
+            multihop-ttl: 64
+    transport:
+        config:
+            local-address: {{ipv6_upstream_address}}%kni1
+    afi-safis:
+      - config:
+            afi-safi-name: ipv6-unicast
+neighbors:
+  - config:
+        neighbor-address: 10.255.254.1
+        peer-group: tor
+    timers:
+        config:
+            hold-time: 30
+            keepalive-interval: 10
+            connect-retry: 5
+{% for FVRR in pillar["generic_netinfra_config"]["fv_reflectors"][deployment] %}
+  - config:
+        neighbor-address: {{ FVRR.ipv4_address }}
+        peer-group: fvrr
+    timers:
+          config:
+              hold-time: 30
+              keepalive-interval: 10
+              connect-retry: 5
+{% endfor %}
+  - config:
+        neighbor-address: FE80::CD:1%kni1
+        peer-group: upstream6
+    timers:
+        config:
+            hold-time: 30
+            keepalive-interval: 10
+            connect-retry: 5

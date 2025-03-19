@@ -1,0 +1,35 @@
+#cloud-config
+datasource:
+  Ec2:
+    strict_id: false
+
+runcmd:
+  # Set the hostname
+  - hostname -b ${hostname}
+  %{~ for command in coalesce(runcmd, []) ~}
+  - "${command}"
+  %{~ endfor ~}
+
+%{~ if length(bootcmd) > 0 ~}
+bootcmd:
+  %{~ for command in coalesce(bootcmd, []) ~}
+  - "${command}"
+  %{~ endfor ~}
+%{~ endif ~}
+
+write_files:
+  - path: /etc/default/mr_prober
+    content: |
+      STAND_NAME=${stand_name}
+      S3_ENDPOINT=${s3_endpoint}
+      S3_PREFIX=${stand_name}/
+      CLUSTER_ID=${cluster_id}
+      AGENT_ADDITIONAL_METRIC_LABELS=${agent_additional_metric_labels}
+      HOSTNAME=${hostname}
+      DEBUG=False
+      LOG_LEVEL=DEBUG
+      MR_PROBER_LOGS_PATH=/var/log/mr_prober
+      # Solomon adds dot at the end of the hostname while fetching FQDNs from EDS, 
+      # but Juggler does not. So we have to push our hostname to the Solomon without dot at the end.
+      # Remove after https://st.yandex-team.ru/CLOUD-97827.
+      AGENT_ADDITIONAL_METRIC_LABELS={"host": "${hostname}"}

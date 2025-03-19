@@ -1,0 +1,58 @@
+{% extends "../../base/alert.j2" %}
+
+{% set windowSecs = 600 %}
+{% set delaySecs = 120 %}
+{% macro prog() %}
+
+let sensors_iface_traffic_rate = {
+	cluster='cloud_{{ env }}_cloudgate',
+	service='interfaces',
+	host='{{host}}',
+	iface='{{iface}}',
+	name='rx_packets_rate',
+	worker='-',
+	dc='*'
+};
+
+let moving_avg = moving_avg(sensors_iface_traffic_rate, 5m);
+let min_traffic = bottom_avg(1, moving_avg);
+let max_traffic = top_avg(1, moving_avg);
+let suspicious_host = get_label(min_traffic, 'node');
+let c_hosts = size(sensors_iface_traffic_rate);
+let reason = 'Too few hosts for production!';
+alarm_if(c_hosts <= 1);
+let reason = 'Too few hosts for calculus! God bless you...';
+ok_if(c_hosts == 2);
+let reason = 'This host gets too few traffic';
+let max_total = integrate(max_traffic);
+let min_total = integrate(min_traffic);
+let avg_total = integrate(series_avg(moving_avg));
+warn_if(min_total < avg_total / c_hosts);
+let reason = 'This host gets too much traffic';
+let suspicious_host = get_label(max_traffic, 'node');
+let total = integrate(series_sum(moving_avg));
+warn_if(max_total > total / 2);
+let is_red = false;
+let reason = 'everything is ok';
+
+{% endmacro %}
+
+
+{% block main %}
+	"name": "CGW {{direction}} traffic deviation for {{role}} @ {{ env }}",
+	"groupByLabels": ["dc"],
+	"annotations": {
+		"host": "[[expression.suspicious_host]]",
+		"tags": "Solomon, yc-{{env}}, yc-cgw",
+		"reason": "[[expression.reason]]",
+		"service": "cgw_traffic_deviation_{{direction}}",
+		"wiki": "https://docs.yandex-team.ru/yc-monitoring/cgw/cgw_traffic_deviation",
+		"max_total": "[[expression.max_total]]",
+		"min_total": "[[expression.min_total]]",
+		"avg_total": "[[expression.avg_total]]",
+		"total": "[[expression.total]]",
+		"host_count": "[[expression.c_hosts]]"
+	},
+	"description": "Check if trafic deviation is fine between hosts in same shard.",
+	"type": {{ type_expression() }}
+{% endblock %}

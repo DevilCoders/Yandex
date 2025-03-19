@@ -1,0 +1,38 @@
+{% extends "../../base/alert.j2" %}
+
+{% set crt_threshold = 20000 %} # latency (ms)
+{% set wrn_threshold = 15000 %} # latency (ms)
+
+{% block main %}
+    "name": "yc_infra_nvme_disks_latency @ {{ env }}/{{ cluster }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "tags": "yc_infra_nvme_disks_latency, {{ env }}, {{ cluster }}",
+        "host": "[[labels.host]]{{ host_suffix }}",
+        "service": "nvme_disks_latency"
+    },
+    "description": "Check NVME disks latency",
+    "type": {
+        "threshold": {
+          "selectors": "{project='{{ project_id }}', cluster='cloud_{{ env }}', service='sys', path='/Io/Disks/WriteWaitMillisec|/Io/Disks/ReadWaitMillisec', host='{{ host_prefix }}*', disk='nvme*'}",
+          "timeAggregation": "AVG",
+          "predicate": "GTE",
+          "threshold": {{ crt_threshold }},
+          "predicateRules": [
+            {
+              "thresholdType": "AVG",
+              "comparison": "GTE",
+              "threshold": {{ crt_threshold }},
+              "targetStatus": "ALARM"
+            },
+            {
+              "thresholdType": "AVG",
+              "comparison": "GTE",
+              "threshold": {{ wrn_threshold }},
+              "targetStatus": "WARN"
+            }
+          ]
+        }
+    }
+{% endblock %}
+

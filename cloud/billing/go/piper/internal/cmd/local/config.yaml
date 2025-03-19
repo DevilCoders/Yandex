@@ -1,0 +1,138 @@
+log:
+  level: info
+  paths:
+    - stderr
+    - logbroker://localhost:3113
+trace:
+  enabled: true
+  local_agent_hostport: :6831
+  queue_size: 2048
+ydb:
+  address: localhost:2145
+  root: test/
+  database: /Root
+  disable_tls: true
+  auth: { "type": "noauth" }
+
+  installations:
+    presenter:
+      address: localhost:2145
+      root: test/
+      database: /Root
+      disable_tls: true
+      auth: { "type": "noauth" }
+
+iam_meta:
+  use_localhost: true
+
+logbroker_installations:
+  local:
+    host: localhost
+    port: 2145 #optional
+    database: "/Root"
+    disable_tls: true
+    auth: { "type": "noauth" }
+  lbkx:
+    host: lbkx.logbroker.yandex.net
+    port: 2135
+    database: /Root
+    disable_tls: true
+    auth:
+      type: "iam-metadata"
+
+resource_manager:
+  endpoint: localhost:21001
+  auth: { "type": "noauth" }
+  grpc:
+    disable_tls: true
+
+status_server:
+  enabled: true
+  port: 9741
+
+dump:
+  sink:
+    ydb_presenter:
+      enabled: true
+  source:
+    presenter:
+      disabled: true
+      handler: presenter:ydb
+      logbroker:
+#        installation: lbkx
+#        consumer: /yc/preprod/piper-consumer
+#        topic: /yc/preprod/mirrored/rt/billing-enricher-var-output
+        installation: local
+        consumer: test-consumer
+        topic: billing-enricher-var-output
+        max_messages: 10
+
+# dump:
+#   source:
+#     resharder-errors:
+#       handler: dumpErrors:ydb
+#       logbroker:
+#         installation: local
+#         topic: resharder-errors
+#         consumer: test-consumer
+#         max_messages: 1000
+#         lag: 288h
+#         batch_limit: 100
+#         batch_timeout: 5
+
+resharder:
+  disabled: true
+  sink:
+    logbroker:
+      installation: local
+      topic: resharder-errors
+      partitions: 3
+    logbroker_errors:
+      installation: local
+      topic: resharder-errors
+      partitions: 1
+    ydb_errors:
+      enabled: false
+  source:
+    test-me:
+      handler: general
+      params:
+        chunk_size: 50MiB
+        metric_lifetime: 288h
+      logbroker:
+        installation: local
+        consumer: test-consumer
+        topic: resharder-errors
+        max_messages: 1000
+        max_size: 50MiB
+        lag: 288h
+        batch_limit: 100
+        batch_timeout: 5
+
+# resharder:
+#   sink:
+#     logbroker:
+#       installation: local
+#       topic: resharder-errors
+#       partitions: 3
+#     logbroker_errors:
+#       installation: local
+#       topic: resharder-errors
+#       partitions: 1
+#     ydb_errors:
+#       enabled: false
+#   source:
+#     test-me:
+#       handler: general
+#       params:
+#         chunk_size: 50MiB
+#         metric_lifetime: 288h
+#       logbroker:
+#         installation: local
+#         consumer: test-consumer
+#         topic: resharder-errors
+#         max_messages: 1000
+#         max_size: 50MiB
+#         lag: 288h
+#         batch_limit: 100
+#         batch_timeout: 5

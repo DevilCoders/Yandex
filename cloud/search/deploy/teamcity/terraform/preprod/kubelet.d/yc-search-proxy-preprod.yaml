@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ycsearch-proxy-preprod
+  labels:
+    app: search
+    yc-service: proxy
+spec:
+  containers:
+    - name: proxy
+      # 0.96f83516e35fd8113e2658f0cce6b01958ebbee1.trunk
+      image: cr.yandex/crp71i0m8b2qn22pp957/yc-search-proxy:${application_version}
+      imagePullPolicy: IfNotPresent
+      ports:
+        - containerPort: 8080
+      readinessProbe:
+        httpGet:
+          path: /ping
+          port: 8080
+        initialDelaySeconds: 20
+        timeoutSeconds: 1
+      env:
+        - name: ENV
+          value: "prod"
+      volumeMounts:
+        - name: secrets-volume
+          mountPath: /secrets
+          readOnly:  true
+        - name: logs-volume
+          mountPath: /var/log/yc/search/yc_search_proxy
+          terminationGracePeriodSeconds: 30
+  hostNetwork: true
+  volumes:
+    - name: secrets-volume
+      hostPath:
+        path: /secrets
+        type: DirectoryOrCreate
+    - name: logs-volume
+      hostPath:
+        path: /var/log/yc
+        type: DirectoryOrCreate

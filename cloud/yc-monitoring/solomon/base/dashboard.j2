@@ -1,0 +1,99 @@
+{% macro render_panel(title, cluster, service, query, subtitle="", rowspan=0, colspan=0, project=project_id) %}
+{
+    "type": "IFRAME",
+    "title": "{{ title }}",
+    "subtitle": "{{ subtitle }}",
+    "url": "/?project={{ project }}&cluster={{ cluster }}&service={{ service }}&{{ query }}",
+    "markdown": "",
+    "rowspan": {{ rowspan }},
+    "colspan": {{ colspan }}
+}
+{% endmacro %}
+
+{% macro render_panel_raw(title, url, subtitle="", rowspan=0, colspan=0) %}
+{
+    "type": "IFRAME",
+    "title": "{{ title }}",
+    "subtitle": "{{ subtitle }}",
+    "url": "{{ url }}",
+    "markdown": "",
+    "rowspan": {{ rowspan }},
+    "colspan": {{ colspan }}
+}
+{% endmacro %}
+
+{% macro render_panel_query_parts(title, cluster, service, query_parts, subtitle="", rowspan=0, colspan=0, project=project_id) %}
+{
+    "type": "IFRAME",
+    "title": "{{ title }}",
+    "subtitle": "{{ subtitle }}",
+    "url": "/?project={{ project }}&cluster={{ cluster }}&service={{ service }}&{{ query_parts | join('&') }}",
+    "markdown": "",
+    "rowspan": {{ rowspan }},
+    "colspan": {{ colspan }}
+}
+{% endmacro %}
+
+{% macro render_row(title, cluster, service, query, subtitle="", rowspan=0, colspan=0) %}
+{
+    "panels": [{{ render_panel(title, cluster, service, query, subtitle=subtitle, rowspan=rowspan, colspan=colspan) }}]
+}
+{% endmacro %}
+
+{% macro render_markdown(markdown, title="", subtitle="", rowspan=0, colspan=0) %}
+{
+    "type": "MARKDOWN",
+    "title": "{{ title }}",
+    "subtitle": "{{ subtitle }}",
+    "url": "",
+    "markdown": "{{ markdown }}",
+    "rowspan": {{ rowspan }},
+    "colspan": {{ colspan }}
+}
+{% endmacro %}
+
+{# Эти агрегации работают только на "main" инсталляции Solomon.
+   Нужны для Contrail-API dashboard.
+   vla -> Vla, sas -> Sas
+   См. CLOUD-27378: contrail-api dashboards don't work on cloud-prod and cloud-preprod solomons #}
+{% macro dc_aggregate_name(text) -%}
+    {{ text[0]|upper }}{{ text[1:] }}
+{%- endmacro %}
+
+{% macro oct_head_selector(az) -%}
+    oct*{{ az }}*
+{%- endmacro %}
+
+{% macro compute_head_selector(az) -%}
+    head*{{ az }}*
+{%- endmacro %}
+
+{# FIXME: invalid for HW-LABs! #}
+{% macro compute_node_selector(az) -%}
+    {{ az }}*
+{%- endmacro %}
+
+{%- if id is not defined or id is none %}
+{%- set id = config_name + "_" + env %}
+{% endif %}
+
+{%- if name is not defined or name is none %}
+{%- set name = menu + " on " + env|upper %}
+{%- endif %}
+
+{
+    "id": "{{ id }}",
+    "projectId": "{{ project_id }}",
+    "name": "{{ name }}",
+    "description": "{{ description }}",
+    "heightMultiplier": {{ height_multiplier|default(1) }},
+    "parameters": [
+        {% block parameters %}{% endblock %}    {# Use either 'block parameters' ... #}
+        {% if parameters %}                     {# ... or variable: 'set parameters = [('foo', 'bar')]'. #}
+            {% for name, value in parameters %}
+                { "name": "{{ name }}", "value": "{{ value }}" }{%- if not loop.last %},{%- endif %}
+            {% endfor %}
+        {% endif %}
+    ],
+    "rows": {% block rows %}[]{% endblock %}
+}

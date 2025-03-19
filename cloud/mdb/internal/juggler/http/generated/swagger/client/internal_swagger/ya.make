@@ -1,0 +1,43 @@
+GO_LIBRARY()
+
+OWNER(g:mdb)
+
+SRCS(
+    internal_swagger_client.go
+    v2_agent_get_config_parameters.go
+    v2_agent_get_config_responses.go
+    v2_bookmarks_get_bookmarks_parameters.go
+    v2_bookmarks_get_bookmarks_responses.go
+    v2_bookmarks_remove_bookmark_parameters.go
+    v2_bookmarks_remove_bookmark_responses.go
+    v2_bookmarks_set_bookmark_parameters.go
+    v2_bookmarks_set_bookmark_responses.go
+    v2_checks_get_active_jobs_parameters.go
+    v2_checks_get_active_jobs_responses.go
+    v2_checks_get_matching_notify_rules_parameters.go
+    v2_checks_get_matching_notify_rules_responses.go
+    v2_namespaces_get_rules_without_namespace_parameters.go
+    v2_namespaces_get_rules_without_namespace_responses.go
+    v2_suggest_convert_blinov_parameters.go
+    v2_suggest_convert_blinov_responses.go
+    v2_suggest_logins_parameters.go
+    v2_suggest_logins_responses.go
+    v2_suggest_objects_parameters.go
+    v2_suggest_objects_responses.go
+    v2_suggestions_get_downtimed_user_checks_parameters.go
+    v2_suggestions_get_downtimed_user_checks_responses.go
+    v2_suggestions_get_invalid_user_checks_parameters.go
+    v2_suggestions_get_invalid_user_checks_responses.go
+    v2_suggestions_get_no_data_user_checks_parameters.go
+    v2_suggestions_get_no_data_user_checks_responses.go
+    v2_suggestions_get_notify_rules_without_predicates_parameters.go
+    v2_suggestions_get_notify_rules_without_predicates_responses.go
+    v2_suggestions_get_unreachable_user_checks_parameters.go
+    v2_suggestions_get_unreachable_user_checks_responses.go
+    v2_user_config_get_user_config_parameters.go
+    v2_user_config_get_user_config_responses.go
+    v2_user_config_set_user_config_parameters.go
+    v2_user_config_set_user_config_responses.go
+)
+
+END()

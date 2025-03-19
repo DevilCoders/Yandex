@@ -1,0 +1,114 @@
+{
+  "variables": {
+    "image_family": "dc-aws-base"
+  },
+  "builders": [
+    {
+      "type": "amazon-ebs",
+      "region": "eu-central-1",
+
+      "ami_name": "{{user `image_family`}}-{{isotime | clean_resource_name}}",
+
+      "source_ami_filter": {
+        "filters": {
+          "virtualization-type": "hvm",
+          "name": "ubuntu/images/hvm-ssd/ubuntu-xenial-16.04-amd64-server-*",
+          "root-device-type": "ebs"
+        },
+        "owners": ["099720109477"],
+        "most_recent": true
+      },
+      "instance_type": "t3.small",
+      "subnet_id": "subnet-05cdff2fafb886bda",
+      "ssh_username": "ubuntu"
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'image prepared by Packer at ' | sudo tee /etc/image_description",
+        "date --rfc-3339 sec | sudo tee -a /etc/image_description",
+        "echo '169.254.169.254 metadata.google.internal' | sudo tee -a /etc/hosts"
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "export DEBIAN_FRONTEND=noninteractive",
+        "sudo apt-get update -qq",
+        "sudo apt-add-repository universe",
+        "sudo curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -",
+        "echo 'deb https://apt.kubernetes.io/ kubernetes-xenial main' | sudo tee -a /etc/apt/sources.list.d/kubernetes.list",
+        "sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -",
+        "echo 'deb [arch=amd64] https://download.docker.com/linux/ubuntu xenial stable' | sudo tee -a /etc/apt/sources.list.d/docker-stable.list",
+        "sudo apt-get update -qq",
+        "sudo apt-get upgrade -y --allow-unauthenticated --option=Dpkg::Options::=--force-confold"
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "sudo apt-get install -y apt-transport-https ca-certificates gnupg-agent software-properties-common docker-ce docker-ce-cli"
+      ]
+    },
+    {
+      "type": "shell-local",
+      "command": "echo base-salt"
+    },
+    {
+      "type": "salt-masterless",
+      "local_state_tree": "{{template_dir}}/salt_base"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'Purge Salt packages'",
+        "sudo apt-get -y purge salt-common salt-minion",
+        "sudo rm -rf /srv/salt",
+        "sudo rm -rf /var/cache/salt",
+        "sudo rm -rf /var/lib/cloud",
+        "sudo rm -ff /var/lib/dhcp/*.leases",
+        "echo 'List installed packages and versions'",
+        "dpkg -l",
+        "ls -al /var/lib/dpkg/",
+        "sudo rm -f /etc/apt/apt.conf.d/99ipv4-only",
+        "sudo rm /var/lib/apt/lists/lock",
+        "sudo rm /var/cache/apt/archives/lock",
+        "sudo rm /var/lib/dpkg/lock*",
+        "sudo dpkg --configure -a"
+      ]
+    },
+    {
+      "type": "shell-local",
+      "command": "echo kubelet-salt"
+    },
+    {
+      "type": "salt-masterless",
+      "local_state_tree": "{{template_dir}}/salt_base_kubelet"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'Purge Salt packages'",
+        "sudo apt-get -y purge salt-common salt-minion",
+        "sudo rm -rf /srv/salt",
+        "sudo rm -rf /var/cache/salt",
+        "echo 'List installed packages and versions'",
+        "dpkg -l",
+        "sudo systemctl stop kubelet",
+        "ls -la /var/lib/kubelet/pki/",
+        "sudo rm -rf /var/lib/kubelet/pki/* || true",
+        "sudo sync",
+        "ls -la /var/lib/kubelet/pki/"
+      ]
+    }
+  ],
+  "post-processors": [
+    {
+      "type": "manifest",
+      "output": "{{ pwd }}/{{user `image_family`}}-builder-manifest.json",
+      "strip_path": true
+    }
+  ]
+}

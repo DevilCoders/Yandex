@@ -1,0 +1,82 @@
+#!/bin/sh
+
+
+set -e
+
+[ "${1:-}" = 'salt_test' ] && SALT_MODE=1 || SALT_MODE=
+
+
+_schmilter() {
+    sed -r \
+        -e '/^[[:space:]]*$/ d' \
+        -e '/^([#:*]|COMMIT)/ d' \
+        -e 's/\[[^]]+]$//' \
+        -e 's/(-m[[:space:]]+comment[[:space:]]+--comment[[:space:]]+)"([^"]+)"/\1\2/g'
+}
+
+
+_get_tables_order_passthru() {
+    local order_file="${1:?}"
+    local table _table other
+    while read -r table other ; do
+        _table="${table#\*}"
+        [ "${_table}" = "${table:-}" ] || printf '%s\n' "${_table}" >>"$order_file"
+        printf '%s %s\n' "$table" "$other"
+    done
+}
+
+
+_tmpfiles() {
+    local file res fd=3
+    for file in iprules iprules_tables; do
+        file="$(mktemp --suffix ".$file")" || return $?
+        res=0
+        eval "exec $fd<>\"$file\"" && \
+            eval "exec $(($fd+1))<&$fd" && \
+                eval "exec $fd>&$fd" || res=$?
+        unlink "$file"
+        [ $res -eq 0 ] || return $res
+        fd=$(($fd+2))
+    done
+}
+
+
+ERRMSG=
+error() {
+    ERRMSG="${ERRMSG:+$ERRMSG
+}$*"
+}
+
+
+for ip_ver in 6 4; do
+    [ $ip_ver -eq 4 ] && iptables_save=iptables-save || iptables_save=ip6tables-save
+    _tmpfiles
+    _get_tables_order_passthru /dev/fd/5 </etc/iptables/rules.v${ip_ver} | _schmilter >&3 ||:
+    tables_order="$(cat <&6)"
+
+    if ! (
+        for table in ${tables_order:-filter}; do
+            "/opt/yc-iptables/sbin/$iptables_save" -t "$table"
+        done \
+        | _schmilter \
+        | diff -u /dev/fd/4 - >&2
+    ); then
+        error "IP${ip_ver}: Table $table: Different rules"
+    fi
+done
+
+if [ "$SALT_MODE" ]; then
+    ERRMSG="$(printf '%s\n' "$ERRMSG" | tr '\n' ' ')"
+    if [ "$ERRMSG" = ' ' ]; then
+        echo "changed=no comment='All rules are set up'"
+    else
+        echo "changed=yes comment='$ERRMSG'"
+    fi
+elif [ "$ERRMSG" ]; then
+    ret=1
+    printf '\n%s\n' "$ERRMSG" >&2
+else
+    echo Ok
+fi
+
+exit $ret

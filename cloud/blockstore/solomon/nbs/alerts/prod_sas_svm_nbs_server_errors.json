@@ -1,0 +1,41 @@
+{
+    "annotations": {
+        "host": "{{labels.host}}.svc.cloud.yandex.net", 
+        "service": "solomon_alert_nbs_server_errors", 
+        "tags": "yc-prod-nbs-solomon"
+    }, 
+    "channels": [
+        {
+            "config": {}, 
+            "id": "juggler"
+        }
+    ], 
+    "createdAt": "2020-12-30T12:51:02Z", 
+    "createdBy": "yegorskii", 
+    "delaySeconds": 30, 
+    "delaySecs": 30, 
+    "description": "", 
+    "groupByLabels": [
+        "host"
+    ], 
+    "id": "prod_sas_svm_nbs_server_errors", 
+    "name": "[PROD][SAS][SVM] NBS Server Errors", 
+    "noPointsPolicy": "NO_POINTS_DEFAULT", 
+    "notificationChannels": [
+        "juggler"
+    ], 
+    "periodMillis": 900000, 
+    "projectId": "nbs", 
+    "resolvedEmptyPolicy": "RESOLVED_EMPTY_DEFAULT", 
+    "state": "ACTIVE", 
+    "type": {
+        "expression": {
+            "checkExpression": "", 
+            "program": "let blacklist_requests='AlterPlacementGroupMembership|StartEndpoint|StopEndpoint|ListEndpoints|KickEndpoint';\n\nlet total_errors = integrate_fn(group_lines('sum', {\n\tproject='nbs',\n\tcluster='yandexcloud_prod_sas',\n\tservice='server',\n\thost='nbs-control-*',\n\trequest='*',\n\tsensor='Errors',\n\ttype= 'ssd|hdd',\n\trequest!='{{blacklist_requests}}'\n}));\n\nlet throttle_errors = integrate_fn(group_lines('sum', {\n\tproject='nbs',\n\tcluster='yandexcloud_prod_sas',\n\tservice='server',\n\thost='nbs-control-*',\n\trequest='*',\n\tsensor='Errors/Throttling',\n\ttype= 'ssd|hdd',\n\trequest!='{{blacklist_requests}}'\n}));\n\nlet session_errors = integrate_fn(group_lines('sum', {\n\tproject='nbs',\n\tcluster='yandexcloud_prod_sas',\n\tservice='server',\n\thost='nbs-control-*',\n\trequest='*',\n\tsensor='Errors/Session',\n\ttype= 'ssd|hdd',\n\trequest!='{{blacklist_requests}}'\n}));\n\nlet reassign_events = integrate_fn(group_lines('sum', {\n\tproject='nbs',\n\tcluster='yandexcloud_prod_sas',\n\tservice='server',\n\thost='nbs-control-*',\n\tsensor='AppCriticalEvents/ReassignTablet'\n}));\n\nlet other_errors = total_errors - throttle_errors - session_errors;\nlet max_session_errors = max(session_errors);\nlet max_other_errors = max(other_errors);\n\nlet reassign_gauge = max(reassign_events) > 0 ? 20.0 : 1;\n\nno_data_if(count(total_errors) == 0);\nno_data_if(count(throttle_errors) == 0);\nno_data_if(count(session_errors) == 0);\n\nalarm_if(max_session_errors >= 300 * reassign_gauge);\nalarm_if(max_other_errors >= 1200 * reassign_gauge);\n\nwarn_if(max_session_errors >= 10 * reassign_gauge);\nwarn_if(max_other_errors >= 300 * reassign_gauge);\n"
+        }
+    }, 
+    "updatedAt": "2021-03-10T07:27:03Z", 
+    "updatedBy": "haposik", 
+    "version": 4, 
+    "windowSecs": 900
+}

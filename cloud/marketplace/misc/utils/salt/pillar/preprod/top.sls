@@ -1,0 +1,4 @@
+preprod:
+  '*':
+    - common
+    - secret

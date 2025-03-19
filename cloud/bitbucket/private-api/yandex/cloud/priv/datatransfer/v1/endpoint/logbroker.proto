@@ -1,0 +1,99 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.datatransfer.v1.endpoint;
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/datatransfer/v1/endpoint;tm_server_endpoint";
+
+import "yandex/cloud/priv/datatransfer/v1/endpoint/yds.proto";
+
+message LogbrokerConnection {
+    oneof connection {
+        // Use cluster at whole, which means all-original read rule
+        string cluster = 11;
+        // Use specific instance of logbroker, which means mirror-to read rule
+        string instance = 3;
+    }
+}
+message LogbrokerParserOptions {
+    oneof parser {
+        GenericParser generic_parser = 1;
+        NoParser no_parser = 2;
+        YQLParser yql_parser = 3;
+        LogfellerParser logfeller_parser = 4;
+        NativeParser native_parser = 5;
+    }
+}
+message NoParser {
+}
+message NativeParser {
+}
+message TimeColumn {
+    string col = 1;
+    string format = 2;
+}
+message GenericParser {
+    enum GenericParserFormat {
+        GENERIC_PARSER_FORMAT_UNSPECIFIED = 0;
+        JSON = 1;
+        TSKV = 2;
+    }
+    GenericParserFormat format = 1;
+    DataSchema data_schema = 2;
+    // Will not add logbroker system keys to primary key in target DB
+    bool skip_dedupe_keys = 3;
+    // Which column contains timestamp
+    TimeColumn timestamp = 4;
+    // Allow null keys, if no - null keys will be putted to unparsed data
+    bool null_keys_allowed = 5;
+    // Will add logbroker system columns. CreateTime (_lb_ctime) WriteTime (_lb_wtime)
+    // and all ExtraFields prefixed with _lb_extra_
+    bool add_system_cols = 6;
+    string line_splitter = 7;
+}
+message YQLParser {
+    string script = 1;
+    DataSchema data_schema = 2;
+    repeated string output_key_columns = 3;
+    bool add_synthetic_keys = 4;
+}
+message LogfellerParser {
+    string format = 1;
+    DataSchema data_schema = 2;
+    string line_splitter = 3;
+    // Will add logbroker system columns. CreateTime (_lb_ctime) WriteTime (_lb_wtime)
+    // and all ExtraFields prefixed with _lb_extra_
+    bool add_system_cols = 4;
+}
+message LogbrokerReadOptions {
+    string max_time_lag = 7;
+    // Max amount of data read before insert
+    string buffer_max_size = 14;
+    // Not to fail if found rewind by ttl (gap in lb_offsets)
+    bool allow_ttl_rewind = 19;
+    // mask secrets with XXX with Ant-Secret library
+    // (https://a.yandex-team.ru/arc_vcs/security/ant-secret)
+    bool mask_secrets = 20;
+}
+message TableSplitter {
+    repeated string columns = 1;
+}
+message LogbrokerSource {
+    LogbrokerConnection connection = 1;
+    string consumer = 3;
+    repeated string topics = 2;
+    LogbrokerParserOptions parser = 5;
+    LogbrokerReadOptions read_options = 4;
+    // Will split original input into sub tables defined by this discriminator
+    TableSplitter table_splitter = 16;
+}
+message TargetTopicSettings {
+    oneof topic_settings {
+        string topic_name = 1;
+        string topic_prefix = 2;
+    }
+}
+message LogbrokerTarget {
+    // Use specific instance of logbroker, which means mirror-to read rule
+    string instance = 5;
+    TargetTopicSettings topic_settings = 3;
+}

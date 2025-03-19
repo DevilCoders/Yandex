@@ -1,0 +1,194 @@
+id: 441409
+uid: iam-duty
+title: IAM Duty Dashboard
+folderId: 412692
+refresh: 1m
+
+tags: [ 'iam', 'iam-duty', 'iam-duty-dashboard' ]
+links:
+  !include shared/links.yaml duty
+
+graphDefaults: { datasource: '${ds}', width: 7, height: 6 }
+queryDefaults:
+  labels: 'project=yc.iam.service-cloud, service=${service}, cluster=${service}-${cluster}, host=${host:pipe}'
+  dropNan: true
+
+variables:
+  ui:
+    !include shared/services.yaml
+    !include shared/datasources.yaml
+    !include shared/tp_pools.yaml
+  uiQuery:
+    !include shared/clusters.yaml '${service}'
+    !include shared/hosts.yaml
+    app:
+      labels: 'app=*, method=*'
+    method:
+      labels: 'app=${app}, method=*'
+      multi: true
+  replacement:
+    !include shared/replacements.yaml
+    !include shared/errors.yaml
+  repeat:
+    !include shared/repeat_services.yaml
+    !include shared/jvm_memory_area.yaml
+
+rows:
+  - title: IAM Singlestats
+    graphDefaults: { width: 2, height: 4 }
+    panels:
+      - repeat: iamService
+        title: '@iamService:title'
+        description: '@iamService:description'
+        params: { width: 1 }
+        !include shared/errors_singlestat.yaml '80%'
+          params: { labels: 'service=@iamService, cluster=@iamService-${cluster}, sensor=grpc_statuses|servlet_statuses|http_statuses, status=@5xx, host=@all_hosts, app=*, method=*' }
+
+      - title: 'Identity'
+        description: 'Identity'
+        !include shared/errors_singlestat.yaml '80%'
+          params: { labels: 'service=identity, cluster=identity-${cluster}, host=@all_hosts, metric=api_request_count, app=-, method=*, status_code=500|501|502|504' }
+        params: { width: 1 }
+
+      - description: 'Identity Requests'
+        !include shared/identity/http_statuses_graph.yaml
+        queryDefaults: { labels: 'service=identity, cluster=identity-${cluster}, host=@all_hosts, metric=api_request_count_rate, app=-, method=*' }
+        params: { width: 3 }
+        display: { sort: decreasing, legend: false }
+
+      - type: graph
+        params: { width: 3 }
+        templates:
+          - { name: rps, sumLines: [ 'remote_service' ] }
+          - { name: patchSelect, before: last, add: { moving_avg: [ 1m ] } }
+          - { name: patchSelect, after: last, add: { alias: '{{remote_service}}' } }
+        queries:
+          - params: { labels: 'service=access-service, cluster=access-service-${cluster}, host=@all_hosts, sensor=as_requests_without_id_by_service, remote_service=*' }
+        display: { stack: true, sort: decreasing, fill: 10, legend: false }
+        yAxes: [ { label: '', min: 0 } ]
+        links:
+          - title: 'AccessService Requests IDs Dashboard'
+            uid: 'iam-as-requests'
+
+      !include shared/system_singlestats_panel.yaml
+    drilldowns:
+      - subUid: dd-iam-service-errors-by-host
+        title: 'IAM Service Errors by Hosts'
+        tags: [ 'iam-duty', 'iam-system-singlestats-host' ]
+        ui:
+          service: service
+          ds: ds
+        uiQuery:
+          cluster: cluster
+          host: host
+        uiRepeat: host
+        labels: 'host=${host}'
+
+  - title: '${service} GRPC Metrics'
+    queryDefaults:
+      labels: 'app=${app}, method=${method:pipe}'
+    panels:
+      !include shared/grpc_panels.yaml
+    drilldowns:
+      - subUid: dd-grpc-by-host
+        title: 'IAM GRPC by Hosts'
+        tags: [ 'iam-duty', 'iam-grpc', 'iam-grpc-host' ]
+        ui:
+          service: service
+          ds: ds
+        uiQuery:
+          cluster: cluster
+          host: host
+          app: app
+          method: method
+        uiRepeat: host
+        labels: 'host=${host}'
+
+      - subUid: dd-grpc-by-method
+        title: 'IAM GRPC by Methods'
+        tags: [ 'iam-duty', 'iam-grpc', 'iam-grpc-method' ]
+        ui:
+          service: service
+          ds: ds
+        uiQuery:
+          cluster: cluster
+          host: host
+          app: app
+          method: method
+        uiRepeat: method
+        labels: 'method=${method}'
+
+  - title: '${service} GRPC Connections'
+    panels:
+      !include shared/grpc-connections_panels.yaml
+    drilldowns:
+      - subUid: dd-grpc-connections-by-host
+        title: 'IAM GRPC Connections by Hosts'
+        tags: [ 'iam-duty', 'iam-grpc-connections', 'iam-grpc-connections-host' ]
+        ui:
+          service: service
+          ds: ds
+        uiQuery:
+          cluster: cluster
+          host: host
+        uiRepeat: host
+        labels: 'host=${host}'
+
+  - title: '${service} Active-Probes and Resource-Reaper Delete-Tasks'
+    queryDefaults:
+      labels: 'service=active-probes, cluster=active-probes-${cluster}, host=iam-activeprobes-*, service_name=${service}'
+    panels:
+      !include shared/active-probes/failed_singlestat.yaml 2 3
+
+      !include shared/active-probes/failed-by-tests_graph.yaml bottom 7
+        links:
+          - title: 'Active-Probes dashboard'
+            uid: 'iam-active-probes'
+
+      !include shared/active-probes/duration_graph.yaml bottom 7
+        links:
+          - title: 'Active-Probes dashboard'
+            uid: 'iam-active-probes'
+
+      !include shared/grpc_methods_graph.yaml 'Client' '@write_methods' '@clients_app' 2
+        params: { width: 8 }
+        queryDefaults:
+          labels: 'service=reaper, cluster=reaper-${cluster}, host=@all_hosts, service_name=-'
+
+  - title: 'Task Processor - ${taskprocessor_pool} Pool'
+    graphDefaults: { width: 6 }
+    panels:
+      !include shared/task_processor_panels.yaml
+
+    drilldowns:
+      - subUid: dd-iam-tp-by-host
+        title: 'IAM Task Processor by Hosts'
+        tags: [ 'iam-duty', 'iam-tp-host' ]
+        ui:
+          service: service
+          ds: ds
+          taskprocessor_pool: taskprocessor_pool
+        uiQuery:
+          cluster: cluster
+          host: host
+        uiRepeat: host
+        labels: 'host=${host}'
+
+  - title: 'JVM and System'
+    graphDefaults: { width: 8 }
+    panels:
+      !include shared/jvm_panels.yaml
+      !include shared/system_panels.yaml
+
+    drilldowns:
+      - subUid: dd-iam-jvm-sys-by-host
+        title: 'JVM and System by Hosts'
+        tags: [ 'iam-duty', 'iam-jvm-sys-host' ]
+        ui:
+          service: service
+          ds: ds
+        uiQuery:
+          cluster: cluster
+          host: host
+        uiRepeat: host
+        labels: 'host=${host}'

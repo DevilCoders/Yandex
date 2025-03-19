@@ -1,0 +1,93 @@
+id: 518390
+uid: iam-identity
+title: Identity
+folderId: 412692
+refresh: 1m
+
+tags: [ 'iam', 'iam-identity' ]
+links:
+  !include shared/links.yaml identity
+
+graphDefaults: { datasource: '${ds}', width: 7, height: 6 }
+queryDefaults:
+  labels: 'project=yc.iam.service-cloud, service=identity, cluster=identity-${cluster}, host=${host:pipe}, method=${method:pipe}, path=${path:pipe}'
+  dropNan: true
+  defaultTimeWindow: '1m'
+
+variables:
+  ui:
+    !include shared/datasources.yaml
+  uiQuery:
+    !include shared/clusters.yaml 'identity'
+    host:
+      labels: 'host=@all_hosts, method=*, path=*, metric=api_request_count_rate'
+      multi: true
+    method:
+      labels: 'method=*, path=*'
+      multi: true
+    path:
+      labels: 'path=*'
+      multi: true
+  replacement:
+    !include shared/replacements.yaml
+
+rows:
+  - title: 'Identity Requests'
+    queryDefaults: { labels: 'metric=api_request_count_rate' }
+    panels:
+      !include shared/identity/identity_row.yaml
+
+      - type: graph
+        title: 'Request Latency'
+        params: { width: 8 }
+        queries:
+          - params: { labels: 'metric=api_request_latency' }
+            select: { moving_avg: [ 1m ], non_negative_derivative: [], group_by_labels: [ sum, bucket ], histogram_percentile: [99, bucket] }
+          - params: { labels: 'metric=api_request_latency' }
+            select: { moving_avg: [ 1m ], non_negative_derivative: [], group_by_labels: [ sum, bucket ], histogram_percentile: [99.9, bucket] }
+          - params: { labels: 'metric=api_request_latency' }
+            select: { moving_avg: [ 1m ], non_negative_derivative: [], group_by_labels: [ sum, bucket ], histogram_percentile: [99.99, bucket] }
+          - params: { labels: 'metric=api_request_latency' }
+            select: { moving_avg: [ 1m ], non_negative_derivative: [], group_by_labels: [ sum, bucket ], histogram_percentile: [100, bucket] }
+        yAxes: [ { format: ms, min: 0 } ]
+        display: { empty: false, sort: decreasing }
+
+    drilldowns:
+      - subUid: dd-identity-by-host
+        title: 'Identity by Hosts'
+        tags: [ 'iam-identity', 'iam-identity-host' ]
+        ui:
+          ds: ds
+        uiQuery:
+          cluster: cluster
+          host: host
+          method: method
+          path: path
+        uiRepeat: host
+        labels: 'host=${host}'
+
+      - subUid: dd-identity-by-method
+        title: 'Identity by Methods'
+        tags: [ 'iam-identity', 'iam-identity-method' ]
+        ui:
+          ds: ds
+        uiQuery:
+          cluster: cluster
+          host: host
+          method: method
+          path: path
+        uiRepeat: method
+        labels: 'method=${method}'
+
+      - subUid: dd-identity-by-path
+        title: 'Identity by Paths'
+        tags: [ 'iam-identity', 'iam-identity-path' ]
+        ui:
+          ds: ds
+        uiQuery:
+          cluster: cluster
+          host: host
+          method: method
+          path: path
+        uiRepeat: path
+        labels: 'path=${path}'

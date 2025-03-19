@@ -1,0 +1,103 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.dataproc.v1;
+
+import "yandex/cloud/priv/validation.proto";
+import "google/protobuf/timestamp.proto";
+import "yandex/cloud/api/tools/options.proto";
+import "yandex/cloud/priv/dataproc/v1/common.proto";
+import "google/protobuf/duration.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/dataproc/v1;dataproc";
+option java_outer_classname = "PHS";
+
+enum Role {
+  option (cloud.api.tools.enumeration).lint_skip.unspecified_value = true;
+  ROLE_UNSPECIFIED = 0;
+  MASTERNODE = 1; // HDFS NameNode and YARN ResourceManager
+  DATANODE = 2; // HDFS DataNode and YARN NodeManager
+  COMPUTENODE = 3; // YARN NodeManager
+}
+
+message AutoscalingConfig {
+  // Upper limit for total instance subcluster count.
+  int64 max_hosts_count = 1 [(value) = "1-100"];
+
+  // Preemptible instances are stopped at least once every 24 hours, and can be stopped at any time
+  // if their resources are needed by Compute.
+  // For more information, see [Preemptible Virtual Machines](/docs/compute/concepts/preemptible-vm).
+  bool preemptible = 2;
+
+  // Time in seconds allotted for averaging metrics.
+  google.protobuf.Duration measurement_duration = 3 [(required) = true, (value) = "1m-10m"];
+
+  // The warmup time of the instance in seconds. During this time,
+  // traffic is sent to the instance, but instance metrics are not collected.
+  google.protobuf.Duration warmup_duration = 4 [(value) = "<=10m"];
+
+  // Minimum amount of time in seconds allotted for monitoring before
+  // Instance Groups can reduce the number of instances in the group.
+  // During this time, the group size doesn't decrease, even if the new metric values
+  // indicate that it should.
+  google.protobuf.Duration stabilization_duration = 5 [(value) = "1m-30m"];
+
+  // Defines an autoscaling rule based on the average CPU utilization of the instance group.
+  double cpu_utilization_target = 6 [(value) = "10-100"];
+
+  // Timeout to gracefully decommission nodes during downscaling. In seconds. Default value: 120
+  int64 decommission_timeout = 7 [(value) = "0-86400"];
+}
+
+// Hadoop subcluster.
+message Subcluster {
+  // Required. Unique ID of the Hadoop subcluster.
+  // This ID is assigned by MDB in the process of creating Hadoop subcluster.
+  string id = 1;
+
+  // Required. Unique ID of the Hadoop cluster.
+  string cluster_id = 2;
+
+  // The time when the Hadoop subcluster was created.
+  google.protobuf.Timestamp created_at = 3;
+
+  // Name of the Hadoop subcluster.
+  // The name is unique within the folder. 1-64 characters long.
+  string name = 4;
+
+  // Role of hosts in subcluster
+  Role role = 5;
+
+  // Resource configuration for hosts in subcluster
+  Resources resources = 6;
+
+  string subnet_id = 7;
+
+  // Number of hosts in subcluster
+  int64 hosts_count = 8;
+
+  // Assign public ip addresses for all hosts in subcluter.
+  bool assign_public_ip = 9;
+
+  // Configuration for instance group based subclusters
+  AutoscalingConfig autoscaling_config = 10;
+
+  // ID of Compute Instance Group for autoscaling subclusters
+  string instance_group_id = 11;
+}
+
+message Host {
+  // Required. Name of the host.
+  string name = 1;
+
+  // Required. ID of the Hadoop subcluster.
+  string subcluster_id = 2;
+
+  // Aggregated host health
+  Health health = 3;
+
+  // Compute instance id
+  string compute_instance_id = 4;
+
+  // Role
+  Role role = 5;
+}

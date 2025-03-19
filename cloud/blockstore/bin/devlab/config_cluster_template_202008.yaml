@@ -1,0 +1,218 @@
+use_walle: True
+use_fixed_tablet_types: True
+require_address: False
+cluster_uuid: "2452520"
+static_pdisk_type: SSD
+static_erasure: block-4-2
+fail_domain_type: body
+monitoring_address: "::"
+hosts:
+  - name: myt1-ct5-17.cloud.yandex.net
+    body: '103058926'
+    datacenter: 'sas'
+    rack: 'sas-1:1'
+    drives: &disk_set_nvme3_hdd1
+      - path: /dev/disk/by-partlabel/NVMEKIKIMR01
+        type: SSD
+      - path: /dev/disk/by-partlabel/NVMEKIKIMR02
+        type: SSD
+      - path: /dev/disk/by-partlabel/NVMEKIKIMR03
+        type: SSD
+      - path: /dev/disk/by-partlabel/ROTKIKIMR01
+        type: ROT
+  - name: myt1-ct5-14.cloud.yandex.net
+    body: '113058926'
+    datacenter: 'sas'
+    rack: 'sas-2:1'
+    drives: *disk_set_nvme3_hdd1
+  - name: myt1-ct5-15.cloud.yandex.net
+    body: '123058926'
+    datacenter: 'sas'
+    rack: 'sas-3:1'
+    drives: *disk_set_nvme3_hdd1
+  - name: myt1-ct5-16.cloud.yandex.net
+    body: '133058926'
+    datacenter: 'sas'
+    rack: 'sas-4:1'
+    drives: *disk_set_nvme3_hdd1
+  - name: myt1-ct5-12.cloud.yandex.net
+    body: '143058926'
+    datacenter: 'sas'
+    rack: 'sas-5:1'
+    drives: *disk_set_nvme3_hdd1
+  - name: myt1-ct5-18.cloud.yandex.net
+    body: '153058926'
+    datacenter: 'sas'
+    rack: 'sas-6:1'
+    drives: *disk_set_nvme3_hdd1
+  - name: myt1-ct5-24.cloud.yandex.net
+    body: '163058926'
+    datacenter: 'sas'
+    rack: 'sas-7:1'
+    drives: *disk_set_nvme3_hdd1
+  - name: myt1-ct5-25.cloud.yandex.net
+    body: '173058926'
+    datacenter: 'sas'
+    rack: 'sas-8:1'
+    drives: *disk_set_nvme3_hdd1
+log:
+  default: 3
+domains:
+  - domain_name: dev_global
+    storage_pool_kinds:
+      - kind: "ssd"
+        erasure: block-4-2
+        fail_domain_type: body
+        filter_properties:
+          type: SSD
+      - kind: "rot"
+        erasure: block-4-2
+        fail_domain_type: body
+        filter_properties:
+          type: ROT
+      - kind: "ssdencrypted"
+        erasure: block-4-2
+        fail_domain_type: body
+        encryption_mode: 1
+        filter_properties:
+          type: SSD
+      - kind: "rotencrypted"
+        erasure: block-4-2
+        fail_domain_type: body
+        encryption_mode: 1
+        filter_properties:
+          type: ROT
+    console_initializers:
+      - cloud_ssdencrypted_table_profile
+    databases:
+      - name: NBS
+        storage_units:
+          - kind: "ssd"
+            count: 20
+          - kind: "rot"
+            count: 1
+        overridden_configs:
+          log:
+            default: 3
+          monitoring_address: "::"
+          ic:
+            merge_peer_counters: True
+          nbs:
+            enable: True
+            storage:
+              channels_profile: 3
+              channels_profile_ssd: 4
+              channels_profile_hybrid: 5
+              scatter_volumes_in_scheme_shard: True
+              channel_allocation_mode: CA_EXPLICIT
+              allocate_separate_mixed_channels: True
+              write_request_batching_enabled: True
+              ssd_compaction_type: 1
+              hdd_compaction_type: 1
+              v1_garbage_compaction_enabled: True
+              compaction_garbage_threshold: 20
+              throttling_enabled: True
+              throttling_enabled_s_s_d: True
+            diagnostics:
+              host_name_scheme: HOSTNAME_YDBVIEWER
+              viewer_host_name: "ydb.bastion.cloud.yandex-team.ru"
+              solomon_cluster_name: "cloud_hw-nbs-dev-lab"
+              use_async_logger: True
+              ssd_perf_threshold:
+                read_threshold:
+                  threshold: 100
+                  percentile: 95
+                write_threshold:
+                  threshold: 100
+                  percentile: 95
+              hdd_perf_threshold:
+                read_threshold:
+                  threshold: 1000
+                  percentile: 95
+                write_threshold:
+                  threshold: 1000
+                  percentile: 95
+            server:
+              data_host: "localhost"
+              node_type: nbs
+            http_proxy:
+              port: 9770
+              nbs_server_host: "localhost"
+              nbs_server_port: 9766
+              nbs_server_insecure: true
+            names:
+              suppress_version_check: True
+            auth:
+              access_service_endpoint: "local-lb.cloud-lab.yandex.net:14286"
+              use_black_box: False
+              use_access_service: True
+              use_staff: False
+              use_user_account_service: False
+            breakpad:
+              enable: True
+
+profiles:
+   - channels:
+     - storage_pool_kind: ssdencrypted
+     - storage_pool_kind: ssdencrypted
+     - storage_pool_kind: ssdencrypted
+   # channels reserved for S3 Proxy, only S3 Proxy should use them
+   - channels:
+     - storage_pool_kind: ssdencrypted
+     - storage_pool_kind: ssdencrypted
+     - storage_pool_kind: rotencrypted
+   - channels:
+     - storage_pool_kind: ssdencrypted
+     - storage_pool_kind: rotencrypted
+     - storage_pool_kind: rotencrypted
+   # channels used by NBS
+   - channels:
+     - storage_pool_kind: rot
+     - storage_pool_kind: rot
+     - storage_pool_kind: rot
+     - storage_pool_kind: rot
+     - storage_pool_kind: rot
+     - storage_pool_kind: rot
+     - storage_pool_kind: rot
+     - storage_pool_kind: rot
+     - storage_pool_kind: rot
+     - storage_pool_kind: rot
+     - storage_pool_kind: rot
+   - channels:
+     - storage_pool_kind: ssd
+     - storage_pool_kind: ssd
+     - storage_pool_kind: ssd
+     - storage_pool_kind: ssd
+     - storage_pool_kind: ssd
+     - storage_pool_kind: ssd
+     - storage_pool_kind: ssd
+     - storage_pool_kind: ssd
+     - storage_pool_kind: ssd
+     - storage_pool_kind: ssd
+     - storage_pool_kind: ssd
+   - channels:
+     - storage_pool_kind: ssd
+     - storage_pool_kind: ssd
+     - storage_pool_kind: ssd
+     - storage_pool_kind: rot
+     - storage_pool_kind: rot
+     - storage_pool_kind: rot
+     - storage_pool_kind: rot
+     - storage_pool_kind: rot
+     - storage_pool_kind: rot
+     - storage_pool_kind: rot
+     - storage_pool_kind: rot
+   # Reserved for Solomon
+   - channels:
+       - storage_pool_kind: ssdencrypted
+       - storage_pool_kind: ssdencrypted
+       - storage_pool_kind: ssdencrypted
+       - storage_pool_kind: ssdencrypted
+       - storage_pool_kind: ssdencrypted
+       - storage_pool_kind: ssdencrypted
+       - storage_pool_kind: ssdencrypted
+   - channels:
+       - storage_pool_kind: ssdencrypted
+       - storage_pool_kind: ssdencrypted
+       - storage_pool_kind: ssdencrypted
+       - storage_pool_kind: ssdencrypted

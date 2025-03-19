@@ -1,0 +1,111 @@
+terraform {
+  required_providers {
+    ycp = {
+      source = "terraform.storage.cloud-preprod.yandex.net/yandex-cloud/ycp"
+    }
+  }
+  required_version = ">= 0.13"
+}
+
+module "common" {
+  source = "../common"
+}
+
+provider "ycp" {
+  prod        = false
+  ycp_profile = module.common.ycp_profile
+  folder_id   = var.yc_folder
+  zone        = module.common.yc_zone
+}
+
+module "ssh-keys" {
+  source       = "../../../modules/ssh-keys"
+  yandex_token = var.yandex_token
+  abc_service  = module.common.abc_group.abc_service
+  abc_service_scopes = module.common.abc_group.abc_service_scopes
+}
+
+data "template_file" "application_yaml" {
+  template = file("${path.module}/files/kms/application.tpl.yaml")
+  count    = var.yc_instance_group_size
+
+  vars = {
+    zone = module.common.yc_zone_suffix[element(var.custom_yc_zones, count.index % length(var.custom_yc_zones))]
+  }
+}
+
+data "template_file" "configs" {
+  template = file("${path.module}/files/kms/configs.tpl")
+  count    = var.yc_instance_group_size
+
+  vars = {
+    application_yaml        = element(data.template_file.application_yaml.*.rendered, count.index)
+    yandex_internal_root_ca = file("${path.module}/../../../common/allCAs.pem")
+  }
+}
+
+data "template_file" "infra_configs" {
+  template = file("${path.module}/files/infra-configs.tpl")
+
+  vars = {
+    billing_push_client_yc_logbroker_conf = file("${path.module}/files/push-client/billing-push-client-yc-logbroker.yaml")
+    push_client_yc_logbroker_conf         = file("${path.module}/files/push-client/push-client-yc-logbroker.yaml")
+    solomon_agent_conf                    = file("${path.module}/files/solomon-agent.conf")
+  }
+}
+
+data "template_file" "podmanifest" {
+  template = file("${path.module}/files/podmanifest.tpl.yaml")
+  count    = var.yc_instance_group_size
+
+  vars = {
+    config_digest          = sha256(element(data.template_file.configs.*.rendered, count.index))
+    infra_config_digest    = sha256(data.template_file.infra_configs.rendered)
+    metadata_version       = module.common.metadata_image_version
+    solomon_version        = module.common.solomon_agent_image_version
+    push_client_version    = module.common.push-client_image_version
+    application_version    = module.common.application_version
+    jaeger_agent_version   = module.common.jaeger-agent_image_version
+  }
+}
+
+module "kms-control-plane-instance-group" {
+  source          = "../../../modules/kubelet_instance_group_ycp_v2"
+  name_prefix     = "kms-control"
+  hostname_prefix = "kms-control"
+  hostname_suffix = module.common.hostname_suffix
+  role_name       = "kms-control"
+  osquery_tag     = module.common.osquery_tag
+
+  zones = var.custom_yc_zones
+
+  instance_group_size = var.yc_instance_group_size
+
+  instance_platform_id = module.common.instance_platform_id
+  cores_per_instance   = var.instance_cores
+  memory_per_instance  = var.instance_memory
+  disk_per_instance    = var.instance_disk_size
+  disk_type            = var.instance_disk_type
+  image_id             = module.common.overlay_image_id
+
+  configs              = data.template_file.configs.*.rendered
+  infra-configs        = data.template_file.infra_configs.rendered
+  podmanifest          = data.template_file.podmanifest.*.rendered
+  ssh-keys             = module.ssh-keys.ssh-keys
+  skip_update_ssh_keys = "false"
+
+  metadata = {
+    skm = file("${path.module}/files/skm/bundle.yaml")
+  }
+
+  labels = module.common.instance_labels
+
+  subnets        = var.subnets
+  ipv4_addresses = var.ipv4_addresses
+  ipv6_addresses = var.ipv6_addresses
+  underlay       = false
+
+  service_account_id = var.service_account_id
+  host_group         = module.common.host_group
+  security_group_ids = var.security_group_ids
+}

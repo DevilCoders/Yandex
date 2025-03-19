@@ -1,0 +1,94 @@
+id: 111467
+uid: iX5-NY9ik
+refresh: 3m
+title: All gateways metrics (AI, MDB, API)
+
+tags: [ 'ycp', 'ycp-gateway', 'ycp-duty', 'ycp-drilldown' ]
+
+variables:
+  ui:
+    cluster: { values: [prod, preprod, gpn] }
+    type:
+      multi: true
+      values: [api, ai, mdb]
+      titles: [API, AI, MDB]
+  replacement:
+    !include ../include/errors.yaml
+
+graphDefaults: { width: 6, height: 5, datasource: 'Solomon Cloud' }
+queryDefaults: { labels: 'project=platform, cluster=cloud_${cluster}_api-gateway, service=api_gateway_ma, host!=cluster' }
+
+rows:
+
+  - title: ${type} Gateway
+    uiRepeat: type
+    drilldowns:
+      - subUid: dd_allgw_host
+        ui:
+          cluster: cluster
+          type:
+            values: [api, ai, mdb]
+            titles: [API, AI, MDB]
+          host:
+            multi: true
+            values: [ '*-blue-*', '*-green-*' ]
+            titles: [ 'Blue', 'Green' ]
+        uiRepeat: host
+        labels: 'host=$host'
+    queryDefaults: { labels: 'cluster=cloud_${cluster}_${type}-gateway' }
+
+    panels:
+
+      - type: graph
+        templates:
+          - { name: rps, rate: ui }
+          - { name: patchSelect, before: last, add: { asap: [] } }
+        title: 'Gateway $rateUnit ($cluster)'
+        display: { legend: false, fill: 0 }
+        yAxes: [ { min: 0, decimals: 1 } ]
+        queries:
+          - params: { labels: 'name=grpc_server_request_total, system=*, grpc_type=*, grpc_service=yandex.cloud.*, grpc_method!=all' }
+
+      - type: graph
+        title: 'Gateway and envoy errors ($cluster)'
+        display: { fill: 0 }
+        yAxes: [ { min: 0, decimals: 1 } ]
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_server_response_total, grpc_code=@c5xx, system=*, grpc_type=*, grpc_service=yandex.cloud, grpc_method!=all, upstream_error=true' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: "0", group_lines: [sum], alias: gw upstream 5xx }
+          - params: { labels: 'name=grpc_server_response_total, grpc_code=@c5xx, system=*, grpc_type=*, grpc_service=yandex.cloud, grpc_method!=all, upstream_error=false' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: "0", group_lines: [sum], alias: gw 5xx }
+          - params: { labels: 'name=envoy_http_frontend_v4_tls_downstream_rq_5xx|envoy_http_frontend_v6_tls_downstream_rq_5xx|envoy_http_frontend_v4_plain_downstream_rq_5xx|envoy_http_frontend_v6_plain_downstream_rq_5xx, service=api_envoy_ma, host!=cluster' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: "0", group_lines: [sum], alias: "envoy front 5xx" }
+          - params: { labels: 'name=envoy_cluster_*_upstream_rq_503, service=api_envoy_ma, host!=cluster' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: "0", group_lines: [sum], alias: "envoy upstream 503" }
+
+      - type: graph
+        templates:
+          - { groupLines: true, name: percentile, format: solomon }
+          - { name: patchSelect, before: last, add: { asap: [] } }
+        title: 'Gateway response duration ($cluster)'
+        display: { fill: 0 }
+        yAxes: [ { min: 0, decimals: 1 } ]
+        queries:
+          - params: { labels: 'name=grpc_server_response_duration_seconds, system=*, grpc_type=*, grpc_service=yandex.cloud, bin=*' }
+
+      - type: graph
+        title: 'Gateway LA1 ($cluster)'
+        templates:
+          - { name: patchSelect, before: last, add: { asap: [] } }
+        display: { fill: 0 }
+        yAxes: [ { min: 0, decimals: 1 } ]
+        queryDefaults: { labels: 'name=node_load1, service=node-exporter_ma, host!=cluster' }
+        queries:
+          - select: { percentile_group_lines: "50", alias: "la1 p50" }
+            groupByTime: { max: 'default' }
+          - select: { percentile_group_lines: "95", alias: "la1 p95" }
+            groupByTime: { max: 'default' }
+          - select: { percentile_group_lines: "99", alias: "la1 p99" }
+            groupByTime: { max: 'default' }

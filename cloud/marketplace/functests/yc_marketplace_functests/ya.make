@@ -1,0 +1,50 @@
+OWNER(g:cloud-marketplace)
+
+PY3_LIBRARY()
+
+PY_SRCS(
+    fixtures/__init__.py
+    fixtures/common_data.py
+    fixtures/test_build/__init__.py
+    fixtures/test_build/test_blueprint_build_task.py
+    fixtures/test_category/__init__.py
+    fixtures/test_category/test_default_category_list.py
+    fixtures/test_category/test_get_category.py
+    fixtures/test_category/test_list_category.py
+    fixtures/test_health/__init__.py
+    fixtures/test_health/test_health_monrun.py
+    fixtures/test_isv/__init__.py
+    fixtures/test_isv/test_isv_create.py
+    fixtures/test_isv/test_isv_create_duplication.py
+    fixtures/test_isv/test_isv_get.py
+    fixtures/test_isv/test_isv_listing.py
+    fixtures/test_product/__init__.py
+    fixtures/test_product_family/__init__.py
+    fixtures/test_product_family/test_product_family_update_inherit_logo.py
+    fixtures/test_product_family/test_product_family_related_saas_product.py
+    fixtures/test_product_family_version/__init__.py
+    fixtures/test_product_family_version/test_product_family_version_create_with_sku.py
+    fixtures/test_product_family_version/test_product_family_version_list.py
+    fixtures/test_product_family_version/test_product_family_version_publish.py
+    fixtures/test_product_family_version/test_version_get.py
+    fixtures/test_publisher/__init__.py
+    fixtures/test_publisher/test_publisher_create.py
+    fixtures/test_publisher/test_publisher_create_duplication.py
+    fixtures/test_publisher/test_publisher_get.py
+    fixtures/test_publisher/test_publisher_listing.py
+    fixtures/test_saas_product/__init__.py
+    fixtures/test_simple_product/__init__.py
+    fixtures/test_sku_draft/__init__.py
+    fixtures/test_var/__init__.py
+    fixtures/test_var/test_var_create.py
+    fixtures/test_var/test_var_create_duplication.py
+    fixtures/test_var/test_var_get.py
+    fixtures/test_var/test_var_listing.py
+    utils.py
+)
+
+PEERDIR(
+    cloud/marketplace/common/yc_marketplace_common
+)
+
+END()

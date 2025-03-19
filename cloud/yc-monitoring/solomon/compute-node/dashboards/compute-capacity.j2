@@ -1,0 +1,113 @@
+{% extends "../../base/dashboard.j2" %}
+
+{% set parameters = (
+    ("cluster", "cloud_" + env + "_scheduler"),
+    ("service", "resources"),
+    ("host_group", "default"),
+) %}
+
+{% macro render_capacity_panel(type, platform, threshold) %}
+    {{ render_panel(
+        title=type + " @ " + platform,
+        cluster="[[cluster]]",
+        service="[[service]]",
+        query="host_group=[[host_group]]&host=-&zone_id=ru-*&type=" + type + "&platform_id=" + platform +
+                "&graph=auto&aggr=last&stack=false&min=0&downsamplingAggr=last" +
+                "&numberFormat=0%7Cauto&secondaryGraphMode=bars&e=&threshold=" + threshold|string +
+                "&graphOnly=y",
+        colspan=2) }}
+{% endmacro %}
+
+{% macro render_row_az(title, cluster, service, query, subtitle="", rowspan=0, colspan=0, project=project_id) %}
+{
+  "panels": [
+    {% for az in zones_by_env[env] %}
+        {{ render_panel(title + " @ " + az.zone, cluster, service, query + "&zone_id=" + az.zone,
+                subtitle, rowspan, colspan, project) }}
+        {% if not loop.last %},{% endif %}
+    {% endfor %}
+  ]
+}
+{% endmacro %}
+
+{% macro render_row_cpu_usage(platform) %}
+    {{ render_row_az("CPU usage " + platform,
+        cluster="[[cluster]]",
+        service="[[service]]",
+        query="l.host_group=[[host_group]]&l.metric=cores_free&l.node_name=%21all_nodes&graph=auto&" +
+                "graphMode=heatmap&interpolate=none&greenValue=36&yellowValue=24&redValue=12&violetValue=0&" +
+                "&secondaryGraphMode=distribution&aggr=last&downsamplingAggr=last&" +
+                "numberFormat=0%7C&graphOnly=y&l.platform=" + platform,
+        colspan=2) }}
+{% endmacro %}
+
+{% macro render_row_mem_usage(platform) %}
+    {{ render_row_az("Free memory distribution " + platform,
+        cluster="[[cluster]]",
+        service="[[service]]",
+        query="l.host_group=[[host_group]]&l.metric=memory_free&" +
+              "l.node_name=!all_nodes&l.platform=" + platform + "&"
+              "graph=auto&graphMode=distribution&secondaryGraphMode=none",
+        colspan=2) }}
+{% endmacro %}
+
+{% block rows %}
+[
+    { "panels": [
+        {{ render_capacity_panel("c4-f50-m8", "standard-v2", threshold=256) }},
+        {{ render_capacity_panel("c8-m16", "standard-v2", threshold=256) }},
+        {{ render_capacity_panel("c32-m256", "standard-v2", threshold=36) }}
+    ] },
+    { "panels": [
+        {{ render_capacity_panel("c80-m320", "standard-v2", threshold=18) }}
+    ] },
+    { "panels": [
+        {{ render_capacity_panel("c4-f20-m8", "standard-v1", threshold=128) }},
+        {{ render_capacity_panel("c8-m16", "standard-v1", threshold=48) }},
+        {{ render_capacity_panel("c32-m256", "standard-v1", threshold=3) }}
+    ] },
+    { "panels": [
+        {{ render_capacity_panel("c8-m48-g1", "gpu-standard-v2", threshold=8) }},
+        {{ render_capacity_panel("c32-m192-g4", "gpu-standard-v2", threshold=2) }},
+        {{ render_capacity_panel("c64-m384-g8", "gpu-standard-v2", threshold=2) }}
+    ] },
+    { "panels": [
+        {{ render_capacity_panel("c8-m96-g1", "gpu-standard-v1", threshold=8) }},
+        {{ render_capacity_panel("c32-m384-g4", "gpu-standard-v1", threshold=2) }}
+    ] },
+    { "panels": [
+        {{ render_capacity_panel("c8-m32-n8", "standard-v1", threshold=9) }},
+        {{ render_capacity_panel("c8-m32-n8", "standard-v2", threshold=18) }},
+        {{ render_capacity_panel("c64-m256-n15", "standard-v2", threshold=3) }}
+    ] },
+    { "panels": [
+        {{ render_panel("free cores",
+                cluster="[[cluster]]",
+                service="[[service]]",
+                query="l.host_group=[[host_group]]&l.node_name=all_nodes&l.metric=cores_free&l.zone_id=*&graph=auto&aggr=last&" +
+                        "downsamplingAggr=last&hideNoData=true&l.host=-&l.platform=standard-*&" +
+                        "secondaryGraphMode=bars&stack=false&min=0&numberFormat=0|&e=&graphOnly=y",
+                colspan=3) }},
+        {{ render_panel("preemptible cores",
+                cluster="[[cluster]]",
+                service="[[service]]",
+                query="l.host_group=[[host_group]]&l.node_name=all_nodes&l.metric=preemptible_exclusive_cores_used&l.zone_id=*&graph=auto&aggr=last&" +
+                        "downsamplingAggr=last&hideNoData=true&l.host=-&l.platform=standard-*&" +
+                        "secondaryGraphMode=bars&stack=false&min=0&numberFormat=0|&e=&graphOnly=y",
+                colspan=3) }}
+    ] },
+    {{ render_row_cpu_usage("standard-v1") }},
+    {{ render_row_cpu_usage("standard-v2") }},
+    { "panels": [
+        {{ render_panel("free_memory",
+                cluster="[[cluster]]",
+                service="[[service]]",
+                query="l.host_group=[[host_group]]&l.node_name=all_nodes&l.metric=memory_free&l.zone_id=!all_zones&graph=auto&" +
+                "aggr=last&downsamplingAggr=last&hideNoData=true&l.host=-&l.platform=standard-*&secondaryGraphMode=bars&" +
+                "e=&stack=false&numberFormat=1|T&min=0&graphOnly=y",
+                colspan=3) }}
+    ] },
+    {{ render_row_mem_usage("standard-v1") }},
+    {{ render_row_mem_usage("standard-v2") }}
+]
+{% endblock %}

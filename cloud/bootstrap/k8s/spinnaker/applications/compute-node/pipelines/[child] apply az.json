@@ -1,0 +1,274 @@
+{
+    "appConfig": {},
+    "application": "compute-node",
+    "description": "Deploys \"compute\" salt role to one AZ. Creates and closes Infra event. Versions are taken from manifests at https://bb.yandex-team.ru/projects/CLOUD/repos/k8s-deploy.",
+    "id": "526f938c-29e8-4530-900e-21bf3b75d385",
+    "index": 0,
+    "keepWaitingPipelines": false,
+    "limitConcurrent": true,
+    "name": "[child] apply az",
+    "parameterConfig": [
+        {
+            "default": "",
+            "description": "CLOUD-XXXXXX",
+            "hasOptions": false,
+            "label": "Existing release ticket",
+            "name": "releaseTicket",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": true,
+            "required": true
+        },
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": true,
+            "label": "Stand",
+            "name": "stand",
+            "options": [
+                {
+                    "value": "testing"
+                },
+                {
+                    "value": "preprod"
+                },
+                {
+                    "value": "prod"
+                }
+            ],
+            "pinned": true,
+            "required": true
+        },
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": true,
+            "label": "AZ",
+            "name": "az",
+            "options": [
+                {
+                    "value": "a"
+                },
+                {
+                    "value": "b"
+                },
+                {
+                    "value": "c"
+                }
+            ],
+            "pinned": true,
+            "required": true
+        }
+    ],
+    "spelEvaluator": "v4",
+    "stages": [
+        {
+            "failOnFailedExpressions": true,
+            "name": "Configure context",
+            "refId": "10",
+            "requisiteStageRefIds": [],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "namespace",
+                    "value": "compute"
+                },
+                {
+                    "key": "baseRole",
+                    "value": "compute"
+                },
+                {
+                    "key": "saltRole",
+                    "value": "compute"
+                },
+                {
+                    "key": "infraServiceId",
+                    "value": 293
+                },
+                {
+                    "key": "infraServiceTestingEnvId",
+                    "value": 6083
+                },
+                {
+                    "key": "infraServicePreprodEnvId",
+                    "value": 6084
+                },
+                {
+                    "key": "infraServiceProdEnvId",
+                    "value": 6085
+                },
+                {
+                    "key": "spinnakerExecutionURL",
+                    "value": "https://spinnaker.cloud.yandex.net/#/applications/${execution.application}/executions/${execution.Id}"
+                },
+                {
+                    "key": "triggerUserLogin",
+                    "value": "${trigger.user.replace(\"@yandex-team.ru\", \"\")}"
+                },
+                {
+                    "key": "infraEnvironmentID",
+                    "value": "${parameters.stand == \"testing\" ? infraServiceTestingEnvId : parameters.stand == \"preprod\" ? infraServicePreprodEnvId : parameters.stand == \"prod\" ? infraServiceProdEnvId : FAIL }"
+                },
+                {
+                    "key": "stand",
+                    "value": "${parameters.stand}"
+                },
+                {
+                    "key": "az",
+                    "value": "${parameters.az}"
+                },
+                {
+                    "key": "dc",
+                    "value": "${parameters.az == \"a\" ? \"vla\" : parameters.az == \"b\" ? \"sas\" : parameters.az == \"c\" ? \"myt\" : FAIL }"
+                },
+                {
+                    "key": "releaseTicket",
+                    "value": "${parameters.releaseTicket.matches(\"CLOUD-[0-9]{5,6}\") == true ? parameters.releaseTicket: INVALID_TICKET_FORMAT}"
+                },
+                {
+                    "key": "accountName",
+                    "value": "kten_${stand}-${az}_${namespace}"
+                },
+                {
+                    "key": "pathToManifest",
+                    "value": "${stand}/ru-central1-${az}/manifests/${namespace}/${baseRole}/salt-base-role/templates/${saltRole}.yaml"
+                }
+            ]
+        },
+        {
+            "actions": [
+                {
+                    "actionId": "b27dc902-2658-4389-9dc1-717ef2d61202",
+                    "actionName": "Read manifest",
+                    "actionType": "readFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "master",
+                    "filePath": "${pathToManifest}",
+                    "outputVariable": "manifestToApply",
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                }
+            ],
+            "expectedArtifacts": [
+                {
+                    "defaultArtifact": {
+                        "customKind": true,
+                        "id": "e542f9b0-a23a-4ffa-8b2e-b85e4f618dee"
+                    },
+                    "displayName": "manifestToApply",
+                    "id": "ac94817c-f8e6-49d8-8153-96ec513c5ae7",
+                    "matchArtifact": {
+                        "artifactAccount": "embedded-artifact",
+                        "id": "4efa8549-0dee-475c-881d-620ae820085d",
+                        "name": "${manifestToApply}",
+                        "type": "embedded/base64"
+                    },
+                    "useDefaultArtifact": false,
+                    "usePriorArtifact": false
+                }
+            ],
+            "name": "Read manifest",
+            "refId": "20",
+            "requisiteStageRefIds": [
+                "10"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "failOnFailedExpressions": true,
+            "name": "Show manifest",
+            "refId": "30",
+            "requisiteStageRefIds": [
+                "20"
+            ],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "manifestToApply",
+                    "value": "${#readYaml(manifestToApply)}"
+                }
+            ]
+        },
+        {
+            "comments": "????????? ????? ?????? ????????, https://st.yandex-team.ru/CLOUD-104557\n????? ??????? ?????? - ??????????? ???? pipeline, ????????? ??????? ???????.",
+            "description": "Started by: ${triggerUserLogin} Execution: ${spinnakerExecutionURL}",
+            "environmentId": "${infraEnvironmentID}",
+            "eventType": "maintenance",
+            "myt": "${dc == \"myt\"}",
+            "name": "Create Infra event",
+            "refId": "40",
+            "requisiteStageRefIds": [
+                "30"
+            ],
+            "sas": "${dc == \"sas\"}",
+            "serviceId": "${infraServiceId}",
+            "severity": "major",
+            "tickets": "${releaseTicket}",
+            "title": "Release",
+            "type": "createInfraEvent",
+            "vla": "${dc == \"vla\"}"
+        },
+        {
+            "account": "${accountName}",
+            "cloudProvider": "kubernetes",
+            "completeOtherBranchesThenFail": false,
+            "continuePipeline": true,
+            "failPipeline": false,
+            "manifestArtifact": {
+                "artifactAccount": "bb.yandex-team.ru",
+                "id": "121a759b-7739-4c70-acfb-1af06a17c9d7",
+                "name": "${pathToManifest}",
+                "reference": "https://bb.yandex-team.ru/projects/CLOUD/repos/k8s-deploy/raw/${pathToManifest}",
+                "type": "bitbucket/file"
+            },
+            "moniker": {
+                "app": "${execution.application}"
+            },
+            "name": "Deploy k8s",
+            "namespaceOverride": "",
+            "refId": "50",
+            "requisiteStageRefIds": [
+                "40"
+            ],
+            "skipExpressionEvaluation": true,
+            "source": "artifact",
+            "trafficManagement": {
+                "enabled": false,
+                "options": {
+                    "enableTraffic": false
+                }
+            },
+            "type": "deployManifest"
+        },
+        {
+            "name": "Close Infra event",
+            "refId": "60",
+            "requisiteStageRefIds": [
+                "50"
+            ],
+            "type": "closeInfraEvent"
+        },
+        {
+            "name": "Check state",
+            "preconditions": [
+                {
+                    "context": {
+                        "stageName": "Deploy k8s",
+                        "stageStatus": "SUCCEEDED"
+                    },
+                    "failPipeline": true,
+                    "type": "stageStatus"
+                }
+            ],
+            "refId": "70",
+            "requisiteStageRefIds": [
+                "60"
+            ],
+            "type": "checkPreconditions"
+        }
+    ],
+    "triggers": []
+}

@@ -1,0 +1,36 @@
+{% extends "../../base/alert.j2" %}
+
+{% set windowSecs = 600 %}
+
+{% macro prog() %}
+let sessions = max({
+	cluster='cloud_{{ env }}_cloudgate',
+	service='vsop',
+	host!='cluster',
+	name='dynamic-sessions',
+	'vpp-nat'='sessions',
+	aggregation='vrf',
+	thread='-',
+	vrf='all'
+});
+
+let nat_ports = 64511;
+let is_red = sessions * 0.9 > {{ addresses }} * nat_ports;
+let is_yellow = sessions * 0.7 > {{ addresses }} * nat_ports;
+alarm_if(is_red);
+warn_if(is_yellow);
+{% endmacro %}
+
+
+{% block main %}
+	"name": "CGW NAT session exhaustion @ {{ env }}",
+	"groupByLabels": ["host"],
+	"annotations": {
+		"host": "{{ svm_fqdn() }}",
+		"tags": "Solomon, yc-{{env}}, yc-cgw",
+		"service": "{{ serviceName }}",
+		"wiki": "https://docs.yandex-team.ru/yc-monitoring/cgw/{{ serviceName }}"
+	},
+	"description": "Check if it is time to add more addresses to cgw-nat",
+	"type": {{ type_expression() }}
+{% endblock %}

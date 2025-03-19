@@ -1,0 +1,118 @@
+apiVersion: datadoghq.com/v1alpha1
+kind: ExtendedDaemonSet
+metadata:
+  name: compute-serialproxy
+  namespace: compute
+spec:
+  strategy:
+    canary:
+      replicas: 1
+      nodeSelector:
+        serialproxy: "canary"
+  template:
+    metadata:
+      labels:
+        name: compute-serialproxy
+    spec:
+      nodeSelector:
+        compute-serialproxy: "1"
+      hostNetwork: true
+      containers:
+      - name: compute-serialproxy
+        image: cr.yandex/yc-bootstrap/ubuntu:xenial-20210114-2.0
+        command: [ 'bash', '-c', 'while [ 1 ]; do echo "Dummy compute serialproxy 2 is running"; date; sleep 10; done' ]
+      #  image: cr.yandex/yc-bootstrap/yc-serialproxy:rekby-test--2021-05-14--12-57UTC
+        imagePullPolicy: IfNotPresent
+      #  command: ['/serialproxy']
+        ports:
+          - protocol: TCP
+            containerPort: 9700
+        volumeMounts:
+          - mountPath: /etc/yc/serialproxy
+            name: serialproxy-volume
+          - mountPath: /run/log/journal # journald-logging
+            name: journal-data
+          - mountPath: /var/run/systemd/journal # journald-logging
+            name: journal
+          - mountPath: /var/lib/yc/serialproxy
+            name: qemu-serialproxy
+          - mountPath: /etc/ssl/certs
+            name: certs
+
+      # journald-logging
+      - image: cr.yandex/yc-bootstrap/centos/systemd:2021-05-18-09-39UTC-rekby
+        imagePullPolicy: IfNotPresent
+        name: journald
+        volumeMounts:
+          - mountPath: /run
+            name: runtmpfs
+          - mountPath: /run/log/journal
+            name: journal-data
+          - mountPath: /run/systemd/journal
+            name: journal
+          - mountPath: /sys/fs/cgroup
+            name: sys-fs-cgroup
+        securityContext:
+          privileged: true
+      - image: cr.yandex/yc-bootstrap/centos/systemd:2021-05-18-09-39UTC-rekby
+        imagePullPolicy: IfNotPresent
+        name: journalctl
+        command: ["journalctl", "-f", "-o", "json"]
+        volumeMounts:
+          - mountPath: /run/log/journal
+            name: journal-data
+          - mountPath: /etc/yc/serialproxy # for debug
+            name: serialproxy-volume
+      volumes:
+        - name: certs
+          hostPath:
+            path: /etc/ssl/certs
+            type: Directory
+        - name: serialproxy-volume
+          configMap:
+            name: yc-serialproxy-configmap
+            items:
+              - key: serialproxy-config.yaml
+                path: "config.yaml"
+        - name: qemu-serialproxy
+          hostPath:
+            path: /var/lib/yc/serialproxy
+            type: Directory
+        # journald-logging
+        - name: journal-data
+          emptyDir:
+            medium: Memory
+        - name: journal
+          emptyDir:
+            medium: Memory
+        - name: runtmpfs
+          emptyDir:
+            medium: Memory
+        - name: sys-fs-cgroup
+          hostPath:
+            path: /sys/fs/cgroup
+            type: Directory
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: yc-serialproxy-configmap
+  namespace: compute
+data:
+  serialproxy-config.yaml: |
+    public_server:
+      endpoints:
+        - address: "[::]:9700"
+    control_server:
+      address: "localhost:9701"
+    control_gateway:
+      address: "localhost:9602"
+    access_service_client:
+      address: local-lb.cloud-lab.yandex.net:14286 # http://bb.yandex-team.ru/projects/cloud/repos/bootstrap-templates/browse/shared/hw-lab.load-balancers.yaml?at=fab81ce5fc26c5c569d88cc746b96309099fa486#18
+      tls: true
+      disabled: false
+    qemu_registry:
+      max_instances: 1000
+      max_connections: 5
+      state_dir: /var/lib/yc/serialproxy

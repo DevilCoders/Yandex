@@ -1,0 +1,24 @@
+---
+- include: kubelet.yml
+  with_dict: "{{ kubelet_checks }}"
+  loop_control:
+    loop_var: "kubelet_check"
+  tags: ["kubelet"]
+  vars:
+    host: "{{ kubelet_check.value.host | default('cloud_' + env + '_' + kubelet_check.key) }}"
+    cgroup: "{{ host }}"
+    unreachable_host: "{{ kubelet_check.value.unreachable_host | default('') }}"
+    check_tags: [ "yc_kubelet" ]
+    telegram_chat_id: kubelet-alerts
+    children: "CGROUP%{{ cgroup }}"
+    telegram_notification: "{{ default_telegram_notification }}"
+    unreach_limits: "{{ default_timed_limits_unreach_force_ok if kubelet_check.value.unreachable_host is defined else default_timed_limits }}"
+    hw: "{{ kubelet_check.value.hw | default('false') | bool }}"
+
+- include: tasks/cleanup.yml
+  with_dict: "{{ kubelet_checks }}"
+  loop_control:
+    loop_var: "kubelet_check"
+  vars:
+    host: "{{ kubelet_check.value.host | default('cloud_' + env + '_' + kubelet_check.key) }}"
+  tags: ["kubelet"]

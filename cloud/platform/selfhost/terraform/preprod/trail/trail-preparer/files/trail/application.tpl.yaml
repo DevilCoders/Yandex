@@ -1,0 +1,265 @@
+grpcServer:
+  maxConcurrentRequests: 100
+  port: 443
+  reflectionEnabled: true
+  certificatePemFile: /run/trail/certificate.pem
+
+authClient:
+  host: as.private-api.cloud-preprod.yandex.net
+  port: 4286
+  maxRetries: 5
+  timeout: 5
+  tls: true
+
+metrics:
+  pullPort: 4302
+
+cluster:
+  clusterId: f99
+
+resourceManager:
+  host: rm.private-api.cloud-preprod.yandex.net
+  port: 4284
+  timeout: PT5S
+  tls: true
+
+iam:
+  host: iam.private-api.cloud-preprod.yandex.net
+  port: 4283
+  timeout: PT3S
+  tls: true
+
+organizationManager:
+  host: org.private-api.cloud-preprod.yandex.net
+  port: 4290
+  timeout: PT5S
+  tls: true
+
+kikimr:
+  host: localhost
+  discoveryEndpoint: lb.cc803kmei33k779pquc5.ydb.mdb.cloud-preprod.yandex.net
+  port: 2135
+  tablespace: /pre-prod_global/aoedsmvctptsmbkj4g90/cc803kmei33k779pquc5/${ydb_tablespace}
+  database: /pre-prod_global/aoedsmvctptsmbkj4g90/cc803kmei33k779pquc5
+  useSSL: true
+
+healthCheck:
+  port: 9982
+  path: /ping
+
+preparer:
+  destinations:
+    - destination:
+        installation:
+          predefinedName: ${logbroker_destination_installation}
+        topic: ${logbroker_destination_topic_prefix}yc-trail
+        maxChunkBytes: 262144
+      unparsed:
+        installation:
+          predefinedName: ${logbroker_destination_installation}
+        topic: ${logbroker_destination_topic_prefix}yc-trail-unparsed
+        maxChunkBytes: 262144
+      unfiltered:
+        installation:
+          predefinedName: ${logbroker_destination_installation}
+        topic: ${logbroker_destination_topic_prefix}yc-trail-unfiltered
+        maxChunkBytes: 262144
+      cloudLogging:
+        installation:
+          predefinedName: ${logbroker_destination_installation}
+        topic: ${logbroker_cloud_logging_topic}
+        maxChunkBytes: 262144
+        messageFormat: LOGGING
+        compressionCodec: ZSTD
+      sources:
+        - name: yc-events-preprod
+          installation:
+            predefinedName: ${logbroker_source_installation}
+          topic: ${logbroker_source_topic}
+          consumer: ${logbroker_source_consumer}
+          maxMessages: ${logbroker_source_max_messages}
+          taskPoolSize: 4
+
+        - name: yc-storage-preprod
+          installation:
+            predefinedName: ${logbroker_source_installation}
+          topic: ${logbroker_storage_source_topic}
+          consumer: ${logbroker_source_consumer}
+          maxMessages: ${logbroker_source_max_messages}
+          taskPoolSize: 4
+
+        - name: yc-organizationmanager-preprod
+          installation:
+            predefinedName: ${logbroker_source_installation}
+          topic: ${logbroker_organizationmanager_source_topic}
+          consumer: ${logbroker_source_consumer}
+          maxMessages: ${logbroker_source_max_messages}
+          taskPoolSize: 4
+
+        - name: yc-lockbox-data-preprod
+          installation:
+            predefinedName: ${logbroker_source_installation}
+          topic: ${logbroker_lockbox_data_source_topic}
+          consumer: ${logbroker_source_consumer}
+          maxMessages: ${logbroker_source_max_messages}
+          taskPoolSize: 4
+
+        - name: yc-events-e2e-preprod
+          installation:
+            predefinedName: YC_LOGBROKER_PREPROD
+          topic: /aoedsmvctptsmbkj4g90/e2e/yc-events-e2e
+          consumer: ${logbroker_source_consumer}
+          maxMessages: ${logbroker_source_max_messages}
+          taskPoolSize: ${e2e_topic_pool_size}
+
+        - name: yc-events-ingest
+          installation:
+            predefinedName: ${logbroker_ingest_installation}
+          topic: ${logbroker_ingest_topic}
+          consumer: ${logbroker_source_consumer}
+          maxMessages: ${logbroker_source_max_messages}
+          taskPoolSize: 3
+
+
+taskProcessorPools:
+  pools:
+    preparer: 2
+    preparer-lb: 3
+    preparer-dist-cache: 1
+    preparer-organizationmanager: 2
+    preparer-storage: 2
+    preparer-lockbox: 2
+    preparer-e2e: 1
+    preparer-ingest: 1
+
+distributedCache:
+  fetchSize: 1000
+  cleanupDelay: PT5M
+  poolName: preparer-dist-cache
+
+sourcePoolMappings:
+  mappings:
+    - pool: preparer
+      source: yc-events-preprod
+    - pool: preparer-organizationmanager
+      source: yc-organizationmanager-preprod
+    - pool: preparer-storage
+      source: yc-storage-preprod
+    - pool: preparer-lockbox
+      source: yc-lockbox-data-preprod
+    - pool: preparer-e2e
+      source: yc-events-e2e-preprod
+    - pool: preparer-ingest
+      source: yc-events-ingest
+
+localCache:
+  refreshPeriodSec: 60
+  expirePeriodSec: 60
+  defaultLifetime: PT1H
+  lifetimes:
+    folder: PT1H
+    cloud: PT1H
+    subject: PT1H
+    cloudInfo: PT1H
+    folderByFederation: PT1H
+    cloudByFolder: PT1H
+    organization: PT1H
+    organizationByFederation: PT1H
+  notFoundLifetime: PT1H
+
+rpsLimits:
+  rmRps: 200
+  iamRps: 100
+  orgRps: 100
+
+worker:
+  duration: PT10M
+  additionalRandomDuration: PT10M
+  maxDuration: PT30M
+
+conceal:
+  concealedRemoteAddress: cloud.yandex
+  concealedUserAgent: Yandex Cloud
+  concealOnError: true
+  ipPrefixesToConceal:
+    - 2a0d:d6c0::/32 #prod
+    - 2a02:6b8::/32 #preprod
+  subjectsToConceal:
+    bfbbp230elbjmlh0tv41: yc-sa-audit-trails
+
+eventDistributor:
+  parallelism: 25
+
+yandexMonitoringMetrics:
+  pullPort: 4303
+  refreshPeriod: PT15S
+  removeMetricsRefreshPeriod: PT1H
+
+trailsCache:
+  refreshPeriod: PT30S
+  cacheRecordLifetime: PT10M
+
+jwtTokenService:
+  host: iam.api.cloud-preprod.yandex.net
+  port: 443
+  timeout: PT5S
+  tls: true
+
+systemAccount:
+  common:
+    type: INSTANCE_METADATA
+  ydb:
+    type: INSTANCE_METADATA
+
+trailsFilters:
+  defaultExcludedEvents:
+    - yandex.cloud.audit.lockbox.GetPayload
+    - yandex.cloud.audit.storage.ObjectCreate
+    - yandex.cloud.audit.storage.ObjectDelete
+    - yandex.cloud.audit.storage.ObjectUpdate
+  trails:
+    # Audit Trails Demo
+    f99e5qfbuuenm3b32jfm:
+      overwriteDefaultFilters: true
+      collectOrganizationLogs: true
+    # Audit Trails Logging Demo
+    f995dfv6i4810b0hmmqh:
+      collectOrganizationLogs: true
+    # Audit Trails Storage Upload Using SA Demo
+    f99208k80kk9nat4t6em:
+      collectOrganizationLogs: true
+    # Audit Trails Experiments
+    f99p33pcoqmassoaumr4:
+      collectOrganizationLogs: true
+    # yc.security.trail
+    f99j73214ag82og7mhh7:
+      collectOrganizationLogs: true
+    # Audit Trails lockbox data plane logs trail
+    f99a2kmfh8vu536phfpi:
+      overwriteDefaultFilters: true
+      excludedEvents:
+        - yandex.cloud.audit.storage.ObjectCreate
+        - yandex.cloud.audit.storage.ObjectDelete
+        - yandex.cloud.audit.storage.ObjectUpdate
+    # Yandex.Bank
+    cnppimrddhp61s0dk54d:
+      overwriteDefaultFilters: true
+      excludedEvents:
+        - yandex.cloud.audit.storage.ObjectCreate
+        - yandex.cloud.audit.storage.ObjectDelete
+        - yandex.cloud.audit.storage.ObjectUpdate
+    #Yandex.Bank
+    cnp264rjke2jrh7mlm2i:
+      overwriteDefaultFilters: true
+      excludedEvents:
+        - yandex.cloud.audit.storage.ObjectCreate
+        - yandex.cloud.audit.storage.ObjectDelete
+        - yandex.cloud.audit.storage.ObjectUpdate
+
+ingestion:
+  destination:
+    installation:
+      predefinedName: ${logbroker_ingest_installation}
+    topic: ${logbroker_ingest_topic}
+    maxChunkBytes: 262144
+    publisherPoolSize: 1

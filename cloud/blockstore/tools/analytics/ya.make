@@ -1,0 +1,41 @@
+OWNER(g:cloud-nbs)
+
+RECURSE(
+    libs
+
+    aggregate-billing-metrics
+    billing-metrics
+    bsgroups-by-tablets
+    calculate-perf-settings
+    cloud-used-space
+    cpu-wait-monitor
+    common
+    compaction-sim
+    describe-volume
+    dump-event-log
+    escalation-stats
+    event-log-disk-usage
+    event-log-stats
+    event-log-suffer
+    filter-yt-logs
+    find-bad-volumes
+    find-block-accesses
+    find-perf-bottlenecks
+    find-voracious-volumes
+    match-volume-model
+    overcommit-factor
+    pp-calculator
+    process-startup-events
+    query-stats
+    request-stats
+    search_broken_nrd
+    tablets-for-prune
+    top-disks
+    top-loaded-disks
+    visualize-event-log
+    visualize-trace
+    volume-storage-info
+    volume-usage-stats
+    volumes-by-tablets
+    volumes-monitoring
+)

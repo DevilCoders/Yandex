@@ -1,0 +1,245 @@
+{
+    "appConfig": {},
+    "application": "compute-base-role",
+    "id": "18ec3cc0-e33f-4d93-8cad-0a17119236f7",
+    "index": 2,
+    "keepWaitingPipelines": false,
+    "limitConcurrent": false,
+    "name": "apply-az(WIP)",
+    "parameterConfig": [
+        {
+            "default": "",
+            "description": "CLOUD-XXXXXX",
+            "hasOptions": false,
+            "label": "Existing release ticket",
+            "name": "releaseTicket",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": true,
+            "required": true
+        },
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "Salt role name",
+            "name": "saltRole",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": true,
+            "required": true
+        },
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "",
+            "name": "namespace",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": true,
+            "required": true
+        },
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "",
+            "name": "baseRole",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": true,
+            "required": true
+        },
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "",
+            "name": "infraServiceID",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": true,
+            "required": true
+        },
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": true,
+            "label": "AZ",
+            "name": "az",
+            "options": [
+                {
+                    "value": "a"
+                },
+                {
+                    "value": "b"
+                },
+                {
+                    "value": "c"
+                }
+            ],
+            "pinned": true,
+            "required": true
+        },
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": true,
+            "label": "Stand",
+            "name": "stand",
+            "options": [
+                {
+                    "value": "testing"
+                },
+                {
+                    "value": "preprod"
+                },
+                {
+                    "value": "prod"
+                }
+            ],
+            "pinned": true,
+            "required": true
+        }
+    ],
+    "spelEvaluator": "v4",
+    "stages": [
+        {
+            "failOnFailedExpressions": true,
+            "name": "Configure context",
+            "refId": "1",
+            "requisiteStageRefIds": [],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "spinnakerExecutionURL",
+                    "value": "https://spinnaker.cloud.yandex.net/#/applications/bootstrap-base-role/executions/${execution.Id}"
+                },
+                {
+                    "key": "spinnakerExecutionMD",
+                    "value": "[${execution.Id}](https://spinnaker.cloud.yandex.net/#/applications/bootstrap-base-role/executions/${execution.Id})"
+                },
+                {
+                    "key": "today",
+                    "value": "${new java.text.SimpleDateFormat(\"dd.MM.yyyy\").format(new java.util.Date())}"
+                },
+                {
+                    "key": "triggerUserLogin",
+                    "value": "${trigger.user.replace(\"@yandex-team.ru\", \"\")}"
+                },
+                {
+                    "key": "infraEnvironmentID",
+                    "value": "${parameters.stand == \"testing\" ? 415 : parameters.stand == \"preprod\" ? 405 : parameters.stand == \"prod\" ? 406 : FAIL }"
+                },
+                {
+                    "key": "namespace",
+                    "value": "${parameters.namespace}"
+                },
+                {
+                    "key": "az",
+                    "value": "${parameters.az}"
+                },
+                {
+                    "key": "dc",
+                    "value": "${parameters.az == \"a\" ? \"vla\" : parameters.az == \"b\" ? \"sas\" : parameters.az == \"c\" ? \"myt\" : FAIL }"
+                },
+                {
+                    "key": "stand",
+                    "value": "${parameters.stand}"
+                }
+            ]
+        },
+        {
+            "account": "k8s-${namespace}-${stand}-${az}",
+            "cloudProvider": "kubernetes",
+            "completeOtherBranchesThenFail": false,
+            "continuePipeline": true,
+            "failPipeline": false,
+            "manifestArtifact": {
+                "artifactAccount": "bb.yandex-team.ru",
+                "id": "121a759b-7739-4c70-acfb-1af06a17c9d7",
+                "reference": "https://bb.yandex-team.ru/projects/CLOUD/repos/k8s-deploy/raw/${stand}/ru-central1-${az}/manifests/${namespace}/salt-base-role/templates/${parameters.saltRole}.yaml",
+                "type": "bitbucket/file"
+            },
+            "moniker": {
+                "app": "bootstrap-base-role"
+            },
+            "name": "Deploy k8s",
+            "namespaceOverride": "",
+            "refId": "8",
+            "requisiteStageRefIds": [
+                "37"
+            ],
+            "skipExpressionEvaluation": true,
+            "source": "artifact",
+            "trafficManagement": {
+                "enabled": false,
+                "options": {
+                    "enableTraffic": false
+                }
+            },
+            "type": "deployManifest"
+        },
+        {
+            "name": "Close Infra event",
+            "refId": "12",
+            "requisiteStageRefIds": [
+                "8"
+            ],
+            "type": "closeInfraEvent"
+        },
+        {
+            "description": "Started by: ${triggerUserLogin} Execution: ${spinnakerExecutionURL}",
+            "environmentId": "${infraEnvironmentID}",
+            "eventType": "maintenance",
+            "myt": "${dc == \"myt\"}",
+            "name": "Create Infra event",
+            "refId": "37",
+            "requisiteStageRefIds": [
+                "1"
+            ],
+            "sas": "${dc == \"sas\"}",
+            "serviceId": "${parameters.infraServiceID}",
+            "severity": "major",
+            "tickets": "${parameters.releaseTicket}",
+            "title": "Release",
+            "type": "createInfraEvent",
+            "vla": "${dc == \"vla\"}"
+        },
+        {
+            "name": "Check Preconditions",
+            "preconditions": [
+                {
+                    "context": {
+                        "stageName": "Deploy k8s",
+                        "stageStatus": "SUCCEEDED"
+                    },
+                    "failPipeline": true,
+                    "type": "stageStatus"
+                }
+            ],
+            "refId": "38",
+            "requisiteStageRefIds": [
+                "12"
+            ],
+            "type": "checkPreconditions"
+        }
+    ],
+    "triggers": []
+}

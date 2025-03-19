@@ -1,0 +1,186 @@
+#!/bin/bash -e
+
+usage="$(basename "$0") [-c] [-r] [-h] -- script to restart nbs with blue-green
+where:
+    -c  show restarts count instead of service uptime
+    -r  show additional info for release-tool
+    -h  show this help text"
+
+RELEASE=false
+SHOW_RESTARTS_COUNT=false
+
+while getopts 'crh' flag;
+do
+    case "${flag}" in
+        c) SHOW_RESTARTS_COUNT=true;;
+        r) RELEASE=true;;
+        h)
+          echo "$usage"
+          exit 0
+          ;;
+    esac
+done
+
+UUID=$(cat /proc/sys/kernel/random/uuid)
+PID_FILE="/tmp/nbs2.pid.$UUID"
+
+PING_TIMEOUT=30
+ENDPOINT_TIMEOUT=120
+
+AUTH=false
+STR=$(grep AuthorizationMode /Berkanavt/nbs-server/cfg/nbs-storage.txt) || true
+if [[ $STR == *"AUTHORIZATION_REQUIRE"* ]]; then
+  AUTH=true
+fi
+
+CONTROL=false
+STR=$(grep NodeType /Berkanavt/nbs-server/cfg/nbs-server.txt) || true
+if [[ $STR == *"nbs_control"* ]]; then
+  CONTROL=true
+fi
+
+RUN_NBS2=true
+RELEASE_SLEEP=5
+if $CONTROL; then
+  RUN_NBS2=false
+  RELEASE_SLEEP=60
+fi
+
+function LogStep {
+  echo "$(date +'%D %T.%6N') === $1 ==="
+}
+
+function RestartNBS {
+  LogStep "Restart NBS"
+  systemctl kill -s KILL nbs
+  systemctl start nbs
+}
+
+function KillSecondNBS {
+  PID=`cat $PID_FILE`
+  rm $PID_FILE
+
+  KILLED=false
+
+  BREAKPAD_PID=`pgrep -P $PID` &&
+  NBS2_PID=`pgrep -P $BREAKPAD_PID` &&
+  LogStep "Kill NBS2 ($NBS2_PID)" &&
+  (kill -SIGKILL $NBS2_PID) &&
+  KILLED=true
+
+  if [ $KILLED = false ]; then
+    LogStep "Send SIGTERM to NBS2 ($PID)"
+    (kill -SIGTERM $PID) || true
+  fi
+}
+
+function RestartsCount {
+  cat /var/log/nbs-server/systemd-nbs.restart
+}
+
+if [ "$EUID" -ne 0 ]; then
+  echo "Please run as root"
+  exit
+fi
+
+INSECURE_PORT=9766
+INSECURE_PORT2=9771
+SECURE_PORT=0
+SECURE_PORT2=0
+NBS2_ARGS="-n"
+
+if $AUTH; then
+  SECURE_PORT=9768
+  SECURE_PORT2=9772
+  NBS2_ARGS=""
+
+  LogStep "Creating IAM-token"
+  mkdir -p ~/.nbs-client
+  chmod 700 ~/.nbs-client
+  if $CONTROL; then  
+    curl -s -H "Metadata-Flavor: Google" localhost:6770/computeMetadata/v1/instance/service-accounts/default/token | jq -r '.access_token' > ~/.nbs-client/iam-token 
+  else
+    sudo -u nbs grpcurl --plaintext --unix /var/run/yc/token-agent/socket yandex.cloud.priv.iam.v1.TokenAgent/GetToken | jq -r '.iam_token' > ~/.nbs-client/iam-token 
+  fi
+  chmod 600 ~/.nbs-client/iam-token
+
+  LogStep "Check IAM-token"
+  RES=$(timeout -s SIGKILL $ENDPOINT_TIMEOUT blockstore-client listendpoints --host localhost --secure-port $SECURE_PORT --verbose error) \
+    || (echo $RES && echo "Please put iam-token to ~/.nbs-client/iam-token" && exit 1)
+fi
+
+LogStep "Load blockstore-server to the page cache"
+cat /usr/bin/blockstore-server > /dev/null || exit 1
+
+if $CONTROL; then
+  LogStep "Performing Drain"
+  timeout -s SIGKILL 90 blockstore-client executeaction --action DrainNode --input-bytes '{}' \
+    --host localhost --port $INSECURE_PORT --secure-port $SECURE_PORT --verbose error || test $? -eq 137
+  sleep 30
+else
+  LogStep "Configure volume balancer"
+  timeout -s SIGKILL 30 blockstore-client executeaction --action ConfigureVolumeBalancer --input-bytes '{"OpStatus": 2}' \
+    --host localhost --port $INSECURE_PORT --secure-port $SECURE_PORT --verbose error
+
+  LogStep "Rebind volumes"
+  timeout -s SIGKILL 30 blockstore-client executeaction --action RebindVolumes --input-bytes '{"Binding": 2}' \
+    --host localhost --port $INSECURE_PORT --secure-port $SECURE_PORT --verbose error || test $? -eq 137
+  sleep 5
+fi
+
+if $RUN_NBS2; then
+  LogStep "Run NBS2"
+  trap 'echo " Catch interrupt signal!"; RestartNBS; KillSecondNBS; LogStep "Restart Completed by Interruption"' EXIT
+  sudo -u nbs bash -c \
+    'timeout -s SIGKILL 300 /usr/bin/yc-nbs2-init $0 1>> /tmp/nbs2.out 2>> /tmp/nbs2.err & echo $! > $1' "$NBS2_ARGS" "$PID_FILE"
+  echo "PID has been saved to $PID_FILE"
+
+  LogStep "Ping NBS2"
+  RES=$(timeout -s SIGKILL $PING_TIMEOUT blockstore-client ping \
+    --host localhost --port $INSECURE_PORT2 --secure-port $SECURE_PORT2 --verbose error); echo $RES
+
+  if [ "$RES" = "OK" ]; then
+    LogStep "Wait for NBS2 endpoints"
+    timeout -s SIGKILL $ENDPOINT_TIMEOUT blockstore-client listendpoints --wait-for-restoring \
+      --host localhost --port $INSECURE_PORT2 --secure-port $SECURE_PORT2 --verbose error 1> /dev/null
+  fi
+  sleep 1
+fi
+
+if $RELEASE && $SHOW_RESTARTS_COUNT; then
+    RESTARTS=`RestartsCount`
+fi
+
+RestartNBS
+
+if $RUN_NBS2; then
+  trap 'echo " Catch interrupt signal!"; KillSecondNBS; LogStep "Restart Completed by Interruption"' EXIT
+fi
+
+if $RELEASE; then
+  sleep $RELEASE_SLEEP
+  if $SHOW_RESTARTS_COUNT; then
+    systemctl show nbs --property=ActiveState
+    echo RestartsCount=$((`RestartsCount` - RESTARTS))
+  else
+    systemctl show nbs -p ActiveEnterTimestampMonotonic -p ActiveState
+    echo CurrentTimestampMonotonic=`sudo awk '/now/ {print int($3 / 1000)}' /proc/timer_list`
+  fi
+fi
+
+LogStep "Ping NBS"
+RES=$(timeout -s SIGKILL $PING_TIMEOUT blockstore-client ping \
+  --host localhost --port $INSECURE_PORT --secure-port $SECURE_PORT --verbose error); echo $RES
+
+if [ "$RES" = "OK" ]; then
+  LogStep "Wait for NBS endpoints"
+  timeout -s SIGKILL $ENDPOINT_TIMEOUT blockstore-client listendpoints --wait-for-restoring \
+    --host localhost --port $INSECURE_PORT --secure-port $SECURE_PORT --verbose error 1> /dev/null
+fi
+
+if $RUN_NBS2; then
+  trap - EXIT
+  KillSecondNBS
+fi
+
+LogStep "Restart Completed"

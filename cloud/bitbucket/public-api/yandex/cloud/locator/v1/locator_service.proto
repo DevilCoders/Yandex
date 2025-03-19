@@ -1,0 +1,104 @@
+syntax = "proto3";
+
+package yandex.cloud.locator.v1;
+
+import "google/api/annotations.proto";
+import "yandex/cloud/api/tools/options.proto";
+import "yandex/cloud/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/public-api/yandex/cloud/locator/v1;locator";
+option java_package = "yandex.cloud.api.locator.v1";
+
+// A set of methods for the Locator service.
+service LocatorService {
+  // Returns a location and accuracy radius based on information about IP address,
+  // cell towers and WiFi access points that the mobile client can detect.
+  rpc GetLocation (LocationRequest) returns (LocationResponse) {
+    option (google.api.http) = { post: "/locator/v1/getLocation" body: "*" };
+    option (yandex.cloud.api.tools.method).lint_skip.http_verb = true;
+  }
+}
+
+message CellInfo {
+  // Required. Mobile Country Code ([MCC](https://en.wikipedia.org/wiki/Mobile_country_code)).
+  int64 mobile_country_code = 1 [(value) = "1-999"];
+
+  // Required. The cell tower's Mobile Network Code:
+  //
+  // * For GSM and WCDMA networks - [MNC](https://en.wikipedia.org/wiki/Mobile_country_code).
+  // * For CDMA - System ID (SID).
+  int64 mobile_network_code = 2 [(value) = ">0"];
+
+  // Required. Unique identifier of the cell:
+  //
+  // * For GSM - Cell ID ([CID](https://en.wikipedia.org/wiki/Cell_ID).
+  // * For CDMA - Base Station ID (BID).
+  // * For WCDMA - UTRAN Cell ID which is a concatenation of the [Radio Network Controller](https://en.wikipedia.org/wiki/Radio_Network_Controller) ID and Cell ID. Specifying only the Cell ID value in WCDMA networks may return inaccurate results.
+  int64 cell_id = 3 [(value) = ">0"];
+
+  // Required.
+  //
+  // * For GSM and WCDMA - Location Area Code ([LAC](https://en.wikipedia.org/wiki/Mobility_management#Location_area)).
+  // * For CDMA - Network ID (NID).
+  // * For LTE - [Tracking Area Code](https://en.wikipedia.org/wiki/Mobility_management#Tracking_area).
+  int64 location_area_code = 4 [(value) = ">0"];
+
+  // Required. The current signal strength measured in dBm.
+  int64 signal_strength = 5 [(value) = "<0"];
+}
+
+message WifiInfo {
+  // The MAC address of the WiFi access point. It's typically called a BSS, BSSID or MAC address.
+  //
+  // The value is 12 hexadecimal digits without `:` (colon) separators.
+  string bssid = 1 [(required) = true, (pattern) = "[0-9a-fA-F]{12}"];
+
+  // Required. The current signal strength measured in dBm.
+  int64 signal_strength = 2 [(value) = "<0"];
+}
+
+message LocationRequest {
+  // ID of the folder to which you have access.
+  // Required for authorization with a user account (see [yandex.cloud.iam.v1.UserAccount] resource).
+  // Don't specify this field if you make the request on behalf of a service account.
+  string folder_id = 1 [(length) = "<=50"];
+
+  // An array of visible cell towers around device.
+  repeated CellInfo cell_towers = 2;
+
+  // An array of visible WiFi access points around device.
+  repeated WifiInfo wifi_access_points = 3;
+
+  // User IP address in IPv4 or IPv6 format.
+  string ip = 4;
+
+  // Unique user identifier that can be used for debugging. May be empty.
+  string uuid = 5 [(pattern) = "[A-Za-z0-9._-]", (length) = "<=64"];
+}
+
+message Location {
+  // Assumed location latitude in degrees, from -90 to 90.
+  double latitude = 1;
+
+  // Assumed location longitude in degrees, from -180 to 180.
+  double longitude = 2;
+
+  // Assumed location precision in meters.
+  // This represents the radius of a circle around this location.
+  double precision = 3;
+}
+
+message LocationNotFound {
+  // Message with the reason.
+  string message = 1;
+}
+
+message LocationResponse {
+  oneof response {
+    // The user's estimated location.
+    Location location = 1;
+
+    // An error description if the user's location was not found.
+    LocationNotFound location_not_found = 2;
+  }
+}

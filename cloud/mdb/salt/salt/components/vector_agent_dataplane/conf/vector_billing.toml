@@ -1,0 +1,46 @@
+[sinks]
+
+[sinks.to_billing]
+type = "vector"
+version = "2"
+inputs = ["billing_parsed"]
+address = "{{ salt['dbaas.pillar']('data:vector:address') }}"
+
+[sinks.to_billing.buffer]
+type = "disk"
+max_size = 134217728
+when_full = "block"
+
+[sinks.to_billing.healthcheck]
+enabled = true
+
+[transforms]
+
+[transforms.billing_parsed]
+type = "remap"
+inputs = ["billing_file_log"]
+source = """
+. = merge!(., parse_json!(.message))
+del(.message)
+.context.file = .file
+.context.host = .host
+del(.file)
+del(.host)
+del(.source_type)
+del(.message)
+del(.timestamp)
+"""
+
+[sources]
+
+[sources.billing_file_log]
+type = "file"
+glob_minimum_cooldown_ms = 10000
+line_delimiter = "\n"
+max_line_bytes = 102400
+include = ["/var/log/dbaas-billing/billing.log"]
+read_from = "beginning"
+
+[sources.billing_file_log.fingerprint]
+ignored_header_bytes = 0
+strategy = "checksum"

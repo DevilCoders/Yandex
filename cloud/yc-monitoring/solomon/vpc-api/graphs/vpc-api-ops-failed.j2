@@ -1,0 +1,43 @@
+{% extends "vpc-api-base.j2" %}
+
+{% set id_suffix = 'ops_failed' %}
+{% set name = 'operations failed' %}
+{% set transform = 'NONE' %}
+{% set dropNans = 'true' %}
+{% set aggr = "SUM" %}
+
+{% macro prog() %}
+series_sum(['service_type', 'type', 'errorcode'],
+    drop_below({
+        sensor=vpc_operation_failed,
+        meter_type=m1_rate
+    }, 0.001)
+)
+{% endmacro %}
+{% block additional_params %}
+    ,{
+        "name": "host",
+        "value": "*"
+    }
+    ,{
+        "name": "zone",
+        "value": "*"
+    }
+    ,{
+        "name": "service_type",
+        "value": "vpc|loadbalancer"
+    }
+    ,{
+        "name": "type",
+        "value": "all"
+    }
+    ,{
+        "name": "errorcode",
+        "value": "*"
+    }
+{% endblock %}
+
+{% block elements %}
+    {{ render_element("{{service_type}}/{{type}} - {{errorcode}}", prog() | to_prog, stack="true", area="true") }}
+{% endblock %}
+

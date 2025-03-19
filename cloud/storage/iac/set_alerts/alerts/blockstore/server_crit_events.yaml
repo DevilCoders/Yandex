@@ -1,0 +1,126 @@
+definitions:
+  - &alert_id "{{.ID}}_nbs_server_crit_events"
+  - &alert_name "{{.Name}} NBS Server Critical Events"
+  - &alert_annotations_tag "yc-{{.Cluster}}-nbs-solomon"
+  - &alert_annotations_host "{{`{{labels.host}}`}}.{{.HostDomain}}"
+  - &alert_annotations_service "solomon_alert_nbs_server_crit_events"
+  - &alert_juggler_description "(doc: https://nda.ya.ru/t/ruOJldwX5Fnkjh)"
+alerts:
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_juggler_description
+    group_by_labels:
+      - host
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - testing
+      - preprod
+    expression:
+      program: |-
+        let all_events = group_lines('sum', {project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="server", host="{{.Hosts}}", sensor="AppCriticalEvents/*"});
+
+        let reassign_tablet = {project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="server", host="{{.Hosts}}", sensor="AppCriticalEvents/ReassignTablet"};
+
+        let bs_failure = {project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="server", host="{{.Hosts}}", sensor="AppCriticalEvents/TabletBSFailure"};
+
+        let collect_garbage_error = {project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="server", host="{{.Hosts}}", sensor="AppCriticalEvents/CollectGarbageError"};
+
+        let fresh_trim_error = {project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="server", host="{{.Hosts}}", sensor="AppCriticalEvents/TrimFreshLogError"};
+
+        let init_fresh_blocks_error = {project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="server", host="{{.Hosts}}", sensor="AppCriticalEvents/InitFreshBlocksError"};
+
+        let hanging_ydb_stats_error = {project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="server", host="{{.Hosts}}", sensor="AppCriticalEvents/HangingYdbStatsRequest"};
+
+        let all_events_diff = max(all_events) - min(all_events);
+        let reassign_tablets_diff = max(reassign_tablet) - min(reassign_tablet);
+        let bs_failure_diff = max(bs_failure) - min(bs_failure);
+        let collect_garbage_error_diff = max(collect_garbage_error) - min(collect_garbage_error);
+        let fresh_trim_error_diff = max(fresh_trim_error) - min(fresh_trim_error);
+        let init_fresh_blocks_error_diff = max(init_fresh_blocks_error) - min(init_fresh_blocks_error);
+        let hanging_ydb_stats_error_diff = max(hanging_ydb_stats_error) - min(hanging_ydb_stats_error);
+
+        let other_events_diff = all_events_diff
+          - reassign_tablets_diff
+          - bs_failure_diff
+          - collect_garbage_error_diff
+          - fresh_trim_error_diff
+          - init_fresh_blocks_error_diff
+          - hanging_ydb_stats_error_diff;
+
+        let epsilon = 0.00001;
+        alarm_if(other_events_diff > epsilon
+          || reassign_tablets_diff > 20
+          || bs_failure_diff > 999999
+          || collect_garbage_error_diff > 10000
+          || fresh_trim_error_diff > 10000
+          || init_fresh_blocks_error_diff > 30
+          || hanging_ydb_stats_error_diff > 10);
+
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_juggler_description
+    group_by_labels:
+      - host
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - prod_vla
+      - prod_sas
+      - prod_myt
+      - israel
+    expression:
+      program: |-
+        let all_events = group_lines('sum', {project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="server", host="{{.Hosts}}", sensor="AppCriticalEvents/*"});
+
+        let reassign_tablet = {project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="server", host="{{.Hosts}}", sensor="AppCriticalEvents/ReassignTablet"};
+
+        let invalid_tablet_config = {project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="server", host="{{.Hosts}}", sensor="AppCriticalEvents/InvalidTabletConfig"};
+
+        let bs_failure = {project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="server", host="{{.Hosts}}", sensor="AppCriticalEvents/TabletBSFailure"};
+
+        let collect_garbage_error = {project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="server", host="{{.Hosts}}", sensor="AppCriticalEvents/CollectGarbageError"};
+
+        let fresh_trim_error = {project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="server", host="{{.Hosts}}", sensor="AppCriticalEvents/TrimFreshLogError"};
+
+        let init_fresh_blocks_error = {project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="server", host="{{.Hosts}}", sensor="AppCriticalEvents/InitFreshBlocksError"};
+
+        let hanging_ydb_stats_error = {project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="server", host="{{.Hosts}}", sensor="AppCriticalEvents/HangingYdbStatsRequest"};
+
+        let all_events_diff = max(all_events) - min(all_events);
+        let reassign_tablets_diff = max(reassign_tablet) - min(reassign_tablet);
+        let invalid_tablet_config_diff = max(invalid_tablet_config) - min(invalid_tablet_config);
+        let bs_failure_diff = max(bs_failure) - min(bs_failure);
+        let collect_garbage_error_diff = max(collect_garbage_error) - min(collect_garbage_error);
+        let fresh_trim_error_diff = max(fresh_trim_error) - min(fresh_trim_error);
+        let init_fresh_blocks_error_diff = max(init_fresh_blocks_error) - min(init_fresh_blocks_error);
+        let hanging_ydb_stats_error_diff = max(hanging_ydb_stats_error) - min(hanging_ydb_stats_error);
+
+        let other_events_diff = all_events_diff
+          - reassign_tablets_diff
+          - invalid_tablet_config_diff
+          - bs_failure_diff
+          - collect_garbage_error_diff
+          - fresh_trim_error_diff
+          - init_fresh_blocks_error_diff
+          - hanging_ydb_stats_error_diff;
+
+        let epsilon = 0.00001;
+        alarm_if(other_events_diff > epsilon
+          || reassign_tablets_diff > 10
+          || invalid_tablet_config_diff > 999999
+          || bs_failure_diff > 999999
+          || collect_garbage_error_diff > 10000
+          || fresh_trim_error_diff > 10000
+          || init_fresh_blocks_error_diff > 30
+          || hanging_ydb_stats_error_diff > 10);

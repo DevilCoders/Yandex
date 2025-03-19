@@ -1,0 +1,340 @@
+# Link: https://grafana.yandex-team.ru/d/cloud-l7/cloud-l7-balancers
+#
+# How to update:
+#
+# Get token from https://oauth.yandex-team.ru/authorize?response_type=token&client_id=12225edea41e4add87aaa4c4896431f1
+#
+# $ export GRAFANA_OAUTH_TOKEN=...
+#
+# $ cd ~/arcadia/cloud/java/dashboard/src/main/resources/dashboard
+# $ sudo docker run --rm -it -v `pwd`:/data/ -e GRAFANA_OAUTH_TOKEN="$GRAFANA_OAUTH_TOKEN" registry.yandex.net/cloud/platform/dashboard:latest java -jar build/java-dashboard.jar upload /data/l7/all.yaml
+#
+
+id: 469634
+uid: cloud-l7
+title: Cloud L7 balancers
+refresh: 1m
+tags: [ycp, ycp-router, l7, alb]
+
+variables:
+  ui:
+    project:
+      values:
+        - platform
+        - yc-mk8s-masters
+        - aoem2v5as6lv1ebgg1cu
+        - b1grffd2lfm69s7koc4t
+    env:
+      values:
+        - prod
+        - preprod
+        - gpn
+    col1:
+      values:
+        - vla
+        - ru-central1-a
+        - spb99
+        - spb991
+        - spb992
+        - spb993
+    col2:
+      values:
+        - sas
+        - ru-central1-b
+        - spb99
+        - spb992
+        - spb993
+        - spb994
+    col3:
+      values:
+        - myt
+        - ru-central1-c
+        - spb99
+        - spb993
+        - spb994
+        - spb995
+  uiQuery:
+    cluster:
+      datasource: 'Solomon Cloud'
+      labels: 'project="$project", cluster="l7-*|cloud_${env}_*"'
+      inheritLabels: false
+
+graphDefaults:
+  datasource: 'Solomon Cloud'
+  width: 6
+  height: 8
+
+queryDefaults:
+  dropNan: true
+  labels: >-
+    project=${project},
+    service=api_envoy_tags_ma,
+    cluster=${cluster},
+    host=!cluster
+
+
+panels:
+######################################################
+# Misc
+
+- type: graph
+  title: Memory allocated in heap
+  yAxes: [{ format: bytes }]
+  queries:
+  - params: { labels: 'name=alb_memory_allocated' }
+    groupByTime: { max: default }
+
+- type: graph
+  title: Heap size
+  yAxes: [{ format: bytes }]
+  queries:
+  - params: { labels: 'name=alb_memory_heap_size' }
+    groupByTime: { max: default }
+
+- type: graph
+  title: Uptime
+  display: { fill: 0 }
+  yAxes: [{ format: s, min: 100, logBase: 10 }]
+  queries:
+  - params: { labels: 'name=alb_uptime' }
+    groupByTime: { max: default }
+
+- type: graph
+  title: 5xx
+  yAxes: [{ min: -1 }]
+  queries:
+  - params:
+      labels: >-
+        name=alb_http_downstream_rq_xx,
+        alb_response_code_class=5,
+        envoy_listener_address=!*_30080,
+        metrics_group=listener
+    select:
+      diff: []
+      group_by_labels: [sum, host]
+    groupByTime: { max: default }
+
+
+######################################################
+# Connections
+#
+#  void InstanceImpl::flushStatsInternal() {
+#    ...
+#    server_stats_->total_connections_.set(listener_manager_->numConnections() +
+#                                          parent_stats.parent_connections_);
+
+
+- type: graph
+  title: Total connections ${col1}
+  queries:
+  - params: { labels: 'host=*-${col1}*, name=alb_total_connections' }
+    groupByTime: { max: default }
+- type: graph
+  title: Total connections ${col2}
+  queries:
+  - params: { labels: 'host=*-${col2}*, name=alb_total_connections' }
+    groupByTime: { max: default }
+- type: graph
+  title: Total connections ${col3}
+  queries:
+  - params: { labels: 'host=*-${col3}*, name=alb_total_connections' }
+    groupByTime: { max: default }
+
+# No Route
+- type: graph
+  title: No route errors
+  queries:
+  - params: { labels: 'name=alb_http_no_route' }
+    groupByTime: { max: default }
+    select: { group_by_labels: [sum, host], diff: [] }
+
+
+######################################################
+# RPS
+#
+# ConnectionManagerImpl::ActiveStream::ActiveStream() {
+#   ...
+#   connection_manager_.stats_.named_.downstream_rq_total_.inc();
+
+- type: graph
+  title: RPS ${col1}
+  yAxes: [{ decimals: 0, format: short, min: 0 }]
+  queries:
+  - params: { labels: 'host=*-${col1}*, name=alb_http_downstream_rq_total, alb_http_conn_manager_prefix=usr_*' }
+    groupByTime: { max: default }
+    select: { group_by_labels: [sum, host], non_negative_derivative: [] }
+- type: graph
+  title: RPS ${col2}
+  yAxes: [{ decimals: 0, format: short, min: 0 }]
+  queries:
+  - params: { labels: 'host=*-${col2}*, name=alb_http_downstream_rq_total, alb_http_conn_manager_prefix=usr_*' }
+    groupByTime: { max: default }
+    select: { group_by_labels: [sum, host], non_negative_derivative: [] }
+- type: graph
+  title: RPS ${col3}
+  yAxes: [{ decimals: 0, format: short, min: 0 }]
+  queries:
+  - params: { labels: 'host=*-${col3}*, name=alb_http_downstream_rq_total, alb_http_conn_manager_prefix=usr_*' }
+    groupByTime: { max: default }
+    select: { group_by_labels: [sum, host], non_negative_derivative: [] }
+
+# TLS
+- type: graph
+  title: TLS connection error
+  queries:
+  - params: { labels: 'name=alb_ssl_connection_error' }
+    groupByTime: { max: default }
+    select: { group_by_labels: [sum, host], diff: [] }
+
+######################################################
+# Request time
+# TODO(CLOUD-43180): use api_envoy_tags_ma.
+
+- type: graph
+  title: Request time ${col1}
+  yAxes: [{ format: ms }]
+  queries:
+  - params: { labels: 'host=*-${col1}*, alb_http_conn_manager_prefix=usr_*, name=alb_http_downstream_rq_time' }
+    groupByTime: { max: default }
+    select: { non_negative_derivative: [], histogram_percentile: ["95", "bin"] }
+  - params: { labels: 'host=*-${col1}*, alb_http_conn_manager_prefix=usr_*, name=alb_http_downstream_rq_time' }
+    groupByTime: { max: default }
+    select: { non_negative_derivative: [], histogram_percentile: ["99", "bin"] }
+- type: graph
+  title: Request time ${col2}
+  yAxes: [{ format: ms }]
+  queries:
+  - params: { labels: 'host=*-${col2}*, alb_http_conn_manager_prefix=usr_*, name=alb_http_downstream_rq_time' }
+    groupByTime: { max: default }
+    select: { non_negative_derivative: [], histogram_percentile: ["95", "bin"] }
+  - params: { labels: 'host=*-${col2}*, alb_http_conn_manager_prefix=usr_*, name=alb_http_downstream_rq_time' }
+    groupByTime: { max: default }
+    select: { non_negative_derivative: [], histogram_percentile: ["99", "bin"] }
+- type: graph
+  title: Request time ${col3}
+  yAxes: [{ format: ms }]
+  queries:
+  - params: { labels: 'host=*-${col3}*, alb_http_conn_manager_prefix=usr_*, name=alb_http_downstream_rq_time' }
+    groupByTime: { max: default }
+    select: { non_negative_derivative: [], histogram_percentile: ["95", "bin"] }
+  - params: { labels: 'host=*-${col3}*, alb_http_conn_manager_prefix=usr_*, name=alb_http_downstream_rq_time' }
+    groupByTime: { max: default }
+    select: { non_negative_derivative: [], histogram_percentile: ["99", "bin"] }
+
+# HC fail
+- type: graph
+  title: Active HC network failure
+  queries:
+  - params: { labels: 'name=alb_network_failure' }
+    groupByTime: { max: default }
+    select: { group_by_labels: [sum, host], diff: [] }
+
+######################################################
+# Errors
+
+- type: graph
+  title: xDS update rejected
+  queries:
+  - params: { labels: 'name=alb_update_rejected' }
+    groupByTime: { max: default }
+    select: { group_by_labels: [sum, host], diff: [] }
+
+- type: graph
+  title: LDS update rejected
+  queries:
+  - params: { labels: 'name=alb_listener_manager_lds_update_rejected' }
+    groupByTime: { max: default }
+    select: { group_by_labels: [sum, host], diff: [] }
+
+- type: graph
+  title: RDS update rejected
+  queries:
+  - params: { labels: 'name=alb_http_rds_update_rejected' }
+    groupByTime: { max: default }
+    select: { group_by_labels: [sum, host], diff: [] }
+
+- type: graph
+  title: CDS update rejected
+  queries:
+  - params: { labels: 'name=alb_cluster_manager_cds_update_rejected' }
+    groupByTime: { max: default }
+    select: { group_by_labels: [sum, host], diff: [] }
+
+######################################################
+# Disks
+
+- type: graph
+  title: Disk written bytes vda
+  queries:
+  - params: { labels: 'service=node-exporter_ma, name=node_disk_written_bytes_total, device=vda' }
+    groupByTime: { max: default }
+    select: { group_by_labels: [sum, host], non_negative_derivative: [] }
+- type: graph
+  title: Disk written bytes vdb
+  queries:
+  - params: { labels: 'service=node-exporter_ma, name=node_disk_written_bytes_total, device=vdb' }
+    groupByTime: { max: default }
+    select: { group_by_labels: [sum, host], non_negative_derivative: [] }
+- type: graph
+  title: Disk read bytes vda
+  queries:
+  - params: { labels: 'service=node-exporter_ma, name=node_disk_read_bytes_total, device=vda' }
+    groupByTime: { max: default }
+    select: { group_by_labels: [sum, host], non_negative_derivative: [] }
+- type: graph
+  title: Disk read bytes vdb
+  queries:
+  - params: { labels: 'service=node-exporter_ma, name=node_disk_read_bytes_total, device=vdb' }
+    groupByTime: { max: default }
+    select: { group_by_labels: [sum, host], non_negative_derivative: [] }
+
+######################################################
+# CPU
+
+- type: graph
+  title: CPU seconds idle ${col1}
+  queries:
+  - params: { labels: 'service=node-exporter_ma, name=node_cpu_seconds_total, mode=idle, host=*-${col1}*' }
+    groupByTime: { max: default }
+    select: { group_by_labels: [sum, host], non_negative_derivative: [] }
+
+- type: graph
+  title: CPU seconds idle ${col2}
+  queries:
+  - params: { labels: 'service=node-exporter_ma, name=node_cpu_seconds_total, mode=idle, host=*-${col2}*' }
+    groupByTime: { max: default }
+    select: { group_by_labels: [sum, host], non_negative_derivative: [] }
+
+- type: graph
+  title: CPU seconds idle ${col3}
+  queries:
+  - params: { labels: 'service=node-exporter_ma, name=node_cpu_seconds_total, mode=idle, host=*-${col3}*' }
+    groupByTime: { max: default }
+    select: { group_by_labels: [sum, host], non_negative_derivative: [] }
+
+######################################################
+# Misc
+
+- type: graph
+  title: XDS stream close status
+  queries:
+  - params: { labels: 'name=alb_grpc_xds_streams_closed_*' }
+    groupByTime: { max: default }
+    select: { group_by_labels: [sum, host], diff: [] }
+
+######################################################
+# Free space
+
+- type: graph
+  title: Boot disk bytes available
+  yAxes: [{ format: bytes }]
+  queries:
+  - params: { labels: 'service=node-exporter_ma, name=node_filesystem_avail_bytes, mountpoint=/' }
+    groupByTime: { max: default }
+
+- type: graph
+  title: /var/log/fluent bytes available
+  yAxes: [{ format: bytes }]
+  queries:
+  - params: { labels: 'service=node-exporter_ma, name=node_filesystem_avail_bytes, mountpoint=/var/log/fluent' }
+    groupByTime: { max: default }

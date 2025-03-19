@@ -1,0 +1,314 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.k8s.v1;
+
+import "google/protobuf/field_mask.proto";
+
+import "yandex/cloud/api/operation.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+import "yandex/cloud/priv/validation.proto";
+import "yandex/cloud/priv/k8s/v1/cluster.proto";
+import "yandex/cloud/priv/k8s/v1/node_group.proto";
+import "yandex/cloud/priv/k8s/v1/node.proto";
+import "yandex/cloud/priv/k8s/v1/version.proto";
+import "yandex/cloud/priv/billing/v1/light_metric.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/k8s/v1;k8s";
+option java_outer_classname = "PMKCS";
+
+service ClusterService {
+  rpc Get(GetClusterRequest) returns (Cluster);
+
+  rpc List(ListClustersRequest) returns (ListClustersResponse);
+
+  rpc Create(CreateClusterRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "CreateClusterMetadata"
+      response: "Cluster"
+    };
+  }
+
+  rpc Update(UpdateClusterRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateClusterMetadata"
+      response: "Cluster"
+    };
+  }
+
+  rpc Delete(DeleteClusterRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeleteClusterMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+
+  rpc Stop(StopClusterRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "StopClusterMetadata"
+      response: "Cluster"
+    };
+  }
+
+  rpc Start(StartClusterRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "StartClusterMetadata"
+      response: "Cluster"
+    };
+  }
+
+  rpc DeleteStopped(DeleteStoppedClusterRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeleteStoppedClusterMetadata"
+      response: "google.protobuf.Empty"
+    }; 
+  }
+
+  rpc ListNodeGroups(ListClusterNodeGroupsRequest) returns (ListClusterNodeGroupsResponse);
+  rpc ListNodes(ListClusterNodesRequest) returns (ListClusterNodesResponse);
+  rpc ListOperations(ListClusterOperationsRequest) returns (ListClusterOperationsResponse);
+  rpc ListVersions(ListClusterVersionsRequest) returns (ListClusterVersionsResponse);
+  rpc ListUpdateVersions(ListClusterUpdateVersionsRequest) returns (ListClusterUpdateVersionsResponse);
+  rpc SimulateBillingMetrics (CreateClusterRequest) returns (billing.v1.ConsoleLightMetric);
+}
+
+message GetClusterRequest {
+  string cluster_id = 1 [(required) = true];
+}
+
+message ListClustersRequest {
+  string folder_id = 1 [(required) = true];
+
+  int64 page_size = 2 [(value) = "0-1000"];
+  string page_token = 3 [(length) = "<=100"];
+  string filter = 4 [(length) = "<=1000"];
+}
+
+message ListClustersResponse {
+  repeated Cluster clusters = 1;
+  string next_page_token = 2;
+}
+
+message DeleteClusterRequest {
+  string cluster_id = 1 [(required) = true];
+}
+
+message DeleteClusterMetadata {
+  string cluster_id = 1;
+}
+
+message UpdateClusterRequest {
+  string cluster_id = 1 [(required) = true];
+  google.protobuf.FieldMask update_mask = 2;
+
+  string name = 3 [(pattern) = "|[a-z]([-a-z0-9]{0,61}[a-z0-9])?"];
+  string description = 4 [(length) = "<=256"];
+  map<string, string> labels = 5 [(size) = "<=64", (length) = "<=63", (pattern) = "[-_0-9a-z]*", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_0-9a-z]*"];
+
+  MasterUpdateSpec master_spec = 9;
+
+  oneof internet_gateway {
+    string gateway_ipv4_address = 6 [(length) = "<=15"];
+  }
+  string service_account_id = 7;
+  string node_service_account_id = 8;
+
+  NetworkPolicy network_policy = 10;
+
+  IPAllocationPolicy ip_allocation_policy = 11;
+}
+
+message StopClusterMetadata {
+  string cluster_id = 1;
+}
+
+message StopClusterRequest {
+  string cluster_id = 1 [(required) = true];
+  string service_account_id = 2;
+}
+
+message StartClusterMetadata {
+  string cluster_id = 1;
+}
+
+message StartClusterRequest {
+  string cluster_id = 1 [(required) = true];
+}
+
+message DeleteStoppedClusterRequest {
+  string cluster_id = 1 [(required) = true];
+  string service_account_id = 2;
+}
+
+message DeleteStoppedClusterMetadata {
+  string cluster_id = 1;
+}
+
+message MasterUpdateSpec {
+  UpdateVersionSpec version = 1;
+  MasterMaintenancePolicy maintenance_policy = 2;
+  repeated string security_group_ids = 3;
+}
+
+message UpdateClusterMetadata {
+  string cluster_id = 1;
+}
+
+message CreateClusterRequest {
+  string folder_id = 1 [(required) = true];
+  string name = 2 [(pattern) = "|[a-z]([-a-z0-9]{0,61}[a-z0-9])?"];
+  string description = 3 [(length) = "<=256"];
+  map<string, string> labels = 4 [(size) = "<=64", (length) = "<=63", (pattern) = "[-_0-9a-z]*", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_0-9a-z]*"];
+
+  string network_id = 5 [(required) = true];
+  MasterSpec master_spec = 6 [(required) = true];
+  IPAllocationPolicy ip_allocation_policy = 7;
+
+  oneof internet_gateway {
+    string gateway_ipv4_address = 8 [(length) = "<=15"];
+  }
+
+  // Service account to be used for provisioning compute/vpc resources for kubernetes cluster.
+  // Selected service account should have `edit` role on the folder where the cluster will be
+  // located and on the folder where selected network resides.
+  string service_account_id = 9 [(required) = true];
+  // Service account to be used by the worker nodes of the cluster to access container
+  // registry or to push node logs/metrics.
+  string node_service_account_id = 10 [(required) = true];
+
+  // REGULAR by default.
+  ReleaseChannel release_channel = 11;
+
+  NetworkPolicy network_policy = 12;
+
+  KMSProvider kms_provider = 13;
+
+  oneof network_implementation {
+    Cilium cilium = 14;
+  }
+}
+
+message CreateClusterMetadata {
+  string cluster_id = 1;
+}
+
+message AutoUpgradeMasterMetadata {
+  string cluster_id = 1;
+}
+
+message ListClusterOperationsRequest {
+  string cluster_id = 1 [(required) = true];
+
+  int64 page_size = 2 [(value) = "0-1000"];
+  string page_token = 3 [(length) = "<=100"];
+  string filter = 4 [(length) = "<=1000"];
+}
+
+message ListClusterOperationsResponse {
+  repeated operation.Operation operations = 1;
+  string next_page_token = 2;
+}
+
+message ListClusterNodeGroupsRequest {
+  string cluster_id = 1 [(required) = true];
+
+  int64 page_size = 2 [(value) = "0-1000"];
+  string page_token = 3 [(length) = "<=100"];
+  string filter = 4 [(length) = "<=1000"];
+}
+
+message ListClusterNodeGroupsResponse {
+  repeated NodeGroup node_groups = 1;
+  string next_page_token = 2;
+}
+
+message ListClusterNodesRequest {
+  string cluster_id = 1 [(required) = true];
+
+  int64 page_size = 2 [(value) = "0-1000"];
+  string page_token = 3 [(length) = "<=100"];
+}
+
+message ListClusterNodesResponse {
+  repeated Node nodes = 1;
+  string next_page_token = 2;
+}
+
+message MasterSpec {
+  oneof master_type {
+    option (exactly_one) = true;
+    ZonalMasterSpec zonal_master_spec = 1;
+    RegionalMasterSpec regional_master_spec = 2;
+  }
+
+  string version = 3;
+  MasterMaintenancePolicy maintenance_policy = 4;
+  // 0 means latest. That's one more reason why revisions must start from 1.
+  int64 specific_revision = 5 [(value) = ">=0"];
+  repeated string security_group_ids = 6;
+}
+
+message ZonalMasterSpec {
+  string zone_id = 1 [(required) = true];
+
+  // If not specified and there is a single subnet in specified zone, address
+  // in this subnet will be allocated.
+  InternalAddressSpec internal_v4_address_spec = 2;
+
+  // Specification of parameters for external IPv4 networking.
+  ExternalAddressSpec external_v4_address_spec = 3;
+}
+
+message InternalAddressSpec {
+  string subnet_id = 2;
+}
+
+message ExternalAddressSpec {
+  // IP address.
+  string address = 1;
+}
+
+message RegionalMasterSpec {
+  string region_id = 1 [(required) = true];
+
+  repeated MasterLocation locations = 2;
+
+  // Specification of parameters for external IPv4 networking.
+  ExternalAddressSpec external_v4_address_spec = 3;
+
+  // Specification of parameters for external IPv6 networking.
+  ExternalAddressSpec external_v6_address_spec = 4;
+}
+
+message MasterLocation {
+  string zone_id = 1 [(required) = true];
+
+  // If not specified and there is a single subnet in specified zone, address
+  // in this subnet will be allocated.
+  InternalAddressSpec internal_v4_address_spec = 2;
+}
+
+message ListClusterVersionsRequest {
+}
+
+message ListClusterVersionsResponse {
+  repeated ClusterVersions available_versions = 1;
+}
+
+message ClusterVersions {
+  ReleaseChannel release_channel = 1;
+
+  // list of available versions for cluster create.
+  repeated string versions = 2;
+
+  // Default version. (can be empty).
+  string default_version = 3;
+}
+
+message ListClusterUpdateVersionsRequest {
+  string cluster_id = 1 [(required) = true];
+}
+
+message ListClusterUpdateVersionsResponse {
+  // list of available versions for cluster update (in most cases will be one version or empty list).
+  repeated string versions = 1;
+}

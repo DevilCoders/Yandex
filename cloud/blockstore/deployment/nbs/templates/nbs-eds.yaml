@@ -1,0 +1,107 @@
+apiVersion: datadoghq.com/v1alpha1
+kind: ExtendedDaemonSet
+metadata:
+  name: nbs
+  namespace: nbs
+  annotations:
+    # hack to perform rolling update pods if configMap change
+    checksum/config: {{ include (print $.Template.BasePath "/nbs-configmap.yaml") . | sha256sum }}
+spec:
+  securityContext:
+    privileged: true
+    allowedProcMountTypes:
+    - Unmasked
+    - Default
+  strategy:
+    canary:
+      replicas: 1
+      autoFail:
+        enabled: False
+  template:
+    spec:
+      nodeSelector:
+        compute-node: "1"
+      hostNetwork: true
+      {{- if .Values.config.nbs.MockNrd }}
+      initContainers:
+      - name: mock-nrd
+        image: cr.yandex/crpmrci5rfvf3uu8np78/mock-nrd:{{ .Chart.AppVersion }}
+        volumeMounts:
+          - name: nbs-nrd-mock
+            mountPath: /Berkanavt/nbs-server/data/
+            readonly: false
+          - name: nbs-configs
+            mountPath: /Berkanavt/nbs-server/cfg/
+        command: ['bash', '-c', '/usr/bin/mock-nrd.sh']
+      {{- end }}
+      containers:
+      - name: yandex-cloud-blockstore-server
+        image: cr.yandex/crpmrci5rfvf3uu8np78/yandex-cloud-blockstore-server:{{ .Chart.AppVersion }}
+        command: ['bash', '-c', '/usr/bin/configure-and-start.sh']
+        securityContext:
+          procMount: Unmasked
+          privileged: true 
+          capabilities:
+            add:
+              - SYS_PTRACE
+              - SYS_ADMIN
+        volumeMounts:
+          - name: nbs-configs
+            mountPath: /Berkanavt/nbs-server/cfg/
+          {{- if .Values.config.nbs.MockNrd }}
+          - name: nbs-nrd-mock
+            mountPath: /Berkanavt/nbs-server/data/
+            readOnly: false
+          {{- end }} 
+          - name: var-log
+            mountPath: /var/log/
+            readOnly: false
+          - name: dev-log
+            mountPath: /dev/log
+            readOnly: false
+          - name: var-lib-yc
+            mountPath: /var/lib/yc
+            readOnly: false
+
+      {{- if .Values.config.nbs.MockNrd }}
+        postStart:
+          exec:
+            command: ['bash', '-c', 'blockstore-client UpdateDiskRegistryConfig --config /Berkanavt/nbs-server/cfg/nbs-client.txt --input /Berkanavt/nbs-server/cfg/nbs-disk-registry.txt --proto && blockstore-client ExecuteAction --action AllowDiskAllocation --input-bytes "{ \"Allow\": true }"']
+      {{- end }}
+      - name: yandex-cloud-blockstore-http-proxy
+        image: cr.yandex/crpmrci5rfvf3uu8np78/yandex-cloud-blockstore-http-proxy:{{ .Chart.AppVersion }}
+        command: ['bash', '-c', '/usr/bin/blockstore-http-proxy --config=/Berkanavt/nbs-server/cfg/nbs-http-proxy.txt']
+        securityContext:
+          capabilities:
+            add:
+              - SYS_PTRACE
+              - SYS_ADMIN
+        volumeMounts:
+          - name: nbs-configs
+            mountPath: /Berkanavt/nbs-server/cfg/
+          - name: var-log
+            mountPath: /var/log/
+            readOnly: false
+          - name: dev-log
+            mountPath: /dev/log
+            readOnly: false
+      volumes:
+      - name: nbs-configs
+        configMap:
+          name: nbs
+      {{- if .Values.config.nbs.MockNrd }}
+      - name: nbs-nrd-mock
+        emptyDir: {}
+      {{- end}}
+      - name: var-log
+        hostPath:
+          type: Directory
+          path: /var/log/
+      - name: dev-log
+        hostPath:
+          type: Socket
+          path: /dev/log
+      - name: var-lib-yc
+        hostPath:
+          type: DirectoryOrCreate
+          path: /var/lib/yc

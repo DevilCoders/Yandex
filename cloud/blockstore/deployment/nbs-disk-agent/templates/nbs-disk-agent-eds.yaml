@@ -1,0 +1,52 @@
+apiVersion: datadoghq.com/v1alpha1
+kind: ExtendedDaemonSet
+metadata:
+  name: nbs-disk-agent-eds
+  namespace: nbs-disk-agent
+spec:
+  strategy:
+    canary:
+      replicas: 1
+      autoFail:
+        enabled: False
+    spec:
+      nodeSelector:
+        nbs-disk-agent: "1"
+      hostNetwork: true
+      containers:
+      - name: yandex-cloud-blockstore-disk-agent
+        image: cr.yandex/crpmrci5rfvf3uu8np78/yandex-cloud-blockstore-disk-agent:{{ .Chart.appVersion }}
+        command: ['bash', '-c', 'source /Berkanavt/nbs-server/cfg/nbs_disk_agent.cfg && /usr/bin/blockstore-disk-agent ${nbs_arg}']
+        securityContext:
+          capabilities:
+            add:
+              - SYS_PTRACE
+              - SYS_ADMIN
+        volumeMounts:
+          - name: nbs-disk-agent-configs
+            mountPath: /Berkanavt/nbs-server/cfg/
+          - name: nbs-disk-agent-location-config
+            mountPath: /Berkanavt/nbs-server/cfg-location/nbs-location.txt
+          - name: var-log
+            mountPath: /var/log/
+            readOnly: false
+          - name: dev-log
+            mountPath: /dev/log
+            readOnly: false
+
+      volumes:
+      - name: nbs-disk-agent-configs
+        configMap:
+          name: configmap-nbs
+      - name: nbs-disk-agent-location-config
+        hostPath:
+          type: File
+          path: /Berkanavt/nbs-server/cfg/nbs-location.txt
+      - name: var-log
+        hostPath:
+          type: Directory
+          path: /var/log/
+      - name: dev-log
+        hostPath:
+          type: Socket
+          path: /dev/log

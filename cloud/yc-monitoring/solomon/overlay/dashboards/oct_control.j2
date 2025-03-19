@@ -1,0 +1,89 @@
+{% extends "../../base/dashboard.j2" %}
+
+{% set cluster = "cloud_" + env + "_oct" %}
+
+{% macro render_row_azs(title, query, hostnum=None, service="oct_control", title2=None, query2=None) %}
+{ "panels": [
+    {% for az in zones_by_env[env] %}
+      {% set colspan    = 1 if title2 else 2 %}
+
+      {% set number_with_mask = "*" + hostnum|string if hostnum != "*" else hostnum %}
+
+      {% set host       = "oct-*" + az.prefix + number_with_mask|string if hostnum else dc_aggregate_name(az.prefix) %}
+      {% set host_title = host if hostnum else host|upper %}
+      {{ render_panel(title + " @ " + host_title, cluster, service, query=query + "&l.host=" + host, colspan=colspan) }}
+
+      {% if title2 %}
+      ,
+      {{ render_panel(title2 + " @ " + host_title, cluster, service, query=query2 + "&l.host=" + host, colspan=colspan) }}
+      {% endif %}
+
+      {% if not loop.last %},{% endif %}
+    {% endfor %}
+]}
+{% endmacro %}
+
+{% block rows %}
+[
+    {{ render_row_azs(service = "oct_head_cgroup_metrics",
+                      hostnum = "*",
+                      title   = "CPU on oct-head",
+                      query   = "l.metric=cpuacct.usage&graph=auto&l.unit=contrail-control&stack=false",
+
+                      title2  = "Memory (RSS) on oct-head",
+                      query2  = "l.metric=rss&graph=auto&l.unit=contrail-control&stack=false") }},
+
+    {{ render_row_azs(service = "oct_ctrl_cgroup_metrics",
+                      hostnum = "*",
+                      title   = "CPU oct-ctrl",
+                      query   = "l.metric=cpuacct.usage&graph=auto&l.unit=contrail-control&stack=false",
+
+                      title2  = "Memory (RSS) on oct-ctrl",
+                      query2  = "l.metric=rss&graph=auto&l.unit=contrail-control&stack=false") }},
+
+    {{ render_row_azs(title   = "Tasks/sec",
+                      query   = "l.name=tasks.entries.created_per_second&graph=auto&stack=false") }},
+
+    {{ render_row_azs(title   = "Peers OK",
+                      query   = "l.name=neigh.by-type.*count&graph=auto&filter=top&filterLimit=20&l.status=OK&graphMode=bars",
+
+                      title2  = "Peers CRIT",
+                      query2  = "l.name=neigh.by-type.*count&graph=auto&filter=top&filterLimit=20&l.status=CRIT") }},
+
+    {{ render_row_azs(hostnum = "*",
+                      title   = "Nodes per Control",
+                      query   = "l.name=neigh.by-type.count&l.type=compute&graph=auto&stack=false",
+
+                      title2  = "Nodes per Control",
+                      query2  = "l.name=neigh.by-type.count&l.type=compute&graph=auto&graphMode=pieChart") }},
+
+    {{ render_row_azs(service = "oct_control_routes",
+                      title   = "BGP prefixes",
+                      query   = "l.name=routes.by-class-family.prefixes&graph=auto&l.class=bgp%3Al3vpn&stack=false",
+
+                      title2  = "BGP paths",
+                      query2  = "l.name=routes.by-class-family.paths&graph=auto&l.class=bgp%3Al3vpn&stack=false") }},
+
+    {{ render_row_azs(service = "oct_control_routes",
+                      title   = "FIP prefixes",
+                      query   = "l.name=routes.by-class-family.prefixes&graph=auto&l.class=fip%3A*&stack=false",
+
+                      title2  = "Vnet prefixes",
+                      query2  = "l.name=routes.by-class-family.prefixes&graph=auto&l.class=vnet%3A*&stack=false") }},
+
+    {{ render_row_azs(title   = "Avg. Neighbour Paths",
+                      query   = "l.name=neigh.by-type.paths_avg&graph=auto&stack=false") }},
+
+    {{ render_row_azs(title   = "BGP rx/sec",
+                      query   = "l.name=neigh.by-type.peer_stats.rx.calls_per_second&graph=auto&stack=false",
+
+                      title2  = "BGP tx/sec",
+                      query2   = "l.name=neigh.by-type.peer_stats.tx.calls_per_second&graph=auto&stack=false") }},
+
+    {{ render_row_azs(title   = "IfMap nodes",
+                      query   = "l.name=ifmap.tables.node_count&l.table=*&graph=auto&stack=false",
+
+                      title2  = "IFMap/Discovery CRITs",
+                      query2  = "l.name=connections.*&l.status=!OK&graph=auto") }}
+]
+{% endblock %}

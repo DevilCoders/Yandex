@@ -1,0 +1,35 @@
+[Unit]
+Description=Contrail vrouter agent service
+After=network.target
+
+# Logic behind params:
+# Assume loading after restart takes 5 seconds.
+# If we restarted 10 times during last minute we worked no more than 10 seconds
+# If so, it's better to stop resetting connectivity and blinking with routes to CGW,
+# so we won't cause any more problems in control plane.
+StartLimitInterval=60s
+StartLimitBurst=10
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/contrail-vrouter-agent
+PIDFile=/var/run/contrail/contrail-vrouter-agent.pid
+# If we want to restart fast, we need to also stop fast (default is 90s)
+TimeoutStopSec=1
+Restart=always
+RestartSec=0.1
+ExecStop=/bin/kill -s TERM $MAINPID
+PrivateTmp=yes
+ProtectHome=yes
+ReadOnlyDirectories=/
+ReadWriteDirectories=-/dev
+ReadWriteDirectories=-/run
+ReadWriteDirectories=-/var/crashes
+ReadWriteDirectories=-/var/lib/contrail
+ReadWriteDirectories=-/var/log/contrail
+ReadWriteDirectories=-{{ flow_log_directory }}
+LimitCORE=infinity
+MemoryLimit=20G
+
+[Install]
+WantedBy=multi-user.target

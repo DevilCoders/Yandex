@@ -1,0 +1,233 @@
+{
+    "appConfig": {},
+    "application": "kten-namespaces",
+    "id": "677cbee7-0d7b-4eb7-a9fc-8dad784b091c",
+    "index": 2,
+    "keepWaitingPipelines": false,
+    "limitConcurrent": true,
+    "name": "update-teams-for-stand",
+    "parameterConfig": [
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": true,
+            "label": "",
+            "name": "stand",
+            "options": [
+                {
+                    "value": "testing"
+                },
+                {
+                    "value": "preprod"
+                },
+                {
+                    "value": "prod"
+                }
+            ],
+            "pinned": true,
+            "required": true
+        },
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "",
+            "name": "releaseTicket",
+            "options": [],
+            "pinned": true,
+            "required": true
+        },
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "",
+            "name": "teamsHW",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": false,
+            "required": true
+        },
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "",
+            "name": "teamsSVM",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": false,
+            "required": true
+        }
+    ],
+    "spelEvaluator": "v4",
+    "stages": [
+        {
+            "failOnFailedExpressions": true,
+            "name": "Configure Context",
+            "refId": "1",
+            "requisiteStageRefIds": [],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "stand",
+                    "value": "${{\"testing\", \"preprod\", \"prod\"}.contains(parameters.stand) ? parameters.stand : UnsupportedStand}"
+                },
+                {
+                    "key": "releaseTicket",
+                    "value": "${parameters.releaseTicket}"
+                },
+                {
+                    "key": "branchName",
+                    "value": "${parameters.releaseTicket + \"_\" + parameters.stand}"
+                },
+                {
+                    "key": "teamsHW",
+                    "value": "${parameters.teamsHW}"
+                },
+                {
+                    "key": "teamsSVM",
+                    "value": "${parameters.teamsSVM}"
+                }
+            ]
+        },
+        {
+            "actions": [
+                {
+                    "actionId": "cdf79792-0f69-436b-9c65-283ce5406de0",
+                    "actionName": "Check if branch exists for testing",
+                    "actionType": "getBranch",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branchName": "${branchName}",
+                    "outputVariable": "branchInfo",
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                }
+            ],
+            "completeOtherBranchesThenFail": false,
+            "continuePipeline": true,
+            "failPipeline": false,
+            "name": "Check if branch exists",
+            "refId": "10",
+            "requisiteStageRefIds": [
+                "1"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "actions": [
+                {
+                    "actionName": "create",
+                    "actionType": "createBranch",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branchName": "${branchName}",
+                    "outputVariable": "branchInfo",
+                    "project": "cloud",
+                    "repo": "k8s-deploy",
+                    "startPoint": "master"
+                }
+            ],
+            "name": "Create Branch",
+            "refId": "11",
+            "requisiteStageRefIds": [
+                "10"
+            ],
+            "stageEnabled": {
+                "expression": "${branchInfo == null}",
+                "type": "expression"
+            },
+            "type": "bitbucket"
+        },
+        {
+            "actions": [
+                {
+                    "actionName": "Update HW",
+                    "actionType": "writeFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "commitMessage": "${releaseTicket} Update teams for HW in ${stand}",
+                    "filePath": "${stand}/enginfra-namespaces_hw-values.yaml",
+                    "ignoreUnmodified": true,
+                    "newContent": "${teamsHW}",
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                },
+                {
+                    "actionName": "update SVM",
+                    "actionType": "writeFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "commitMessage": "${releaseTicket} Update teams for SVM in ${stand}",
+                    "filePath": "${stand}/enginfra-namespaces_svm-values.yaml",
+                    "ignoreUnmodified": true,
+                    "newContent": "${teamsSVM}",
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                },
+                {
+                    "actionId": "e0705394-6b74-4b83-8752-d866afed7bce",
+                    "actionName": "Create PR",
+                    "actionType": "createPullRequest",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "description": "Update kten teams in ${stand}",
+                    "findExisting": true,
+                    "fromRef": "${branchName}",
+                    "ignoreEmpty": true,
+                    "outputVariable": "pullRequest",
+                    "project": "cloud",
+                    "repo": "k8s-deploy",
+                    "title": "${releaseTicket} Update kten teams in ${stand}",
+                    "toRef": "master"
+                }
+            ],
+            "name": "Update Values",
+            "refId": "12",
+            "requisiteStageRefIds": [
+                "11",
+                "10"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "attempts": 1,
+            "buildConfigurationId": "Selfhost_GenerateK8sManifests",
+            "buildParameters": [
+                {
+                    "key": "env.PREFIX",
+                    "value": "enginfra/namespaces"
+                }
+            ],
+            "logicalBranchName": "${branchName}",
+            "name": "Generate Manifests",
+            "refId": "13",
+            "requisiteStageRefIds": [
+                "12"
+            ],
+            "tcProfile": "aw",
+            "type": "teamcityBuild"
+        },
+        {
+            "actions": [
+                {
+                    "actionName": "Wait PR",
+                    "actionType": "waitPullRequest",
+                    "source": "priorAction",
+                    "sourceActionId": "e0705394-6b74-4b83-8752-d866afed7bce"
+                }
+            ],
+            "name": "Wait for PR merged",
+            "refId": "14",
+            "requisiteStageRefIds": [
+                "13"
+            ],
+            "type": "bitbucket"
+        }
+    ],
+    "triggers": []
+}

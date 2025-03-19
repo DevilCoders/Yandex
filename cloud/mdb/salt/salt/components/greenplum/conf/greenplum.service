@@ -1,0 +1,30 @@
+{%- from "components/greenplum/map.jinja" import gpdbvars,sysvars with context -%}
+{% set bin_path="%s-%s/bin"|format(gpdbvars.gphome, gpdbvars.gpmajver) %}
+[Unit]
+Description=Greenplum
+After=network.target
+
+[Service]
+{% if salt.pillar.get('data:database_slice:enable', False) and salt.dbaas.is_dataplane() %}
+Slice=database.slice
+{% endif %}
+Type=forking
+Environment="MASTER_DATA_DIRECTORY={{ gpdbvars.masterdir }}/master/{{ gpdbvars.segprefix }}-1"
+Environment="PYTHONPATH={{ gpdbvars.gphome }}-{{ gpdbvars.gpmajver }}/lib/python"
+Environment="GPHOME={{ gpdbvars.gphome }}-{{ gpdbvars.gpmajver }}"
+TimeoutStartSec=10min
+TimeoutStopSec=10min
+ExecStart={{ bin_path }}/gpstart -a
+ExecStartPre=/usr/local/yandex/gp_wait_cluster.py -w 1 -r 600 -s
+ExecStop={{ bin_path }}/gpstop -a -M fast
+ExecReload={{ bin_path }}/gpstop -uq
+User={{ gpdbvars.gpadmin }}
+Group={{ gpdbvars.gpadmin }}
+LimitNOFILE={{ sysvars.nofile }}
+LimitNPROC={{ sysvars.nproc }}
+LimitCORE={{ sysvars.core }}
+PIDFile=/var/run/greenplum/gp.pid
+RuntimeDirectory=greenplum
+
+[Install]
+WantedBy=multi-user.target

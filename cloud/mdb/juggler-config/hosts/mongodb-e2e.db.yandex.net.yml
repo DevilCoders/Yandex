@@ -1,0 +1,57 @@
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    namespace: dbaas.mongodb
+    host: mongodb-e2e.db.yandex.net
+
+  tasks:
+    - juggler_facts: jserver_api=http://juggler-api.search.yandex.net:8998/api
+    - include_vars: ../configs/nonrelational_dbs_resps.yml
+    - include_vars: ../configs/notifications_worktime.yml
+
+    - juggler_check:
+        host: "{{ host }}"
+        service: dbaas-e2e-porto-qa-mongodb
+        namespace: "{{ namespace }}"
+        aggregator: logic_or
+        notifications: "{{ notifications_sms }}"
+        refresh_time: 3600
+        tags:
+          - mdb.porto_test
+        ttl: 21600
+        children:
+            host: dbaas-e2e01k.db.yandex.net
+            service: dbaas-e2e-porto-qa-mongodb
+        __force__: True
+    - juggler_check:
+        host: "{{ host }}"
+        service: dbaas-e2e-compute-preprod-mongodb
+        namespace: "{{ namespace }}"
+        aggregator: logic_or
+        notifications: "{{ notifications_sms }}"
+        refresh_time: 3600
+        tags:
+          - mdb.compute_preprod
+        ttl: 21600
+        children:
+            host: dbaas-e2e-preprod01k.cloud-preprod.yandex.net
+            service: dbaas-e2e-compute-preprod-mongodb
+        __force__: True
+    - juggler_check:
+        host: "{{ host }}"
+        service: dbaas-e2e-compute-prod-mongodb
+        namespace: "{{ namespace }}"
+        aggregator: logic_or
+        notifications: "{{ notifications }}"
+        refresh_time: 3600
+        tags:
+          - mdb.compute_prod
+        ttl: 21600
+        children:
+            host: dbaas-e2e01k.yandexcloud.net
+            service: dbaas-e2e-compute-prod-mongodb
+        __force__: True
+
+  post_tasks:
+    - juggler_cleanup: jcheck_mark={{ host }}

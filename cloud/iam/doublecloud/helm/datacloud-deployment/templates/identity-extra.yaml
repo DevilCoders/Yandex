@@ -1,0 +1,95 @@
+{{- if eq .Values.serviceName "identity" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "identity-configs-extra"
+  namespace: "iam"
+  labels:
+  {{- include "datacloud-lib.labels" . | nindent 4 }}
+data:
+{{- $configFiles := printf "%s/{ids.yaml}" (include "datacloud-lib.getConfigsPath" . ) }}
+{{ (.Files.Glob $configFiles).AsConfig | indent 2 }}
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "identity-nginx-config"
+  namespace: "iam"
+data:
+  identity.conf: |
+    server {
+        listen 14336 http2 ssl;
+        server_name identity;
+
+        ssl_certificate /etc/nginx/ssl/tls.crt;
+        ssl_certificate_key /etc/nginx/ssl/tls.key;
+
+        ssl_protocols TLSv1.2 TLSv1.3;
+
+        server_tokens off;
+
+        ssl_prefer_server_ciphers on;
+        ssl_ciphers kEECDH+AESGCM+AES128:kEECDH+AES128;
+
+        ssl_session_cache shared:cache:128m;
+        ssl_session_timeout 28h;
+
+        proxy_set_header X-Real-IP $remote_addr;
+
+        location / {
+            proxy_pass http://localhost:2637;
+        }
+    }
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "nginx-config"
+  namespace: "iam"
+data:
+  nginx.conf: |
+    user www-data;
+    worker_processes 4;
+    worker_rlimit_nofile 40960;
+    pid /var/run/nginx.pid;
+
+    events {
+      worker_connections 4096;
+    }
+
+    http {
+      include                 /etc/nginx/mime.types;
+      default_type            application/octet-stream;
+
+      gzip                    on;
+      gzip_vary               on;
+      gzip_static             on;
+      gzip_disable            msie6;
+      gzip_types              text/plain application/xml text/css application/x-javascript text/js application/json;
+
+      server_tokens           off;
+      sendfile                on;
+      tcp_nopush              on;
+      tcp_nodelay             on;
+
+      keepalive_timeout       60;
+
+      client_max_body_size    40m;
+      server_names_hash_bucket_size   64;
+      server_name_in_redirect on;
+
+      add_header Strict-Transport-Security max-age=31536000;
+      add_header X-Frame-Options SAMEORIGIN;
+      add_header X-Content-Type-Options nosniff;
+      add_header X-XSS-Protection "1; mode=block";
+
+      log_format main '[$time_local] $host $remote_addr "$request" $status "$http_referer" "$http_user_agent" "$http_cookie" "$http_x_forwarded_for" $request_length $bytes_sent $request_time';
+
+      access_log /var/log/nginx/access.log main;
+      error_log  /var/log/nginx/error.log;
+      include /etc/nginx/conf.d/*.conf;
+    }
+
+{{- end }}

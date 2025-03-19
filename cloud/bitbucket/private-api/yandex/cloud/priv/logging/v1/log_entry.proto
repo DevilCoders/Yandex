@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.logging.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "yandex/cloud/priv/logging/v1/log_resource.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/logging/v1;logging";
+option java_outer_classname = "PCLE";
+
+message LogEntry {
+  string uid = 1; // output only
+  LogEntryResource resource = 2;
+  google.protobuf.Timestamp timestamp = 3; // user defined timestamp
+
+  google.protobuf.Timestamp ingested_at = 4; // as seen at ingestion api
+  google.protobuf.Timestamp saved_at = 5; // as seen at storage procedure
+
+  LogLevel.Level level = 6;
+  string message = 7;
+  google.protobuf.Struct json_payload = 8;
+  string stream_name = 9 [(pattern) = "|[a-zA-Z][-a-zA-Z0-9_.]{0,63}"];
+}
+
+message IncomingLogEntry {
+  google.protobuf.Timestamp timestamp = 1 [(required) = true]; // user defined timestamp
+  LogLevel.Level level = 2;
+  string message = 3 [(bytes) = "<=65536"];
+  google.protobuf.Struct json_payload = 4 [(bytes) = "<=65536"];
+  string stream_name = 5 [(pattern) = "|[a-z][-a-z0-9_.]{1,61}[a-z0-9]"];
+}
+
+message LogEntryDefaults {
+  LogLevel.Level level = 2;
+  google.protobuf.Struct json_payload = 4 [(bytes) = "<=65536"];
+  string stream_name = 5 [(pattern) = "|[a-z][-a-z0-9_.]{1,61}[a-z0-9]"];
+}
+
+message Destination {
+  oneof destination {
+    option (exactly_one) = true;
+    string log_group_id = 1 [(pattern) = "|[a-z][-a-z0-9_.]{1,61}[a-z0-9]"];
+    string folder_id = 2 [(pattern) = "|[a-z][-a-z0-9_.]{1,61}[a-z0-9]"];
+  }
+}
+
+message LogLevel {
+  enum Level {
+    LEVEL_UNSPECIFIED = 0;
+    TRACE = 1;
+    DEBUG = 2;
+    INFO = 3;
+    WARN = 4;
+    ERROR = 5;
+    FATAL = 6;
+  }
+  Level level = 1;
+}

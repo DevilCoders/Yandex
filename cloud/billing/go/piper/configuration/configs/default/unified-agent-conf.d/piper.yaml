@@ -1,0 +1,52 @@
+storages:
+  - name: piper_logs
+    plugin: fs
+    config:
+      directory: /var/lib/yandex/unified_agent/piper_logs
+      max_partition_size: 100mb
+      max_segment_size: 10mb
+  - name: piper_metrics
+    plugin: fs
+    config:
+      directory: /var/lib/yandex/unified_agent/piper_metrics
+      max_partition_size: 100mb
+      max_segment_size: 10mb
+
+routes:
+  - input:
+      plugin: metrics_pull
+      config:
+        url: http://localhost:9741/metrics
+        format:
+          prometheus: {}
+        poll_period: 15s
+        project: ycbilling
+        service: piper_canary
+    channel:
+      pipe:
+        - storage_ref:
+            name: piper_metrics
+      output:
+        plugin: metrics_pull
+        id: pull_metrics
+        config:
+          port: 2113
+  - input:
+      plugin: grpc
+      config:
+        uri: localhost:3113
+    channel:
+      pipe:
+        - storage_ref:
+            name: piper_logs
+      output:
+        plugin: logbroker
+        config:
+          endpoint: lb.etn03iai600jur7pipla.ydb.mdb.yandexcloud.net
+          port: 2135
+          topic: /yc.billing.service-cloud/deploy_rnd/rnd-piper-logs
+          database: /global/b1gvcqr959dbmi1jltep/etn03iai600jur7pipla
+          codec: gzip
+          iam:
+            cloud_meta: {}
+          use_ssl: {}

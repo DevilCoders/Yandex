@@ -1,0 +1,58 @@
+BLACKBOX_URL: https://blackbox.yandex-team.ru/blackbox
+BASE_HOST: {{ salt['pillar.get']('data:db_maintenance:base_host') }}
+DB_CONN: port=6432 dbname=dbm user=dbm connect_timeout=1 password={{ salt['pillar.get']('data:config:pgusers:dbm:password') }} sslmode=require
+DB_HOSTS: {{ ','.join(salt['pillar.get']('data:db_maintenance:db_hosts')) }}
+ALLOWED_LOGINS:
+{% for login in salt['pillar.get']('data:db_maintenance:allow_logins') %}
+    - {{ login }}
+{% endfor %}
+USE_TVM: {{ salt['pillar.get']('data:db_maintenance:use_tvm', true) }}
+TVM_BLACKBOX_ENV: ProdYateam
+TVM_CLIENT_ID: {{ salt['pillar.get']('data:db_maintenance:tvm_client_id') }}
+TVM_SECRET: {{ salt['pillar.get']('data:db_maintenance:tvm_secret') }}
+CA_VERIFY: /opt/yandex/allCAs.pem
+{% if 'deploy_api_v2_token' in salt['pillar.get']('data:db_maintenance') %}
+DEPLOY_API_V2_TOKEN: {{ salt['pillar.get']('data:db_maintenance:deploy_api_v2_token') }}
+{% endif %}
+DEPLOY_API_V2_URL: {{ salt['pillar.get']('data:db_maintenance:deploy_api_v2_url') }}
+DEPLOY_ENV: {{ salt['pillar.get']('data:db_maintenance:deploy_env') }}
+SALT_ENV: {{ salt['pillar.get']('data:db_maintenance:salt_env', 'prod') }}
+LOGCONFIG:
+    handlers:
+        tskv:
+            class: logging.handlers.RotatingFileHandler
+            level: DEBUG
+            formatter: tskv
+            maxBytes: 209715200
+            filename: /var/log/db-maintenance/dbm.log
+            backupCount: 10
+RESERVED_RESOURCES:
+  1:
+    reserved_cpu: {{ salt['pillar.get']('data:db_maintenance:reserved_resources:1:cpu', 16) }}
+    reserved_memory: {{ salt['pillar.get']('data:db_maintenance:reserved_resources:1:memory', 68719476736) }}
+    reserved_io: {{ salt['pillar.get']('data:db_maintenance:reserved_resources:1:io', 335544320) }}
+    reserved_net: {{ salt['pillar.get']('data:db_maintenance:reserved_resources:1:net', 33554432) }}
+  2:
+    reserved_cpu: {{ salt['pillar.get']('data:db_maintenance:reserved_resources:2:cpu', 40) }}
+    reserved_memory: {{ salt['pillar.get']('data:db_maintenance:reserved_resources:2:memory', 171798691840) }}
+    reserved_io: {{ salt['pillar.get']('data:db_maintenance:reserved_resources:2:io', 671088640) }}
+    reserved_net: {{ salt['pillar.get']('data:db_maintenance:reserved_resources:2:net', 671088640) }}
+  3:
+    reserved_cpu: {{ salt['pillar.get']('data:db_maintenance:reserved_resources:3:cpu', 64) }}
+    reserved_memory: {{ salt['pillar.get']('data:db_maintenance:reserved_resources:3:memory', 274877906944) }}
+    reserved_io: {{ salt['pillar.get']('data:db_maintenance:reserved_resources:3:io', 1073741824) }}
+    reserved_net: {{ salt['pillar.get']('data:db_maintenance:reserved_resources:3:net', 1073741824) }}
+SENTRY:
+    environment: {{ salt['pillar.get']('data:sentry:environment') }}
+    dsn: {{ salt['pillar.get']('data:db_maintenance:sentry:dsn') }}
+    traces_sample_rate: {{ salt['pillar.get']('data:db_maintenance:sentry:traces_sample_rate', 0.0) }}
+METRICS:
+    port: 6060
+{% if salt['pillar.get']('data:db_maintenance:skip_overcommit_regexes', []) %}
+SKIP_OVERCOMMIT_FQDN_REGEXES:
+{%     for regex in salt['pillar.get']('data:db_maintenance:skip_overcommit_regexes') %}
+  - {{ regex }}
+{%     endfor %}
+{% else %}
+SKIP_OVERCOMMIT_FQDN_REGEXES: []
+{% endif %}

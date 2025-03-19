@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: PodList
+items:
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: api-static
+    namespace: kube-system
+    labels:
+      role: api
+    annotations:
+      config_digest: ${config_digest}
+      scheduler.alpha.kubernetes.io/critical-pod: ""
+  spec:
+    priority: 2000000001
+    priorityClassName: system-cluster-critical
+    hostNetwork: true
+    initContainers:
+    - name: deploy-configs
+      image: cr.yandex/crp7nvlkttssi7kapoho/infra/metadata:${metadata_version}
+      volumeMounts:
+      - name: all-configs
+        mountPath: /etc
+        terminationGracePeriodSeconds: 30
+      - name: usr-local
+        mountPath: /usr/local
+        terminationGracePeriodSeconds: 30
+    containers:
+    - name: kms-ydb-dumper
+      image: cr.yandex/crpr3khkepsccf25vvt6/ydb-dumper:${application_version}
+      env:
+      - name: APPLICATION_YAML
+        value: /etc/kms/application.yaml
+      - name: APPLICATION_LOG_DIR
+        value: /var/log/kms
+      - name: APPLICATION_LOG_FILE_MAX_FILES
+        value: "3"
+      - name: APPLICATION_ACCESS_LOG_FILE_MAX_FILES
+        value: "3"
+      - name: JAVA_TOOL_OPTIONS
+        value: "-XX:-UseContainerSupport -Djava.net.preferIPv6Addresses=true -Dfile.encoding=UTF-8 -Xlog:gc*:file=/var/log/kms/gc.log::filecount=10,filesize=100M"
+      volumeMounts:
+      - name: kms-configs
+        mountPath: /etc/kms
+        readOnly: true
+      - name: var-kms
+        mountPath: /var/kms
+        terminationGracePeriodSeconds: 30
+      - name: var-log-kms
+        mountPath: /var/log/kms
+      - name: run-kms
+        mountPath: /run/kms
+    volumes:
+    - name: all-configs
+      hostPath:
+        path: /etc
+        type: DirectoryOrCreate
+    - name: kms-configs
+      hostPath:
+        path: /etc/kms
+        type: DirectoryOrCreate
+    - name: usr-local
+      hostPath:
+       path: /usr/local
+       type: DirectoryOrCreate
+    - name: var-kms
+      hostPath:
+        path: /var/kms
+        type: DirectoryOrCreate
+    - name: var-log-kms
+      hostPath:
+        path: /var/log/kms
+        type: DirectoryOrCreate
+    - name: run-kms
+      hostPath:
+        type: DirectoryOrCreate
+        path: /run/kms

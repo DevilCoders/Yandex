@@ -1,0 +1,7 @@
+- **31.01.2022** [Access service release documentation](release/access_service) has been added.
+- **16.12.2021** Добавлена переработанная [инструкция по релизу iam-common](release/identity).
+- **10.12.2021** Добавлена [инструкция про общий порядок релизов по окружениям](release/index).
+- **30.08.2021** Добавлена [инструкция по диагностике Permission Denied для сапорта](support/internal/permission_denied).
+- **23.08.2021** Добавлены [примеры классификации чрезвычайных ситуаций](duty/emergency#primery-klassifikacii-chrezvychajnyh-situacij).
+- **23.08.2021** Добавлена страница [Сетевые доступы](duty/firewall) в разделе Дежурства.
+- **23.08.2021** Добавлена страница [Введение](duty/intro) в разделе Дежурства.

@@ -1,0 +1,209 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.platform.alb.v1;
+
+import "google/protobuf/field_mask.proto";
+
+import "yandex/cloud/api/operation.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+import "yandex/cloud/priv/platform/alb/v1/http_router.proto";
+import "yandex/cloud/priv/platform/alb/v1/rate_limit.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/platform/alb/v1;alb";
+option java_outer_classname = "PALVHS";
+
+// A set of methods for managing virtual hosts of HTTP Router resource.
+service VirtualHostService {
+  // Returns the specified VirtualHost resource.
+  rpc Get (GetVirtualHostRequest) returns (VirtualHost);
+
+  // Retrieves the list of virtual hosts in the specified HTTP Router.
+  rpc List (ListVirtualHostsRequest) returns (ListVirtualHostsResponse);
+
+  // Creates a new virtual host in the specified HTTP Router.
+  rpc Create (CreateVirtualHostRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "CreateVirtualHostMetadata"
+      response: "VirtualHost"
+    };
+  }
+
+  // Updates an existing VirtualHost in the specified HTTP Router.
+  rpc Update(UpdateVirtualHostRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateVirtualHostMetadata"
+      response: "VirtualHost"
+    };
+  }
+
+  // Deletes the specified virtual host.
+  rpc Delete (DeleteVirtualHostRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeleteVirtualHostMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+
+  rpc RemoveRoute(RemoveRouteRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "RemoveRouteMetadata"
+      response: "VirtualHost"
+    };
+  }
+
+  // Adding a single route to a virtual host can be very confusing operation -
+  // it will be added to the end of the route list, so there is no chance to
+  // know will it ever work. Thus routes are updated altogether using
+  // UpdateVirtualHost call.
+  // TODO: consider using some marker for route addition, e.g. some 'before/after'
+  // field referencing existing route.
+  rpc UpdateRoute(UpdateRouteRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateRouteMetadata"
+      response: "VirtualHost"
+    };
+  }
+}
+
+message GetVirtualHostRequest {
+  // ID of the HTTP Router that the virtual host belongs to.
+  string http_router_id = 1 [(required) = true];
+
+  // Name of the VirtualHost resource to return.
+  string virtual_host_name = 2 [(required) = true, (pattern) = "|[a-z][-a-z0-9]{1,61}[a-z0-9]"];
+}
+
+message ListVirtualHostsRequest {
+  // ID of the HTTP Router that the virtual host belongs to.
+  string http_router_id = 1 [(required) = true];
+
+  int64 page_size = 2 [(value) = "<=1000"];
+
+  string page_token = 3 [(length) = "<=100"];
+}
+
+message ListVirtualHostsResponse {
+  // List of virtual hosts.
+  repeated VirtualHost virtual_hosts = 1;
+
+  string next_page_token = 2;
+}
+
+message CreateVirtualHostRequest {
+  // ID of the HTTP Router that the virtual host belongs to.
+  string http_router_id = 1 [(required) = true];
+
+  // Configuration of the virtual host to create.
+  string name = 2 [(pattern) = "|[a-z][-a-z0-9]{1,61}[a-z0-9]"];
+  repeated string authority = 3 [(size) = "<=32", (unique) = true, (length) = "<=255", (pattern) = "[-*.a-z0-9]+"];
+  repeated int64 ports = 4;
+  repeated Route routes = 5;
+  repeated HeaderModification modify_request_headers = 6;
+  repeated HeaderModification modify_response_headers = 7;
+  RouteOptions route_options = 9;
+  repeated RateLimit rate_limits = 10;
+}
+
+message CreateVirtualHostMetadata {
+  // ID of the HTTP Router that the virtual host is being created.
+  string http_router_id = 1 [(required) = true];
+
+  // Name of the virtual host that is being created.
+  string virtual_host_name = 2;
+}
+
+message UpdateVirtualHostRequest {
+  // ID of the HTTP Router that the virtual host belongs to.
+  string http_router_id = 1 [(required) = true];
+  google.protobuf.FieldMask update_mask = 2;
+
+  string virtual_host_name = 3 [(required) = true];
+  // Fields of the virtual host to update.
+  // Except name, that field used to address virtual host within the http router
+  // and cannot be changed after creation.
+  repeated string authority = 4 [(size) = "<=32", (unique) = true, (length) = "<=255", (pattern) = "[-*.a-z0-9]+"];
+  repeated int64 ports = 5;
+  repeated Route routes = 6;
+  repeated HeaderModification modify_request_headers = 7;
+  repeated HeaderModification modify_response_headers = 8;
+  RouteOptions route_options = 9;
+  repeated RateLimit rate_limits = 10;
+}
+
+message UpdateVirtualHostMetadata {
+  // ID of the HTTP Router where a virtual host is being updated.
+  string http_router_id = 1;
+
+  // Name of the updated virtual host.
+  string virtual_host_name = 2;
+}
+
+message DeleteVirtualHostRequest {
+  // ID of the HTTP Router to delete a virtual host in.
+  string http_router_id = 1 [(required) = true];
+
+  // Name of the virtual host to delete.
+  string virtual_host_name = 2 [(required) = true, (pattern) = "|[a-z][-a-z0-9]{1,61}[a-z0-9]"];
+}
+
+message DeleteVirtualHostMetadata {
+  // ID of the HTTP Router where a virtual host is being deleted.
+  string http_router_id = 1;
+
+  // Name of the virtual host that is being deleted.
+  string virtual_host_name = 2;
+}
+
+message AddVirtualHostRequest {
+  string http_router_id = 1 [(required) = true];
+  VirtualHost virtual_host = 2 [(required) = true];
+}
+
+message AddVirtualHostMetadata {
+  string http_router_id = 1;
+  string virtual_host_name = 2;
+}
+
+message RemoveVirtualHostRequest {
+  string http_router_id = 1 [(required) = true];
+  string virtual_host_name = 2 [(required) = true];
+}
+
+message RemoveVirtualHostMetadata {
+  string http_router_id = 1;
+  string virtual_host_name = 2;
+}
+
+message RemoveRouteRequest {
+  string http_router_id = 1 [(required) = true];
+  string virtual_host_name = 2 [(required) = true];
+  string route_name = 3 [(required) = true];
+}
+
+message RemoveRouteMetadata {
+  string http_router_id = 1;
+  string virtual_host_name = 2;
+  string route_name = 3;
+}
+
+message UpdateRouteRequest {
+  string http_router_id = 1 [(required) = true];
+  string virtual_host_name = 2 [(required) = true];
+  google.protobuf.FieldMask update_mask = 3;
+
+  string route_name = 4 [(required) = true];
+  oneof route {
+    option (exactly_one) = true;
+    HttpRoute http = 5;
+    GrpcRoute grpc = 6;
+  }
+  RouteOptions route_options = 7;
+  repeated RateLimit rate_limits = 9;
+}
+
+message UpdateRouteMetadata {
+  string http_router_id = 1;
+  string virtual_host_name = 2;
+  string route_name = 3;
+}

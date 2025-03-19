@@ -1,0 +1,27 @@
+RECURSE(
+    select_unmarked_records
+    convert_and_split_to_bits
+    collect_records
+    create_records_bits
+    run_compare_meaning
+    create_records_joins
+    generate_transcript_honeypots
+    generate_check_transcript_honeypots
+    import_data
+    obfuscate
+    select_records_joins
+    produce_transcription_tasks
+    produce_check_transcription_tasks
+    calculate_markup_metrics
+    upload_obfuscated_bits
+    prepare_input_for_recognizer
+    select_records_split_for_markup
+    produce_quality_evaluation_tasks
+    create_records_bits_audio
+    create_markup_pool
+    run_markup_pool_acceptance
+    instantiate_trigger_artifact
+    upload_audio_for_toloka
+    transcript_feedback_loop
+    create_markup_params
+)

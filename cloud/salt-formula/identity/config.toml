@@ -1,0 +1,95 @@
+{%- import "common/kikimr/init.sls" as vars with context %}
+
+{%- set environment = grains["cluster_map"]["environment"] %}
+{%- set lb_endpoints = grains['cluster_map']['load_balancer']['endpoints'] -%}
+{%- set stand_type = grains['cluster_map']['stand_type'] -%}
+
+{%- set kikimr_iam_host = 'localhost' if vars.subdomains|length > 1 else lb_endpoints.iam_kikimr_grpc.host %}
+{%- set kikimr_iam_port = pillar['kikimr_tenant_ports'][vars.iam_database]['grpc_port'] if vars.subdomains|length > 1 or vars.base_role == 'cloudvm' else lb_endpoints.iam_kikimr_grpc.port %}
+
+{%- set hostname = grains['nodename'] %}
+{%- set base_role = grains['cluster_map']['hosts'][hostname]['base_role'] -%}
+
+[endpoint.identity_public]
+port = 4336
+
+[endpoint.identity_private]
+port = 2637
+
+{% if salt['pillar.get']('identity:push:url', '') %}
+[welcome_email]
+enabled = true
+host = "{{ salt['pillar.get']('identity:push:url', '') }}"
+timeout = 15
+{% endif %}
+
+{% for bb_conf in pillar.identity.get('blackbox', []) %}
+[[blackbox]]
+passport_url = "{{ bb_conf['passport_url'] }}"
+tvm_client_id = {{ bb_conf['tvm_client_id'] }}
+mds_url = "{{ bb_conf['mds_url'] }}"
+# See https://docs.yandex-team.ru/blackbox/methods/sessionid
+sessionid_cookie_host = "{{ bb_conf['sessionid_cookie_host'] }}"
+{%- endfor %}
+
+{% if pillar.identity.get('tvm') %}
+[tvm]
+client_id = {{ pillar.identity['tvm']['client_id'] }}
+blackbox_instance = "{{ pillar.identity['tvm']['blackbox_instance'] }}"
+client_secret_file = "/var/lib/yc/identity/tvm_client_secret"
+{% endif %}
+
+[gauthling]
+storage_path = "/var/lib/yc/identity/gauthling-storage"
+
+[endpoints.access_service]
+enabled = true
+url = "{{ lb_endpoints.access_service_grpc.host }}:{{ lb_endpoints.access_service_grpc.port }}"
+
+[endpoints.billing]
+private_url = "https://{{ lb_endpoints.billing_private_ssl.host }}:{{ lb_endpoints.billing_private_ssl.port }}"
+
+[endpoints.gauthling_daemon]
+url = "gauthling.is.not.here.anymore:1234"
+
+[endpoints.compute_private]
+url = "http://{{ lb_endpoints.compute.host }}:{{ lb_endpoints.compute.port }}/private"
+
+[endpoints.compute]
+url = "http://{{ lb_endpoints.compute.host }}:{{ lb_endpoints.compute.port }}/external"
+
+[endpoints.kikimr.identity]
+host = "{{ salt['grains.get']('overrides:kikimr_endpoint', (kikimr_iam_host, kikimr_iam_port)|join(':')) }}"
+root = "/{{ vars.ydb_domain }}/{{ vars.iam_database }}/{{ grains['cluster_map']['stand_type'] }}/{{ salt['grains.get']('overrides:kikimr_id', salt['grains.get']('cluster_map:kikimr:shared_dir')) }}/identity"
+{%- if stand_type == 'virtual' %}
+request_timeout = 30 {# CLOUD-4799 #}
+{%- endif %}
+
+[endpoints.scms]
+url = "{{ lb_endpoints.scms.host }}:{{ lb_endpoints.scms.port }}"
+
+[endpoints.resource_manager]
+{% if base_role == 'cloudvm' %}
+tls = false
+{% endif %}
+url = "{{ lb_endpoints.resource_manager_grpc.host }}:{{ lb_endpoints.resource_manager_grpc.port }}"
+
+[limits]
+{% if base_role == 'cloudvm' %}
+user = "100/second"
+org = "1000/second"
+{% else %}
+user = "10/second"
+org = "100/second"
+{% endif %}
+
+{% set fqdn = grains['nodename'] %}
+{% if salt['grains.get']('cluster_map:hosts:'+fqdn+':base_role', '')  == 'seed' %}
+[billing]
+enabled = false
+{% endif %}
+
+{% if environment in ("prod", "pre-prod") %}
+[caching]
+enable_sync_cache = true
+{% endif %}

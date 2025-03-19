@@ -1,0 +1,156 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.platform.alb.v1;
+
+import "google/protobuf/field_mask.proto";
+
+import "yandex/cloud/api/operation.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+import "yandex/cloud/priv/platform/alb/v1/http_router.proto";
+import "yandex/cloud/priv/platform/alb/v1/virtual_host_service.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/platform/alb/v1;alb";
+option java_outer_classname = "PALHRS";
+
+service HttpRouterService {
+  rpc Get(GetHttpRouterRequest) returns (HttpRouter);
+  rpc List(ListHttpRoutersRequest) returns (ListHttpRoutersResponse);
+
+  rpc Create(CreateHttpRouterRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "CreateHttpRouterMetadata"
+      response: "HttpRouter"
+    };
+  }
+  rpc Update(UpdateHttpRouterRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateHttpRouterMetadata"
+      response: "HttpRouter"
+    };
+  }
+  rpc Delete(DeleteHttpRouterRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeleteHttpRouterMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+
+  // AddVirtualHost/UpdateVirtualHost technically do the same, but have different semantics.
+  rpc AddVirtualHost(AddVirtualHostRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "AddVirtualHostMetadata"
+      response: "VirtualHost"
+    };
+  }
+  rpc RemoveVirtualHost(RemoveVirtualHostRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "RemoveVirtualHostMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+  rpc UpdateVirtualHost(UpdateVirtualHostRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateVirtualHostMetadata"
+      response: "VirtualHost"
+    };
+  }
+
+  rpc RemoveRoute(RemoveRouteRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "RemoveRouteMetadata"
+      response: "VirtualHost"
+    };
+  }
+  rpc UpdateRoute(UpdateRouteRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateRouteMetadata"
+      response: "VirtualHost"
+    };
+  }
+
+  // Lists operations for the specified http router.
+  rpc ListOperations (ListHttpRouterOperationsRequest) returns (ListHttpRouterOperationsResponse);
+}
+
+message GetHttpRouterRequest {
+  string http_router_id = 1 [(required) = true];
+}
+
+message ListHttpRoutersRequest {
+  string folder_id = 1 [(required) = true];
+
+  int64 page_size = 2 [(value) = "0-1000"];
+  string page_token = 3 [(length) = "<=100"];
+  string filter = 4 [(length) = "<=1000"];
+}
+
+message ListHttpRoutersResponse {
+  repeated HttpRouter http_routers = 1;
+  string next_page_token = 2;
+}
+
+message DeleteHttpRouterRequest {
+  string http_router_id = 1 [(required) = true];
+}
+
+message DeleteHttpRouterMetadata {
+  string http_router_id = 1;
+}
+
+message UpdateHttpRouterRequest {
+  string http_router_id = 1 [(required) = true];
+
+  // Use UpdateVirtualHost to change specific virtual host.
+  google.protobuf.FieldMask update_mask = 2;
+
+  string name = 3 [(pattern) = "|[a-z][-a-z0-9]{1,61}[a-z0-9]"];
+  string description = 4 [(length) = "<=256"];
+  map<string, string> labels = 5 [(priv.size) = "<=64", (length) = "<=63", (pattern) = "[-_0-9a-z]*", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_0-9a-z]*"];
+
+  repeated VirtualHost virtual_hosts = 6;
+
+  reserved 7, 8; // was https_redirect, https_redirect_port
+
+  // Forbids Delete() calls.
+  bool deletion_protection = 9;
+
+  RouteOptions route_options = 10;
+}
+
+message UpdateHttpRouterMetadata {
+  string http_router_id = 1;
+}
+
+message CreateHttpRouterRequest {
+  string folder_id = 1 [(required) = true];
+  string name = 2 [(pattern) = "|[a-z][-a-z0-9]{1,61}[a-z0-9]"];
+  string description = 3 [(length) = "<=256"];
+  map<string, string> labels = 4 [(priv.size) = "<=64", (length) = "<=63", (pattern) = "[-_0-9a-z]*", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_0-9a-z]*"];
+
+  // List of rules to match the :authority (Host) header.
+  // Only one virtual host with no authority (default match) can be specified.
+  repeated VirtualHost virtual_hosts = 5;
+
+  reserved 6, 7; // was https_redirect, https_redirect_port
+
+  // Forbids Delete() calls.
+  bool deletion_protection = 8;
+
+  RouteOptions route_options = 9;
+}
+
+message CreateHttpRouterMetadata {
+  string http_router_id = 1;
+}
+
+message ListHttpRouterOperationsRequest {
+  string http_router_id = 1 [(required) = true, (length) = "<=50"];
+  int64 page_size = 2 [(value) = "<=1000"];
+  string page_token = 3 [(length) = "<=100"];
+}
+
+message ListHttpRouterOperationsResponse {
+  repeated operation.Operation operations = 1;
+  string next_page_token = 2;
+}

@@ -1,0 +1,68 @@
+---
+# Source: extendeddaemonset/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: extendeddaemonset
+  labels:
+    app.kubernetes.io/name: extendeddaemonset
+    helm.sh/chart: extendeddaemonset-v0.3.0
+    app.kubernetes.io/instance: extendeddaemonset
+    app.kubernetes.io/version: "v0.3.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: extendeddaemonset
+      app.kubernetes.io/instance: extendeddaemonset
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: extendeddaemonset
+        app.kubernetes.io/instance: extendeddaemonset
+    spec:
+      nodeSelector:
+        eds-operator: "1"
+      hostNetwork: true
+      serviceAccountName: extendeddaemonset
+      securityContext:
+        {}
+      containers:
+        - name: extendeddaemonset
+          securityContext:
+            {}
+          image: "cr.yandex/yc-bootstrap/extendeddaemonset:v0.6.0-rc.4_e9076b0"
+          imagePullPolicy: IfNotPresent
+          args:
+            - -loglevel=debug
+            - --metrics-addr
+            - 127.0.0.1:38080
+            - --health-probe-addr
+            - 127.0.0.1:38081
+          env:
+            - name: WATCH_NAMESPACE
+              value: ""
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: OPERATOR_NAME
+              value: extendeddaemonset
+            - name: VALIDATION_MODE
+              value: "Manual"
+            - name: KUBERNETES_SERVICE_HOST
+              value: hw-k8s-lab-svm.lb.kten.cloud.yandex.net
+            - name: KUBERNETES_SERVICE_PORT
+              value: "443"
+          ports:
+            - name: metrics
+              containerPort: 38080
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              host: 127.0.0.1
+              path: /healthz/
+              port: 38081
+          resources:
+            {}

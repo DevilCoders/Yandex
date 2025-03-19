@@ -1,0 +1,27 @@
+[Unit]
+Description=Monops Web Container
+After=docker.service skm.service
+Requires=docker.service skm.service
+ConditionPathExists=/etc/default/monops
+ConditionPathExists=/etc/yc/monops/mongo.password
+
+[Service]
+TimeoutStartSec=0
+Restart=always
+EnvironmentFile=/etc/default/monops
+Environment=LC_ALL=C.UTF-8
+Environment=LANG=C.UTF-8
+ExecStartPre=/bin/bash -c "curl -s -H Metadata-Flavor:Google http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token | \
+    jq -r '.access_token' | \
+    docker login --username iam --password-stdin $MONOPS_CR_ENDPOINT"
+ExecStartPre=/usr/bin/docker pull $MONOPS_WEB_IMAGE
+ExecStart=/usr/bin/docker run --network=host --rm --name %n \
+    --volume /etc/yc/monops:/etc/yc/monops \
+    --env MONGO_HOSTS --env MONGO_PORT --env MONGO_SSL_ENABLED \
+    --env LANG --env LC_ALL \
+    $MONOPS_WEB_IMAGE
+ExecStop=/usr/bin/docker stop --time 3 %n
+ExecStopPost=-/usr/bin/docker rm %n
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,120 @@
+node:
+  id: any
+  cluster: api_gateway
+  locality:
+    region: ru-central1
+    zone: any
+
+admin:
+  access_log_path: /var/log/envoy/admin_access.log
+  address:
+    socket_address: { address: 127.0.0.1, port_value: 9901 }
+
+# As recommended in https://www.envoyproxy.io/docs/envoy/latest/configuration/best_practices/edge
+overload_manager:
+  refresh_interval: 0.25s
+  resource_monitors:
+  - name: "envoy.resource_monitors.fixed_heap"
+    typed_config:
+      "@type": type.googleapis.com/envoy.config.resource_monitor.fixed_heap.v2alpha.FixedHeapConfig
+      max_heap_size_bytes: 268435456 # 256 Mb
+  actions:
+  - name: "envoy.overload_actions.shrink_heap"
+    triggers:
+    - name: "envoy.resource_monitors.fixed_heap"
+      threshold:
+        value: 0.95
+  - name: "envoy.overload_actions.stop_accepting_requests"
+    triggers:
+    - name: "envoy.resource_monitors.fixed_heap"
+      threshold:
+        value: 0.98
+
+stats_config:
+  use_all_default_tags: true
+
+#stats_sinks:
+#  - name: envoy.statsd
+#    config:
+#      address:
+#        socket_address: { address: 127.0.0.1, port_value: 9125 }
+
+#tracing:
+#  http:
+#    name: envoy.dynamic.ot
+#    typed_config:
+#      "@type": type.googleapis.com/envoy.config.trace.v2.DynamicOtConfig
+#      library: /usr/local/lib/libjaegertracing_plugin.so
+#      config:
+#        service_name: api-gateway-preprod
+#        sampler: { type: const, param: 1 }
+#        reporter: { localAgentHostPort: 127.0.0.1:5775 }
+
+dynamic_resources:
+  lds_config:
+    api_config_source:
+      api_type: GRPC
+      grpc_services:
+        envoy_grpc:
+          cluster_name: xds_cluster
+  cds_config:
+    api_config_source:
+      api_type: GRPC
+      grpc_services:
+        envoy_grpc:
+          cluster_name: xds_cluster
+
+static_resources:
+  clusters:
+    - name: xds_cluster
+      connect_timeout: 0.25s
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      http2_protocol_options: {}
+      load_assignment:
+        cluster_name: xds_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 4435
+
+    - name: als
+      connect_timeout: 0.25s
+      http2_protocol_options: {}
+      type: STATIC
+      hosts:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 4436
+
+    - name: gateway
+      connect_timeout: 0.25s
+      common_http_protocol_options:
+        idle_timeout: 60s
+      http2_protocol_options: {}
+      type: STATIC
+      lb_policy: ROUND_ROBIN
+      circuit_breakers:
+        thresholds: [{max_requests: 1000}]
+      hosts: [{ socket_address: { address: 127.0.0.1, port_value: 9894 }}]
+
+    - name: gateway_healthcheck
+      connect_timeout: 0.25s
+      common_http_protocol_options:
+        idle_timeout: 60s
+      type: STATIC
+      lb_policy: ROUND_ROBIN
+      circuit_breakers:
+        thresholds: [{max_requests: 1000}]
+      hosts: [{ socket_address: { address: 127.0.0.1, port_value: 9895 }}]
+
+  secrets:
+    - name: frontend_certs
+      tls_certificate:
+        certificate_chain:
+          filename: /etc/envoy/ssl/certs/api-gateway.crt
+        private_key:
+          filename: /etc/envoy/ssl/private/api-gateway.key

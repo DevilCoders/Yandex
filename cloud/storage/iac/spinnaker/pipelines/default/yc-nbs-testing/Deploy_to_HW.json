@@ -1,0 +1,307 @@
+{
+ "appConfig": {},
+ "application": "yc-nbs-testing",
+ "id": "ad62f548-004b-4bd3-9b6b-4dcabf29d01f",
+ "index": 3,
+ "keepWaitingPipelines": false,
+ "lastModifiedBy": "librarian@yandex-team.ru",
+ "limitConcurrent": false,
+ "name": "Deploy_to_HW",
+ "parameterConfig": [
+  {
+   "default": "nbs",
+   "description": "Choose project to release",
+   "hasOptions": true,
+   "label": "Release Project",
+   "name": "releaseProject",
+   "options": [
+    {
+     "value": "nbs"
+    },
+    {
+     "value": "nfs"
+    },
+    {
+     "value": "disk_manager"
+    },
+    {
+     "value": "snapshot"
+    },
+    {
+     "value": "disk_agent"
+    }
+   ],
+   "pinned": true,
+   "required": true
+  },
+  {
+   "default": "XXX.tags.releases.XXX.stable-22-2-XXX",
+   "description": "Previous version to test on HW-NBS-STABLE-LAB and TESTING",
+   "hasOptions": false,
+   "label": "Previous Version",
+   "name": "previousVersion",
+   "options": [
+    {
+     "value": ""
+    }
+   ],
+   "pinned": true,
+   "required": true
+  },
+  {
+   "default": "XXX.tags.releases.XXX.stable-22-2-XXX",
+   "description": "Version to release",
+   "hasOptions": false,
+   "label": "Current Version",
+   "name": "currentVersion",
+   "options": [
+    {
+     "value": ""
+    }
+   ],
+   "pinned": true,
+   "required": true
+  },
+  {
+   "default": "HW-NBS-STABLE-LAB",
+   "description": "",
+   "hasOptions": true,
+   "label": "Release Contour",
+   "name": "releaseContour",
+   "options": [
+    {
+     "value": "HW-NBS-STABLE-LAB"
+    },
+    {
+     "value": "TESTING"
+    },
+    {
+     "value": "PREPROD"
+    },
+    {
+     "value": "PROD"
+    },
+    {
+     "value": "ISRAEL"
+    }
+   ],
+   "pinned": true,
+   "required": true
+  },
+  {
+   "default": "",
+   "description": "Main release startrek ticket",
+   "hasOptions": false,
+   "label": "Release Ticket",
+   "name": "releaseTicket",
+   "options": [
+    {
+     "value": ""
+    }
+   ],
+   "pinned": true,
+   "required": true
+  },
+  {
+   "default": "stable-22-2-XX",
+   "description": "Previous Tag",
+   "hasOptions": false,
+   "label": "Release Tag",
+   "name": "releaseTag",
+   "options": [
+    {
+     "value": ""
+    }
+   ],
+   "pinned": true,
+   "required": true
+  }
+ ],
+ "spelEvaluator": "v4",
+ "stages": [
+  {
+   "failOnFailedExpressions": true,
+   "name": "Evaluate variables",
+   "refId": "1",
+   "requisiteStageRefIds": [],
+   "type": "evaluateVariables",
+   "variables": [
+    {
+     "key": "trigger_user",
+     "value": "${trigger.user.replace(\"@yandex-team.ru\", \"\")}"
+    },
+    {
+     "key": "release_config",
+     "value": "${ parameters.releaseProject == \"nbs\" ? \"blockstore.yaml\" : parameters.releaseProject == \"nfs\" ? \"filestore.yaml\" : parameters.releaseProject == \"disk_agent\" ? \"disk_agent.yaml\" : parameters.releaseProject == \"snapshot\" ? \"snapshot.yaml\" : \"INVALID\" }"
+    },
+    {
+     "key": "previous_version",
+     "value": "${parameters.previousVersion}"
+    },
+    {
+     "key": "current_version",
+     "value": "${parameters.currentVersion}"
+    },
+    {
+     "key": "release_ticket",
+     "value": "${parameters.releaseTicket}"
+    },
+    {
+     "key": "release_contour",
+     "value": "${parameters.releaseContour}"
+    },
+    {
+     "key": "release_contour_lower",
+     "value": "${parameters.releaseContour.toLowerCase()}"
+    },
+    {
+     "key": "release_tag",
+     "value": "${parameters.releaseTag}"
+    },
+    {
+     "key": "release_project_human",
+     "value": "${ parameters.releaseProject == \"nbs\" ? \"Network Block Storage\" : parameters.releaseProject == \"nfs\" ? \"Network File Storage\" : parameters.releaseProject == \"disk_manager\" ? \"Disk Manager\" : parameters.releaseProject == \"snapshot\" ? \"Snapshot\" : \"Disk Agent\" }"
+    },
+    {
+     "key": "release_component",
+     "value": "${ parameters.releaseProject == \"nbs\" ? \"blockstore\" : parameters.releaseProject == \"nfs\" ? \"filestore\" : parameters.releaseProject == \"disk_manager\" ? \"disk_manager\" : parameters.releaseProject == \"snapshot\" ? \"snapshot\" : \"blockstore\" }"
+    }
+   ]
+  },
+  {
+   "assignee": "${trigger_user}",
+   "components": "${release_component}",
+   "description": "Release ticket: ${parameters.releaseTicket}\n\nSpinnaker execution: https://spinnaker.cloud.yandex.net/#/applications/${execution.application}/executions/${ execution.id }\n\n\n%%\n./release --package-version ${current_version}          \\\n    --service-config configs/${release_config} -T ${release_ticket}              \\\n    -d '${release_tag}'  -v --cluster-name ${release_contour_lower}  --zone-name global   \\\n    --prev-package-version ${previous_version}          \\\n    --no-auth --force -U\n%%",
+   "followers": "${trigger_user}",
+   "name": "Create ticket HW-NBS-STABLE-LAB",
+   "outputVariable": "stage_release_ticket",
+   "queue": "NBSOPS",
+   "refId": "11",
+   "requisiteStageRefIds": [
+    "1"
+   ],
+   "stageEnabled": {
+    "expression": "${release_contour== \"HW-NBS-STABLE-LAB\"}",
+    "type": "expression"
+   },
+   "summary": "[${release_contour}] Deploy ${release_project_human}  ${release_tag}",
+   "ticketType": "release",
+   "type": "createStartrekTicket"
+  },
+  {
+   "failPipeline": true,
+   "instructions": "After you launched commands/followed instructions from created ticket, and everything deployed, press confirm here",
+   "judgmentInputs": [],
+   "name": "Confirm when deployed",
+   "notifications": [],
+   "refId": "16",
+   "requisiteStageRefIds": [
+    "11",
+    "24",
+    "25",
+    "26",
+    "28"
+   ],
+   "selectedStageRoles": [
+    "ycnbs:administration"
+   ],
+   "stageTimeoutMs": 1209600000,
+   "type": "manualJudgment"
+  },
+  {
+   "completeOtherBranchesThenFail": false,
+   "continuePipeline": true,
+   "failPipeline": false,
+   "name": "Close ticket",
+   "refId": "23",
+   "requisiteStageRefIds": [
+    "16"
+   ],
+   "resolution": "fixed",
+   "ticketId": "${stage_release_ticket}",
+   "transition": "closed1",
+   "type": "executeTransition"
+  },
+  {
+   "assignee": "${trigger_user}",
+   "components": "${release_component}",
+   "description": "Release ticket: ${release_ticket}\n\nSpinnaker execution: https://spinnaker.cloud.yandex.net/#/applications/${execution.application}/executions/${ execution.id }\n\n\n%%\n./release --package-version ${current_version}    \\\n    --service-config configs/${release_config} -T  ${release_ticket}          \\\n    -d '${release_tag}'  -v --cluster-name testing --zone-name vla         \\\n    --prev-package-version ${previous_version}\n%%\n%%\n./release --package-version ${current_version}   \\\n    --service-config configs/${release_config} -T  ${release_ticket}          \\\n    -d '${release_tag}' -v --cluster-name testing --zone-name sas         \\\n%%\n%%\n./release --package-version ${current_version}   \\\n    --service-config configs/${release_config} -T  ${release_ticket}          \\\n    -d '${release_tag}' -v --cluster-name testing --zone-name myt         \\\n    -U\n%%",
+   "followers": "${trigger_user}",
+   "name": "Create ticket TESTING",
+   "outputVariable": "stage_release_ticket",
+   "queue": "NBSOPS",
+   "refId": "24",
+   "requisiteStageRefIds": [
+    "1"
+   ],
+   "stageEnabled": {
+    "expression": "${release_contour== \"TESTING\"}",
+    "type": "expression"
+   },
+   "summary": "[${release_contour}] Deploy ${release_project_human}  ${release_tag}",
+   "ticketType": "release",
+   "type": "createStartrekTicket"
+  },
+  {
+   "assignee": "${trigger_user}",
+   "components": "${release_component}",
+   "description": "Release ticket: ${release_ticket}\n\nSpinnaker execution: https://spinnaker.cloud.yandex.net/#/applications/${execution.application}/executions/${ execution.id }\n\n\n%%\n./release --package-version ${current_version}    \\\n    --service-config configs/${release_config} -T  ${release_ticket}          \\\n    -d '${release_tag}'  -v --cluster-name preprod --zone-name vla         \\\n    --prev-package-version ${previous_version} \n%%\n%%\n./release --package-version ${current_version}  \\\n    --service-config configs/${release_config} -T  ${release_ticket}          \\\n    -d '${release_tag}' -v --cluster-name preprod --zone-name sas         \\\n%%\n",
+   "followers": "${trigger_user}",
+   "name": "Create ticket PREPROD",
+   "outputVariable": "stage_release_ticket",
+   "queue": "NBSOPS",
+   "refId": "25",
+   "requisiteStageRefIds": [
+    "1"
+   ],
+   "stageEnabled": {
+    "expression": "${release_contour== \"PREPROD\"}",
+    "type": "expression"
+   },
+   "summary": "[${release_contour}] Deploy ${release_project_human}  ${release_tag}",
+   "ticketType": "release",
+   "type": "createStartrekTicket"
+  },
+  {
+   "assignee": "${trigger_user}",
+   "components": "${release_component}",
+   "description": "Release ticket: ${release_ticket}\n\nSpinnaker execution: https://spinnaker.cloud.yandex.net/#/applications/${execution.application}/executions/${ execution.id }\n\n\n%%\n./release --package-version ${current_version}   \\\n    --service-config configs/${release_config} -T  ${release_ticket}          \\\n    -d '${release_tag}'  -v --cluster-name prod --zone-name vla  \n%%\n%%\n./release --package-version ${current_version}   \\\n    --service-config configs/${release_config} -T  ${release_ticket}          \\\n    -d '${release_tag}' -v --cluster-name prod --zone-name sas         \\\n%%\n%%\n./release --package-version ${current_version}   \\\n    --service-config configs/${release_config} -T  ${release_ticket}          \\\n    -d '${release_tag}' -v --cluster-name prod --zone-name myt         \\\n    -U\n%%\n%%\n./release --package-version ${current_version}   \\\n    --service-config configs/${release_config} -T  ${release_ticket}          \\\n    -d '${release_tag}' -v --cluster-name preprod --zone-name myt         \\\n    -U\n%%",
+   "followers": "${trigger_user}",
+   "name": "Create ticket PROD",
+   "outputVariable": "stage_release_ticket",
+   "queue": "NBSOPS",
+   "refId": "26",
+   "requisiteStageRefIds": [
+    "1"
+   ],
+   "stageEnabled": {
+    "expression": "${release_contour== \"PROD\"}",
+    "type": "expression"
+   },
+   "summary": "[${release_contour}] Deploy ${release_project_human}  ${release_tag}",
+   "ticketType": "release",
+   "type": "createStartrekTicket"
+  },
+  {
+   "assignee": "${trigger_user}",
+   "components": "${release_component}",
+   "description": "Release ticket: ${release_ticket}\n\nSpinnaker execution: https://spinnaker.cloud.yandex.net/#/applications/${execution.application}/executions/${ execution.id }\n\n\n%%\n./release --package-version ${current_version}   \\\n    --service-config configs/${release_config} -T  ${release_ticket}          \\\n    -d '${release_tag}'  -v --cluster-name israel --zone-name m1a  \n%%\n",
+   "followers": "${trigger_user}",
+   "name": "Create ticket ISRAEL",
+   "outputVariable": "stage_release_ticket",
+   "queue": "NBSOPS",
+   "refId": "28",
+   "requisiteStageRefIds": [
+    "1"
+   ],
+   "stageEnabled": {
+    "expression": "${release_contour== \"ISRAEL\"}",
+    "type": "expression"
+   },
+   "summary": "[${release_contour}] Deploy ${release_project_human}  ${release_tag}",
+   "ticketType": "release",
+   "type": "createStartrekTicket"
+  }
+ ],
+ "triggers": []
+}

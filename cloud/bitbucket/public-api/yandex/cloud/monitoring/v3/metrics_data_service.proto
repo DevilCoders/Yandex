@@ -1,0 +1,113 @@
+syntax = "proto3";
+
+package yandex.cloud.monitoring.v3;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "yandex/cloud/api/tools/options.proto";
+import "yandex/cloud/validation.proto";
+import "yandex/cloud/monitoring/v3/downsampling.proto";
+import "yandex/cloud/monitoring/v3/metric_type.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/public-api/yandex/cloud/monitoring/v3;monitoring";
+option java_package = "yandex.cloud.api.monitoring.v3";
+
+// A set of methods for managing metric data.
+service MetricsDataService {
+    // Returns metric data from Monitoring.
+    rpc Read (ReadMetricsDataRequest) returns (ReadMetricsDataResponse) {
+        option (google.api.http) = { post: "/monitoring/v3/data/read" body: "*" };
+        option (yandex.cloud.api.tools.method).lint_skip.http_verb = true;
+    }
+
+    // Writes metric data to Monitoring.
+    rpc Write (WriteMetricsDataRequest) returns (WriteMetricsDataResponse) {
+        option (google.api.http) = { post: "/monitoring/v3/data/write" body: "*" };
+    }
+}
+
+message ReadMetricsDataRequest {
+    // ID of the folder that the metric belongs to.
+    string folder_id = 1 [(required) = true, (length) = "<=50"];
+
+    // Query text.
+    string query = 2 [(required) = true];
+
+    // The beginning of the time interval, in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+    google.protobuf.Timestamp from_time = 3 [(required) = true];
+
+    // The end of the time interval, in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+    google.protobuf.Timestamp to_time = 4 [(required) = true];
+
+    // Downsampling parameters.
+    Downsampling downsampling = 5 [(required) = true];
+}
+
+message Timeseries {
+    message DoubleValues {
+        repeated double values = 1;
+    }
+
+    message Int64Values {
+        repeated int64 values = 2;
+    }
+
+    // List of timestamps.
+    repeated google.protobuf.Timestamp timestamps = 1;
+
+    oneof values {
+        // List of double values.
+        DoubleValues double_values = 2;
+
+        // List of int64 values. Only for `IGAUGE` or 'COUNTER' metric type.
+        Int64Values int64_values = 3;
+    }
+}
+
+message ReadMetricData {
+    // Alias.
+    string alias = 1;
+
+    // Name of the metric.
+    string name = 2;
+
+    // List of metric labels as `key:value` pairs.
+    map<string, string> labels = 3;
+
+    // Type of the metric.
+    MetricType type = 4;
+
+    // Metric timeseries.
+    Timeseries timeseries = 5;
+}
+
+message ReadMetricsDataResponse {
+    // List of metrics with timeseries.
+    repeated ReadMetricData metrics = 1;
+}
+
+message WriteMetricsDataRequest {
+    message RawData {
+        // Query content type. Use "application/json".
+        string content_type = 1 [(required) = true];
+
+        // Query content.
+        bytes content = 2 [(required) = true];
+    }
+
+    // ID of the folder that the metric belongs to.
+    string folder_id = 1 [(required) = true, (length) = "<=50"];
+
+    // ID of the service that the metric belongs to. Use `service=custom` for custom metrics.
+    string service = 2 [(required) = true, (length) = "<=50"];
+
+    oneof data {
+        // Raw metrics data.
+        RawData raw_data = 3;
+    }
+}
+
+message WriteMetricsDataResponse {
+    // Number of successfully written metrics.
+    int64 written_metrics_count = 1;
+}

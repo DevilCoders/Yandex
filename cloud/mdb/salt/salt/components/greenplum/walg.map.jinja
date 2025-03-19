@@ -1,0 +1,135 @@
+{% from "components/greenplum/map.jinja" import gpdbvars with context %}
+
+{% set environment = salt['pillar.get']('yandex:environment', 'dev') %}
+{% set walg_suffix = salt['pillar.get']('data:walg:suffix', salt['pillar.get']('data:dbaas:cluster_id', salt['grains.get']('pg:suffix', salt['grains.get']('id')))) %}
+
+{% set segments_in_host = salt.pillar.get('data:greenplum:segment_in_host', 1)|int %}
+{% set segment_host_count = salt.pillar.get('data:greenplum:segment_host_count', 1)|int %}
+{% set walg_io_limit = salt['pillar.get']('data:dbaas:flavor:io_limit', salt['pillar.get']('data:walg:io_limit', 536870912)) // (2 * segments_in_host) %}
+{% set walg_network_limit = salt['pillar.get']('data:dbaas:flavor:network_limit', salt['pillar.get']('data:walg:network_limit', 1073741824)) // (2 * segments_in_host) %}
+{% set cpu_guarantee = salt['pillar.get']('data:dbaas:flavor:cpu_guarantee', salt['pillar.get']('data:walg:parallel_workers', 1)) // segments_in_host %}
+
+{% if cpu_guarantee < 4 %}
+{% set walg_coroutines = 1 %}
+{% elif cpu_guarantee > 8 %}
+{% set walg_coroutines = cpu_guarantee // 2 %}
+{% else %}
+{% set walg_coroutines = cpu_guarantee %}
+{% endif %}
+
+{% set walg_threads = walg_coroutines + 2 %}
+
+{% if environment in ['prod', 'compute-prod'] %}
+{% set walg_upload_disk_concurrency = salt['pillar.get']('data:walg:upload_disk_concurrency', 1) %}
+{% else %}
+{% set walg_upload_disk_concurrency = salt['pillar.get']('data:walg:upload_disk_concurrency', walg_coroutines) %}
+{% endif %}
+
+{% set walg_seg_poll_interval = salt['pillar.get']('data:walg:segment_poll_interval', '1m') %}
+{% set walg_seg_poll_retries = salt['pillar.get']('data:walg:segment_poll_retries', '5') %}
+{% set walg_stop_backup_timeout = salt['pillar.get']('data:walg:stop_backup_timeout', '1m') %}
+{% set walg_alive_check_interval = salt['pillar.get']('data:walg:alive_check_interval', '30s') %}
+{% set walg_delete_concurrency = salt['pillar.get']('data:walg:delete_concurrency', segment_host_count) %}
+
+{% set walg = {
+    'WALG_COMPRESSION_METHOD': salt['pillar.get']('data:walg:compression', 'brotli'),
+    'PGUSER': gpdbvars.gpadmin,
+    'PGDATABASE': 'postgres',
+    'PGPASSFILE': '/home/{0}/.pgpass'.format(gpdbvars.gpadmin),
+    'WALG_DELTA_MAX_STEPS': 0,
+    'WALE_GPG_KEY_ID': salt['pillar.get']('data:s3:gpg_key_id', salt['grains.get']('pg:suffix', salt['grains.get']('id'))),
+    'WALG_DISK_RATE_LIMIT': walg_io_limit | int,
+    'WALG_NETWORK_RATE_LIMIT': walg_network_limit | int,
+    'WALG_DOWNLOAD_CONCURRENCY': walg_coroutines | int,
+    'WALG_UPLOAD_CONCURRENCY': walg_coroutines | int,
+    'WALG_UPLOAD_DISK_CONCURRENCY': walg_upload_disk_concurrency | int,
+    'WALG_GP_LOGS_DIR': '/var/log/greenplum',
+    'WALG_GP_SEG_POLL_INTERVAL': walg_seg_poll_interval,
+    'WALG_GP_SEG_POLL_RETRIES': walg_seg_poll_retries | int,
+    'WALG_STOP_BACKUP_TIMEOUT': walg_stop_backup_timeout,
+    'WALG_ALIVE_CHECK_INTERVAL': walg_alive_check_interval,
+    'WALG_GP_DELETE_CONCURRENCY': walg_delete_concurrency | int,
+
+    'GOMAXPROCS': walg_threads | int,
+} %}
+
+{% if salt['pillar.get']('data:walg:storage', 's3') == 'ssh' %}
+{% set ssh_prefix = salt['pillar.get']('data:walg:ssh_prefix') %}
+{% if not ssh_prefix %}
+{% set ssh_server = salt['pillar.get']('data:walg:ssh_server') %}
+{% set recover_dir = salt['pillar.get']('data:walg:ssh_folder', '/backups/walg') %}
+{% set cluster = salt['pillar.get']('data:walg:ssh_cluster', salt['grains.get']('id').split('.')[0][:-1]) %}
+{% set ssh_prefix = 'ssh://' + ssh_server + salt['file.join'](recover_dir, cluster) %}
+{% endif %}
+
+{% do walg.update({
+    'WALG_SSH_PREFIX': ssh_prefix,
+    'SSH_PORT': salt['pillar.get']('data:walg:ssh_port', '22'),
+    'SSH_USERNAME': salt['pillar.get']('data:walg:ssh_user', 'walg'),
+    'SSH_PRIVATE_KEY_PATH': salt['pillar.get']('data:walg:ssh_private_key_path', '/etc/wal-g/SSH_KEY'),
+}) %}
+
+{% else %}
+
+{% do walg.update({
+    'AWS_ENDPOINT': salt['pillar.get']('data:s3:endpoint', 'https://s3.mds.yandex.net/').replace('https+path','https').replace('http+path','http'),
+    'WALE_S3_PREFIX': "s3://{0}/wal-e/{1}/{2}/".format(salt['pillar.get']('data:s3_bucket', 'mdb'), walg_suffix, gpdbvars.gpmajver),
+    'AWS_S3_FORCE_PATH_STYLE': (not salt['pillar.get']('data:s3:virtual_addressing_style', False)),
+}) %}
+{% if salt['pillar.get']('data:s3:access_key_id') %}
+{% do walg.update({'AWS_ACCESS_KEY_ID': salt.pillar.get('data:s3:access_key_id')})%}
+{% endif %}
+{% if salt['pillar.get']('data:s3:access_secret_key') %}
+{% do walg.update({'AWS_SECRET_ACCESS_KEY': salt.pillar.get('data:s3:access_secret_key')})%}
+{% endif %}
+{% if salt['pillar.get']('data:walg:nobalancer', True) and salt['pillar.get']('data:dbaas:vtype') != 'compute' %}
+{% do walg.update({'S3_ENDPOINT_SOURCE': salt['pillar.get']('data:s3:endpoint_source', 'http://s3.mds.yandex.net/hostname')}) %}
+{% do walg.update({'S3_ENDPOINT_PORT': salt['pillar.get']('data:s3:endpoint_port', 4080)}) %}
+{% endif %}
+{% if salt['pillar.get']('data:s3:region') %}
+{% do walg.update({'AWS_REGION': salt['pillar.get']('data:s3:region')}) %}
+{% endif %}
+
+{% endif %}
+
+{% if 'dbaas_e2e' in salt['pillar.get']('data:dbaas:cluster:name', salt['pillar.get']('data:dbaas:cluster_name', 'unknown')) %}
+{% do walg.update({'WALG_LOG_LEVEL': 'DEVEL'}) %}
+{% endif %}
+
+{% if salt['pillar.get']('data:walg:use_wal_delta', False) %}
+{% do walg.update({'WALG_USE_WAL_DELTA': 'True'}) %}
+{% endif %}
+
+{% if salt['pillar.get']('data:s3:gpg_key')  %}
+{% do walg.update({'WALG_PGP_KEY_PATH': '/etc/wal-g/PGP_KEY'})%}
+{% endif %}
+
+{% do walg.update({'PGHOST': 'localhost'}) %}
+
+{% set walg_restore = {
+    'WALE_S3_PREFIX': "s3://{0}/wal-e/{1}/{2}".format(salt['pillar.get']('data:restore-from-pillar-data:s3_bucket', 'mdb'), salt['pillar.get']('restore-from:cid'), gpdbvars.gpmajver),
+    'WALE_GPG_KEY_ID': salt['pillar.get']('data:restore-from-pillar-data:s3:gpg_key_id'),
+    'WALG_PGP_KEY_PATH': '/etc/wal-g/PGP_KEY_RESTORE',
+} %}
+
+{% for var in [
+    'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'WALG_DELTA_MAX_STEPS',
+    'PGHOST', 'PGUSER', 'PGPASSFILE', 'PATH', 'AWS_ENDPOINT',
+    'AWS_S3_FORCE_PATH_STYLE', 'GOMAXPROC', 'WALG_DOWNLOAD_CONCURRENCY',
+     'WALG_UPLOAD_CONCURRENCY', 'GOMAXPROCS', 'WALG_LOG_LEVEL', 'WALG_GP_LOGS_DIR'] %}
+
+{% if var in walg %}
+{% do walg_restore.update({var: walg[var]}) %}
+{% endif %}
+{% endfor %}
+
+{% set walg_monitor = {
+    'PGUSER': "monitor",
+    'PGDATABASE': "postgres",
+} %}
+
+{% for var in walg %}
+{% if var not in ['PGPASSWORD', 'PGPASSFILE', 'PGUSER', 'PGDATABASE'] %}
+{% do walg_monitor.update({var: walg[var]}) %}
+{% endif %}
+{% endfor %}

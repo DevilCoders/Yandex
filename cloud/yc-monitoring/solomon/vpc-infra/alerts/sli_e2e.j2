@@ -1,0 +1,24 @@
+{% extends "../../base/alert.j2" %}
+{% macro prog() %}
+let errors = {cluster='cloud_{{ env }}_compute', service='juggler-events', juggler_service='e2e-tests-{{ e2e_type }}', status='CRIT', host='{{ dc | capitalize }}'};
+let all = group_lines('sum', {cluster='cloud_{{ env }}_compute', service='juggler-events', juggler_service='e2e-tests-{{ e2e_type }}', status ='*', host='{{ dc | capitalize }}'});
+ok_if(count(errors) == 0);
+let error_percent = max(errors) / max(all) * 100;
+let is_red = error_percent > {{ red_threshold }} || error_percent != error_percent;
+let is_yellow = error_percent > {{ red_threshold }};
+let trafficColor = is_red ? 'red' : (is_yellow ? 'yellow' : 'green');
+let description = '{{ e2e_type }} in {{dc}} error percent: ' + error_percent + '%';
+{% endmacro %}
+
+{% block main %}
+    "name": "vpc sli for {{ e2e_type }} @ {{ env }} {{ dc }}",
+    "annotations": {
+        "tags": "Solomon",
+        "host": "vpc-sli-{{ env }}-{{ dc }}",
+        "service": "sli-{{ e2e_type }}",
+        "trafficLight.color": "[[expression.trafficColor]]",
+        "details": "[[expression.description]]"
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

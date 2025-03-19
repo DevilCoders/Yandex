@@ -1,0 +1,1 @@
+DELETE FROM `test/mkt/meta/product_versions`;

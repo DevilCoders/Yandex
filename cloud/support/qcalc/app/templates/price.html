@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Калькулятор квот</title>
+<style type ="text/css">
+table {
+  font-family: arial, sans-serif;
+  border-collapse: collapse;
+ // width: 60%;
+}
+
+td, th {
+  border: 1px solid #dddddd;
+  text-align: left;
+  padding: 8px;
+}
+
+.true {
+     color: green;
+}
+
+.false {
+     color: red;
+}
+
+.compute {
+float: left;
+}
+
+.other {
+float: left;
+}
+
+</style>
+</head>
+<body>
+
+{% block content %}
+
+<table>
+
+<tr>
+
+<th>Сумма всех активных грантов</th>
+<th>Кредитный лимит</th>
+<th>Баланс</th>
+<th>Информация о клиенте</th>
+</tr>
+
+<tr>
+<td><input id='grant' type="float" value="{{balance.grantsumm}}" size=5 disabled></td>
+<td><input id='cr-limit' type="float" value="{{balance.credit}}" size=5 disabled></td>
+<td><input id='balance' type="float" value="{{balance.balance}}" size=5></td>
+<td rowspan="3">
+    <br>
+    CloudID: <p id="cloudid">{{ cloudid }}</p>
+        {% if userinfo['personType'] == 'company' or userinfo['personType'] == 'switzerland_nonresident_company' %}
+                Организация: "{{ userinfo['company'] }}"
+            {% else %}
+                Тип аккаунта: Личный
+        {% endif %}
+    <br>Тип оплаты: {{ userinfo['paymentType'] | replace("invoice","безнал") | replace("card","карта") }}
+
+    <br>Статус: {{ userinfo['displayStatus'] }}
+    <br>Валюта:<label id="currency">{{ balance['currency'] }}</label> <label id="curvalue"></label>
+
+</td>
+</tr>
+
+
+<tr>
+<th>Стартовый грант Compute</th>
+<td  colspan="2"><input id=computegrant type="float" value="{{balance['grants']['compute']}}"  size=5 disabled></td>
+</tr>
+
+<tr>
+<th>Стартовый грант на остальные сервисы</th>
+<td  colspan="2"><input id=othergrant type="float" value="{{balance['grants']['other']}}"  size=5 disabled></td>
+</tr>
+</table>
+<p>
+    <div class="compute">
+
+<table>
+<tr>
+    <th colspan="4"><p align="center">Квоты Compute Cloud</p></th>
+
+</tr>
+</tr>
+     <tr><td colspan="4"><p align="center">
+            Коэффициент умножения квот<br>
+            <input id="computemult" value="1" size=5>
+     </p></td>
+     </tr>
+
+<tr>
+<td>Название</td>
+<td>Значение</td>
+<td>₽ в час</td>
+<td>Использовано</td>
+</tr>
+{% for quota in quotas.keys() %}
+    {% if quota in ['memory', 'total-disk-size', 'network-hdd-total-disk-size', 'network-ssd-total-disk-size', 'total-snapshot-size'] %}
+<tr>
+<td>{{ quota }}</td>
+<td><input name="compute" id={{ quota }} type="float" value="{{quotas[quota]['limit']/1073741824}}" size=5></td>
+<td><input id={{ quota }}-ph type="float" value="{{quotas[quota]['price']}}"  size=5 disabled></td>
+<td><input id={{ quota }}-used type="float" value="{{quotas[quota]['value']/1073741824}}"  size=5 disabled></td>
+</tr>
+    {% elif quota == 'instance-cores' %}
+<tr>
+<td>{{ quota }}</td>
+<td><input name="compute" id="{{ quota }}" type="float" value="{{quotas[quota]['limit']/100}}" size=5></td>
+<td><input id='{{ quota }}-ph' type="float" value="{{quotas[quota]['price']}}"  size=5 disabled></td>
+<td><input id='{{ quota }}-used' type="float" value="{{quotas[quota]['value']/100}}"  size=5 disabled></td>
+</tr>
+    {% else %}
+<tr>
+<td>{{ quota }}</td>
+<td><input name="compute" id="{{ quota }}" type="float" value="{{quotas[quota]['limit']}}" size=5></td>
+<td><input id='{{ quota }}-ph' type="float" value="{{quotas[quota]['price']}}"  size=5 disabled></td>
+<td><input id='{{ quota }}-used' type="float" value="{{quotas[quota]['value']}}"  size=5 disabled></td>
+</tr>
+    {% endif %}
+
+{% endfor %}
+ </table>
+</div>
+<div class = 'other'>
+ <table>
+
+<tr>
+    <th colspan="4"><p align="center">Квоты MDB</p></th>
+
+</tr>
+     <tr><td colspan="4"><p align="center">
+            Использовать коэффициент пересчёта<br>
+            <input type="checkbox" id="mdbcoef">Да
+     </p></td>
+     </tr>
+          <tr><td colspan="4"><p align="center">
+            Коэффициент умножения квот<br>
+            <input id="mdbmult" value="1" size=5>
+     </p></td>
+     </tr>
+
+     {% for quota in quotas_mdb.keys() %}
+    {% if quota in ['mdb.hdd.size', 'mdb.ssd.size', 'mdb.memory.size'] %}
+<tr>
+<td>{{ quota }}</td>
+<td><input name="mdb" id={{ quota }} type="float" value="{{quotas_mdb[quota]['limit']/1073741824}}" size=5></td>
+<td><input id={{ quota }}-ph type="float" value="{{quotas_mdb[quota]['price']}}"  size=5 disabled></td>
+<td><input id={{ quota }}-used type="float" value="{{quotas_mdb[quota]['value']/1073741824}}"  size=5 disabled></td>
+</tr>
+    {% else %}
+<tr>
+<td>{{ quota }}</td>
+<td><input name="mdb" id="{{ quota }}" type="float" value="{{quotas_mdb[quota]['limit']}}" size=5></td>
+<td><input id='{{ quota }}-ph' type="float" value="{{quotas_mdb[quota]['price']}}"  size=5 disabled></td>
+<td><input id='{{ quota }}-used' type="float" value="{{quotas_mdb[quota]['value']}}"  size=5 disabled></td>
+</tr>
+    {% endif %}
+
+{% endfor %}
+
+<tr>
+    <th colspan="4"><p align="center">Квоты Object Storage</p></th>
+</tr>
+
+<tr>
+<td>Общий объём/Gb</td>
+<td><input name="s3" id='total_size_quota' type="float" value="{{quotas_s3['total_size_quota']/1073741824|default('5120')}}" size=5></td>
+<td><input id='hot-st-ph' type="float" value=0.00172222222222222 size=5 disabled></td>
+<td><input id='hot-st-used' type="float" value="{{quotas_s3['total_size']/1073741824|default('5120')}}" size=5 disabled></td>
+
+</tr>
+    <tr>
+<td>Количество корзин</td>
+<td><input name="s3" id='buckets_count_quota' type="float" value="{{quotas_s3['buckets_count_quota']|default('25')}}" size=5></td>
+<td></td>
+<td><input id='baskets-used' type="float" value="{{quotas_s3['buckets_count']|default('25')}}" size=5 disabled></td>
+
+</tr>
+
+
+ </table>
+
+<button onclick="validateForm()" id='calc'>Итого</button>
+
+<br><br>
+<p id="price-ph"></p>
+<p id="price-p2d"></p>
+<p id="total-bl"></p>
+<p id="decision"></p>
+<p id="wbepaid"></p>
+<button onclick="getcode()" id='getcode' hidden>Генерировать код</button>
+<button onclick="copyLink()" id='copy' hidden>Копировать код</button>
+<input id='link' type="text" value='' size=0 hidden >
+
+<script type="text/javascript" src="/static/matheval.js"></script>
+
+<script type="text/javascript" src="/static/front.js"></script>
+
+{% endblock %}
+    </div>
+</body>
+</html>

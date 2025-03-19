@@ -1,0 +1,34 @@
+{% set mongodb = salt.slsutil.renderer('salt://components/mongodb/defaults.py?saltenv=' ~ saltenv) %}
+{% set config = mongodb.config.get('mongod') %}
+{% set management_iface = 'eth1' %}
+
+table filter {
+    chain OUTPUT {
+        policy ACCEPT;
+        mod state state (ESTABLISHED RELATED) ACCEPT;
+{% if config.security.enableEncryption %}
+{# explicitly allow access to KMIP Server #}
+        daddr '{{ config.security.kmip.serverName }}' proto tcp dport {{ config.security.kmip.port }} ACCEPT;
+{% endif %}
+        daddr 169.254.169.254 mod owner uid-owner '{{ mongodb.user }}' REJECT reject-with icmp-net-unreachable;
+        outerface {{management_iface}} {
+            mod owner uid-owner '{{mongodb.user}}' REJECT reject-with icmp-net-unreachable;
+        }
+    }
+}
+
+domain ip6 {
+    table filter {
+        chain OUTPUT {
+            policy ACCEPT;
+            mod state state (ESTABLISHED RELATED) ACCEPT;
+            outerface {{management_iface}} {
+                # The last match wins.
+{% for host in salt['pillar.get']('data:access:management_hosts', []) %}
+                daddr '{{ host.fqdn }}' proto tcp dport {{host.port}} ACCEPT;
+{% endfor %}
+                mod owner uid-owner '{{mongodb.user}}' REJECT reject-with icmp-net-unreachable;
+            }
+        }
+    }
+}

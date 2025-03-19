@@ -1,0 +1,212 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.iot.devices.v1;
+
+import "google/protobuf/field_mask.proto";
+import "yandex/cloud/priv/validation.proto";
+import "yandex/cloud/priv/sensitive.proto";
+import "yandex/cloud/api/operation.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+import "yandex/cloud/priv/iot/devices/v1/device.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/iot/devices/v1;devices";
+option java_outer_classname = "PITDS";
+
+service DeviceService {
+  rpc Get (GetDeviceRequest) returns (Device);
+
+  rpc GetByName (GetByNameDeviceRequest) returns (Device);
+
+  rpc List (ListDevicesRequest) returns (ListDevicesResponse);
+
+  rpc Create (CreateDeviceRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "CreateDeviceMetadata"
+      response: "Device"
+    };
+  }
+
+  rpc Update (UpdateDeviceRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateDeviceMetadata"
+      response: "Device"
+    };
+  }
+
+  rpc Delete (DeleteDeviceRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeleteDeviceMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+
+  rpc ListCertificates (ListDeviceCertificatesRequest) returns (ListDeviceCertificatesResponse);
+
+  rpc AddCertificate (AddDeviceCertificateRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "AddDeviceCertificateMetadata"
+      response: "DeviceCertificate"
+    };
+  }
+
+  rpc DeleteCertificate (DeleteDeviceCertificateRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeleteDeviceCertificateMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+
+  rpc ListPasswords (ListDevicePasswordsRequest) returns (ListDevicePasswordsResponse);
+
+  rpc AddPassword (AddDevicePasswordRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "AddDevicePasswordMetadata"
+      response: "DevicePassword"
+    };
+  }
+
+  rpc DeletePassword (DeleteDevicePasswordRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeleteDevicePasswordMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+
+  rpc ListOperations (ListDeviceOperationsRequest) returns (ListDeviceOperationsResponse);
+}
+
+message GetDeviceRequest {
+  string device_id = 1 [(required) = true, (length) = "<=50"];
+  DeviceView device_view = 2;
+}
+
+message GetByNameDeviceRequest {
+  string registry_id = 1 [(required) = true, (length) = "<=50"];
+  string device_name = 2 [(required) = true, (length) = "<=50", (pattern) = "[a-zA-Z0-9_-]*"];
+  DeviceView device_view = 3;
+}
+
+message ListDevicesRequest {
+  oneof id {
+    option (exactly_one) = true;
+    string registry_id = 1 [(length) = "<=50"];
+    string folder_id = 2 [(length) = "<=50"];
+  }
+  int64 page_size = 3 [(value) = "0-1000"];
+  string page_token = 4 [(length) = "<=100"];
+  DeviceView device_view = 5;
+}
+
+message ListDevicesResponse {
+  repeated Device devices = 1;
+  string next_page_token = 2;
+}
+
+message CreateDeviceRequest {
+  string registry_id = 1 [(required) = true, (length) = "<=50"];
+  string name = 2 [(required) = true, (length) = "<=50", (pattern) = "[a-zA-Z0-9_-]*"];
+  string description = 3 [(length) = "<=256"];
+  repeated Certificate certificates = 4;
+  // map from alias to canonical topic name prefix, e.g. my/custom/alias -> $device/{id}/events
+  map<string, string> topic_aliases = 5;
+  string password = 6 [(sensitive) = true];
+
+  message Certificate {
+    string certificate_data = 1 [(sensitive) = true];
+  }
+}
+
+message CreateDeviceMetadata {
+  string device_id = 1;
+}
+
+message UpdateDeviceRequest {
+  string device_id = 1 [(required) = true, (length) = "<=50"];
+
+  google.protobuf.FieldMask update_mask = 2;
+
+  string name = 3 [(length) = "<=50", (pattern) = "[a-zA-Z0-9_-]*"];
+  string description = 4 [(length) = "<=256"];
+  // map from alias to canonical topic name prefix
+  map<string, string> topic_aliases = 5;
+}
+
+message UpdateDeviceMetadata {
+  string device_id = 1;
+}
+
+message DeleteDeviceRequest {
+  string device_id = 1 [(required) = true, (length) = "<=50"];
+}
+
+message DeleteDeviceMetadata {
+  string device_id = 1;
+}
+
+message ListDeviceCertificatesRequest {
+  string device_id = 1 [(required) = true, (length) = "<=50"];
+}
+
+message ListDeviceCertificatesResponse {
+  repeated DeviceCertificate certificates = 1;
+}
+
+message AddDeviceCertificateRequest {
+  string device_id = 1 [(required) = true, (length) = "<=50"];
+  string certificate_data = 3 [(sensitive) = true];
+}
+
+message AddDeviceCertificateMetadata {
+  string device_id = 1;
+  string fingerprint = 2;
+}
+
+message DeleteDeviceCertificateRequest {
+  string device_id = 1 [(required) = true, (length) = "<=50"];
+  string fingerprint = 2 [(required) = true, (length) = "<=50"];
+}
+
+message DeleteDeviceCertificateMetadata {
+  string device_id = 1 [(required) = true, (length) = "<=50"];
+  string fingerprint = 2 [(required) = true, (length) = "<=50"];
+}
+
+message ListDevicePasswordsRequest {
+  string device_id = 1 [(required) = true, (length) = "<=50"];
+}
+
+message ListDevicePasswordsResponse {
+  repeated DevicePassword passwords = 1;
+}
+
+message AddDevicePasswordRequest {
+  string device_id = 1 [(required) = true, (length) = "<=50"];
+  string password = 2 [(length) = ">=14", (sensitive) = true];
+}
+
+message AddDevicePasswordMetadata {
+  string device_id = 1;
+  string password_id = 2;
+}
+
+message DeleteDevicePasswordRequest {
+  string device_id = 1 [(required) = true, (length) = "<=50"];
+  string password_id = 2 [(required) = true, (length) = "<=50"];
+}
+
+message DeleteDevicePasswordMetadata {
+  string device_id = 1 [(required) = true, (length) = "<=50"];
+  string password_id = 2 [(required) = true, (length) = "<=50"];
+}
+
+message ListDeviceOperationsRequest {
+  string device_id = 1 [(required) = true];
+  int64 page_size = 2 [(value) = "0-1000"];
+  string page_token = 3 [(length) = "<=100"];
+  string filter = 4 [(length) = "<=1000"];
+}
+
+message ListDeviceOperationsResponse {
+  repeated operation.Operation operations = 1;
+  string next_page_token = 2;
+}

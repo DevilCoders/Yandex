@@ -1,0 +1,270 @@
+swagger: "2.0"
+info:
+  description: "API for working with secrets."
+  version: "1.0.0"
+  title: "MDB Secrets"
+  contact:
+    email: "mdb@yandex-team.ru"
+  license:
+    name: "Proprietary"
+schemes:
+  - "http"
+consumes:
+  - "application/json"
+produces:
+  - "application/json"
+paths:
+  /v1/gpg:
+    parameters:
+      - $ref: '#/parameters/RequestIdHeader'
+      - $ref: '#/parameters/ClusterId'
+      - $ref: '#/parameters/Authorization'
+    put:
+      summary: Retrieves or generates gpg key
+      operationId: Get
+      tags:
+        - gpg
+      responses:
+        200:
+          description: Key for cluster
+          schema:
+            $ref: '#/definitions/GpgKeyResponse'
+        401:
+          description: "Unauthorized"
+          schema:
+            $ref: "#/definitions/Error"
+        403:
+          description: "Forbidden"
+          schema:
+            $ref: "#/definitions/Error"
+        500:
+          description: "Internal server error"
+          schema:
+            $ref: "#/definitions/Error"
+        503:
+          description: "Service unavailable (dependency down)"
+          schema:
+            $ref: "#/definitions/Error"
+    delete:
+      summary: Delete gpg key for cluster
+      operationId: Delete
+      tags:
+        - gpg
+      responses:
+        200:
+          description: "Gpg deleted"
+        401:
+          description: "Unauthorized"
+          schema:
+            $ref: "#/definitions/Error"
+        403:
+          description: "Forbidden"
+          schema:
+            $ref: "#/definitions/Error"
+        500:
+          description: "Internal server error"
+          schema:
+            $ref: "#/definitions/Error"
+        503:
+          description: "Service unavailable (dependency down)"
+          schema:
+            $ref: "#/definitions/Error"
+
+  /v1/cert:
+    put:
+      parameters:
+        - $ref: '#/parameters/RequestIdHeader'
+        - $ref: '#/parameters/Hostname'
+        - $ref: '#/parameters/Altnames'
+        - $ref: '#/parameters/Authorization'
+        - $ref: '#/parameters/CertificateAuthority'
+        - $ref: '#/parameters/CertificateType'
+        - $ref: '#/parameters/Force'
+      summary: Retrieves or generates host certificate
+      operationId: Put
+      tags:
+        - certs
+      responses:
+        200:
+          description: Certificate for host
+          schema:
+            $ref: '#/definitions/CertResponse'
+        401:
+          description: "Unauthorized"
+          schema:
+            $ref: "#/definitions/Error"
+        403:
+          description: "Forbidden"
+          schema:
+            $ref: "#/definitions/Error"
+        500:
+          description: "Internal server error"
+          schema:
+            $ref: "#/definitions/Error"
+        503:
+          description: "Service unavailable (dependency down)"
+          schema:
+            $ref: "#/definitions/Error"
+    get:
+      parameters:
+        - $ref: '#/parameters/RequestIdHeader'
+        - $ref: '#/parameters/Hostname'
+        - $ref: '#/parameters/Authorization'
+      summary: Retrieves host certificate
+      operationId: GetCertificate
+      tags:
+        - certs
+      responses:
+        200:
+          description: Certificate for host
+          schema:
+            $ref: '#/definitions/CertResponse'
+        401:
+          description: "Unauthorized"
+          schema:
+            $ref: "#/definitions/Error"
+        403:
+          description: "Forbidden"
+          schema:
+            $ref: "#/definitions/Error"
+        404:
+          description: "Not found"
+          schema:
+            $ref: "#/definitions/Error"
+        500:
+          description: "Internal server error"
+          schema:
+            $ref: "#/definitions/Error"
+        503:
+          description: "Service unavailable (dependency down)"
+          schema:
+            $ref: "#/definitions/Error"
+    delete:
+      parameters:
+        - $ref: '#/parameters/RequestIdHeader'
+        - $ref: '#/parameters/Hostname'
+        - $ref: '#/parameters/Authorization'
+      summary: Revoke certificate by hostname and delete from mdb-secrets
+      operationId: RevokeCertificate
+      tags:
+        - certs
+      responses:
+        200:
+          $ref: "#/responses/OK"
+        default:
+          $ref: "#/responses/Error"
+
+  /v1/ping:
+    get:
+      tags:
+        - common
+      summary: "Reports service status"
+      operationId: "Ping"
+      responses:
+        200:
+          description: "Service is alive and well"
+        503:
+          description: "Service unavailable (database or other dependency is offline)"
+          schema:
+            $ref: "#/definitions/Error"
+
+parameters:
+  RequestIdHeader:
+    name: X-Request-Id
+    in: header
+    description: Unique request ID (must be generated for each separate request, even retries)
+    type: string
+  Authorization:
+    name: Authorization
+    in: header
+    description: OAuth token. It is not in security section because we also use cookies and you can't specify those in swagger 2.0.
+    type: string
+  ClusterId:
+    name: cid
+    in: query
+    required: true
+    description: ClusterId
+    type: string
+  Hostname:
+    name: hostname
+    in: query
+    required: true
+    description: Target hostname
+    type: string
+  Altnames:
+    name: alt_names
+    in: query
+    required: false
+    description: Target alt names
+    type: array
+    items:
+      type: string
+    minItems: 0
+  CertificateAuthority:
+    name: ca
+    in: query
+    required: true
+    type: string
+    description: Certificate authority name. Ex. InternalCA
+  CertificateType:
+    name: type
+    in: query
+    type: string
+    required: true
+    description: Certificate type. Ex. host
+  Force:
+    name: force
+    in: query
+    required: false
+    description: Update Certificates without check exists
+    type: boolean
+    default: false
+definitions:
+  Error:
+    type: object
+    properties:
+      message:
+        description: "Error description"
+        type: string
+  GpgKeyResponse:
+    type: object
+    description: Encrypted armored private key
+    properties:
+      key:
+        $ref: '#/definitions/EncryptedMessage'
+  CertResponse:
+    type: object
+    description: Certificate with encrypted armored private key
+    properties:
+      key:
+        $ref: '#/definitions/EncryptedMessage'
+      cert:
+        type: string
+      expiration:
+        type: string
+        format: date-time
+
+  EncryptedMessage:
+      type: object
+      properties:
+        version:
+          type: integer
+          example: 1
+          description: encryption version
+        data:
+          type: string
+          description: encrypted data encoded in url-safe base64
+responses:
+  Error:
+    description: "Base Error Response"
+    schema:
+      $ref: "#/definitions/Error"
+  OK:
+    description: "Base OK Response"
+    schema:
+      type: object
+      description: Use for an empty response
+      properties:
+        message:
+          description: message for user
+          type: string

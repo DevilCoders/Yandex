@@ -1,0 +1,166 @@
+menu: "[CGW] Alerts"
+menu_type: admin
+api_path: /alerts/
+tags: ["cgw"]
+entities:
+
+  cgw_restartable_exists:
+    menu: "CGW restartable exists @ {{ env }}"
+    template: cgw_restartable_exists.json.j2
+  cgw-rx-miss:
+    menu: "CGW rx miss @ {{ env }}"
+    template: cgw-rx-miss.json.j2
+    context:
+      red_threshold: 10
+      yellow_threshold: 0
+    env_context:
+      prod:
+        red_threshold: 100
+  cgw_iface_errors:
+    menu: "CGW interfaces errors @ {{ env }}"
+    template: cgw_iface_errors.json.j2
+  cgw_iface_traffic_rate:
+    menu: "CGW interfaces traffic rate @ {{ env }}"
+    template: cgw_iface_traffic_rate.json.j2
+  cgw_iface_packet_rate:
+    menu: "CGW interfaces packet rate @ {{ env }}"
+    template: cgw_iface_packet_rate.json.j2
+  cgw_nat_session_exhaustion:
+    menu: "CGW-NAT session exhaustion @ {{ env }}"
+    template: cgw_nat_session_exhaustion.json.j2
+    context:
+      addresses: 1
+    env_context:
+      prod:
+        addresses: 17
+      preprod:
+        addresses: 8
+      testing:
+        addresses: 1
+      israel:
+        addresses: 8
+  cgw_dc_vpp_vectors_per_call:
+    menu: "CGW-DC VPP vectors per call @ {{ env }}"
+    template: vpp-vectors-per-call.json.j2
+    context:
+      host: "cgw-dc*"
+      warn: 0.1
+      crit: 5.0
+  cgw_ipv4_vpp_vectors_per_call:
+    menu: "CGW-IPv4 VPP vectors per call @ {{ env }}"
+    template: vpp-vectors-per-call.json.j2
+    context:
+      host: "cgw-ipv4*"
+      warn: 0.4
+      crit: 0.9
+  cgw_ipv6_vpp_vectors_per_call:
+    menu: "CGW-IPv6 VPP vectors per call @ {{ env }}"
+    template: vpp-vectors-per-call.json.j2
+    context:
+      host: "cgw-ipv6*"
+      warn: 0.1
+      crit: 0.2
+  cgw_nat_vpp_vectors_per_call:
+    menu: "CGW-NAT VPP vectors per call @ {{ env }}"
+    template: vpp-vectors-per-call.json.j2
+    context:
+      host: "cgw-nat*"
+      warn: 0.08
+      crit: 0.25
+  lb_node_vpp_vectors_per_call:
+    menu: "LBNode VPP vectors per call @ {{ env }}"
+    template: vpp-vectors-per-call.json.j2
+    context:
+      host: "*lb-node*"
+      warn: 1.0
+      crit: 10.0
+{% set roles_to_iter_by_env = {
+  "prod": ["cgw","cgw-ipv4", "cgw-ipv6", "cgw-nat", "cgw-dc", "lb-node"],
+  "preprod": ["cgw-nat", "cgw-dc", "lb-node"],
+  "testing": ["cgw-nat", "cgw-dc", "lb-node"]
+}
+%}
+{% for role in roles_to_iter_by_env.get(env, []) %}
+{% set host = "cgw-sas*|cgw-vla*|cgw-myt*" if role == "cgw" else role ~ "*" %}
+{%   for direction, iface in [("egress", "EthernetDownstream*"), ("ingress", "EthernetUpstream*")] %}
+  {{role}}_iface_traffic_deviation_{{direction}}:
+    menu: "{{role}} {{direction}} traffic deviation @ {{env}}"
+    template: cgw_traffic_deviation.json.j2
+    context:
+      direction: "{{direction}}"
+      role: "{{role}}"
+      iface: "{{iface}}"
+      host: "{{host}}"
+
+{%   endfor %}
+{% endfor %}
+
+  cgw_vpp_lengthy_barrier:
+    menu: "CGW VPP lengthy barrier holds @ {{ env }}"
+    template: cgw_vpp_lengthy_barrier.json.j2
+    context:
+      typ: "cgw"
+      host: "cgw-ip*|cgw-vla*|cgw-sas*|cgw-myt*|honey-cgw-vla*|honey-cgw-sas*|honey-cgw-myt*"
+      threshold_ms: 100
+      warn: 0
+      crit: 10
+
+  cgw_dc_vpp_lengthy_barrier:
+    menu: "CGW-DC VPP lengthy barrier holds @ {{ env }}"
+    template: cgw_vpp_lengthy_barrier.json.j2
+    context:
+      typ: "cgw-dc"
+      host: "cgw-dc*"
+      threshold_ms: 100
+      warn: 0
+      crit: 10
+
+  lb_node_vpp_lengthy_barrier:
+    menu: "LB-Node VPP lengthy barrier holds @ {{ env }}"
+    template: cgw_vpp_lengthy_barrier.json.j2
+    context:
+      typ: "lb-node"
+      host: "*lb-node-*|honey-lb-node-*"
+      threshold_ms: 130
+      warn: 1
+      crit: 10
+
+  cgw_nat_vpp_lengthy_barrier:
+    menu: "CGW-Nat VPP lengthy barrier holds @ {{ env }}"
+    template: cgw_vpp_lengthy_barrier.json.j2
+    context:
+      typ: "cgw-nat"
+      host: "cgw-nat*"
+      threshold_ms: 250
+      warn: 1
+      crit: 10
+
+  # salt_versions_diff alerts
+  {% for br in ['cgw', 'cgw-dc', 'cgw-nat', 'cgw-ipv4', 'cgw-ipv6'] %}
+  {% for az in zones_by_env[env] %}
+  # per dc alerts
+  salt_versions_diff_cgw_{{ br }}_{{ az.prefix }}:
+    menu: "{{ br | upper }} salt-versions-diff @ {{ env }}"
+    template: ../../common/alerts/cloudgate/salt-versions-diff.json.j2
+    context:
+      name: "{{ project_id }}-{{ env }}-cgw_salt_versions_diff_{{ br }}_{{ az.prefix }}"
+      cluster: "cloud_{{ env }}_cloudgate"
+      bootstrap_role: "{{ br }}"
+      salt_role: "{{ salt_by_bootstrap_role[br] }}"
+      tags: "yc-{{ env }}, visible, yc-{{ az.prefix }}"
+      dc: "{{ az.prefix }}"
+      host: "cgw_{{ br }}_{{ env }}_{{ az.prefix }}"
+  {% endfor %}
+  # cross dc alerts
+  salt_versions_diff_cgw_{{ br }}:
+    menu: "{{ br | upper }} salt-versions-diff @ {{ env }}"
+    template: ../../common/alerts/cloudgate/salt-versions-diff.json.j2
+    context:
+      name: "{{ project_id }}-{{ env }}-cgw_salt_versions_diff_{{ br }}"
+      cluster: "cloud_{{ env }}_cloudgate"
+      bootstrap_role: "{{ br }}"
+      salt_role: "{{ salt_by_bootstrap_role[br] }}"
+      tags: "yc-{{ env }}, visible"
+      dc: "*"
+      host: "cgw_{{ br }}_{{ env }}"
+  {% endfor %}

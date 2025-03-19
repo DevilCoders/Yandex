@@ -1,0 +1,15 @@
+[Slice]
+{% if salt.pillar.get('data:database_slice:limit_cpu', True) %}
+CPUAccounting=yes
+CPUWeight=1
+CPUQuota={{ (salt.pillar.get('data:dbaas:flavor:cpu_limit') * 100 - salt.pillar.get('data:database_slice:max_reserved_cpu', 1)) | int }}%
+{% endif %}
+{% if salt.pillar.get('data:database_slice:limit_memory', True) %}
+{%     set max_reserved_memory = salt.pillar.get('data:database_slice:max_reserved_memory', 1024 * 1024 * 1024) %}
+{%     set max_advised_memory = salt.pillar.get('data:database_slice:max_advised_memory', 1536 * 1024 * 1024) %}
+{%     set reserved_memory = [salt.pillar.get('data:dbaas:flavor:memory_limit') * salt.pillar.get('data:database_slice:multiplier_reserved_memory', 0.2), max_reserved_memory] | min | int %}
+{%     set advised_memory = [salt.pillar.get('data:dbaas:flavor:memory_limit') * salt.pillar.get('data:database_slice:multiplier_advised_memory', 0.25), max_advised_memory] | min | int %}
+MemoryAccounting=yes
+MemoryHigh={{ salt.pillar.get('data:dbaas:flavor:memory_limit') - advised_memory }}
+MemoryMax={{ salt.pillar.get('data:dbaas:flavor:memory_limit') - reserved_memory }}
+{% endif %}

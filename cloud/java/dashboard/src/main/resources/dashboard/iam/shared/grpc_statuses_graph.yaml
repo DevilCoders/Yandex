@@ -1,0 +1,17 @@
+- type: graph
+  title: 'GRPC/HTTP statuses RPS'
+  templates:
+    - { name: rps, sumLines: [ status ] }
+    - { name: patchSelect, before: last, add: { moving_avg: [ 1m ] } }
+    - { name: patchSelect, after: last, add: { alias: '{{status}}' } }
+  queries:
+    - params: { labels: 'sensor=grpc_statuses' }
+    - params: { labels: 'sensor=servlet_statuses|http_statuses' }
+  draw:
+    !include status_styles.yaml
+  yAxes: [ { min: 0 }, { min: 0 } ]
+  display: { empty: false, lineModes: [ bars, lines ], sort: decreasing }
+  dataLinks:
+    - title: 'Request logs (${__series.name})'
+      targetBlank: true
+      url: 'https://yql.yandex-team.ru/?query=USE%20hahn%3B%0A%24ts%3DCAST%28%28${__value.time}%2F1000%29%20AS%20Uint32%29%3B%0A%24cluster%3D%22${cluster}%22%3B%0A%24app%3D%22${service}%22%3B%0A%24host%3D%22${host:pipe}%22%3B%0A%24method%3D%22${method:pipe}%22%3B%0A%24status%3D%22${__series.name}%22%3B%0A%24cl_uri%3D%22.cloud%22%7C%7CIF%28%24cluster%3D%22prod%22%2C%22%22%2C%22-%22%7C%7C%24cluster%29%7C%7C%22.yandex.net%22%3B%0A%24to5m%3D%28%24t%29-%3E%7BRETURN%20DateTime%3A%3AFormat%28%22%25Y-%25m-%25dT%25H%3A%25M%3A%25S%22%29%28AddTimezone%28DateTime%3A%3AMakeDatetime%28DateTime%3A%3AStartOf%28DateTime%3A%3AFromSeconds%28CAST%28%24t%20AS%20Uint32%29%29%2C%20Interval%28%22PT30M%22%29%29%29%2C%20%22Europe%2FMoscow%22%29%29%7D%3B%0A%24toDay%3D%28%24t%29-%3E%7BRETURN%20DateTime%3A%3AFormat%28%22%25Y-%25m-%25d%22%29%28AddTimezone%28DateTime%3A%3AFromSeconds%28CAST%28%24t%20AS%20Uint32%29%29%2C%20%22Europe%2FMoscow%22%29%29%7D%3B%0A%24isOld%3D%24ts%3CDateTime%3A%3AToSeconds%28CurrentUtcTimestamp%28%29%29-158400%3B%0A%24filter%3D%28%24actual%2C%24f%29-%3E%7BRETURN%20String%3A%3AStartsWith%28%24f%2C%22%24%22%29%20OR%20ListAny%28ListMap%28String%3A%3ASplitToList%28%24f%2C%20%22%7C%22%29%2C%28%24s%29-%3E%7BRETURN%20String%3A%3AContains%28%24actual%2C%20%24s%29%7D%29%29%7D%3B%0A%24statusCode%3DCASE%20%24status%0AWHEN%20%22CANCELLED%22%20THEN%201%0AWHEN%20%22UNKNOWN%22%20THEN%202%0AWHEN%20%22INVALID_ARGUMENT%22%20THEN%203%0AWHEN%20%22DEADLINE_EXCEEDED%22%20THEN%204%0AWHEN%20%22NOT_FOUND%22%20THEN%205%0AWHEN%20%22ALREADY_EXISTS%22%20THEN%206%0AWHEN%20%22PERMISSION_DENIED%22%20THEN%207%0AWHEN%20%22RESOURCE_EXHAUSTED%22%20THEN%208%0AWHEN%20%22FAILED_PRECONDITION%22%20THEN%209%0AWHEN%20%22ABORTED%22%20THEN%2010%0AWHEN%20%22OUT_OF_RANGE%22%20THEN%2011%0AWHEN%20%22UNIMPLEMENTED%22%20THEN%2012%0AWHEN%20%22INTERNAL%22%20THEN%2013%0AWHEN%20%22UNAVAILABLE%22%20THEN%2014%0AWHEN%20%22DATA_LOSS%22%20THEN%2015%0AWHEN%20%22UNAUTHENTICATED%22%20THEN%2016%0AELSE%20-1%0AEND%3B%0ASELECT%20%2A%0AFROM%20RANGE%28%22logs%2Fyc-api-request-log%2F%22%20%7C%7C%20IF%28%24isOld%2C%221d%22%2C%2230min%22%29%2CIF%28%24isOld%2C%24toDay%28%24ts-86400%29%2C%24to5m%28%24ts%29%29%2C%20IF%28%24isOld%2C%24toDay%28%24ts%2B86400%29%2C%24to5m%28%24ts%2B3600%29%29%29%0AWHERE%20%60app%60%3D%24app%0AAND%20String%3A%3AContains%28%60source_uri%60%2C%24cl_uri%29%0AAND%20%24filter%28%60source_uri%60%2C%24host%29%0AAND%20%24filter%28%60request_uri%60%2C%24method%29%0AAND%20%28String%3A%3AStartsWith%28%24status%2C%22%24%22%29%20OR%20%24statusCode%3D%60grpc_status_code%60%29%0AAND%20%60unixtime%60%20BETWEEN%20%24ts-59%20AND%20%24ts%2B59'

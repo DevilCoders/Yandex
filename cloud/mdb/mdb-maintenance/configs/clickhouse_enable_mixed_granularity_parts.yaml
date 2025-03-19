@@ -1,0 +1,35 @@
+info: Cluster maintenance
+repeatable: true
+supports_offline: true
+clusters_selection:
+  db: >-
+    SELECT c.cid
+      FROM dbaas.clusters c
+      JOIN dbaas.subclusters zk_sc USING(cid)
+      JOIN dbaas.subclusters ch_sc USING(cid)
+      JOIN dbaas.pillar ch_p ON (ch_p.subcid = ch_sc.subcid)
+     WHERE c.status = 'RUNNING'
+       AND ch_sc.roles && '{clickhouse_cluster}'
+       AND zk_sc.roles && '{zk}'
+       AND CAST(ch_p.value #>> '{data,clickhouse,config,merge_tree,enable_mixed_granularity_parts}' AS bool) IS DISTINCT FROM true
+pillar_change: >-
+  UPDATE dbaas.pillar p
+     SET value = jsonb_set(
+                     jsonb_set(
+                         value,
+                         '{data,clickhouse,config,merge_tree}',
+                         coalesce(value #> '{data,clickhouse,config,merge_tree}', CAST('{}' AS jsonb))),
+                     '{data,clickhouse,config,merge_tree,enable_mixed_granularity_parts}',
+                     to_jsonb(CAST('true' AS BOOLEAN)))
+    FROM dbaas.subclusters sc
+   WHERE p.subcid = sc.subcid
+     AND sc.cid = :cid
+     AND sc.roles && '{clickhouse_cluster}'
+worker:
+  operation_type: clickhouse_cluster_modify
+  task_type: clickhouse_cluster_maintenance
+  task_args:
+    restart: true
+  timeout: 4h
+max_delay_days: 21
+min_days: 7

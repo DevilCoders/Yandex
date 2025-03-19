@@ -1,0 +1,5 @@
+GRANT USAGE ON SCHEMA dbaas TO mdb_health;
+GRANT SELECT ON ALL TABLES IN SCHEMA dbaas TO mdb_health;
+
+GRANT USAGE ON SCHEMA code TO mdb_health;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA code TO mdb_health;

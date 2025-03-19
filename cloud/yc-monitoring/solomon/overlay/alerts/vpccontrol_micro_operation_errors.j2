@@ -1,0 +1,26 @@
+{% extends "../../base/alert.j2" %}
+{% macro prog() %}
+    let errors = sum(group_lines('sum', diff({cluster='cloud_{{ env }}_vpc-control', service='vpc-control', sensor="micro_operations_total", status="ERROR"})));
+    ok_if(errors == 0);
+
+    let is_red = errors > {{ alarm_limit }};
+    let is_yellow = errors > {{ warn_limit }};
+    let trafficColor = is_red ? 'red' : (is_yellow ? 'yellow' : 'green');
+    let description = 'Micro operation error count: ' + errors;
+    alarm_if(is_red);
+    warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+    "name": "vpc-control micro operation error rate @ {{ env }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "tags": "Solomon",
+        "host": "{{ svm_fqdn() }}",
+        "service": "vpc-control-micro-operation-errors",
+        "trafficLight.color": "[[expression.trafficColor]]",
+        "details": "[[expression.description]]"
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

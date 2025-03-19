@@ -1,0 +1,147 @@
+uid: ycpYdb
+refresh: 1m
+title: YDB
+
+tags: [ 'ycp', 'ydb' ]
+
+graphDefaults:
+  datasource: Solomon
+  width: 12
+  height: 6
+
+queryDefaults:
+  dropNan: true
+  labels: 'project=kikimr, cluster=yandexcloud_${cluster}_global, database=$database, host=cluster, slot=cluster'
+
+variables:
+  ui:
+    cluster:
+      values: ['prod', 'preprod']
+    database:
+      values:
+        - '*/dns'
+        - '*/instancegroup'
+        - '*/ycloud'
+  replacement:
+    error_sensors: 'YdbResponses/Unsupported|YdbResponses/Unspecified|YdbResponses/Undetermined|YdbResponses/Undetermined|YdbResponses/Undetermined|YdbResponses/Timeout|YdbResponses/Timeout|YdbResponses/SessionBusy|YdbResponses/SchemeError|YdbResponses/PreconditionFailed|YdbResponses/Overloaded|YdbResponses/Other|YdbResponses/NotFound|YdbResponses/InternalError|YdbResponses/GenericError|YdbResponses/Cancelled|YdbResponses/BadSession|YdbResponses/BadRequest|YdbResponses/AlreadyExists|YdbResponses/Aborted'
+
+rows:
+  - title: Saturation
+    panels:
+      - type: graph
+        title: 'Tablets consuming 80+% CPU'
+        queries:
+          - params: { labels: 'service=tablets, sensor=HIST(ConsumedCPU), category=executor, range=80?|90?|100?, slot=static, type=DataShard' }
+            groupByTime: { max: default }
+
+      - type: graph
+        title: 'UserPool Cores Consumption'
+        queries:
+          - params: { labels: 'service=utils, sensor=ElapsedMicrosec|ParkedMicrosec, execpool=User' }
+        display: { stack: true }
+        yAxes: [{ format: µs, min: 0 }]
+
+      - type: graph
+        title: Written Data Size
+        queries:
+          - params: { labels: 'service=tablets, sensor=SUM(DbDataSize)|SUM(DbDataBytes)|SUM(DbELobsBytes), category=executor, type=DataShard' }
+            #groupByTime: { sum: default }
+        yAxes: [{ format: bytes, min: 0 }]
+
+      - type: graph
+        title: Memory Consumption (by Nodes)
+        queries:
+          - params: { labels: 'service=utils, host=ycloud-dn-*, sensor=Process/AnonRssSize' }
+        yAxes: [{ format: bytes, min: 0 }]
+
+  - title: Errors
+    panels:
+      - type: graph
+        title: Errors
+        queries:
+          - params: { labels: 'service=kqp, sensor=@error_sensors' }
+            #groupByTime: { sum: default }
+        display: { empty: false }
+
+  - title: 'Latency (high %)'
+    panels:
+      - type: graph
+        templates: { name: percentile, sensor: raw, format: range, levels: [90, 99, 99.9] }
+        title: Prepared Queries
+        queries:
+          - params: { labels: 'service=kqp, sensor=Query/ExecPreparedLatency' }
+        yAxes: [{ format: ms }]
+
+      - type: graph
+        templates: { name: percentile, sensor: raw, format: range, levels: [90, 99, 99.9] }
+        title: Queries
+        queries:
+          - params: { labels: 'service=kqp, sensor=Query/ExecuteLatency' }
+        yAxes: [{ format: ms }]
+
+  - title: Traffic (Grpc)
+    panels:
+      - type: graph
+        title: Request Count (all  types)
+        params: { width: 24 }
+        queries:
+          - params: { labels: 'service=grpc, sensor=total, request!=total' }
+            #groupByTime: { sum: default }
+        display: { empty: false }
+
+      - type: graph
+        title: Request Bytes
+        queries:
+          - params: { labels: 'service=grpc, sensor=requestBytes' }
+        yAxes: [{ format: bytes, min: 0 }]
+
+      - type: graph
+        title: Response Bytes
+        queries:
+          - params: { labels: 'service=grpc, sensor=responseBytes' }
+        yAxes: [{ format: bytes, min: 0 }]
+
+      - type: graph
+        title: Request NotOk
+        queries:
+          - params: { labels: 'service=grpc, sensor=notOkRequest' }
+            #groupByTime: { sum: default }
+
+      - type: graph
+        title: Response NotOk
+        queries:
+          - params: { labels: 'service=grpc, sensor=notOkResponse' }
+            #groupByTime: { sum: default }
+
+      - type: graph
+        title: InFlight Count
+        queries:
+          - params: { labels: 'service=grpc, sensor=infly*, request!=total' }
+            #groupByTime: { sum: default }
+        display: { empty: false }
+
+      - type: graph
+        title: InFlight Bytes
+        queries:
+          - params: { labels: 'service=grpc, sensor=inflyRequestBytes' }
+        yAxes: [{ format: bytes, min: 0 }]
+
+  - title: Queues
+    panels:
+      - type: graph
+        title: Grpc InFlight
+        queries:
+          - params: { labels: 'service=grpc, sensor=infly*, request!=total' }
+        display: { empty: false }
+
+      - type: graph
+        title: 'Dashboard InFlight (DataShard/ImmediateTxInFly Sum)'
+        queries:
+          - params: { labels: 'service=tablets, sensor=SUM(DataShard/ImmediateTxInFly), category=app' }
+            #groupByTime: { sum: default }
+
+      - type: graph
+        title: 'Dashboard InFlight (DataShard/TxCompleteLag Sum)'
+        queries:
+          - params: { labels: 'service=tablets, sensor=SUM(DataShard/TxCompleteLag), category=app' }
+            #groupByTime: { sum: default }

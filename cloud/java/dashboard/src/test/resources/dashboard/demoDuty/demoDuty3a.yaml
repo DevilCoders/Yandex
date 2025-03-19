@@ -1,0 +1,47 @@
+uid: ycpDemoDuty3
+folderId: 178688
+title: Duty dashboard (platform team) DEMO - step 3
+refresh: 3m
+
+variables:
+  ui:
+    cluster: { values: [prod, preprod] }
+
+panels:
+  - type: graph
+    title: 'Gateway rps ($cluster)'
+    params: { datasource: 'Solomon Cloud', width: 8, height: 6 }
+    queries:
+      - params: { labels: 'project=platform, cluster=cloud_${cluster}_api-gateway, service=api_gateway_ma, host!=cluster, system=*, grpc_type=*, grpc_service=yandex.cloud, grpc_method!=all, name=grpc_server_request_total' }
+        groupByTime: { max: default }
+        select: { non_negative_derivative: [], group_lines: sum, alias: [rps] }
+    yAxes: [{ decimals: 1, format: short, label: rps, min: 0 }]
+
+  - type: graph
+    title: 'Gateway and envoy errors ($cluster)'
+    params: { datasource: 'Solomon Cloud', width: 8, height: 6 }
+    queries:
+      - params: { labels: 'project=platform, cluster=cloud_${cluster}_api-gateway, service=api_gateway_ma, host!=cluster, system=*, grpc_type=*, grpc_service=yandex.cloud, grpc_method!=all, name=grpc_server_response_total, grpc_code=Unknown|DeadlineExceeded|Unimplemented|Internal|DataLoss, upstream_error=true' }
+        groupByTime: { max: '15s' }
+        select: { diff: [], drop_below: '0', group_lines: sum, alias: 'gw upstream 5xx' }
+    draw: [{ alias: 'gw upstream 5xx', color: '#b20', at: left }]
+    display: { decimals: 0 }
+    yAxes: [{ decimals: 1, format: short, min: 0 }]
+
+  - type: graph
+    title: 'Gateway response duration ($cluster)'
+    params: { datasource: 'Solomon Cloud', width: 8, height: 6 }
+    queries:
+      - params: { labels: 'project=platform, cluster=cloud_${cluster}_api-gateway, service=api_gateway_ma, host!=cluster, system=*, grpc_type=*, grpc_service=yandex.cloud, name=grpc_server_response_duration_seconds, bin=*' }
+        groupByTime: { max: default }
+        select: { non_negative_derivative: [], group_by_labels: [sum, bin], histogram_percentile: ['50', bin], alias: p50 }
+      - params: { labels: 'project=platform, cluster=cloud_${cluster}_api-gateway, service=api_gateway_ma, host!=cluster, system=*, grpc_type=*, grpc_service=yandex.cloud, name=grpc_server_response_duration_seconds, bin=*' }
+        groupByTime: { max: default }
+        select: { non_negative_derivative: [], group_by_labels: [sum, bin], histogram_percentile: ['75', bin], alias: p75 }
+      - params: { labels: 'project=platform, cluster=cloud_${cluster}_api-gateway, service=api_gateway_ma, host!=cluster, system=*, grpc_type=*, grpc_service=yandex.cloud, name=grpc_server_response_duration_seconds, bin=*' }
+        groupByTime: { max: default }
+        select: { non_negative_derivative: [], group_by_labels: [sum, bin], histogram_percentile: ['90', bin], alias: p90 }
+      - params: { labels: 'project=platform, cluster=cloud_${cluster}_api-gateway, service=api_gateway_ma, host!=cluster, system=*, grpc_type=*, grpc_service=yandex.cloud, name=grpc_server_response_duration_seconds, bin=*' }
+        groupByTime: { max: default }
+        select: { non_negative_derivative: [], group_by_labels: [sum, bin], histogram_percentile: ['99', bin], alias: p99 }
+    yAxes: [{ format: s }]

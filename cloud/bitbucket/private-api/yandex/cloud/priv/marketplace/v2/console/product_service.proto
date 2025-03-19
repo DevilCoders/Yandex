@@ -1,0 +1,120 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.marketplace.v2.console;
+
+import "google/api/annotations.proto";
+import "yandex/cloud/priv/marketplace/v2/product.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/marketplace/v2/console;marketplace_console";
+option java_outer_classname = "PMPCS";
+
+
+service ProductService {
+    rpc Get (GetProductRequest) returns (LocalizedProduct) {
+        option (google.api.http) = { get: "/marketplace/v2/console/products/{product_id}" };
+    }
+    rpc Search (SearchProductsRequest) returns (LocalizedProductsListResponse) {
+        option (google.api.http) = { get: "/marketplace/v2/console/products" };
+    }
+    rpc GetDashboard (DashboardRequest) returns (DashboardResponse) {
+        option (google.api.http) = { get: "/marketplace/v2/console/products/dashboard" };
+    }
+}
+
+message GetProductRequest {
+    string product_id = 1 [(required) = true, (length) = "<=50"];
+}
+
+message SearchProductsRequest {
+    int64 page_size = 1 [(value) = "0-1000"];
+    int64 offset = 2 [(value) = "0-10000"];
+
+    // Query value will be searched in full_text fields such as
+    // marketingInfo.{name,description,shortDescription,useCases}
+    string query = 3 [(length) = "<=100"];
+
+    // Pass product types separated with comma
+    // Values could be individual product types, or name product type group.
+    string type = 4 [(length) = "<=100"];
+
+    // Pass categories separated with comma
+    string category = 5 [(length) = "<=100"];
+
+    // Other searchable attributes
+    // key separated from value with `=`
+    // multiple values separated with `,`
+    // different attribute key-value pair separated with `;`
+    // string encodeURIComponent
+    // eg. `key=value;complex.key=multi,vaules`
+    // should be passed as `key%3Dvalue%3Bcomplex.key%3Dmulti%2Cvaules`
+    string attributes = 6 [(length) = "<=200"];
+
+    // Field results to be sorted by
+    string sort_by = 7 [(length) = "<=100"];
+
+}
+
+message SearchHitsAggregatesResponse {
+    // Total search hit count (approximate)
+    int64 total = 1;
+
+    // Search hits aggregated by some param
+    repeated Aggregate aggregates = 2;
+
+    message Aggregate {
+        string name = 1;
+        string title = 2;
+        string tooltip = 3;
+        SelectorType selector_type = 4;
+        repeated AggregateItem items = 5;
+
+        enum SelectorType {
+            SELECTOR_TYPE_UNSPECIFIED = 0;
+            SINGLE = 1;
+            MULTIPLE = 2;
+        }
+    }
+
+    message AggregateItem {
+        string value = 1;
+        string title = 2;
+        int64 count = 3;
+    }
+}
+
+message LocalizedProductsListResponse {
+    // List of localized products
+    repeated LocalizedProduct products = 1;
+    // Metadata and statistics about all search result hits
+    SearchHitsAggregatesResponse meta = 2;
+}
+
+message DashboardRequest {
+    Type type = 1;
+
+    enum Type {
+        TYPE_UNSPECIFIED = 0;
+        COMPUTE = 1;
+        DATALENS = 2;
+    }
+}
+
+message DashboardResponse {
+    repeated DashboardCategory categories = 1;
+    // Metadata and statistics about all search result hits
+    SearchHitsAggregatesResponse meta = 2;
+
+    message DashboardCategory {
+        // Resource id
+        string id = 1;
+        // Human readable category name
+        string name = 2;
+        // Localized title
+        string title = 3;
+        // Localized description
+        string description = 4;
+        // First N products from category
+        repeated LocalizedProduct products = 5;
+    }
+}

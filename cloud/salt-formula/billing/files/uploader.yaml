@@ -1,0 +1,198 @@
+{%- from "billing/map.jinja" import kikimr_endpoint, billing_private_endpoint, billing_private_ssl_endpoint, identity_endpoint, logbroker_host, billing with context %}
+
+logging:
+  level: DEBUG
+
+main:
+  billing_account_cardinality: {{ billing.billing_account_cardinality }}
+
+solomon:
+  base_url: {{ billing.solomon.base_url }}
+  project: {{ billing.solomon.project }}
+  cluster: {{ billing.solomon.cluster }}
+  period: {{ billing.solomon.period }}
+
+
+pipeline:
+  polling_delay: {{ billing.uploader.get('polling_delay', 5) }}
+  parallel: {{ billing.uploader.get('parallel', False) }}
+
+common:
+  ydb: &ydb
+    endpoint: {{ billing.uploader.get('kikimr', {}).get('host', kikimr_endpoint.host) }}
+    database: {{ billing.uploader.get('kikimr', {}).get('database', kikimr_endpoint.database) }}
+    root: {{ billing.uploader.get('kikimr', {}).get('root', kikimr_endpoint.root) }}
+
+endpoints:
+  kikimr:
+    billing:
+      host: {{ billing.uploader.get('kikimr', {}).get('host', kikimr_endpoint.host) }}
+      root: "{{ billing.uploader.get('kikimr', {}).get('root', kikimr_endpoint.root) }}"
+      database: {{ billing.uploader.get('kikimr', {}).get('database', kikimr_endpoint.database) }}
+      retry_timeout: 40
+      request_timeout: 12
+      warning_request_time: 60
+      enable_logging: False
+      enable_batching: False
+  identity_private:
+    url: http://{{ identity_endpoint.host }}:{{ identity_endpoint.port }}
+
+source:
+{%- if not billing.uploader.source.get('logbroker', {}).get('topics', []) and not billing.uploader.source.get('file', [])  %}
+  {}
+{%- else %}
+{% for topic in billing.uploader.source.get('logbroker', {}).get('topics', []) %}
+  topic-{{ topic.name }}:
+    type: logbrokerv2
+    sink: {{ topic.get("sink", "ydb") }}
+{%- if topic.get('polling_delay', None) %}
+    polling_delay: {{ topic.polling_delay }}
+{%- endif %}
+    instances: {{ topic.get('instances', 1) }}
+    parameters:
+{%- if billing.uploader.source.logbroker.get("auth", {}).get("enabled", False) %}
+      auth:
+        enabled: True
+        client_id: {{ billing.uploader.source.logbroker.auth.client_id }}
+        destination: {{ billing.uploader.source.logbroker.auth.destination }}
+{%- if billing.uploader.source.logbroker.auth.get('secret', None) %}
+        secret: {{ billing.uploader.source.logbroker.auth.secret }}
+{%- endif %}
+{%- endif %}
+      host: {{ billing.logbroker.host }}
+      port: {{ billing.logbroker.get('port', '2135') }}
+      dc_list: {{ billing.uploader.source.logbroker.dc_list }}
+      client_id: {{ billing.logbroker.client_id }}
+      topic: {{ topic.name }}
+      log_format: {{ topic.get('log_format', 'json')}}
+      max_messages_count: {{ topic.get('max_messages_count', 200)}}
+      limit: {{ topic.get('limit', 200)}}
+      timeout: 15
+      send_sensors: {{ billing.uploader.source.logbroker.get("send_sensors", False) }}
+      send_batch: {{ billing.uploader.source.logbroker.get("send_batch", 100) }}
+{% endfor %}
+
+{% for target in billing.uploader.source.get('file', []) %}
+  src-{{ target.path }}:
+    type: file
+    sink: kikimr
+    parameters:
+      pattern: "{{ target.pattern }}"
+      watch_dir: "{{ target.path }}"
+{% endfor %}
+{%- endif %}
+
+transformer:
+
+  filter.min_processed:
+    metering: True
+    type: filter-by-min-processed
+  filter.message_wt:
+    metering: True
+    type: filter-by-write-time
+  filter.expired:
+    metering: True
+    type: mark-expired-metrics
+  filter.quantity:
+    metering: True
+    type: filter-by-neg-quantity
+  validate.tags:
+    metering: True
+    type: validate-tags
+  resolvers.sku:
+    metering: True
+    type: resolve-sku
+  resolvers.account:
+    metering: True
+    type: resolve-billing-accounts
+  aggregte.s3:
+    metering: True
+    type: s3-requests-aggregate
+  labels.set:
+    metering: True
+    type: set-labels
+  labels.map.build:
+    metering: True
+    type: build-labels-map
+  sku_counters.build:
+    metering: True
+    type: build-sku-counters
+  uploader_logs.build:
+    metering: True
+    type: build-uploader-logs
+  partitioning:
+    metering: True
+    type: common.sharding
+    parameters:
+      routes:
+         root:
+            subroutes:
+              - uploader_logs
+              - sku_counters
+              - expired_sku_counters
+              - labels_maps
+            key:
+              - billing_account_id
+            partitions: 48
+         discarded_metrics:
+            key:
+              - uuid
+            partitions: 48
+         raw_metrics:
+           key:
+             - folder_id
+           partitions: 48
+         expired_metrics:
+            key:
+              - uuid
+            partitions: 48
+         unparsed_metrics:
+            key:
+              - metric
+            partitions: 48
+
+sink:
+  ydb:
+    type: ydb-static
+    metering: True
+    transformers:
+      - filter.min_processed
+      - filter.message_wt
+      - filter.expired
+      - validate.tags
+      - resolvers.sku
+      - filter.quantity
+      - resolvers.account
+      - labels.set
+      - labels.map.build
+      - sku_counters.build
+      - uploader_logs.build
+      - partitioning
+    parameters:
+      <<: *ydb
+      partitions: 48
+      sessions: 100
+      workers: 6
+
+  ydb.s3:
+    type: ydb-static
+    metering: True
+    transformers:
+      - filter.min_processed
+      - filter.message_wt
+      - filter.expired
+      - validate.tags
+      - aggregte.s3
+      - resolvers.sku
+      - filter.quantity
+      - resolvers.account
+      - labels.set
+      - labels.map.build
+      - sku_counters.build
+      - uploader_logs.build
+      - partitioning
+    parameters:
+      <<: *ydb
+      partitions: 48
+      sessions: 100
+      workers: 6

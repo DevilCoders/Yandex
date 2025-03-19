@@ -1,0 +1,29 @@
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    namespace: dbaas.clickhouse
+    host: mdb-clickhouse-ci
+  tasks:
+    - juggler_facts: jserver_api=http://juggler-api.search.yandex.net:8998/api
+    - include_vars: ../configs/analytic_dbs_resps.yml
+    - include_vars: ../configs/notifications_nocalls.yml
+    - juggler_check:
+        host: "{{ host }}"
+        service: clickhouse-master-ci
+        namespace: "{{ namespace }}"
+        aggregator: logic_or
+        aggregator_kwargs:
+          mode: 'WARN'
+        notifications: "{{ notifications }}"
+        refresh_time: 600
+        ttl: 3600
+        children:
+          host: ci01k.db.yandex.net
+          service: clickhouse_master_ci
+        meta:
+          urls:
+            - {title: "How to handle?", url: "https://wiki.yandex-team.ru/mdb/internal/operations/duty-howto/clickhouse/#clickhouse-master-ci", type: "mdb"}
+        __force__: True
+  post_tasks:
+    - juggler_cleanup: jcheck_mark={{ host }}

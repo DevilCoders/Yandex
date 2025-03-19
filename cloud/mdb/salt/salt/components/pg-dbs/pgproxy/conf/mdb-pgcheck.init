@@ -1,0 +1,74 @@
+#! /bin/bash
+
+### BEGIN INIT INFO
+# Provides:          mdb-pgcheck
+# Required-Start:    $all
+# Required-Stop:     $all
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: starts mdb-pgcheck
+### END INIT INFO
+
+. /lib/lsb/init-functions
+
+DAEMON="mdb-pgcheck"
+DAEMON_BASE="pgcheck"
+DAEMON_BIN="/opt/yandex/mdb-pgcheck/bin/mdb-pgcheck"
+DAEMON_NAME="mdb-pgcheck"
+DAEMON_OPTS="--config-path /etc/"
+LOGS_FILE="/var/log/pgcheck/pgcheck.log"
+
+
+if [ ! -x $DAEMON_BIN ]
+then
+  exit 1
+fi
+
+ulimit -c unlimited
+
+case "$1" in
+  start)
+    log_begin_msg "Starting ${DAEMON_NAME}..."
+
+    if start-stop-daemon --quiet --stop --signal 0 --pidfile /var/run/$DAEMON.pid 2>/dev/null 1>/dev/null; then
+      log_failure_msg "${DAEMON_NAME} already running"
+    else
+      start-stop-daemon -c postgres --start -bmp /var/run/$DAEMON.pid --exec /bin/bash -- -c "exec ${DAEMON_BIN} ${DAEMON_OPTS} >> ${LOGS_FILE} 2>&1"
+      log_end_msg $?
+    fi
+
+    log_end_msg $?
+  ;;
+
+  status)
+    status_of_proc "$DAEMON_BIN" "$DAEMON_NAME" && exit 0 || exit $?
+  ;;
+
+  stop)
+    log_begin_msg "Stopping ${DAEMON_NAME}..."
+    start-stop-daemon --quiet --retry=TERM/10/KILL/5 --stop --pidfile /var/run/$DAEMON.pid 1>/dev/null 2>&1
+    log_end_msg $?
+    rm -f /var/run/$DAEMON.pid 2>/dev/null
+  ;;
+
+  reload)
+   log_begin_msg "Reloading ${DAEMON_NAME}..."
+   start-stop-daemon --quiet --stop --signal 1 --pidfile /var/run/$DAEMON.pid
+   log_end_msg $?
+  ;;
+
+  restart)
+    log_begin_msg "Restarting ${DAEMON_NAME}..."
+    $0 stop
+    sleep 1
+    $0 start
+  ;;
+
+*)
+  log_success_msg "Usage $0 {start|stop|reload|restart}"
+  exit 1
+
+esac
+
+exit 0
+

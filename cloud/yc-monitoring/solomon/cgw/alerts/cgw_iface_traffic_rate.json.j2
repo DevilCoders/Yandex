@@ -1,0 +1,39 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro prog() %}
+let sensors_all_ifaces_rate = {
+	cluster='cloud_{{ env }}_cloudgate',
+	service='interfaces',
+	host='*',
+	iface='Ethernet*',
+	worker='-',
+	name='rx_bytes_rate'
+};
+let sum_traffic_rate = group_lines('sum', sensors_all_ifaces_rate);
+let traffic_rate = max(sum_traffic_rate);
+// now we have 25Gbps links, but we see out_of_buffers at 20Gbps -> let us know about this
+// 20Gbps == 2500MBps
+let treshold_crit = 2400 * 1000 * 1000 ;
+let treshold_warn = 2000 * 1000 * 1000;
+
+let is_red = traffic_rate > treshold_crit;
+let is_yellow = traffic_rate > treshold_warn;
+alarm_if(is_red);
+warn_if(is_yellow);
+{% endmacro %}
+
+
+{% block main %}
+	"name": "CGW interfaces traffic rate @ {{ env }}",
+	"groupByLabels": ["host"],
+	"annotations": {
+		"host": "{{ svm_fqdn() }}",
+		"tags": "Solomon, yc-{{env}}, yc-cgw",
+		"service": "{{ serviceName }}",
+		"wiki": "https://docs.yandex-team.ru/yc-monitoring/cgw/{{ serviceName }}",
+		"traffic_rate": "[[expression.traffic_rate]]",
+		"traffic_rate_derivative": "[[expression.traffic_rate_derivative]]"
+	},
+	"description": "Check summary traffic rate.",
+	"type": {{ type_expression() }}
+{% endblock %}

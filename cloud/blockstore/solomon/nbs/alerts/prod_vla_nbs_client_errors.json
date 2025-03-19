@@ -1,0 +1,41 @@
+{
+    "annotations": {
+        "host": "{{labels.host}}.cloud.yandex.net", 
+        "service": "solomon_alert_nbs_client_errors", 
+        "tags": "yc-prod-nbs-solomon"
+    }, 
+    "channels": [
+        {
+            "config": {}, 
+            "id": "juggler"
+        }
+    ], 
+    "createdAt": "2020-12-30T13:14:41Z", 
+    "createdBy": "yegorskii", 
+    "delaySeconds": 30, 
+    "delaySecs": 30, 
+    "description": "NBS client error count alert for ycloud's iconostasis\nhttps://nda.ya.ru/3VnQWd", 
+    "groupByLabels": [
+        "host"
+    ], 
+    "id": "prod_vla_nbs_client_errors", 
+    "name": "[PROD][VLA] NBS Client Errors", 
+    "noPointsPolicy": "NO_POINTS_DEFAULT", 
+    "notificationChannels": [
+        "juggler"
+    ], 
+    "periodMillis": 600000, 
+    "projectId": "nbs", 
+    "resolvedEmptyPolicy": "RESOLVED_EMPTY_DEFAULT", 
+    "state": "ACTIVE", 
+    "type": {
+        "expression": {
+            "checkExpression": "", 
+            "program": "let hosts = 'vla04-*';\nlet blacklist_hosts = '';\nlet blacklist_requests='AlterPlacementGroupMembership|StartEndpoint|StopEndpoint|ListEndpoints|KickEndpoint';\n\nlet fatal_errors_threshold = 1;\nlet throttle_errors_threshold = 50000;\n// let session_errors_threshold = 1500;\nlet other_errors_threshold = 3000;\n\nlet total_errors = group_lines('sum', {project='nbs', cluster='yandexcloud_prod_vla', service='client', host='{{hosts}}', request='*', sensor='Errors', type= '-', host!='{{blacklist_hosts}}', request!='{{blacklist_requests}}'});\nlet fatal_errors = group_lines('sum', {project='nbs', cluster='yandexcloud_prod_vla', service='client', host='{{hosts}}', request='*', sensor='Errors/Fatal', type= '-', host!='{{blacklist_hosts}}', request!='{{blacklist_requests}}'});\nlet throttle_errors = group_lines('sum', {project='nbs', cluster='yandexcloud_prod_vla', service='client', host='{{hosts}}', request='*', sensor='Errors/Throttling', type= '-', host!='{{blacklist_hosts}}', request!='{{blacklist_requests}}'});\n// let session_errors = group_lines('sum', {project='nbs', cluster='yandexcloud_prod_vla', service='client', host='{{hosts}}', request='*', sensor='Errors/Session', type= '-', host!='{{blacklist_hosts}}'});\nlet other_errors = total_errors - fatal_errors - throttle_errors;\n\nlet fatal_errors_sum = sum(fatal_errors);\nlet throttle_errors_sum = sum(throttle_errors);\n// let session_errors_sum = sum(session_errors);\nlet other_errors_sum = sum(other_errors);\n\n//is_alarm(fatal_errors_sum >= fatal_errors_threshold);\n\nlet reassign_count = integrate_fn(group_lines('sum', {\n    project=\"nbs\",\n    cluster=\"yandexcloud_prod_vla\",\n    service=\"server\",\n    host=\"{{hosts}}\",\n    sensor=\"AppCriticalEvents/ReassignTablet\"\n}));\n\nlet reassign_gauge = max(reassign_count) > 0 ? 50.0 : 1;\n\n\nalarm_if(fatal_errors_sum >= fatal_errors_threshold && count(fatal_errors) > 0);\n\nalarm_if(other_errors_sum >= other_errors_threshold * reassign_gauge && count(other_errors) > 0);\n\nalarm_if(throttle_errors_sum >= throttle_errors_threshold && count(throttle_errors) > 0);\n\n"
+        }
+    }, 
+    "updatedAt": "2021-03-10T07:27:05Z", 
+    "updatedBy": "haposik", 
+    "version": 11, 
+    "windowSecs": 600
+}

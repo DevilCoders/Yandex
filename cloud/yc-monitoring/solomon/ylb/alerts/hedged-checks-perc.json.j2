@@ -1,0 +1,46 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro svm_fqdn() -%}
+	[[labels.host]].{{ svm_domains[env] }}
+{%- endmacro %}
+
+{% macro prog() %}
+let all_checks = non_negative_derivative({
+	cluster='cloud_{{ env }}_ylb',
+	service='healthcheck_node',
+	host!='cluster',
+	name='hedged_checker_primary_request_start',
+	env='{{ env }}'
+	} + constant_line(0, 5m));
+
+let hedged_checks = non_negative_derivative({
+	cluster='cloud_{{ env }}_ylb',
+	service='healthcheck_node',
+	host!='cluster',
+	name='hedged_checker_backup_request_win',
+	env='{{ env }}'
+	} + constant_line(0, 5m));
+
+let hedged_perc = max(hedged_checks / all_checks * 100);
+let description = 'Increase count of hedged checks: ' + hedged_perc + '%';
+
+let is_red = hedged_perc > {{ red_threshold }};
+alarm_if(is_red);
+
+let is_yellow = hedged_perc > {{ yellow_threshold }};
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+	"id": "{{ id }}",
+	"name": "{{ name }}",
+	"description": "",
+	"groupByLabels": ["host"],
+	"annotations": {
+		"details": "[[expression.description]]",
+		"host": "{{ svm_fqdn() }}",
+		"service": "{{ serviceName }}",
+		"wiki": "https://docs.yandex-team.ru/yc-monitoring/cgw/{{ serviceName }}"
+	},
+	"type": {{ type_expression() }}
+{% endblock %}

@@ -1,0 +1,31 @@
+USE %YT_CLUSTER%;
+
+PRAGMA yt.InferSchema = '1';
+PRAGMA yt.Pool = "cloud_analytics_pool";
+
+$path = "//home/cloud_analytics/import/iam/cloud_owners/1h";
+
+$tables = (
+    SELECT ListSortDesc(AGGREGATE_LIST(Path))
+    FROM FOLDER($path, 'row_count')
+    WHERE Type = "table"
+         AND Yson::LookupInt64(Attributes, 'row_count') > 0
+);
+
+DEFINE ACTION $get_removed($table_pair) AS
+    $old = $table_pair.1;
+    $new = $table_pair.0;
+    INSERT INTO @result_table
+    SELECT * FROM $old AS old
+    LEFT ONLY JOIN $new AS new
+    ON old.id == new.id
+    WHERE old.id IS NOT NULL;
+END DEFINE;
+
+EVALUATE FOR $table_pair in ListTake(ListZip($tables, ListSkip($tables, 1)), 48)
+    DO $get_removed($table_pair);
+
+COMMIT;
+
+INSERT INTO `%TMP_TABLE%` WITH TRUNCATE 
+SELECT * FROM @result_table;

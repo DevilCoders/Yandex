@@ -1,0 +1,55 @@
+{% extends "../../base/dashboard.j2" %}
+
+{% set raw_methods = [
+    ["Decrypt", "Encrypt", "ReEncrypt"],
+    ["GenerateDataKey", "BatchDecrypt"]
+] %}
+{#
+{% set methods = ["Decrypt", "Encrypt", "ReEncrypt", "GenerateDataKey", "BatchDecrypt"]%}
+{% set raw_panels = 3 %}
+{% set raw_methods = [methods[i * raw_panels:(i + 1) * raw_panels] for i in range(0, len(methods) / raw_panels)] %}
+#}
+{% set cluster = "cloud_" + env + "_kms_cluster" %}
+{% set service = "service" %}
+
+{% macro render_row_panels(title_format, methods, method_prefix, query) %}
+{ "panels": [
+    {% for method in methods %}
+      {% set colspan = 1 %}
+      {{ render_panel(title_format.format(method=method), cluster, service, query=query + "&l.method=" + method_prefix + method, colspan=colspan) }}
+      {% if not loop.last %},{% endif %}
+    {% endfor %}
+]}
+{% endmacro %}
+
+{% block rows %}
+[
+    { "panels": [
+        {{ render_panel(
+            "API rps",
+            cluster,
+            service,
+            query="graph=kms_grpc_api_requests_rps&l.method=*&l.host=cluster-data-all&l.app=kms-data-plane_server")
+        }},
+        {{ render_panel(
+            "API 4xx errors",
+            cluster,
+            service,
+            query="graph=kms_grpc_api_statuses_4xx&l.method=*&l.host=cluster-data-all&l.app=kms-data-plane_server")
+        }},
+        {{ render_panel(
+            "API 5xx errors",
+            cluster,
+            service,
+            query="graph=kms_grpc_api_statuses_5xx&l.method=*&l.host=cluster-data-all&l.app=kms-data-plane_server")
+        }}
+    ]},
+    {% for methods in raw_methods %}
+        {{ render_row_panels(title_format="{method} rps", methods=methods, query="l.app=kms-data-plane_server&l.host=cluster-data-all&graph=kms_grpc_api_requests_rps", method_prefix="kms.v1.SymmetricCryptoService/") }},
+    {% endfor %}
+    {% for methods in raw_methods %}
+        {{ render_row_panels(title_format="{method} response duration", methods=methods, query="l.app=kms-data-plane_server&l.host=cluster-data-all&graph=kms_grpc_api_duration", method_prefix="kms.v1.SymmetricCryptoService/") }}
+        {%- if not loop.last %},{% endif -%}
+    {% endfor %}
+]
+{% endblock %}

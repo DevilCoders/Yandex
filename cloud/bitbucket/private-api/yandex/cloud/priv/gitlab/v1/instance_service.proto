@@ -1,0 +1,307 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.gitlab.v1;
+
+import "google/protobuf/timestamp.proto";
+
+import "yandex/cloud/api/operation.proto";
+import "yandex/cloud/priv/billing/v1/light_metric.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+import "yandex/cloud/priv/validation.proto";
+
+import "yandex/cloud/priv/gitlab/v1/backup.proto";
+import "yandex/cloud/priv/gitlab/v1/instance.proto";
+import "yandex/cloud/priv/gitlab/v1/maintenance.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/gitlab/v1;gitlab";
+option java_outer_classname = "PGIS";
+
+// A set of methods for managing gitlab instances.
+service InstanceService {
+  // Returns the specified gitlab instance.
+  rpc Get (GetInstanceRequest) returns (Instance);
+
+  // Retrieves a list of gitlab instances.
+  rpc List (ListInstancesRequest) returns (ListInstancesResponse);
+
+  // Creates a new gitlab instance.
+  rpc Create (CreateInstanceRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "CreateInstanceMetadata"
+      response: "Instance"
+    };
+  }
+
+  // Upgrade the specified gitlab instance to the latest version.
+  rpc Upgrade (UpgradeInstanceRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpgradeInstanceMetadata"
+      response: "Instance"
+    };
+  }
+
+  // Backup gitlab instance
+  rpc CreateBackup (CreateInstanceBackupRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "CreateInstanceBackupMetadata"
+      response: "Instance"
+    };
+  }
+
+  // Modifies the specified gitlab instance.
+  rpc Update (UpdateInstanceRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateInstanceMetadata"
+      response: "Instance"
+    };
+  }
+
+  // Deletes the specified gitlab instance.
+  rpc Delete (DeleteInstanceRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeleteInstanceMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+
+  rpc Start (StartInstanceRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "StartInstanceMetadata"
+      response: "Instance"
+    };
+  }
+
+  rpc Stop (StopInstanceRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "StopInstanceMetadata"
+      response: "Instance"
+    };
+  }
+
+  // Reschedule planned maintenance operation.
+  rpc RescheduleMaintenance (RescheduleMaintenanceRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "RescheduleMaintenanceMetadata"
+      response: "Instance"
+    };
+  }
+
+  rpc ScheduleUpgrade (ScheduleUpgradeRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "ScheduleUpgradeMetadata"
+      response: "Instance"
+    };
+  }
+
+  rpc ScheduleUpgradeBatch (ScheduleUpgradeBatchRequest) returns (ScheduleUpgradeBatchResponse);
+
+  rpc ListBackups (ListInstanceBackupsRequest) returns (ListInstanceBackupsResponse);
+
+  rpc ListOperations (ListInstanceOperationsRequest) returns (ListInstanceOperationsResponse);
+
+  rpc GetFolderStats (GetFolderStatsRequest) returns (FolderStats);
+
+  // private methods
+
+  rpc ListAll(ListAllInstancesRequest) returns (ListInstancesResponse);
+
+  rpc SimulateBillingMetrics (CreateInstanceRequest) returns (billing.v1.ConsoleLightMetricsListResponse);
+}
+
+message ListAllInstancesRequest {
+  int64 page_size = 1 [(yandex.cloud.priv.value) = "0-1000"];
+  string page_token = 2 [(yandex.cloud.priv.length) = "<=100"];
+}
+
+message GetInstanceRequest {
+  string instance_id = 1 [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.length) = "<=50"];
+}
+
+message ListInstancesRequest {
+  string folder_id = 1 [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.length) = "<=50"];
+
+  // The maximum number of results per page that should be returned. If the number of available
+  // results is larger than `page_size`, the service returns a `next_page_token` that can be used
+  // to get the next page of results in subsequent ListInstances requests.
+  // Acceptable values are 0 to 1000, inclusive. Default value: 100.
+  int64 page_size = 2 [(yandex.cloud.priv.value) = "0-1000"];
+
+  // Page token. Set `page_token` to the `next_page_token` returned by a previous ListInstances
+  // request to get the next page of results.
+  string page_token = 3 [(yandex.cloud.priv.length) = "<=100"];
+}
+
+message ListInstancesResponse {
+  repeated Instance instances = 1;
+
+  // This token allows you to get the next page of results for ListInstances requests,
+  // if the number of results is larger than `page_size` specified in the request.
+  // To get the next page, specify the value of `next_page_token` as a value for
+  // the `page_token` parameter in the next ListInstances request. Subsequent ListInstances
+  // requests will have their own `next_page_token` to continue paging through the results.
+  string next_page_token = 2;
+}
+
+message ListInstanceOperationsRequest {
+  string instance_id = 1 [(yandex.cloud.priv.required) = true, (length) = "<=50"];
+  int64 page_size = 2 [(yandex.cloud.priv.value) = "0-1000"];
+  string page_token = 3 [(yandex.cloud.priv.length) = "<=100"];
+}
+
+message ListInstanceOperationsResponse {
+  repeated operation.Operation operations = 1;
+  string next_page_token = 2;
+}
+
+message ListInstanceBackupsRequest {
+  string instance_id = 1 [(yandex.cloud.priv.required) = true, (length) = "<=50"];
+  int64 page_size = 2 [(yandex.cloud.priv.value) = "0-1000"];
+  string page_token = 3 [(yandex.cloud.priv.length) = "<=100"];
+}
+
+message ListInstanceBackupsResponse {
+  repeated Backup backups = 1;
+  string next_page_token = 2;
+}
+
+message CreateInstanceRequest {
+  string folder_id = 1 [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.length) = "<=50"];
+  string name = 2 [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.pattern) = "|[a-z][-a-z0-9]{1,61}[a-z0-9]"];
+  string description = 3 [(yandex.cloud.priv.length) = "<=256"];
+  map<string, string> labels = 4 [(yandex.cloud.priv.size) = "<=64", (yandex.cloud.priv.length) = "<=63",
+    (yandex.cloud.priv.pattern) = "[-_0-9a-z]*", (yandex.cloud.priv.map_key).length = "1-63",
+    (yandex.cloud.priv.map_key).pattern = "[a-z][-_0-9a-z]*"];
+  string resource_preset_id = 5 [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.length) = "<=50"];
+  int64 disk_size = 6 [(yandex.cloud.priv.value) = "32212254720-322122547200"];
+  string admin_login = 7 [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.length) = "<=50"];
+  string admin_email = 8 [(yandex.cloud.priv.required) = true];
+  string domain_prefix = 9 [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.length) = "<=50", (yandex.cloud.priv.pattern) = "[a-z0-9][a-z0-9-]{3,48}[a-z0-9]"];
+  string subnet_id = 10 [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.length) = "<=50"];
+  MaintenanceWindow maintenance_window = 11 [(yandex.cloud.priv.required) = false];
+  int64 backup_retain_period_days = 12 [(yandex.cloud.priv.required) = false];
+}
+
+message CreateInstanceMetadata {
+  string instance_id = 1;
+}
+
+message UpgradeInstanceRequest {
+  string instance_id = 1;
+}
+
+message UpgradeInstanceMetadata {
+  string instance_id = 1;
+}
+
+message CreateInstanceBackupRequest {
+  string instance_id = 1;
+}
+
+message CreateInstanceBackupMetadata {
+  string instance_id = 1;
+}
+
+message UpdateInstanceRequest {
+  string instance_id = 1 [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.length) = "<=50"];
+  string name = 2 [(yandex.cloud.priv.pattern) = "|[a-z][-a-z0-9]{1,61}[a-z0-9]"];
+  string description = 3 [(yandex.cloud.priv.length) = "<=256"];
+  map<string, string> labels = 4 [(yandex.cloud.priv.size) = "<=64", (yandex.cloud.priv.length) = "<=63",
+    (yandex.cloud.priv.pattern) = "[-_0-9a-z]*", (yandex.cloud.priv.map_key).length = "1-63",
+    (yandex.cloud.priv.map_key).pattern = "[a-z][-_0-9a-z]*"];
+  MaintenanceWindow maintenance_window = 5 [(yandex.cloud.priv.required) = false];
+  int64 backup_retain_period_days = 6 [(yandex.cloud.priv.required) = false];
+  string resource_preset_id = 7 [(yandex.cloud.priv.required) = false]; // , (yandex.cloud.priv.length) = "<=50"
+  //   int64 disk_size = 6 [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.value) = "10737418240-4398046511104"];
+}
+
+message UpdateInstanceMetadata {
+  string instance_id = 1;
+}
+
+message DeleteInstanceRequest {
+  string instance_id = 1;
+}
+
+message DeleteInstanceMetadata {
+  string instance_id = 1;
+}
+
+message GetFolderStatsRequest {
+  string folder_id = 1 [(required) = true, (length) = "<=64"];
+}
+
+message FolderStats {
+  int64 instance_count = 1;
+}
+
+message StartInstanceRequest {
+  string instance_id = 1;
+}
+
+message StartInstanceMetadata {
+  string instance_id = 1;
+}
+
+message StopInstanceRequest {
+  string instance_id = 1;
+}
+
+message StopInstanceMetadata {
+  string instance_id = 1;
+}
+
+message RescheduleMaintenanceRequest {
+  string instance_id = 1 [(required) = true, (length) = "<=50"];
+
+  enum RescheduleType {
+    RESCHEDULE_TYPE_UNSPECIFIED = 0;
+    IMMEDIATE = 1;
+    NEXT_AVAILABLE_WINDOW = 2;
+    SPECIFIC_TIME = 3;
+  }
+  // Required. The type of reschedule request.
+  RescheduleType reschedule_type = 2[(required) = true];
+
+  // The time for SPECIFIC_TIME reschedule. Limited by two weeks since first time scheduled.
+  google.protobuf.Timestamp delayed_until = 3;
+}
+
+message RescheduleMaintenanceMetadata {
+  string instance_id = 1 [(required) = true, (length) = "<=50"];
+}
+
+message ScheduleUpgradeRequest {
+  string instance_id = 1 [(required) = true, (length) = "<=50"];
+
+  // The time for scheduling upgrade. Limitation?
+  google.protobuf.Timestamp delayed_until = 3 [(required) = true];
+}
+
+message ScheduleUpgradeMetadata {
+  string instance_id = 1 [(required) = true, (length) = "<=50"];
+
+  enum ScheduleStatus {
+    SCHEDULE_STATUS_UNSPECIFIED = 0;
+    SUCCESSFUL = 1;
+    UNKNOWN_ERROR = 2;
+    NOT_FOUND = 3;
+    INVALID_REQUEST = 4;
+    ALREADY_UPDATED = 5;
+  }
+
+  ScheduleStatus schedule_status = 2 [(required) = true];
+
+  // Optional error message for additional information about unknown errors
+  string error_message = 3 [(required) = false];
+}
+
+message ScheduleUpgradeBatchRequest {
+  repeated string instance_id = 1 [(size) = ">0"];
+
+  // The time for scheduling upgrade. Limitation?
+  google.protobuf.Timestamp delayed_until = 3 [(required) = true];
+}
+
+message ScheduleUpgradeBatchResponse {
+  repeated ScheduleUpgradeMetadata result = 1 [(size) = ">0"];
+}

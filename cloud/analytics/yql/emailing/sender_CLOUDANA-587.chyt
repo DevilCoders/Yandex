@@ -1,0 +1,139 @@
+use chyt.hahn/cloud_analytics;
+INSERT INTO "<append=%false>//home/cloud_analytics/emailing/sender/CLOUDANA-587"
+SELECT
+    t3.billing_account_id as billing_account_id,
+    account_name,
+    first_name,
+    last_name,
+    email,
+    phone,
+    mail_promo,
+    mail_feature,
+    mail_testing,
+    mail_billing,
+    mail_event,
+    mail_tech,
+    mail_info,
+    last_sales_name as login,
+    multiIf(
+        last_sales_name IN ('dmtroe', 'dmtroe@yandex-team.ru'), 'dmtroe@yandex-team.ru',
+        last_sales_name = 'anbalu', 'anbalu@yandex-team.ru',
+        last_sales_name = 'gingerkote', 'gingerkote@yandex-team.ru',
+        last_sales_name = 'timag', 'timag@yandex-team.ru',
+        last_sales_name = 'la-n', 'dolgihalina@yandex-team.ru',
+        last_sales_name = 'moiseeva-m', 'moiseeva-m@yandex-team.ru',
+        last_sales_name = 'dolgihalina', 'dolgihalina@yandex-team.ru',
+        'dolgihalina@yandex-team.ru'
+    ) as sales_email,
+    multiIf(
+        last_sales_name IN ('dmtroe', 'dmtroe@yandex-team.ru'), '+7 (903) 609-66-60',
+        last_sales_name = 'anbalu', '+7 (910) 796-11-49',
+        last_sales_name = 'gingerkote', '+7 (996) 010-98-27',
+        last_sales_name = 'timag', '+7 (961) 637-73-28',
+        last_sales_name = 'la-n', '+7 (920) 070-72-67',
+        last_sales_name = 'moiseeva-m', '+7 (920) 024-38-55',
+        last_sales_name = 'dolgihalina', '+7 (920) 070-72-67',
+        '+7 (920) 070-72-67'
+    ) as sales_phone,
+    multiIf(
+        last_sales_name IN ('dmtroe', 'dmtroe@yandex-team.ru'), 'Дмитрий',
+        last_sales_name = 'anbalu', 'Андрей',
+        last_sales_name = 'gingerkote', 'Александр',
+        last_sales_name = 'timag', 'Тимур',
+        last_sales_name = 'la-n', 'Алина',
+        last_sales_name = 'moiseeva-m', 'Марина',
+        last_sales_name = 'dolgihalina', 'Алина',
+        'Алина'
+    ) as sales_first_name,
+    multiIf(
+        last_sales_name IN ('dmtroe', 'dmtroe@yandex-team.ru'), 'Троегубов',
+        last_sales_name = 'anbalu', 'Балучшкин',
+        last_sales_name = 'gingerkote', 'Варданян',
+        last_sales_name = 'timag', 'Гусейнов',
+        last_sales_name = 'la-n', 'Долгих',
+        last_sales_name = 'moiseeva-m', 'Моисеева',
+        last_sales_name = 'dolgihalina', 'Долгих',
+        'Долгих'
+    ) as sales_last_name,
+    multiIf(
+        modulo(sipHash64(billing_account_id), 2) = 0, 'test',
+        'control'
+    ) as group
+FROM(
+    SELECT
+        t3.*,
+        t012.last_sales_name
+    FROM(
+        SELECT
+            t01.*
+        FROM(
+        SELECT
+            t0.*,
+            t1.last_lead_state,
+            t1.last_event_time
+        FROM(
+            SELECT
+                billing_account_id,
+                groupArray(event_time)[1] as last_call_time,
+                groupArray(sales_name)[1] as last_sales_name
+            FROM (SELECT * FROM "//home/cloud_analytics_test/cubes/crm_leads/cube" WHERE event = 'call'AND call_status = 'reachible' ORDER BY event_time DESC)
+            WHERE
+                NOT (billing_account_id IS NULL OR billing_account_id = '')
+            GROUP BY
+                billing_account_id
+            HAVING
+                toDate(last_call_time) <= addMonths(toDate(NOW()), -9)
+        ) as t0
+        INNER JOIN(
+            SELECT
+                billing_account_id,
+                groupArray(lead_state)[1] as last_lead_state,
+                groupArray(event_time)[1] as last_event_time
+            FROM (SELECT * FROM "//home/cloud_analytics_test/cubes/crm_leads/cube" WHERE event = 'lead_changed_status' ORDER BY event_time DESC)
+            WHERE
+                NOT (billing_account_id IS NULL OR billing_account_id = '')
+            GROUP BY
+                billing_account_id
+            HAVING
+                last_lead_state = 'Recycled'
+        ) as t1
+        ON t0.billing_account_id = t1.billing_account_id
+        ) as t01
+        INNER JOIN(
+            SELECT
+                billing_account_id,
+                SUM(real_consumption) as paid
+            FROM "//home/cloud_analytics/cubes/acquisition_cube/cube"
+            GROUP BY
+                billing_account_id
+            HAVING
+                paid <= 0
+        ) as t2
+        ON t01.billing_account_id = t2.billing_account_id
+        WHERE
+            toDate(last_event_time) <= addMonths(toDate(NOW()), -9)
+    ) as t012
+    INNER JOIN(
+        SELECT
+            billing_account_id,
+            account_name,
+            first_name,
+            last_name,
+            multiIf(
+                user_settings_email LIKE '%@yandex.%' OR user_settings_email LIKE '%@ya.%',CONCAT(lower(replaceAll(splitByString('@',assumeNotNull(user_settings_email))[1], '.', '-')), '@yandex.ru'),
+                lower(user_settings_email)
+            ) as email,
+            phone,
+            mail_promo,
+            mail_feature,
+            mail_testing,
+            mail_billing,
+            mail_event,
+            mail_tech,
+            mail_info
+        FROM "//home/cloud_analytics/cubes/acquisition_cube/cube"
+        WHERE
+            event = 'ba_created'
+    ) as t3
+    ON t012.billing_account_id = t3.billing_account_id
+)

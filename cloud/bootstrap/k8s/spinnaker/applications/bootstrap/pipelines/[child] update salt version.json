@@ -1,0 +1,410 @@
+{
+    "appConfig": {},
+    "application": "bootstrap",
+    "id": "4d29a81d-878c-4a4a-9924-21a0483e7bce",
+    "index": 2,
+    "keepWaitingPipelines": false,
+    "limitConcurrent": false,
+    "name": "[child] update salt version",
+    "parameterConfig": [
+        {
+            "default": "",
+            "description": "CLOUD-XXXXXX",
+            "hasOptions": false,
+            "label": "Existing release ticket",
+            "name": "releaseTicket",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": true,
+            "required": true
+        },
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": true,
+            "label": "Stand",
+            "name": "stand",
+            "options": [
+                {
+                    "value": "testing"
+                },
+                {
+                    "value": "preprod"
+                },
+                {
+                    "value": "prod"
+                }
+            ],
+            "pinned": true,
+            "required": true
+        },
+        {
+            "default": "",
+            "description": "[Teamcity Job](https://teamcity.aw.cloud.yandex.net/buildConfiguration/Selfhost_YcSaltFormula_PackageBuild)",
+            "hasOptions": false,
+            "label": "Salt formula version",
+            "name": "saltFormulaVersion",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": true,
+            "required": true
+        }
+    ],
+    "spelEvaluator": "v4",
+    "stages": [
+        {
+            "failOnFailedExpressions": true,
+            "name": "Configure context",
+            "refId": "10",
+            "requisiteStageRefIds": [],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "inSvmCluster",
+                    "value": true
+                },
+                {
+                    "key": "namespace",
+                    "value": "bootstrap"
+                },
+                {
+                    "key": "baseRole",
+                    "value": "bootstrap"
+                },
+                {
+                    "key": "saltRole",
+                    "value": "bootstrap"
+                },
+                {
+                    "key": "releaseTicket",
+                    "value": "${parameters.releaseTicket.matches(\"CLOUD-[0-9]{5,6}\") == true ? parameters.releaseTicket: INVALID_TICKET_FORMAT}"
+                },
+                {
+                    "key": "stand",
+                    "value": "${parameters.stand}"
+                },
+                {
+                    "key": "saltFormulaVersion",
+                    "value": "${parameters.saltFormulaVersion.matches(\"^0\\.1-[0-9]{4,6}\\.[0-9]{6}(\\.hotfix-[a-z_-]+)?$\") == true ? parameters.saltFormulaVersion: INVALID_SALT_FORMULA_VERSION_FORMAT}"
+                },
+                {
+                    "key": "spinnakerExecutionURL",
+                    "value": "https://spinnaker.cloud.yandex.net/#/applications/${execution.application}/executions/${execution.Id}"
+                },
+                {
+                    "key": "spinnakerExecutionMD",
+                    "value": "[${execution.Id}](${spinnakerExecutionURL})"
+                },
+                {
+                    "key": "triggerUserLogin",
+                    "value": "${trigger.user.replace(\"@yandex-team.ru\", \"\")}"
+                },
+                {
+                    "key": "branchName",
+                    "value": "release-${parameters.releaseTicket}-${parameters.stand}"
+                },
+                {
+                    "key": "optionalClusterSuffix",
+                    "value": "${inSvmCluster?\"-svm\":\"\"}"
+                },
+                {
+                    "key": "k8sRelease",
+                    "value": "${baseRole}-base-role"
+                },
+                {
+                    "key": "emptyPRWorkaround",
+                    "value": "# ${new java.text.SimpleDateFormat(\"yyMMddHHmmss\").format(new java.util.Date())} empty PR workaround"
+                }
+            ]
+        },
+        {
+            "actions": [
+                {
+                    "actionName": "check",
+                    "actionType": "getBranch",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branchName": "${branchName}",
+                    "outputVariable": "branchInfo_k8s_deploy",
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                }
+            ],
+            "completeOtherBranchesThenFail": false,
+            "continuePipeline": true,
+            "failPipeline": false,
+            "name": "[k8s-deploy] Check if branch exists",
+            "refId": "110",
+            "requisiteStageRefIds": [
+                "10"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "actions": [
+                {
+                    "actionName": "create",
+                    "actionType": "createBranch",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branchName": "${branchName}",
+                    "outputVariable": "branchInfo_k8s_deploy",
+                    "project": "cloud",
+                    "repo": "k8s-deploy",
+                    "startPoint": "master"
+                }
+            ],
+            "name": "[k8s-deploy] Create branch",
+            "refId": "120",
+            "requisiteStageRefIds": [
+                "110"
+            ],
+            "stageEnabled": {
+                "expression": "${branchInfo_k8s_deploy == null}",
+                "type": "expression"
+            },
+            "type": "bitbucket"
+        },
+        {
+            "actions": [
+                {
+                    "actionName": "Update values.yaml for \"a\"",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "(${saltRole}:[\\s\\S]+?version:\\s*).+",
+                            "replacement": "$1${saltFormulaVersion} ${emptyPRWorkaround}"
+                        }
+                    ],
+                    "commitMessage": "${releaseTicket} Update salt formula version to ${saltFormulaVersion} for ${stand}-a",
+                    "filePath": "${stand}/ru-central1-a${optionalClusterSuffix}/helmfiles/${namespace}/${k8sRelease}/values.yaml",
+                    "ignoreUnmodified": false,
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                },
+                {
+                    "actionName": "Update values.yaml for \"b\"",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "(${saltRole}:[\\s\\S]+?version:\\s*).+",
+                            "replacement": "$1${saltFormulaVersion} ${emptyPRWorkaround}"
+                        }
+                    ],
+                    "commitMessage": "${releaseTicket} Update salt formula version to ${saltFormulaVersion} for ${stand}-b",
+                    "filePath": "${stand}/ru-central1-b${optionalClusterSuffix}/helmfiles/${namespace}/${k8sRelease}/values.yaml",
+                    "ignoreUnmodified": false,
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                },
+                {
+                    "actionName": "Update values.yaml for \"c\"",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "(${saltRole}:[\\s\\S]+?version:\\s*).+",
+                            "replacement": "$1${saltFormulaVersion} ${emptyPRWorkaround}"
+                        }
+                    ],
+                    "commitMessage": "${releaseTicket} Update salt formula version to ${saltFormulaVersion} for ${stand}-c",
+                    "filePath": "${stand}/ru-central1-c${optionalClusterSuffix}/helmfiles/${namespace}/${k8sRelease}/values.yaml",
+                    "ignoreUnmodified": false,
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                },
+                {
+                    "actionId": "e13cf689-406c-4fc2-95ba-0572504b3f2b",
+                    "actionName": "Create PR k8s-deploy",
+                    "actionType": "createPullRequest",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "description": "Created by Spinnaker execution: ${spinnakerExecutionMD}",
+                    "findExisting": true,
+                    "fromRef": "${branchName}",
+                    "ignoreEmpty": false,
+                    "outputVariable": "bitbucketPR_k8s_deploy",
+                    "project": "cloud",
+                    "repo": "k8s-deploy",
+                    "reviewers": [
+                        "${triggerUserLogin}"
+                    ],
+                    "title": "${releaseTicket} Update ${saltRole}=${saltFormulaVersion} for base role ${baseRole} in ${stand}",
+                    "toRef": "master"
+                }
+            ],
+            "failOnFailedExpressions": true,
+            "name": "[k8s-deploy] Update salt formula version",
+            "refId": "130",
+            "requisiteStageRefIds": [
+                "110",
+                "120"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "attempts": 3,
+            "buildConfigurationId": "Selfhost_GenerateK8sManifests",
+            "buildParameters": [
+                {
+                    "key": "env.PREFIX",
+                    "value": "${namespace}/${k8sRelease}"
+                }
+            ],
+            "completeOtherBranchesThenFail": false,
+            "continuePipeline": true,
+            "failOnFailedExpressions": false,
+            "failPipeline": false,
+            "logicalBranchName": "${branchName}",
+            "name": "[k8s-deploy] Generate manifests",
+            "refId": "140",
+            "requisiteStageRefIds": [
+                "130"
+            ],
+            "tcProfile": "aw",
+            "type": "teamcityBuild"
+        },
+        {
+            "actions": [
+                {
+                    "actionId": "405835ea-eeaa-4305-b6c1-2afb69981e11",
+                    "actionName": "Wait for PR merged",
+                    "actionType": "waitPullRequest",
+                    "source": "priorAction",
+                    "sourceActionId": "e13cf689-406c-4fc2-95ba-0572504b3f2b"
+                }
+            ],
+            "completeOtherBranchesThenFail": false,
+            "continuePipeline": true,
+            "failPipeline": false,
+            "name": "[k8s-deploy] Wait for PR merged",
+            "refId": "150",
+            "requisiteStageRefIds": [
+                "140"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "actions": [
+                {
+                    "actionName": "check",
+                    "actionType": "getBranch",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branchName": "${branchName}",
+                    "outputVariable": "branchInfo_cluster_configs",
+                    "project": "cloud",
+                    "repo": "cluster-configs"
+                }
+            ],
+            "completeOtherBranchesThenFail": false,
+            "continuePipeline": true,
+            "failPipeline": false,
+            "name": "[cluster-configs] Check if branch exists",
+            "refId": "210",
+            "requisiteStageRefIds": [
+                "10"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "actions": [
+                {
+                    "actionName": "create",
+                    "actionType": "createBranch",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branchName": "${branchName}",
+                    "outputVariable": "branchInfo_cluster_configs",
+                    "project": "cloud",
+                    "repo": "cluster-configs",
+                    "startPoint": "master"
+                }
+            ],
+            "name": "[cluster-configs] Create branch",
+            "refId": "220",
+            "requisiteStageRefIds": [
+                "210"
+            ],
+            "stageEnabled": {
+                "expression": "${branchInfo_cluster_configs == null}",
+                "type": "expression"
+            },
+            "type": "bitbucket"
+        },
+        {
+            "actions": [
+                {
+                    "actionName": "Update",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "(bootstrap:\\n      version: ).+",
+                            "replacement": "$1${saltFormulaVersion} ${emptyPRWorkaround}"
+                        }
+                    ],
+                    "commitMessage": "Update ${saltRole} salt formula version to ${saltFormulaVersion} for ${stand}",
+                    "filePath": "${stand}/base-role-releases/${baseRole}.yaml",
+                    "ignoreUnmodified": false,
+                    "project": "cloud",
+                    "repo": "cluster-configs"
+                },
+                {
+                    "actionId": "e13cf689-406c-4fc2-95ba-0572504b3f2b",
+                    "actionName": "Create PR cluster-configs",
+                    "actionType": "createPullRequest",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "description": "Created by Spinnaker execution: ${spinnakerExecutionMD}",
+                    "findExisting": true,
+                    "fromRef": "${branchName}",
+                    "ignoreEmpty": false,
+                    "outputVariable": "bitbucketPR",
+                    "project": "cloud",
+                    "repo": "cluster-configs",
+                    "reviewers": [
+                        "${triggerUserLogin}"
+                    ],
+                    "title": "${releaseTicket} Update ${saltRole}=${saltFormulaVersion} for base role ${baseRole} in ${stand}",
+                    "toRef": "master"
+                }
+            ],
+            "failOnFailedExpressions": true,
+            "name": "[cluster-configs] Update salt formula version",
+            "refId": "230",
+            "requisiteStageRefIds": [
+                "210",
+                "220"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "actions": [
+                {
+                    "actionName": "Wait for PR merged",
+                    "actionType": "waitPullRequest",
+                    "source": "priorAction",
+                    "sourceActionId": "e13cf689-406c-4fc2-95ba-0572504b3f2b"
+                }
+            ],
+            "name": "[cluster-configs] Wait for PR merged",
+            "refId": "240",
+            "requisiteStageRefIds": [
+                "230"
+            ],
+            "type": "bitbucket"
+        }
+    ],
+    "triggers": []
+}

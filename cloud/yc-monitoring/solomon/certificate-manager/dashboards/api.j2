@@ -1,0 +1,57 @@
+{% extends "../../base/dashboard.j2" %}
+
+{% set dpl_methods = ["CertificateContentService/Get", "CertificateContentService/GetEncrypted",
+    "IntegrationService/BatchGetContent", "IntegrationService/BatchGetChangedMetadata",
+    "IntegrationService/GetDomainMeta"] %}
+{% set cpl_methods = ["CertificateService/Get", "CertificateService/List", "CertificateService/Create",
+    "CertificateService/Update", "CertificateService/Delete", "CertificateService/ValidateContent",
+    "CertificateService/RequestNew", "CertificateService/Renew", "CertificateService/ListReferences",
+    "CertificateService/AddReferences", "CertificateService/RemoveReferences",
+    "CertificateService/ListOperations", "CertificateService/ListAccessBindings",
+    "CertificateService/SetAccessBindings", "CertificateService/UpdateAccessBindings",
+    "console.CertificateConsoleService/GetFolderStats", "console.CertificateConsoleService/ListActive",
+    "console.CertificateConsoleService/ValidateContent", "OperationService/Get", "QuotaService/Get",
+    "QuotaService/UpdateMetric", "QuotaService/BatchUpdateMetric", "QuotaService/GetDefault",
+    "DomainService/Get", "DomainService/List", "DomainService/Create", "DomainService/Update",
+    "DomainService/SetPrimaryCertificate", "DomainService/Delete", "DomainService/ListReferences",
+    "DomainService/AddReferences", "DomainService/RemoveReferences",
+    "DomainService/ListOperations", "DomainService/ListAccessBindings",
+    "DomainService/SetAccessBindings", "DomainService/UpdateAccessBindings"] %}
+
+{% set row_graphs = {
+    "rps" : "grpc_api_requests_rps",
+    "errors" : "grpc_api_statuses_errors",
+    "duration" : "grpc_api_duration"
+   }
+%}
+
+{% set cluster = "cloud_" + env + "_ycm_cluster" %}
+{% set service = "service" %}
+
+{% macro render_row_panels(title, method, host, app) %}
+{ "panels": [
+    {% for name, graph in row_graphs.items() %}
+        {{ render_panel(
+            title + " " + name,
+            cluster,
+            service,
+            query="graph={}&l.method={}&l.host={}&l.app={}".format(graph, method, host, app))
+        }}
+        {% if not loop.last %},{% endif %}
+    {% endfor %}
+]}
+{% endmacro %}
+
+{% block rows %}
+[
+    {{ render_row_panels("CPL API", "*", "cluster-cpl", "certificate-manager-control-plane_server") }},
+    {{ render_row_panels("DPL API", "*", "cluster-dpl", "certificate-manager-data-plane_server") }},
+    {% for method in dpl_methods %}
+        {{ render_row_panels("DPL " + method, "certificatemanager.v1." + method, "cluster-dpl", "certificate-manager-data-plane_server") }},
+    {% endfor %}
+    {% for method in cpl_methods %}
+        {{ render_row_panels("CPL " + method, "certificatemanager.v1." + method, "cluster-cpl", "certificate-manager-control-plane_server") }}
+        {% if not loop.last %},{% endif %}
+    {% endfor %}
+]
+{% endblock %}

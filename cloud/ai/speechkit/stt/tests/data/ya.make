@@ -1,0 +1,5 @@
+RECURSE(
+    model
+    queries
+    tags
+)

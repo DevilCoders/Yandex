@@ -1,0 +1,46 @@
+info: Odyssey (connection pooler) version upgrade
+repeatable: true
+clusters_selection:
+  db: >-
+    SELECT cid FROM (
+             SELECT cid,
+                    env,
+                    type,
+                    actual_rev,
+                    'odyssey' as component
+             FROM dbaas.clusters
+             WHERE status = 'RUNNING'
+               AND type = 'greenplum_cluster'
+         ) c
+             JOIN dbaas.versions USING (cid, component)
+             JOIN dbaas.default_versions
+                  ON default_versions.type = c.type
+                      AND default_versions.component = c.component
+                      AND default_versions.env = c.env
+                      AND default_versions.major_version = versions.major_version
+                      AND default_versions.edition = versions.edition
+                      AND default_versions.minor_version > versions.minor_version
+                      AND NOT versions.pinned
+             JOIN dbaas.pillar p USING (cid)
+                  WHERE p.value->'data'->'disable_mw'->>'odyssey' IS NULL
+pillar_change: >-
+  UPDATE dbaas.versions p SET minor_version = default_v.minor_version,
+      package_version = default_v.package_version
+  FROM (
+           SELECT default_versions.minor_version,
+                  default_versions.package_version
+           FROM (
+                    SELECT *,
+                           'odyssey' AS component
+                    FROM dbaas.clusters
+                    WHERE clusters.cid = :cid
+                ) c
+                    JOIN dbaas.versions USING (cid, component)
+                    JOIN dbaas.default_versions USING (component, env, major_version, edition)
+       ) as default_v
+  WHERE p.cid = :cid AND component = 'odyssey'
+worker:
+  operation_type: greenplum_cluster_modify
+  task_type: greenplum_cluster_maintenance
+  task_args: {}
+  timeout: 24h

@@ -1,0 +1,79 @@
+port: 8883
+server_crt: "/etc/yc-iot/mqtt/ssl/certs/server.crt"
+server_key: "/etc/yc-iot/mqtt/ssl/private/server.key"
+tvm:
+  daemon_port: 18080
+  auth_token: "${tvm_token}"
+
+logbroker:
+  topic: "/yc-iot/preprod"
+  connection:
+    address: "logbroker.yandex.net"
+    choose_proxy_timeout: 5s
+    max_recv_msg_size: 50MB
+    max_send_msg_size: 50MB
+  consumer:
+    client_id: "/yc-iot/mqttpreprod${mqtt_id}"
+    commit_interval: 0
+    max_time_lag: 0
+    read_only_local: false
+    commits_disabled: true
+    max_read_size: 40MB
+    topics:
+      - "/yc-iot/preprod"
+  producer:
+    source_prefix: "${mqtt_name}_"
+    max_producers: 5
+    max_batch_size: 128KB
+
+shard:
+  client_msg_buffer_size: 128
+  commands_msg_buffer_size: 128
+  topic_msg_buffer_size: 10
+shard_upstream:
+  consumers_count: 1
+  buffer_size: 100
+  history_time_window: 10m
+
+metrics:
+  namespace: mqtt
+  subsystem: cloud_mqtt_preprod
+  listen-addr: 127.0.0.1:12580
+selfcheck:
+  port: 443
+billing:
+  send_period: 15m
+  logbroker:
+    connection:
+      address: "vla.logbroker.yandex.net"
+      choose_proxy_timeout: 5s
+      max_recv_msg_size: 50MB
+    topic: "/yc/preprod/billing-iot-traffic"
+    source: "${mqtt_name}"
+authorizer:
+  max_retries: 5
+  timeout: 5s
+  retry_timeout: 0.5s
+#  address: "devices-preprod-${zone}01.ycp.cloud-preprod.yandex.net:443"
+cloud_logger:
+  buff_size: 100
+  config:
+    filename:                ${cloudlog_log_file}
+    maxsize:                 1024
+    maxage:                  1
+    maxbackups:              2
+    localtime:               false
+    compress:                false
+self_ping:
+  check_period: 1m
+  ping_timeout: 20s
+  sub_cert: ${self_ping_certs}/sub_cert.pem
+  pub_cert: ${self_ping_certs}/pub_cert.pem
+  topic_prefix: "$devices/b91ku6cg8ngp1gr4cjkg/events/selfping"
+  zone: ${zone}
+  instance_name: ${mqtt_name}
+logging:
+  file_path: "${log_dir}/access.log"
+  level: info
+  compress: true
+  max_age_days: 14

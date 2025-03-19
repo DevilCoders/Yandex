@@ -1,0 +1,4 @@
+RECURSE(
+    records
+    voicetable
+)

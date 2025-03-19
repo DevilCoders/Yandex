@@ -1,0 +1,333 @@
+USE %YT_CLUSTER%;
+PRAGMA yt.InferSchema = '1';
+PRAGMA yson.DisableStrict;
+PRAGMA File('libcrypta_identifier_udf.so', 'yt://hahn/home/crypta/public/udfs/stable/libcrypta_identifier_udf.so');
+PRAGMA Udf('libcrypta_identifier_udf.so');
+
+$export_table = '%UPDATES_TABLES_PATH%/' || CAST(CurrentUtcTimestamp() AS String);
+$iam_tables = '//home/cloud_analytics/import/iam/cloud_owners/1h';
+$monetary_grants_offers_tables = '//home/logfeller/logs/yc-billing-export-monetary-grant-offers/1h';
+$monetary_grants_tables = '//home/logfeller/logs/yc-billing-export-monetary-grants/1h';
+$passport_uid_ba_tbl = '//home/cloud_analytics/clients/passport_uid_ba';
+$waitlist = '//home/cloud_analytics/clients/waitlist';
+$clients_segments = '//home/cloud_analytics/import/wiki/clients_segments';
+$promo_event_tickets = '//home/cloud_analytics/import/startrek/promo_events';
+$billing_accounts_tbl = '//home/logfeller/logs/yc-billing-export-billing-accounts/1h';
+$dwh_scoring_tbl = '//home/cloud_analytics/scoring/leads/leads';
+
+$dt2unixts = ($dt) -> {
+    RETURN DateTime::ToSeconds(
+                    DateTime::MakeTzDatetime($dt)
+            )
+};
+
+$date2unixts = ($date) -> {
+    $parser = DateTime::Parse('%Y-%m-%d');
+    RETURN $dt2unixts($parser($date))
+};
+
+$iso2unixts = ($iso_datetime) -> {
+    RETURN $dt2unixts(DateTime::ParseIso8601($iso_datetime))
+};
+
+DEFINE SUBQUERY $last_non_empty_table($path) AS
+    $max_path = (
+        SELECT MAX(Path) as Path
+        FROM FOLDER($path, 'row_count')
+        WHERE Type = 'table'
+            AND Yson::LookupInt64(Attributes, 'row_count') > 0
+    );
+    SELECT * FROM CONCAT($max_path);
+END DEFINE;
+
+$to_decimal = ($amount) -> {
+    RETURN CAST($amount AS Decimal(22,9));
+};
+
+$to_double = ($amount) -> {
+    RETURN CAST($amount AS Double);
+};
+
+$email_to_canonical = ($email) -> {
+    RETURN Identifiers::NormalizeEmail($email);
+};
+
+$yt_email_from_login = ($login) -> {
+    RETURN $login || "@yandex-team.ru"
+};
+
+$ba_from_promo_events = (
+    SELECT
+        g.billing_account_id AS billing_account_id,
+        'promo_events' AS source
+    FROM $last_non_empty_table($monetary_grants_offers_tables) AS go
+    JOIN $last_non_empty_table($monetary_grants_tables) AS g
+        ON go.id = g.source_id
+    WHERE
+        String::Strip(
+            Yson::LookupString(Yson::ParseJson(Yson::ConvertToString(go.proposed_meta)), 'ticket')
+        ) IN (
+            SELECT key FROM $promo_event_tickets
+        )
+    GROUP BY g.billing_account_id
+);
+
+-- For now we just want to create leads from accounts who have only one cloud
+-- Later, we will decide how to behave in other complex cases.
+$passport_uid_ba_dups = (
+    SELECT
+        user_settings_email,
+        COUNT(1) as cnt
+    FROM (
+        SELECT
+            $email_to_canonical(user_settings_email) AS user_settings_email
+        FROM $passport_uid_ba_tbl
+    )
+        GROUP BY user_settings_email
+);
+$passport_uid_ba = (
+    SELECT
+        $email_to_canonical(all_rows.user_settings_email) AS user_settings_email,
+        all_rows.ba_created_at AS ba_created_at,
+        all_rows.sales_person AS sales_person,
+        all_rows.first_paid_consumption_date AS first_paid_consumption_date,
+        all_rows.segment AS segment,
+        all_rows.passport_uid AS passport_uid,
+        all_rows.billing_account_id AS billing_account_id,
+        all_rows.ba_paid_at AS ba_paid_at,
+        all_rows.client_name AS client_name,
+        all_rows.ba_curr_state AS ba_curr_state,
+        all_rows.first_consumption_date AS first_consumption_date
+    FROM $passport_uid_ba_tbl AS all_rows
+    LEFT ONLY JOIN (
+            SELECT
+                user_settings_email
+            FROM $passport_uid_ba_dups
+                WHERE cnt > 1
+        ) AS email_dups
+        ON $email_to_canonical(email_dups.user_settings_email) = $email_to_canonical(all_rows.user_settings_email)
+);
+
+$iam_email_dups = (
+    SELECT
+        user_settings_email,
+        COUNT(1) as cnt
+    FROM (
+        SELECT
+            $email_to_canonical(user_settings_email) AS user_settings_email,
+            passport_uid
+        FROM $last_non_empty_table($iam_tables)
+        GROUP BY user_settings_email, passport_uid
+
+    )
+        GROUP BY user_settings_email
+);
+
+$iam_clouds = (
+    SELECT
+        user_settings_email,
+        passport_uid,
+        email,
+        first_name,
+        last_name,
+        phone,
+        timezone,
+        mail_billing,
+        mail_event,
+        mail_feature,
+        mail_info,
+        mail_marketing,
+        mail_promo,
+        mail_support,
+        mail_tech,
+        mail_technical,
+        mail_testing,
+        user_settings_language,
+        MIN(created_at) as created_at
+    FROM(
+        SELECT
+            $email_to_canonical(iam.user_settings_email) AS user_settings_email,
+            iam.passport_uid AS passport_uid,
+            $email_to_canonical(iam.email) AS email,
+            iam.phone AS phone,
+            iam.timezone AS timezone,
+            iam.first_name AS first_name,
+            iam.last_name AS last_name,
+            iam.mail_billing AS mail_billing,
+            iam.mail_event AS mail_event,
+            iam.mail_feature AS mail_feature,
+            iam.mail_info AS mail_info,
+            iam.mail_marketing AS mail_marketing,
+            iam.mail_promo AS mail_promo,
+            iam.mail_support AS mail_support,
+            iam.mail_tech AS mail_tech,
+            iam.mail_technical AS mail_technical,
+            iam.mail_testing AS mail_testing,
+            iam.user_settings_language AS user_settings_language,
+            $iso2unixts(iam.cloud_created_at) AS created_at
+        FROM $last_non_empty_table($iam_tables) AS iam
+        LEFT ONLY JOIN (
+                SELECT
+                    user_settings_email
+                FROM $iam_email_dups
+                    WHERE cnt > 1
+            ) AS email_dups
+            ON $email_to_canonical(email_dups.user_settings_email) = $email_to_canonical(iam.user_settings_email)
+        WHERE
+            $email_to_canonical(user_settings_email) IS NOT null
+        )
+    GROUP BY
+        user_settings_email,
+        passport_uid,
+        email,
+        phone,
+        timezone,
+        first_name,
+        last_name,
+        mail_billing,
+        mail_event,
+        mail_feature,
+        mail_info,
+        mail_marketing,
+        mail_promo,
+        mail_support,
+        mail_tech,
+        mail_technical,
+        mail_testing,
+        user_settings_language
+);
+
+$waitlist_users = (
+    SELECT
+        email,
+        MAX_BY(company_name, LENGTH(company_name)) AS company_name,
+        MAX_BY(company_city, LENGTH(company_city)) AS company_city,
+        MAX_BY(company_area, LENGTH(company_area)) AS company_area,
+        MAX_BY(company_url, LENGTH(company_url)) AS company_url,
+        'waitlist' AS source
+    FROM $waitlist AS w
+    GROUP BY
+        IF(
+            $email_to_canonical(user_email) IS NOT Null,
+            $email_to_canonical(user_email),
+            IF(
+                yandex_login IS NOT Null,
+                $email_to_canonical(yandex_login || '@yandex.ru'),
+                Null
+            )
+        ) AS email
+);
+
+$grants_by_ba = (
+    SELECT
+        billing_account_id,
+        MIN(id) AS grant_id,
+        SUM($to_decimal(initial_amount)) AS sum_amount,
+        MIN(start_time) AS start_time,
+        MAX(end_time) AS end_time
+    FROM $last_non_empty_table($monetary_grants_tables)
+    GROUP BY billing_account_id
+);
+
+$dwh_scoring = (
+    SELECT
+        billing_account_id,
+        MAX(score) AS score
+    FROM $dwh_scoring_tbl
+    GROUP BY billing_account_id
+);
+
+$billing_accounts = (
+    SELECT
+      email,
+      MAX_BY(billing.id, billing.created_at) AS ba_id,
+      MAX_BY(billing.person_type, billing.created_at) AS person_type,
+      MAX_BY(billing.name, billing.created_at) AS name
+    FROM $last_non_empty_table($iam_tables) AS iam
+        LEFT JOIN $last_non_empty_table($billing_accounts_tbl) AS billing
+        ON iam.passport_uid = billing.owner_id
+    GROUP BY $email_to_canonical(iam.user_settings_email) AS email
+);
+
+INSERT INTO $export_table WITH TRUNCATE
+SELECT
+    i.user_settings_email AS user_settings_email,
+    i.created_at AS console_registration_date,
+    i.mail_billing AS mail_billing,
+    i.mail_event AS mail_event,
+    i.mail_feature AS mail_feature,
+    i.mail_info AS mail_info,
+    i.mail_marketing AS mail_marketing,
+    i.mail_promo AS mail_promo,
+    i.mail_support AS mail_support,
+    i.mail_tech AS mail_tech,
+    i.mail_technical AS mail_technical,
+    i.mail_testing AS mail_testing,
+    i.phone AS phone,
+    i.timezone AS timezone,
+    i.last_name AS last_name,
+    i.first_name AS first_name,
+    i.user_settings_language AS user_settings_language,
+    IF(
+        promo.source IS NOT NULL,
+        promo.source,
+        IF(
+            cs.segment IS NOT NULL,
+            cs.segment,
+            IF(
+                waitlist.source IS NOT NULL,
+                waitlist.source,
+                'organic'
+            )
+        )
+    ) AS lead_source,
+    CAST(waitlist.company_city AS String) AS city,
+    CAST(waitlist.company_name AS String) AS company,
+    CAST(waitlist.company_area AS String) AS industry,
+    CAST(waitlist.company_url AS String) AS website,
+    grants.grant_id AS grant1_id,
+    grants.start_time AS grant1_start_date,
+    grants.end_time AS grant1_end_date,
+    $to_double(grants.sum_amount) AS grant1_amount,
+    billing_accounts.person_type AS person_type,
+    billing_accounts.name AS person_name,
+    IF(billing_accounts.person_type = 'individual', true, false) AS is_individual,
+    IF(passport_uid_ba.first_paid_consumption_date IS NOT NULL, Cast(0 AS Uint64), NULL) AS grant1_remaining,
+    dwh_scoring.score AS ba_paid_real_consumption_prob,
+    IF(
+        passport_uid_ba.passport_uid IS NOT NULL,
+        Math::Fmod(CAST(passport_uid_ba.passport_uid AS Uint64), 100),
+        -1
+    ) AS test_group_index,
+    CAST(passport_uid_ba.ba_created_at AS Uint64) AS ba_created_at,
+    CAST(passport_uid_ba.sales_person AS String) AS sales_person,
+    $date2unixts(passport_uid_ba.first_paid_consumption_date) AS first_paid_consumption_date,
+    CAST(passport_uid_ba.segment AS String) AS segment,
+    CAST(i.passport_uid AS UInt64) AS passport_uid,
+    $date2unixts(passport_uid_ba.first_consumption_date) AS first_consumption_date,
+    CAST(passport_uid_ba.billing_account_id AS String) AS billing_account_id,
+    CAST(passport_uid_ba.ba_paid_at AS Uint64) AS ba_paid_at,
+    CAST(passport_uid_ba.client_name AS String) AS client_name,
+    CAST(passport_uid_ba.ba_curr_state AS String) AS ba_status
+FROM $iam_clouds AS i
+LEFT JOIN $passport_uid_ba AS passport_uid_ba
+    ON i.passport_uid = passport_uid_ba.passport_uid
+LEFT JOIN (
+        SELECT
+            billing_account_id,
+            AGGREGATE_LIST(segment)[0] AS segment
+        FROM $clients_segments
+        GROUP BY billing_account_id
+    ) AS cs
+    ON cs.billing_account_id = passport_uid_ba.billing_account_id
+LEFT JOIN $grants_by_ba AS grants
+    ON grants.billing_account_id = passport_uid_ba.billing_account_id
+LEFT JOIN $waitlist_users AS waitlist
+    ON waitlist.email = i.user_settings_email
+LEFT JOIN $ba_from_promo_events AS promo
+    ON promo.billing_account_id = passport_uid_ba.billing_account_id
+LEFT JOIN $dwh_scoring AS dwh_scoring
+    ON dwh_scoring.billing_account_id = passport_uid_ba.billing_account_id
+LEFT JOIN $billing_accounts AS billing_accounts
+    ON i.user_settings_email = billing_accounts.email
+WHERE i.user_settings_email not like '%@%--%'

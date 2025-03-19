@@ -1,0 +1,125 @@
+{
+  "variables": {
+    "endpoint": "{{env `YC_ENDPOINT`}}",
+    "service_account_key_file": "{{env `YC_SA_KEY_FILE`}}",
+    "ssh_private_key_file": "{{env `SSH_PRIVATE_KEY_FILE`}}",
+    "folder_id": "{{env `YC_FOLDER_ID`}}",
+    "subnet_id": "{{env `YC_SUBNET_ID`}}",
+    "zone": "{{env `YC_ZONE`}}",
+    "commit_revision": "{{env `COMMIT_REVISION`}}",
+    "commit_author": "{{env `COMMIT_AUTHOR`}}",
+    "commit_message": "{{env `COMMIT_MESSAGE`}}",
+    "jaeger_endpoint": "{{env `JAEGER_ENDPOINT`}}",
+    "e2e_real_version": "{{env `E2E_REAL_VERSION`}}"
+  },
+  "builders": [
+    {
+      "type": "yandex",
+      "endpoint": "{{user `endpoint`}}",
+      "service_account_key_file": "{{user `service_account_key_file`}}",
+      "folder_id": "{{user `folder_id`}}",
+      "subnet_id": "{{user `subnet_id`}}",
+      "zone": "{{user `zone`}}",
+      "use_ipv4_nat": false,
+      "use_ipv6": true,
+      "image_name": "e2e-real-{{user `commit_revision` | clean_image_name}}",
+      "image_family": "e2e-real",
+      "image_description": "based on commit (https://a.yandex-team.ru/arc/commit/{{user `commit_revision`}}) by {{user `commit_author`}}",
+      "image_labels": {
+        "commit_revision": "{{user `commit_revision`}}",
+        "commit_author": "{{user `commit_author`}}"
+      },
+      "source_image_family": "ubuntu-1604-lts",
+      "disk_type": "network-nvme",
+      "ssh_username": "ubuntu",
+      "ssh_private_key_file": "{{user `ssh_private_key_file`}}"
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "shell",
+      "inline": [
+        "sudo sed -i '1i nameserver 2a02:6b8:0:3400::5005' /etc/resolv.conf",
+        "echo 'Content of /etc/resolv.conf:' ; cat /etc/resolv.conf",
+        "echo 'Content of /etc/hosts:' ; cat /etc/hosts"
+      ]
+    },
+    {
+      "type": "shell",
+      "environment_vars": [
+        "DEBIAN_FRONTEND=noninteractive"
+       ],
+      "inline": [
+        "sudo systemctl stop apt-daily-upgrade.timer apt-daily.timer; sudo systemctl disable apt-daily.timer apt-daily-upgrade.timer; sudo systemctl daemon-reload",
+        "echo 'Wait for apt-daily service first run'; while true; do [ $( ps aux | grep -c [l]ock_is_held ) -gt 0 ] && date && ps aux | grep apt && sleep 10 || break; done",
+        "sudo apt-get purge -y unattended-upgrades ubuntu-release-upgrader-core update-notifier-common",
+        "echo 'image prepared by Packer at ' | sudo tee /etc/image_description",
+        "date --rfc-3339 sec | sudo tee -a /etc/image_description",
+        "sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 7FCD11186050CD1A",
+        "echo 'deb http://yandex-cloud-upstream-xenial-secure.dist.yandex.ru/yandex-cloud-upstream-xenial-secure stable/all/' | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-upstream-xenial-secure.list",
+        "echo 'deb http://yandex-cloud-upstream-xenial-secure.dist.yandex.ru/yandex-cloud-upstream-xenial-secure stable/amd64/' | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-upstream-xenial-secure.list",
+        "echo 'deb http://yandex-cloud-secure.dist.yandex.ru/yandex-cloud-secure stable/all/' | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-secure-stable.list",
+        "echo 'deb http://yandex-cloud-secure.dist.yandex.ru/yandex-cloud-secure stable/amd64/' | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-secure-stable.list", 
+        "echo '169.254.169.254 metadata.google.internal' | sudo tee -a /etc/hosts"
+      ]
+    },
+    {
+      "type": "shell",
+      "environment_vars": [
+        "DEBIAN_FRONTEND=noninteractive"
+       ],
+      "inline": [
+        "sudo apt-get update -qq",
+        "sudo apt-get install -y --allow-unauthenticated yandex-archive-keyring",
+        "sudo apt-add-repository universe && sudo apt-get update -qq",
+        "sudo apt-get upgrade -y --option=Dpkg::Options::=--force-confold"
+      ]
+    },
+    {
+      "type": "shell",
+      "environment_vars": [
+        "JAEGER_ENDPOINT={{user `jaeger_endpoint`}}",
+        "E2E_REAL_VERSION={{user `e2e_real_version`}}"
+      ],
+      "inline": [
+        "sudo mkdir -p /etc/salt || true",
+        "cat <<EOF | sudo tee /etc/salt/grains",
+        "tracing:",
+        "  jaeger:",
+        "    agent: localhost:6831",
+        "endpoints:",
+        "  jaegerCollector: $JAEGER_ENDPOINT",
+        "e2e_real:",
+        "  version: $E2E_REAL_VERSION",
+        "EOF"
+      ]
+    },
+    {
+      "type": "salt-masterless",
+      "local_state_tree": "{{template_dir}}/salt-formula"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'Purge Salt packages'",
+        "sudo apt-get -y purge salt-common salt-minion",
+        "sudo apt-get clean",
+        "sudo rm -rf /srv/salt",
+        "sudo rm -rf /var/cache/salt",
+        "sudo rm -rf /var/lib/cloud",
+        "sudo rm -ff /var/lib/dhcp/*.leases",
+        "sudo rm -rf /etc/salt",
+        "echo 'List installed packages and versions'",
+        "dpkg -l",
+        "ls -al /var/lib/dpkg/"
+      ]
+    }
+  ],
+  "post-processors": [
+    {
+      "type": "manifest",
+      "output": "{{ pwd }}/manifest.json",
+      "strip_path": true
+    }
+  ]
+}

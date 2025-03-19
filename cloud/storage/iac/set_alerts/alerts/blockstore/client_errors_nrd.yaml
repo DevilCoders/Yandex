@@ -1,0 +1,47 @@
+definitions:
+  - &alert_id "{{.ID}}_nbs_client_nrd_errors"
+  - &alert_name "{{.Name}}[NRD] NBS Client Errors"
+  - &alert_annotations_tag "yc-{{.Cluster}}-nbs-solomon"
+  - &alert_annotations_host "{{`{{labels.host}}`}}.{{.HostDomain}}"
+  - &alert_annotations_service "solomon_alert_nbs_client_nrd_errors"
+  - &alert_juggler_description "(doc: https://nda.ya.ru/t/1py6bOQi5FmZZa)"
+alerts:
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_juggler_description
+    group_by_labels:
+      - host
+    resolved_empty_policy: "RESOLVED_EMPTY_OK"
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - preprod
+      - prod_vla
+      - prod_sas
+      - prod_myt
+      - israel
+    expression:
+      program: |-
+        let hosts = '{{.Hosts}}';
+        let blacklist_hosts = '';
+        let blacklist_requests='AlterPlacementGroupMembership|StartEndpoint|StopEndpoint|ListEndpoints|KickEndpoint|StartServer|StopServer|ServerStatus';
+
+        let fatal_errors_threshold = 1;
+        let other_errors_threshold = 1000;
+
+        let unused_field_needed_to_enable_alert_for_hosts_without_clients={project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="server", host="{{`{{hosts}}`}}", request="MountVolume", sensor="Count", type="-"};
+
+        let total_errors = group_lines('sum', {project='{{.SolomonProjectID}}', cluster='{{.SolomonCluster}}', service='client', host='{{`{{hosts}}`}}', request='*', sensor='Errors', type='ssd_nonrepl', host!='{{`{{blacklist_hosts}}`}}', request!='{{`{{blacklist_requests}}`}}'});
+        let fatal_errors = group_lines('sum', {project='{{.SolomonProjectID}}', cluster='{{.SolomonCluster}}', service='client', host='{{`{{hosts}}`}}', request='*', sensor='Errors/Fatal', type='ssd_nonrepl', host!='{{`{{blacklist_hosts}}`}}', request!='{{`{{blacklist_requests}}`}}'});
+        let other_errors = total_errors - fatal_errors;
+
+        let fatal_errors_sum = sum(fatal_errors);
+        let other_errors_sum = sum(other_errors);
+
+        warn_if(other_errors_sum >= other_errors_threshold && count(other_errors) > 0);
+        warn_if(fatal_errors_sum >= fatal_errors_threshold && count(fatal_errors) > 0);

@@ -1,0 +1,41 @@
+$format_date = DateTime::Format("%Y-%m-%d");
+$format_month = DateTime::Format("%Y-%m");
+
+$tz = 'Europe/Moscow';
+$get_tz_datetime = ($ts) -> (AddTimezone(DateTime::FromSeconds(CAST($ts AS Uint32)), $tz));
+$format_date_by_timestamp = ($ts) -> ($format_date($get_tz_datetime($ts)));
+$format_month_by_timestamp = ($ts) -> ($format_month($get_tz_datetime($ts)));
+
+$get_credit_charge = ($raw, $func) -> (COALESCE(ListAggregate(ListMap(Yson::ConvertToList(Yson::ParseJson(Yson::ConvertToString($raw))), $func), AGGREGATION_FACTORY("SUM")), 0));
+
+$get_amount_by_type = ($raw, $type) -> (IF(Yson::LookupString($raw, "credit_type") == $type, CAST(Yson::LookupString($raw, "consumed_amount") AS Double), 0));
+$get_committed_use_discount_credit_charge = ($raw) -> ($get_amount_by_type($raw, "CommittedUseDiscount"));
+$get_disabled_credit_charge = ($raw) -> ($get_amount_by_type($raw, "Disabled"));
+$get_monetary_grant_credit_charge = ($raw) -> ($get_amount_by_type($raw, "MonetaryGrant"));
+$get_service_credit_charge = ($raw) -> ($get_amount_by_type($raw, "Service"));
+$get_trial_credit_charge = ($raw) -> ($get_amount_by_type($raw, "Trial"));
+$get_volume_incentive_credit_charge = ($raw) -> ($get_amount_by_type($raw, "VolumeIncentive"));
+
+$result = (
+    SELECT
+        $format_date_by_timestamp(billing_records.end_time)                                           AS `date`,
+        billing_records.billing_account_id                                                            AS billing_account_id,
+        billing_records.cloud_id                                                                      AS cloud_id,
+        $get_credit_charge(billing_records.credit_charges, $get_committed_use_discount_credit_charge) AS committed_use_discount_credit,
+        billing_records.cost                                                                          AS cost,
+        billing_records.credit                                                                        AS credit,
+        $get_credit_charge(billing_records.credit_charges, $get_disabled_credit_charge)               AS disabled_credit,
+        billing_records.end_time                                                                      AS end_time,
+        billing_records.labels_hash                                                                   AS labels_hash,
+        $get_credit_charge(billing_records.credit_charges, $get_monetary_grant_credit_charge)         AS monetary_grant_credit,
+        $format_month_by_timestamp(billing_records.end_time)                                          AS month,
+        billing_records.pricing_quantity                                                              AS pricing_quantity,
+        $get_credit_charge(billing_records.credit_charges, $get_service_credit_charge)                AS service_credit,
+        billing_records.sku_id                                                                        AS sku_id,
+        billing_records.start_time                                                                    AS start_time,
+        billing_records.credit + billing_records.cost                                                 AS total,
+        $get_credit_charge(billing_records.credit_charges, $get_trial_credit_charge)                  AS trial_credit,
+        $get_credit_charge(billing_records.credit_charges, $get_volume_incentive_credit_charge)       AS volume_incentive_credit,
+    FROM $billing_records_table AS billing_records
+    WHERE billing_records.end_time <= $migration_timestamp
+);

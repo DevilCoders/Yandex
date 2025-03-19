@@ -1,0 +1,304 @@
+service: yc_transfer_manager # todo: make more generic ABC
+title: Data Platform will transfer your data and do couple extra things
+arcanum:
+  auto_merge:
+    enabled: false
+    requirements:
+      - system: arcanum
+        type: approved
+        data:
+          min_approvers_count: 1
+          ignore_self_ship: false
+      - system: arcanum
+        type: comment_issues_closed
+      - system: arcanum
+        type: st_issue_linked
+        data:
+          in_commit_message: true
+ci:
+  release-title-source: flow
+  autocheck:
+    strong: true
+  actions:
+    go-sumtype-precommit-check:
+      flow: go-sumtype
+      triggers:
+        - on: pr
+          filters:
+            - sub-paths:
+                - "ci/lint/go-sumtype/run-go-sumtype.sh"
+                - "**/*.go"
+                - "**/*.proto"
+                - "ci/go/cmd/lint/third_party/go-sumtype/*.go"
+                - "ci/go/cmd/lint/third_party/go-sumtype/**/*.go"
+    exhaustivestruct-precommit-check:
+      flow: exhaustivestruct
+      triggers:
+        - on: pr
+          filters:
+            - sub-paths:
+                - "ci/lint/exhaustivestruct/run-exhaustivestruct.sh"
+                - "**/*.go"
+                - "**/*.proto"
+                - "ci/go/cmd/lint/third_party/exhaustivestruct/*.go"
+                - "ci/go/cmd/lint/third_party/exhaustivestruct/**/*.go"
+    descriptive-errors:
+      flow: descriptive-errors
+      triggers:
+        - on: pr
+          filters:
+            - sub-paths:
+                - "ci/lint/descriptive_errors/run.sh"
+                - "**/*.go"
+                - "**/*.proto"
+                - "ci/go/cmd/lint/linter_descriptive_errors/*.go"
+                - "ci/go/cmd/lint/linter_descriptive_errors/**/*.go"
+    check-dataplatform-registry:
+      flow: check-dataplatform-registry
+      triggers:
+        - on: pr
+          filters:
+            - sub-paths:
+                - "api/**/*.proto"
+                - "schemaregistry/examples/**/*.proto"
+    upload-dataplatform-registry:
+      flow: create-dataplatform-registry
+      triggers:
+        - on: commit
+          into:
+            - trunk
+          filters:
+            - sub-paths:
+                - "api/**/*.proto"
+                - "schemaregistry/examples/**/*.proto"
+  secret: sec-01f0xqrcm6qv1fr5dt52be9y8z
+  runtime:
+    sandbox-owner: DATA_TRANSFER
+  flows:
+    descriptive-errors:
+      title: Run descriptive_errors
+      jobs:
+        run-descriptive-errors-without-patch:
+          title: Analyze w/o patch
+          task: common/misc/run_command
+          kill-timeout: 30m
+          requirements:
+            sandbox:
+              client_tags: GENERIC & LINUX
+          input:
+            config:
+              cmd_line: transfer_manager/ci/lint/descriptive_errors/run.sh
+              direct_output_links: true
+              result_resources:
+                - path: analyzer_output.txt
+                  description: descriptive_errors analyzer output
+                  type: OTHER_RESOURCE
+                  compression_type: none
+                  ci_badge: true
+                  attributes:
+                    type: analyzer-output-upstream
+              arc_mount_config:
+                enabled: true
+                revision_hash: ${context.launch_pull_request_info.vcs_info.upstream_revision_hash}
+              secret_environment_variables:
+                - key: YA_TOKEN
+                  secret_spec:
+                    uuid: sec-01f0xqrcm6qv1fr5dt52be9y8z
+                    key: ya.token
+        run-descriptive-errors-with-patch:
+          title: Analyze with patch
+          task: common/misc/run_command
+          kill-timeout: 30m
+          requirements:
+            sandbox:
+              client_tags: GENERIC & LINUX
+          input:
+            config:
+              cmd_line: transfer_manager/ci/lint/descriptive_errors/run.sh
+              direct_output_links: true
+              result_resources:
+                - path: analyzer_output.txt
+                  description: descriptive_errors analyzer output
+                  type: OTHER_RESOURCE
+                  compression_type: none
+                  ci_badge: true
+                  attributes:
+                    type: analyzer-output-feature
+              arc_mount_config:
+                enabled: true
+                revision_hash: ${context.launch_pull_request_info.vcs_info.merge_revision_hash}
+        calc-diff:
+          title: Calculate PR diff
+          task: common/misc/run_command
+          version: testing
+          kill-timeout: 15m
+          requirements:
+            sandbox:
+              client_tags: GENERIC & LINUX
+          input:
+            config:
+              cmd_line: |
+                set -eo pipefail
+                $ARC_BIN show ${context.launch_pull_request_info.vcs_info.merge_revision_hash} --oneline -U0 | tail -n +2 >$RESULT_RESOURCES_PATH/patch.diff
+              result_resources:
+                - path: patch.diff
+                  description: Pull request diff
+                  type: OTHER_RESOURCE
+                  compression_type: none
+                  ci_badge: true
+                  attributes:
+                    type: pr-diff
+              arc_mount_config:
+                enabled: true
+        calc-error-diff:
+          title: Calculate errors diff
+          task: projects/data-transfer/errdiff
+          kill-timeout: 15m
+          needs:
+            - run-descriptive-errors-with-patch
+            - run-descriptive-errors-without-patch
+            - calc-diff
+          requirements:
+            sandbox:
+              client_tags: GENERIC & LINUX
+          input:
+            config:
+              strict: false
+    exhaustivestruct:
+      title: Run exhaustivestruct
+      jobs:
+        run-exhaustivestruct-with-patch:
+          title: Run exhaustivestruct
+          task: common/misc/run_command
+          version: testing
+          kill-timeout: 15m
+          requirements:
+            sandbox:
+              client_tags: GENERIC & LINUX & SSD
+              container_resource: 2513696396
+          input:
+            config:
+              fixed_sandbox_resources:
+                - key: update_ci_job_progress
+                  resource_id: 3042627871
+              direct_output_links: true
+              cmd_line: |
+                export UPDATE_CI_JOB_PROGRESS_PATH='{update_ci_job_progress}'
+                export FLOW_LAUNCH_ID='${context.job_instance_id.flow_launch_id}'
+                export JOB_ID='${context.job_instance_id.job_id}'
+                export JOB_NUMBER='${context.job_instance_id.number}'
+                transfer_manager/ci/lint/exhaustivestruct/run-exhaustivestruct.sh
+              result_resources:
+                - path: analyzer_output.txt
+                  description: exhaustivestruct analyzer output (after patch)
+                  type: OTHER_RESOURCE
+                  compression_type: none
+                  attributes:
+                    type: analyzer-output-feature
+              arc_mount_config:
+                enabled: true
+                revision_hash: ${context.launch_pull_request_info.vcs_info.merge_revision_hash}
+              secret_environment_variables:
+                - key: YA_TOKEN
+                  secret_spec:
+                    uuid: sec-01f0xqrcm6qv1fr5dt52be9y8z
+                    key: ya.token
+    go-sumtype:
+      title: Run go-sumtype
+      jobs:
+        run-go-sumtype:
+          title: Run go-sumtype
+          task: common/misc/run_command
+          version: testing
+          kill-timeout: 15m
+          requirements:
+            sandbox:
+              client_tags: GENERIC & LINUX
+          input:
+            config:
+              cmd_line: transfer_manager/ci/lint/go-sumtype/run-go-sumtype.sh
+              result_resources:
+                - path: analyzer_output.txt
+                  description: go-sumtype analyzer output
+                  type: OTHER_RESOURCE
+                  compression_type: none
+                  ci_badge: true
+              arc_mount_config:
+                enabled: true
+              direct_output_links: true
+              secret_environment_variables:
+                - key: YA_TOKEN
+                  secret_spec:
+                    uuid: sec-01f0xqrcm6qv1fr5dt52be9y8z
+                    key: ya.token
+    check-dataplatform-registry:
+      title: Check Schema Registry
+      jobs:
+        check-descriptors:
+          title: Check Proto compatibility
+          task: common/misc/run_command
+          version: testing
+          kill-timeout: 15m
+          requirements:
+            sandbox:
+              client_tags: GENERIC & LINUX
+          input:
+            config:
+              cmd_line: |
+                export NAMESPACE='dataplatform'
+                cloud/dataplatform/schemaregistry/ci/check_protodesc.sh
+              result_resources:
+                - path: descriptors
+                  description: Message descriptors
+                  type: OTHER_RESOURCE
+                  compression_type: none
+                  ci_badge: true
+                - path: report
+                  description: Check descriptor report
+                  type: OTHER_RESOURCE
+                  compression_type: none
+                  ci_badge: true
+              arc_mount_config:
+                enabled: true
+              direct_output_links: true
+              secret_environment_variables:
+                - key: SR_TOKEN
+                  secret_spec:
+                    uuid: sec-01f0xqrcm6qv1fr5dt52be9y8z
+                    key: sr.token
+    create-dataplatform-registry:
+      title: Upload Proto Schemas
+      jobs:
+        create-descriptors:
+          title: Upload Proto Schemas
+          task: common/misc/run_command
+          version: testing
+          kill-timeout: 15m
+          requirements:
+            sandbox:
+              client_tags: GENERIC & LINUX
+          input:
+            config:
+              cmd_line: |
+                export NAMESPACE='dataplatform'
+                cloud/dataplatform/schemaregistry/ci/create_protodesc.sh
+              result_resources:
+                - path: descriptors
+                  description: Message descriptors
+                  type: OTHER_RESOURCE
+                  compression_type: none
+                  ci_badge: true
+                - path: report
+                  description: Check descriptor report
+                  type: OTHER_RESOURCE
+                  compression_type: none
+                  ci_badge: true
+              arc_mount_config:
+                enabled: true
+              direct_output_links: true
+              secret_environment_variables:
+                - key: SR_TOKEN
+                  secret_spec:
+                    uuid: sec-01f0xqrcm6qv1fr5dt52be9y8z
+                    key: sr.token
+

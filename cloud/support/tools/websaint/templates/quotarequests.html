@@ -1,0 +1,100 @@
+{% set canceled = {'count': 0} %}
+
+<div class="info1">
+    <table>
+
+    <tr>
+    <th>Сумма стандартных грантов</th>
+    <th>Сумма активных грантов</th>
+    <th>Сумма пополнений</th>
+        <th>Кредитный лимит</th>
+    <th>Информация о клиенте</th>
+    </tr>
+
+    <tr>
+        <td><input id='startgrant' type="float" value="{{balance.startgrant}}" size=10 disabled></td>
+        <td><input id='othergrants' type="float" value="{{balance.grantsumm}}" size=10 disabled></td>
+        <td>
+            <input id='money' type="float" value="{{money}}" size=5 disabled>
+
+        </td>
+        <td><input id='cr-limit' type="float" value="{{balance.credit}}" size=5 disabled>
+                <input id='balance' type="float" style="display:none" value="{{balance.balance}}" size=5>
+            <input id='grant' type="float" style="display:none" value="{{balance.grantsumm}}" size=5 disabled></td>
+        <td rowspan="3" {% if manager %} bgcolor="green" {% endif %}
+                        {% if userinfo['personType'] == 'individual' and (userinfo['displayStatus'] == 'TRIAL_ACTIVE' or
+                            userinfo['cloud_age']<3 ) or cloudid in badlist %}
+                        bgcolor="red" {% endif %}>
+            <br>CloudID: {{ requests[0]['cloud_id'] }}
+            <br>{% if userinfo['personType'] == 'company' or userinfo['personType'] == 'switzerland_nonresident_company' %}
+                        Тип аккаунта: Юр. Лицо
+                    {% else %}
+                        Тип аккаунта: Личный
+                {% endif %}
+            <br>Тип оплаты: {{ userinfo['paymentType'] | replace("invoice","безнал") | replace("card","карта") }}
+            <br>Статус: {{ userinfo['displayStatus'] }}
+            <br>Валюта:<label id="currency">{{ balance['currency'] }}</label> <label id="curvalue"></label>
+            <br>Managed: <input type="checkbox" {% if manager %} checked {% endif %} disabled>
+            <br>Cloud_age: {% if  userinfo['cloud_age']<3  %} <b> {{ userinfo['cloud_age'] }} </b> {% endif %}
+            <br>{% if  cloudid in badlist  %} <b> USER IN UROD LIST!!  </b> {% endif %}
+            <br>
+        </td>
+    </tr>
+
+    </table>
+</div>
+
+<p>Cloud ID: {{ requests[0]['cloud_id'] }}</p>
+{% for request in requests %}
+    {% if ( request['status'] not in ["CANCELED", "PROCESSED"] ) %}
+        <hr align="center" width=100% size="4"  />
+        <div>
+            <p>Issue ID (ticket ID): <input id="issue_id" type="text" readonly class="textarea" value="{{ request['issue_id'] }}"></p>
+            <p>Quota request ID: <input id="request_id" type="text" readonly class="textarea" value="{{ request['req_id'] }}"></p>
+            <p>Quota request status: {{ request['status'] }}</p>
+            <p>Quota request ticket: <a href="{{ request['req_link'] }}">Ссылка на тикет</a></p>
+        </div>
+    <table id="{{ request['req_id'] }}">
+    <tr>
+        <th>Quota limit name</th>
+        <th>Desired limit</th>
+        <th>Approved limit</th>
+        <th>Quota limit status</th>
+        <th>Select action</th>
+    </tr>
+
+    {% for limit in request['quota_limits'] %}
+    <tr id="{{ limit['quota_id'] }}">
+        <td>{{ limit['quota_id'] }}</td>
+        {% if limit['quota_id'].split('.')[-1] == 'size' %}
+            {% set dimension = 'Gb/Гб' %}
+        {% else %}
+            {% set dimension = '' %}
+        {% endif %}
+        <td><input type="number" readonly value={{ limit['desired_limit'] }}>{{ dimension }}</td>
+        <td><input id="approved_limit_{{ request['req_id'] }}_{{ limit['quota_id'] }}" type="number" value={{ limit['desired_limit'] }}>{{ dimension }}</td>
+        <td>{{ limit['status'] }}</td>
+        <td><input id="approve_{{ request['req_id'] }}_{{ limit['quota_id'] }}" name="action_{{ request['req_id'] }}_{{ limit['quota_id'] }}" type="radio" >
+            <label for="approve_{{ request['req_id'] }}_{{ limit['quota_id'] }}">Approve</label>
+            <input id="reject_{{ request['req_id'] }}_{{ limit['quota_id'] }}" name="action_{{ request['req_id'] }}_{{ limit['quota_id'] }}" type="radio" >
+            <label for="reject_{{ request['req_id'] }}_{{ limit['quota_id'] }}">Reject</label>
+            <input id="pass_{{ request['req_id'] }}_{{ limit['quota_id'] }}" name="action_{{ request['req_id'] }}_{{ limit['quota_id'] }}" checked type="radio" >
+            <label for="pass_{{ request['req_id'] }}_{{ limit['quota_id'] }}">Pass</label>
+        </td>
+
+    </tr>
+
+    {% endfor %}
+
+    {% else %}
+            {% if canceled.update({"count": 1 + canceled.count|int }) %} {% endif %}
+    {% endif %}
+    </table>
+    {% if (request['status'] not in ["CANCELED", "PROCESSED"]) %}
+            <input type="button" id="{{ request['req_id'] }}" value="Send" onclick="send_quota_request(this)">
+            <p id="{{ request['req_id'] }}_done"></p>
+    {% endif %}
+    {% endfor %}
+
+<p>Closed/Processed: {{ canceled['count'] }}</p>
+    </p>

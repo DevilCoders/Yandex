@@ -1,0 +1,218 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: security-infrapod-configmap
+  namespace: security
+data:
+  # capture log files from a volume mapped to /var/log/push-client
+  push-client.yaml: |
+    topic: yandexcloud-test--df-log
+
+    network:
+      advice: my
+      master-addr: logbroker.yandex.net
+
+      proto: pq
+      master-port: 2135
+      tvm-client-id: 2001289
+      tvm-server-id: 2001059
+      tvm-secret-file: /var/lib/push-client/tvm.secret
+
+    logger:
+      mode: stderr
+      telemetry_interval: -1
+      remote: 0
+      level: 6
+
+    watcher:
+      state: /var/lib/push-client/state
+
+    files:
+      - name: /var/log/push-client/*
+
+  solomon-agent.conf: |
+      Logger {
+          LogTo: STDERR
+          Level: INFO
+      }
+
+      Python2 {
+          IgnorePycFiles: true
+      }
+
+      HttpServer {
+          BindPort: 8482
+          MaxConnections: 100
+          OutputBufferSize: 256
+          MaxQueueSize: 200
+          ThreadPoolName: "Io"
+      }
+
+      Storage {
+          Limit: {
+              Total: "2GiB"
+              ShardDefault: "100MiB"
+          }
+      }
+
+      ConfigLoader {
+          Static {
+
+          }
+      }
+
+      ManagementServer {
+          BindAddress: "::"
+          BindPort: 8483
+          ThreadPoolName: "Io"
+      }
+
+      ThreadPoolProvider {
+        ThreadPools: [
+          {
+            Name: "Io"
+            Threads: 4
+          },
+          {
+            Name: "Default"
+            Threads: 8
+          }
+        ]
+      }
+
+  juggler-client.conf: |
+      [client]
+      check_bundles=cloud_infra_prod
+      config_url=http://juggler-api.search.yandex.net
+      targets=AUTO
+      log_level=0
+      checks_discover_dirs=/etc/monrun
+      instance_port=31780
+
+---
+apiVersion: datadoghq.com/v1alpha1
+kind: ExtendedDaemonSet
+metadata:
+  name: security-infrapod
+  namespace: security
+spec:
+  strategy:
+    canary:
+      replicas: 1
+  template:
+    metadata:
+      labels:
+        name: security-infrapod
+    spec:
+      nodeSelector:
+        compute-node: "1"
+      hostNetwork: true
+      initContainers:
+      - name: security-secret-agent-push-client-init
+        image: cr.yandex/yc-bootstrap/ubuntu:xenial-20210114-2.0
+        command: ['bash', '-c', 'chown -R 10000:10000 /var/lib/push-client/state']
+        volumeMounts:
+          - name: secret-agent-push-client-state
+            mountPath: /var/lib/push-client/state
+      - name: security-osquery-push-client-init
+        image: cr.yandex/yc-bootstrap/ubuntu:xenial-20210114-2.0
+        command: ['bash', '-c', 'chown -R 10000:10000 /var/lib/push-client/state']
+        volumeMounts:
+          - name: osquery-push-client-state
+            mountPath: /var/lib/push-client/state
+
+      containers:
+      - name: security-secret-agent-push-client
+        image: cr.yandex/yc-bootstrap/push-client@sha256:0648e76a4aad1cf75e09aa446d63ddf2b0bfec7ceaa01f4d2f9eb9f03773e9d5
+        securityContext:
+          runAsUser: 10000
+          runAsGroup: 10000
+          allowPrivilegeEscalation: false
+        volumeMounts:
+          - name: push-client-secret
+            mountPath: /var/lib/push-client/tvm.secret
+            readOnly: true
+          - name: push-client-config
+            mountPath: /etc/yandex/statbox-push-client
+            readOnly: true
+          - name: secret-agent-push-client-state
+            mountPath: /var/lib/push-client/state
+          - name: secret-agent-push-client-logs
+            mountPath: /var/log/push-client/
+            readOnly: true
+      - name: security-osquery-push-client
+        image: cr.yandex/yc-bootstrap/push-client@sha256:0648e76a4aad1cf75e09aa446d63ddf2b0bfec7ceaa01f4d2f9eb9f03773e9d5
+        securityContext:
+          runAsUser: 10000
+          runAsGroup: 10000
+          allowPrivilegeEscalation: false
+        volumeMounts:
+          - name: push-client-secret
+            mountPath: /var/lib/push-client/tvm.secret
+            readOnly: true
+          - name: push-client-config
+            mountPath: /etc/yandex/statbox-push-client
+            readOnly: true
+          - name: osquery-push-client-state
+            mountPath: /var/lib/push-client/state
+          - name: osquery-push-client-logs
+            mountPath: /var/log/push-client/
+            readOnly: true
+
+      - name: security-solomon-agent
+        image: cr.yandex/yc-bootstrap/solomon-agent@sha256:0b3e8adfe6dafdb843a2764555420a9b2b31f14fdc1d2c67a19278276720facc
+        volumeMounts:
+          - name: solomon-agent-config
+            mountPath: /etc/yandex/solomon-agent
+      - name: security-juggler-client
+        image: cr.yandex/yc-bootstrap/juggler-client@sha256:3dbee74341e223f743acfab52534238bb8618ae698f1dc08b8a6ef15d80a9f20
+        volumeMounts:
+          - name: juggler-client-config
+            mountPath: /etc/juggler
+      volumes:
+      # for push-client
+      #   common secret for push-client
+      - name: push-client-secret
+        hostPath:
+          type: File
+          path: /usr/share/yc-secrets/3b7c9527-1522-11ea-bda9-a8a77dca4466/tvm.secret/1/tvm.secret
+      #  common config for push-client
+      - name: push-client-config
+        configMap:
+          name: security-infrapod-configmap
+          items:
+          - key: "push-client.yaml"
+            path: "push-client.yaml"
+      #   push-client for secret-agent
+      - name: secret-agent-push-client-state
+        hostPath:
+          type: DirectoryOrCreate
+          path: /var/lib/security/push-client/secret-agent
+      - name: secret-agent-push-client-logs
+        hostPath:
+          type: DirectoryOrCreate
+          path: /var/log/security/secret-agent/
+      #   push-client for osquery
+      - name: osquery-push-client-state
+        hostPath:
+          type: DirectoryOrCreate
+          path: /var/lib/security/push-client/osquery
+      - name: osquery-push-client-logs
+        hostPath:
+          type: DirectoryOrCreate
+          path: /var/log/security/osquery/
+
+       # common solomon agent for pod
+      - name: solomon-agent-config
+        configMap:
+          name: security-infrapod-configmap
+          items:
+            - key: "solomon-agent.conf"
+              path: "agent.conf"
+      # common juggler client for pod
+      - name: juggler-client-config
+        configMap:
+          name: security-infrapod-configmap
+          items:
+            - key: "juggler-client.conf"
+              path: "client.conf"

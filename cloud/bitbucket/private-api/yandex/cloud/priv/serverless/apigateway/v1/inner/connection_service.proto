@@ -1,0 +1,130 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.serverless.apigateway.v1.inner;
+
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/serverless/apigateway/v1/inner;inner";
+
+service ConnectionService {
+  rpc Create (CreateConnectionRequest) returns (CreateConnectionResponse);
+  rpc Get (GetConnectionRequest) returns (GetConnectionResponse);
+  rpc Update (UpdateConnectionRequest) returns (UpdateConnectionResponse);
+  rpc Delete (DeleteConnectionRequest) returns (DeleteConnectionResponse);
+  rpc BatchDelete (BatchDeleteRequest) returns (BatchDeleteResponse);
+  rpc Disconnect(DisconnectRequest) returns (DisconnectResponse);
+  rpc BatchDisconnect(BatchDisconnectRequest) returns (BatchDisconnectResponse);
+}
+
+message Connection {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    CONNECTED = 1;
+    DISCONNECTED = 2;
+    FAILED = 3;
+  }
+
+  string id = 1;
+  string gateway_id = 2;
+  Node node = 3;
+
+  Identity identity = 4;
+
+  Status status = 5;
+
+  DisconnectStatus disconnect_status = 6;
+
+  google.protobuf.Timestamp connected_at = 7;
+  google.protobuf.Timestamp disconnected_at = 8;
+  google.protobuf.Timestamp last_active_at = 9;
+}
+
+message Identity {
+  string source_ip = 1 [(required) = true, (length) = "<=50"];
+  string user_agent = 2;
+}
+
+message Node {
+  string ip = 1 [(required) = true, (length) = "<=50"];
+  string hostname = 2 [(required) = true, (length) = "<=100"];
+}
+
+message DisconnectStatus {
+  int64 status_code = 1 [(value) = "0-5000"];
+  string reason = 2;
+}
+
+message CreateConnectionRequest {
+  string connection_id = 1 [(required) = true, (length) = "<=50"];
+  string gateway_id = 2 [(required) = true, (length) = "<=50"];
+  Node node = 3 [(required) = true];
+  google.protobuf.Timestamp connected_at = 4 [(required) = true];
+  Identity identity = 5 [(required) = true];
+}
+
+message CreateConnectionResponse {
+  Connection connection = 1;
+}
+
+message GetConnectionRequest {
+  string connection_id = 1 [(required) = true, (length) = "<=50"];
+}
+
+message GetConnectionResponse {
+  Connection connection = 1;
+}
+
+message UpdateConnectionRequest {
+  string connection_id = 1 [(required) = true, (length) = "<=50"];
+  google.protobuf.FieldMask update_mask = 2;
+
+  Connection.Status status = 3;
+  google.protobuf.Timestamp last_active_at = 4;
+}
+
+message UpdateConnectionResponse {
+  Connection connection = 1;
+}
+
+message DeleteConnectionRequest {
+  string connection_id = 1 [(required) = true, (length) = "<=50"];
+}
+
+message DeleteConnectionResponse {
+}
+
+message DisconnectRequest {
+  string connection_id = 1 [(required) = true, (length) = "<=50"];
+  DisconnectStatus disconnect_status = 2 [(required) = true];
+}
+
+message DisconnectResponse {
+  Connection connection = 1;
+}
+
+message BatchDeleteRequest {
+  oneof filter {
+    option (exactly_one) = true;
+    string gateway_id = 1 [(length) = "<=50"];
+    string node_ip = 2 [(length) = "<=50"];
+  }
+}
+
+message BatchDeleteResponse {
+  int64 deleted_count = 1;
+}
+
+message BatchDisconnectRequest {
+  oneof filter {
+    option (exactly_one) = true;
+    string gateway_id = 1 [(length) = "<=50"];
+    string node_ip = 2 [(length) = "<=50"];
+  }
+  DisconnectStatus disconnect_status = 3 [(required) = true];
+}
+
+message BatchDisconnectResponse {
+  int64 disconnected_count = 1;
+}

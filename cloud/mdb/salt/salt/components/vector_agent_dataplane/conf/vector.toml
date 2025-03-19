@@ -1,0 +1,97 @@
+[api]
+enabled = true
+address = "127.0.0.1:8686"
+
+[sources]
+
+[sources.udp]
+type = "socket"
+address = "127.0.0.1:24225"
+mode = "udp"
+receive_buffer_bytes = 10485760
+decoding.codec = "json"
+
+[sources.vector_metrics]
+type = "internal_metrics"
+scrape_interval_secs = 10
+tags.host_key = "host"
+
+[sinks]
+
+[sinks.remote_prometheus]
+type = "prometheus_remote_write"
+endpoint = "http://{{ salt['dbaas.pillar']('data:prometheus:address') }}"
+healthcheck.enabled = false
+default_namespace = "vector"
+inputs = ["vector_metrics"]
+
+[sinks.local_prometheus]
+type = "prometheus_exporter"
+address = "127.0.0.1:9598"
+default_namespace = "vector"
+inputs = ["vector_metrics"]
+
+
+[sinks.to_controlplane_aggregator]
+type = "vector"
+version = "2"
+inputs = ["remap_add_meta"]
+address = "{{ salt['dbaas.pillar']('data:vector:address') }}"
+buffer.type = "memory"
+buffer.max_events = 2000
+buffer.when_full = "block"
+healthcheck.enabled = true
+
+
+[transforms]
+[transforms.filter_out_garbage]
+type = "filter"
+inputs = ["udp"]
+condition = """
+!(.logger == "salt.transport.mixins.auth" && starts_with!(.message, "Decoding payload")) &&
+!(.logger == "salt.utils.schedule" && starts_with!(.message, "==== evaluating schedule now"))
+"""
+
+[transforms.remap_remove_garbage_fields]
+type = "remap"
+inputs = ["filter_out_garbage"]
+source = """
+del(.colorlevel)
+del(.colormsg)
+del(.colorprocess)
+del(.colorname)
+del(.bracketlevel)
+del(.bracketname)
+del(.bracketprocess)
+"""
+
+[transforms.remap_add_meta]
+type = "remap"
+inputs = ["remap_remove_garbage_fields"]
+source = """
+. = {
+    "vector_cp_from_dp": true,
+    "raw": .,
+    "meta": {
+      "service": "salt-minion",
+      "hostname": "{{ salt['dbaas.pillar']('data:dbaas:fqdn') }}",
+      "record_id": uuid_v4(),
+      "cloud_provider": "{{ salt['dbaas.pillar']('data:dbaas:cloud_provider') }}",
+      "cloud_region": "{{ salt['dbaas.pillar']('data:dbaas:region') }}",
+      "cluster_id": "{{ salt['dbaas.pillar']('data:dbaas:cluster_id') }}",
+      "cluster_name": "{{ salt['dbaas.pillar']('data:dbaas:cluster_name') }}",
+      "cluster_type": "{{ salt['dbaas.pillar']('data:dbaas:cluster_type') }}",
+      "subcluster_id": "{{ salt['dbaas.pillar']('data:dbaas:subcluster_id') }}",
+      "subcluster_name": "{{ salt['dbaas.pillar']('data:dbaas:subcluster_name') }}",
+      "shard_id": "{{ salt['pillar.get']('data:dbaas:shard_id', None) }}",
+      "shard_name": "{{ salt['pillar.get']('data:dbaas:shard_name', None) }}",
+      "cloud_ext_id": "{{ salt['dbaas.pillar']('data:dbaas:cloud:cloud_ext_id') }}",
+      "folder_ext_id": "{{ salt['dbaas.pillar']('data:dbaas:folder:folder_ext_id') }}",
+      "vtype": "{{ salt['pillar.get']('data:dbaas:vtype', None) }}",
+      "vtype_id": "{{ salt['pillar.get']('data:dbaas:vtype_id', None) }}",
+      "vector": {
+        "in": now(),
+      }
+    }
+}
+"""

@@ -1,0 +1,2 @@
+GO_MOCKGEN_FROM(cloud/mdb/datacloud/private_api/datacloud/kafka/v1)
+GO_MOCKGEN_TYPES(ClusterServiceClient OperationServiceClient)

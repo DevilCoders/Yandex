@@ -1,0 +1,295 @@
+accessServer:
+  maxClockSkew: PT10M
+  strictPermissions:
+    - monitoring.data.write # https://st.yandex-team.ru/CLOUD-45361
+    - resource-manager.clouds.deleteInactive # https://st.yandex-team.ru/CLOUD-61246
+    - smart-captcha.captchas.show # https://st.yandex-team.ru/CAPTCHA-3107
+  masterTokenFile: '/etc/yc/access-service/secrets/ydb_token'
+  masterSubjectUserId: yc.iam.serviceAccount
+
+  validateOrganizationMembership: True
+
+featureFlags:
+  alwaysCheckFolderStatus: True
+  # Always make a DB query for a cache miss by default (this may be overridden in pillar).
+  alwaysCheckRootBindings: True
+  userAccountAccessKeys: True
+  storeRoleMaskWithResourcePermissions: True
+
+
+healthCheck:
+  port: 4285
+  path: /ping
+  shutdownDelay: 20
+
+repository:
+  bootstrapMode: DO_NOTHING
+  cacheImplementation: CAFFEINE
+  retryCount: 33 # XXX: Return an adequate value after https://st.yandex-team.ru/CLOUD-46108
+  isolationLevel: ONLINE_CONSISTENT_READ_ONLY
+  # Limit the number of parallel loads to avoid flooding the database: https://st.yandex-team.ru/CLOUD-71351
+  defaultMaxParallelCacheLoads: 64
+  defaultLoadQueueLimit: 192
+  dbTransportTimeout: PT30S
+  resetDbTransportTimeoutOnCacheLoad: True
+  requestLimiter:
+    grpc:
+      queueSize: 512
+      concurrencyPermits: 256
+    internal:
+      queueSize: 192
+      concurrencyPermits: 64
+
+grpcServer:
+  # Should be multi-domain cert for as.xxx and as-s3.xxx and as-monitoring.xxx
+  certificatePemFile: '/etc/yc/access-service/certs/server.pem'
+  maxConcurrentRequests: 1024
+  reflectionEnabled: true
+  port: 4286
+  permitKeepAliveWithoutCalls: true
+  # shoud be a bit less then PT10S (client default)
+  permitKeepAliveTime: PT9.5S
+  maxConnectionAge: PT3H
+
+kikimr:
+  database: /prod_aws-frankfurt/iam
+  tablespace: /prod_aws-frankfurt/iam/
+  discoveryEndpoint: iam.aws-frankfurt.ydb.double.tech:2135
+  useSSL: true
+    # XXX CLOUD-92557: KIKIMR-12335: remove it after 24634-257457db82 release
+  useTrustStore: true
+  sessionPoolMax: 1000
+  auth:
+    type: TOKEN_FILE
+    tokenFile: '/etc/yc/access-service/secrets/ydb_token'
+
+metrics:
+  pullPort: 6060
+
+scms:
+  masterKeyFile: '/etc/yc/access-service/secrets/master.key'
+
+##########
+# caches #
+##########
+
+#
+# Parameters batchSize and pageSize are limited to kikimr _ResultRowsLimit
+# with default value of 1000 rows
+#
+
+# 2K bytes per item
+accessKeyCache:
+  maxSize: 196608
+  expire: P7D
+  reload:
+    interval: PT5S
+    batchSize: 1000
+    shardBatchSize: 1000
+
+# 2K bytes per item
+apiKeyCache:
+  maxSize: 196608
+  expire: P7D
+  reload:
+    interval: PT5S
+    batchSize: 1000
+    shardBatchSize: 1000
+
+# 128 bytes per item
+cloudCache:
+  maxSize: 1048576
+  expire: P7D
+  reload:
+    interval: PT5S
+    batchSize: 1000
+    shardBatchSize: 1000
+
+cloudRegistryCache:
+  maxSize: 1048576
+  expire: P7D
+  reload:
+    interval: PT5S
+    batchSize: 1000
+    shardBatchSize: 1000
+
+# 2K bytes per item
+encryptionKeyCache:
+  maxSize: 196608
+  expire: P7D
+  reload:
+    interval: PT1H
+    batchSize: 1000
+    shardBatchSize: 1000
+
+# 128 bytes per item
+folderCache:
+  maxSize: 1048576
+  expire: P7D
+  reload:
+    interval: PT5S
+    batchSize: 1000
+    shardBatchSize: 1000
+
+folderRegistryCache:
+  maxSize: 1048576
+  expire: P7D
+  reload:
+    interval: PT5S
+    batchSize: 1000
+    shardBatchSize: 1000
+
+
+# 2K bytes per item
+keyCache:
+  maxSize: 196608
+  expire: P7D
+  reload:
+    interval: PT5S
+    batchSize: 1000
+    shardBatchSize: 1000
+
+# 2K bytes per item
+credentialKeyCache:
+  maxSize: 196608
+  expire: P7D
+
+# 64 bytes per item
+permissionCache:
+  maxSize: 16777216
+  expire: P7D
+  reload:
+    interval: PT1H
+    batchSize: 1000
+    shardBatchSize: 1000
+
+# 256 bytes per item
+resourcePermissionsCache:
+  maxSize: 16777216
+  expire: P7D
+  stubExpire: P1D
+  repository:
+    maxParallelLoads: 64
+    loadQueueLimit: 192
+  reload:
+    interval: PT5S
+    batchSize: 1000
+    shardBatchSize: 1000
+    pageSize: 1000
+    parallel: 2 # reduce db load for this cache
+
+# 128 bytes per item
+rolePermissionsCache:
+  maxSize: 16777216
+  expire: P7D
+  reload:
+    interval: P100000D # PT1H
+    pageSize: 1000
+
+# 128 bytes per item
+samlFederatedUserCache:
+  maxSize: 1048576
+  expire: P7D
+  reload:
+    interval: PT5S
+    batchSize: 1000
+    shardBatchSize: 1000
+
+# 128 bytes per item
+serviceAccountCache:
+  maxSize: 1048576
+  expire: P7D
+  reload:
+    interval: PT5S
+    batchSize: 1000
+    shardBatchSize: 1000
+
+# local cache, never reload
+tokenCache:
+  maxSize: 1048576
+  expire: PT12H
+
+# local cache, never reload
+iamCookieCache:
+  maxSize: 1048576
+  expire: PT12H
+
+# 128 bytes per item
+subjectCache:
+  maxSize: 1048576
+  expire: P7D
+  reload:
+    interval: PT5S
+    batchSize: 1000
+    shardBatchSize: 1000
+
+scopePermissionsCache:
+  maxSize: 16777216
+  expire: P7D
+  reload:
+    interval: PT1H
+    pageSize: 1000
+
+clientPermissionsCache:
+  maxSize: 16777216
+  expire: P7D
+  reload:
+    interval: PT1H
+    pageSize: 1000
+
+scopeCache:
+  maxSize: 16777216
+  expire: P7D
+  reload:
+    interval: PT1H
+    pageSize: 1000
+
+clientCache:
+  maxSize: 16777216
+  expire: P7D
+  reload:
+    interval: PT1H
+    pageSize: 1000
+
+revokedCredentialCache:
+  maxSize: 1048576
+  expire: P7D
+  reload:
+    interval: PT5S
+    batchSize: 1000
+    shardBatchSize: 1000
+
+groupEffectiveMembershipsCache:
+  maxSize: 16777216
+  expire: P7D
+  reload:
+    interval: PT5S
+    batchSize: 1000
+    shardBatchSize: 1000
+    pageSize: 1000
+
+preload:
+  oauthClients: True
+  roles:  True
+  scopes:  True
+  rootBindings:  True
+  resourceBindings:
+    []
+
+#########
+# pools #
+#########
+
+aesGcmCipherPool:
+  maxTotal: 128
+
+hmacPool:
+  maxTotal: 65536
+  maxTotalPerKey: 64
+
+signaturePool:
+  maxTotal: 65536
+  maxTotalPerKey: 64
+
+iamCookie:
+  encryptKeyFile: '/etc/yc/access-service/secrets/cookie-encrypt.key'

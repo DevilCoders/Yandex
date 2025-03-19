@@ -1,0 +1,29 @@
+{%- import "common/kikimr/init.sls" as vars with context %}
+
+{% set billing = pillar.get('billing', {}) %}
+{% set cluster_map = salt['grains.get']('cluster_map')%}
+{% set hostname = grains['nodename'] %}
+{% set dc = salt['grains.get']('cluster_map:hosts:%s:location:datacenter' % hostname, 'my')  %}
+{% set versions = pillar.get('yc-pinning', {}).get('packages', {}) %}
+
+{# endpoints #}
+
+{% set endpoints = grains['cluster_map']['load_balancer']['endpoints'] %}
+
+{% set kikimr_billing_host = '127.0.0.1' %}
+{% set kikimr_billing_port = pillar['kikimr_tenant_ports'][vars.billing_database]['grpc_port'] if vars.subdomains|length > 1 or vars.base_role == 'cloudvm' else endpoints.billing_kikimr_grpc.port %}
+
+{% set as_endpoint = endpoints.get('access_service_grpc', {'host': 'localhost', 'port': 31051}) %}
+
+{% set identity_endpoint = endpoints['identity_public'] %}
+
+{% set billing_private_endpoint = endpoints['billing_private'] %}
+{% set billing_private_ssl_endpoint = endpoints['billing_private_ssl'] %}
+
+{% set kikimr_endpoint = {
+  'host': (kikimr_billing_host, kikimr_billing_port)|join(':'),
+  'root': "/{}/{}/{}/{}/billing".format(vars.ydb_domain, vars.billing_database, cluster_map.stand_type, salt['grains.get']('overrides:kikimr_id', salt['grains.get']('cluster_map:kikimr:shared_dir'))),
+  'database': "/{}/{}".format(vars.ydb_domain, vars.billing_database)
+} %}
+
+{# endpoints #}

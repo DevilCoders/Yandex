@@ -1,0 +1,63 @@
+{
+  "variables": {
+    "endpoint":  "{{env `YC_ENDPOINT`}}",
+    "ssh_private_key_file": "{{env `SSH_PRIVATE_KEY_FILE`}}",
+    "folder_id": "{{env `YC_FOLDER_ID`}}",
+    "source_folder_id": "{{env `YC_SOURCE_FOLDER_ID`}}",
+    "subnet_id": "{{env `YC_SUBNET_ID`}}",
+
+    "bastion_user": "{{env `USER`}}",
+
+    "commit_revision": "{{env `COMMIT_REVISION`}}",
+    "commit_author":   "{{env `COMMIT_AUTHOR`}}",
+    "commit_message":  "{{env `COMMIT_MESSAGE`}}"
+  },
+  "builders": [
+    {
+      "type":      "yandex",
+      "endpoint":  "{{user `endpoint`}}",
+      "folder_id": "{{user `folder_id`}}",
+      "subnet_id": "{{user `subnet_id`}}",
+      "zone":      "ru-central1-c",
+      "labels": {
+        "skip_update_ssh_keys": "true"
+      },
+
+      "use_ipv4_nat": false,
+      "use_ipv6":     true,
+
+      "image_name":   "mk8s-controller-{{isotime | clean_resource_name}}",
+      "image_family": "mk8s-controller",
+      "image_labels": {
+        "commit_revision": "{{user `commit_revision` | lower}}",
+        "commit_author":   "{{user `commit_author`   | lower}}"
+      },
+      "image_description": "based on commit (https://a.yandex-team.ru/arc/commit/{{user `commit_revision`}}) by {{user `commit_author`}}@ with message '{{user `commit_message`}}'",
+      "source_image_folder_id": "{{user `source_folder_id`}}",
+      "source_image_family":    "platform-base-kubelet-static",
+      "disk_type":    "network-ssd",
+
+      "ssh_username":         "ubuntu",
+      "ssh_bastion_host" : "bastion.cloud.yandex.net",
+      "ssh_bastion_username": "{{user `bastion_user`}}",
+      "ssh_bastion_agent_auth": true
+    }
+  ],
+
+  "provisioners": [
+    {
+      "type": "shell",
+      "execute_command": "chmod +x {{ .Path }}; {{ .Vars }} sudo -i {{ .Path }}",
+      "script": "mk8s-duty-env.sh"
+    }
+  ],
+
+  "post-processors": [
+    {
+      "type": "manifest",
+      "output": "{{ pwd }}/manifest.json",
+      "strip_path": true
+    }
+  ]
+}
+

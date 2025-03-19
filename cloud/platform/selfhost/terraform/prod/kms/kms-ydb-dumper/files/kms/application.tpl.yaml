@@ -1,0 +1,75 @@
+localWorkingDirectory: /root
+removeBackupsOlderThan: P7D
+
+cron:
+  expression: "0 0 * * * ?"
+  backedUpDirectory: main
+
+ydb:
+  serviceAccountId: aje5pi60fde1330t7m5s
+  endpoint: grpcs://kms-dn.ydb.cloud.yandex.net:2136
+  database: /global/kms
+  testQueries:
+    - "SELECT COUNT(*) > 1000 FROM `%s/keys`"
+    - "SELECT COUNT(*) > 1000 FROM `%s/key_versions`"
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/keys`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/keys`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 140;"
+
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/key_next_rotate_at`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/key_next_rotate_at`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 40;"
+
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/key_versions`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/key_versions`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 180;"
+
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/special_keys`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/special_keys`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 10;"
+
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/version_destroy_at`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/version_destroy_at`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 130;"
+
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/versions_per_cloud`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/versions_per_cloud`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 20;"
+
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/Quota`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/Quota`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 35;"
+
+    - "$count1 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/keys`);
+       $count2 = (SELECT COUNT(DISTINCT key_id) FROM `{{TEST_DIR}}/key_versions`);
+       SELECT $count1 == $count2;"
+
+kms:
+  isRoot: true
+  hosts: [root-kms-${zone}1.cloud.yandex.net, root-kms-myt1.cloud.yandex.net, root-kms-sas1.cloud.yandex.net, root-kms-vla1.cloud.yandex.net]
+  port: 4301
+  keyId: m2RootKmsBackupKeyId1
+
+storages:
+  cloudS3:
+    endpoint: storage.yandexcloud.net:443
+    bucket: yckms-backups
+    accessKeyEnv: CLOUD_S3_ACCESS_KEY
+    secretKeyEnv: CLOUD_S3_SECRET_KEY
+  mdsS3:
+    endpoint: s3.mds.yandex.net:443
+    bucket: yckms-prod-backups
+    accessKeyEnv: MDS_S3_ACCESS_KEY
+    secretKeyEnv: MDS_S3_SECRET_KEY
+
+solomon:
+  host: solomon.cloud.yandex-team.ru
+  oauthTokenEnv: SOLOMON_OAUTH_TOKEN
+  project: kms
+  cluster: prod
+  service: service
+
+tokenService:
+  host: ts.private-api.cloud.yandex.net
+  port: 4282
+  timeout: PT10S

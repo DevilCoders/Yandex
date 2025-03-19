@@ -1,0 +1,435 @@
+use hahn;
+PRAGMA yt.InferSchema = '1';
+PRAGMA File('libcrypta_identifier_udf.so', 'yt://hahn/home/crypta/public/udfs/stable/libcrypta_identifier_udf.so');
+PRAGMA Udf('libcrypta_identifier_udf.so');
+
+$export_tbl = '%EXPORT_TABLE%';
+$cloud_owners_tbl = '//home/cloud_analytics/import/iam/cloud_owners/1h';
+$accounts_tbl = '//home/logfeller/logs/yc-billing-export-billing-accounts/1h';
+$accounts_history_tbl = '//home/logfeller/logs/yc-billing-export-billing-accounts-history/1h';
+$usage_reports_tbl = '//home/logfeller/logs/yc-billing-export-usage-reports/1h';
+$email_company_tbl = '//home/cloud_analytics/clients/email_company';
+$clients_ent_isv_tbl = '//home/cloud_analytics/clients/ent_isv';
+
+$date_format = '%Y-%m-%dT%H:%M:%S+00:00';
+
+$to_decimal = ($amount) -> {
+    RETURN CAST($amount AS Decimal(22,9));
+};
+
+$email_to_canonical = ($email) -> {
+    RETURN Identifiers::NormalizeEmail($email);
+};
+
+DEFINE SUBQUERY $last_non_empty_table($path) AS
+    $max_path = (
+        SELECT MAX(Path) AS Path
+        FROM FOLDER($path, 'row_count')
+        WHERE Type = 'table'
+            AND Yson::LookupInt64(Attributes, 'row_count') > 0
+    );
+    SELECT * FROM CONCAT($max_path);
+END DEFINE;
+
+$ba_created = (
+    SELECT
+        id as billing_account_id,
+        created_at as event_time,
+        'ba_created' as event_type
+    FROM
+        $last_non_empty_table($accounts_tbl)
+)
+
+;
+
+$ba_first_consumption = (
+    SELECT
+        billing_account_id,
+        DateTime::ToSeconds(DateTime::FromStringFormat(MIN(date), '%Y-%m-%d')) AS event_time,
+        'ba_first_consumption' as event_type
+    FROM $last_non_empty_table($usage_reports_tbl)
+    WHERE $to_decimal(cost) > $to_decimal(0)
+    GROUP BY billing_account_id
+);
+
+$ba_paid = (
+    SELECT
+        billing_account_id,
+        MIN(updated_at) AS event_time,
+        'ba_paid' as event_type
+    FROM $last_non_empty_table($accounts_history_tbl)
+    where usage_status = 'paid'
+    GROUP BY billing_account_id
+);
+
+$ba_first_paid_consumption = (
+    SELECT
+        billing_account_id,
+        DateTime::ToSeconds(DateTime::FromStringFormat(MIN(date), '%Y-%m-%d')) AS event_time,
+        'ba_first_paid_consumption' as event_type
+    FROM $last_non_empty_table($usage_reports_tbl)
+    WHERE $to_decimal(cost) > -$to_decimal(credit)
+    GROUP BY billing_account_id
+);
+
+$ba_consumed_last_day = (
+    SELECT
+        billing_account_id,
+        event_time,
+        event_type
+    FROM (
+        SELECT
+            billing_account_id,
+            DateTime::ToSeconds(DateTime::FromStringFormat(MAX(date), '%Y-%m-%d')) AS event_time,
+            'ba_consumed_last_day' as event_type
+        FROM $last_non_empty_table($usage_reports_tbl)
+        WHERE $to_decimal(cost) > $to_decimal(0)
+        GROUP BY billing_account_id
+    )
+    WHERE
+        event_time > DateTime::ToSeconds(DateTime::DatetimeStartOfDay(YQL::CurrentUtcDatetime())) - 24*3600
+
+)
+;
+
+
+$ba_consumed_last_week = (
+    SELECT
+        billing_account_id,
+        event_time,
+        event_type
+    FROM (
+        SELECT
+            billing_account_id,
+            DateTime::ToSeconds(DateTime::FromStringFormat(MAX(date), '%Y-%m-%d')) AS event_time,
+            'ba_consumed_paid_last_week' as event_type
+        FROM $last_non_empty_table($usage_reports_tbl)
+        WHERE $to_decimal(cost) > $to_decimal(0)
+        GROUP BY billing_account_id
+    )
+    WHERE
+        event_time > DateTime::ToSeconds(DateTime::DatetimeStartOfDay(YQL::CurrentUtcDatetime())) - 7*24*3600
+)
+;
+
+
+$ba_consumed_paid_last_day = (
+    SELECT
+        billing_account_id,
+        event_time,
+        event_type
+    FROM (
+        SELECT
+            billing_account_id,
+            DateTime::ToSeconds(DateTime::FromStringFormat(MAX(date), '%Y-%m-%d')) AS event_time,
+            'ba_consumed_paid_last_day' as event_type
+        FROM $last_non_empty_table($usage_reports_tbl)
+        WHERE $to_decimal(cost) > -$to_decimal(credit)
+        GROUP BY billing_account_id
+    )
+    WHERE
+        event_time > DateTime::ToSeconds(DateTime::DatetimeStartOfDay(YQL::CurrentUtcDatetime())) - 24*3600
+
+)
+;
+
+
+$ba_consumed_paid_last_week = (
+    SELECT
+        billing_account_id,
+        event_time,
+        event_type
+    FROM (
+        SELECT
+            billing_account_id,
+            DateTime::ToSeconds(DateTime::FromStringFormat(MAX(date), '%Y-%m-%d')) AS event_time,
+            'ba_consumed_last_week' as event_type
+        FROM $last_non_empty_table($usage_reports_tbl)
+        WHERE $to_decimal(cost) >  -$to_decimal(credit)
+        GROUP BY billing_account_id
+    )
+    WHERE
+        event_time > DateTime::ToSeconds(DateTime::DatetimeStartOfDay(YQL::CurrentUtcDatetime())) - 7*24*3600
+)
+;
+
+$ba_events = (
+    SELECT *
+    FROM
+    $ba_created
+
+    UNION ALL
+
+    SELECT *
+    FROM
+    $ba_first_consumption
+
+    UNION ALL
+
+    SELECT *
+    FROM
+    $ba_paid
+
+    UNION ALL
+
+    SELECT *
+    FROM
+    $ba_first_paid_consumption
+
+    UNION ALL
+
+    SELECT *
+    FROM
+    $ba_consumed_last_day
+
+    UNION ALL
+
+    SELECT *
+    FROM
+    $ba_consumed_last_week
+
+    UNION ALL
+
+    SELECT *
+    FROM
+    $ba_consumed_paid_last_day
+
+    UNION ALL
+
+    SELECT *
+    FROM
+    $ba_consumed_paid_last_week
+)
+
+;
+
+$ba_puid = (
+    SELECT
+        id as billing_account_id,
+        created_at as ba_created_at,
+        IF(owner_id IS NULL,
+            YQL::Concat('ba_', id),
+            owner_id) as passport_uid,
+        IF(owner_id IS NULL,
+            'yes',
+            'no') as is_fake
+    FROM
+        $last_non_empty_table($accounts_tbl)
+);
+
+$ba_events = (
+    SELECT
+        a.billing_account_id AS billing_account_id,
+        passport_uid,
+        event_type,
+        event_time,
+        is_fake
+    FROM
+    $ba_events as a
+    LEFT JOIN $ba_puid
+        as b
+    on a.billing_account_id = b.billing_account_id
+);
+
+$cloud_events = (
+    SELECT
+        IF(a.passport_uid IS NULL, b.passport_uid, a.passport_uid) as passport_uid,
+        IF(billing_account_id IS NULL, 'not_created', billing_account_id) as billing_account_id,
+        'cloud_created' as event_type,
+        IF (event_time IS NULL, ba_created_at-1, event_time) as event_time,
+        IF((a.passport_uid IS NULL) OR (event_time IS NULL), 'yes', IF(is_fake IS NULL, 'no', is_fake)) as is_fake
+    FROM (
+        SELECT
+            passport_uid,
+            DateTime::ToSeconds(DateTime::FromString(MIN(cloud_created_at))) AS event_time
+        FROM $last_non_empty_table($cloud_owners_tbl)
+        GROUP BY passport_uid
+        ) as a
+    FULL JOIN
+        $ba_puid as b
+    on a.passport_uid = b.passport_uid
+)
+
+;
+
+$puid_cr_dates = (
+SELECT
+passport_uid,
+YQL::Concat(YQL::Concat(DateTime::ToStringFormat(
+                        DateTime::DatetimeStartOfWeek(
+                            CAST (DateTime::ToDate(
+                                    DateTime::FromSeconds(event_time)
+                                    ) AS Date)
+                            ),
+                        '%Y-%m-%d'),
+                    ' to '),
+                    DateTime::ToStringFormat(
+                        DateTime::DatetimeStartOfWeek(
+                            CAST (DateTime::ToDate(
+                                    DateTime::FromSeconds(event_time)
+                                    ) AS Date)
+                            )
+                        +
+                        DateTime::IntervalFromDays(6),
+                        '%Y-%m-%d')
+                    ) as week,
+DateTime::ToStringFormat(DateTime::FromSeconds(event_time), '%Y-%m') as month
+FROM $cloud_events
+
+)
+;
+
+$passport_cloud_status = (
+SELECT
+a.passport_uid AS passport_uid,
+cloud_status
+FROM
+$last_non_empty_table($cloud_owners_tbl) as a
+INNER JOIN (
+    SELECT
+        passport_uid,
+        MAX(cloud_created_at) as cloud_created_at
+    FROM
+        $last_non_empty_table($cloud_owners_tbl)
+    GROUP BY
+        passport_uid
+    ) as b
+ON (a.passport_uid = b.passport_uid) AND (a.cloud_created_at = b.cloud_created_at)
+)
+
+;
+
+$client_sources = (
+SELECT
+    passport_uid,
+    source1,
+    a.source2 as source2
+FROM (
+    SELECT
+    passport_uid,
+    client_source as source2
+    FROM
+    [//home/cloud_analytics/import/billing2/offers/2018-10-31]
+    WHERE
+    passport_uid IS NOT NULL
+) as a
+LEFT JOIN
+    [//home/cloud_analytics/clients/client_sources] as b
+ON a.source2 = b.source2
+)
+
+;
+
+
+
+
+$res = (
+
+SELECT DISTINCT
+billing_account_id,
+event_time,
+event_type,
+is_fake,
+passport_uid,
+week,
+month,
+segment,
+sales_person,
+source,
+source_detailed,
+cloud_status,
+ba_curr_state
+FROM(
+    SELECT
+    a.billing_account_id as billing_account_id,
+    event_time,
+    event_type,
+    is_fake,
+    a.passport_uid as passport_uid,
+    week,
+    month,
+    IF (segment IS NULL, 'mass', segment) as segment,
+    IF (sales_person IS NULL, 'other', sales_person) as sales_person,
+    IF (source1 IS NULL, 'organic', source1) as source,
+    IF (source2 IS NULL, 'organic', source2) as source_detailed,
+    IF (cloud_status IS NULL, 'unknown', cloud_status) AS cloud_status,
+    IF (ba_curr_state IS NULL, 'not_created', ba_curr_state) AS ba_curr_state
+
+    FROM (
+
+        SELECT
+        billing_account_id,
+        passport_uid,
+        event_time,
+        event_type,
+        is_fake
+        FROM
+        $cloud_events
+
+        UNION ALL
+
+        SELECT
+        billing_account_id,
+        passport_uid,
+        event_time,
+        event_type,
+        is_fake
+        FROM
+        $ba_events
+
+
+    ) AS a
+    LEFT JOIN
+    $puid_cr_dates as b
+    on a.passport_uid = b.passport_uid
+
+    LEFT JOIN (
+        SELECT
+            billing_account_id,
+            LIST(segment){0} as segment,
+            LIST(sales){0} as sales_person
+        FROM
+            [//home/cloud_analytics/import/wiki/clients_segments]
+        WHERE
+            billing_account_id != 'not_created'
+        GROUP BY
+            billing_account_id
+    ) as c
+    ON a.billing_account_id = c.billing_account_id
+
+    LEFT JOIN
+        $passport_cloud_status as d
+    ON a.passport_uid = d.passport_uid
+
+    LEFT JOIN (
+            SELECT
+                id as billing_account_id,
+                state AS ba_curr_state
+            FROM $last_non_empty_table($accounts_tbl)
+
+        ) as e
+    ON a.billing_account_id = e.billing_account_id
+
+    LEFT JOIN (
+        SELECT
+            passport_uid,
+            LIST(source1){0} as source1,
+            LIST(source2){0} as source2
+        FROM
+            $client_sources
+        GROUP BY
+            passport_uid
+        ) as f
+    ON a.passport_uid = f.passport_uid
+
+
+)
+);
+
+INSERT INTO [//home/cloud_analytics/events/funnel/last] WITH TRUNCATE
+SELECT * FROM $res;
+
+$backup_path = YQL::Concat('home/cloud_analytics/events/funnel/', DateTime::ToStringFormat(YQL::CurrentUtcTimestamp(),'%Y-%m-%d %H:%M:%S'));
+
+INSERT INTO $backup_path WITH TRUNCATE
+SELECT * FROM $res

@@ -1,0 +1,60 @@
+unix {
+  nodaemon
+  log /var/log/vpp.log
+  full-coredump
+  cli-listen /run/vpp/cli.sock
+  gid vpp
+}
+
+api-trace {
+  on
+}
+
+api-segment {
+  gid vpp
+}
+
+ip {
+  heap-size {{ ip4_heapsize }}
+}
+
+ip6 {
+  heap-size {{ ip6_heapsize }}
+}
+
+heapsize {{ heapsize }}
+
+cpu {
+  main-core {{ main_cores }}
+{%- if workers_cores is defined %}
+  corelist-workers {{ workers_cores }}
+{%- endif %}
+}
+
+dpdk {
+  dev default {
+    num-rx-queues {{ num_rx_queues }}
+    num-tx-queues {{ num_rx_queues }}
+    num-rx-desc {{ num_rx_desc }}
+    num-tx-desc {{ num_tx_desc }}
+  }
+
+  {%- for _, iface in phyifaces.iteritems() %}
+  dev 0000:{{ iface['pciid'] }} {%- if workers_cores is defined %} {
+    workers {{ workers_cores }}
+  } {%- endif %}
+  {%- endfor %}
+
+  num-mbufs {{ num_mbufs }}
+  socket-mem {{ socket_mem }}
+}
+{%- set hostname = grains['nodename'] %}
+{%- set host_roles = grains['cluster_map']['hosts'][hostname]['roles'] -%}
+{%- if 'cgw-nat' in host_roles  %}
+nat {
+# TID_INGRESS here see https://bb.yandex-team.ru/projects/CLOUD/repos/yavpp-scripts/browse/source/pinghole/yavpp-tids#10
+  outside VRF id 4
+# Use 5-tuple instead of 3-tuple key.
+  endpoint-dependent
+}
+{%- endif %}

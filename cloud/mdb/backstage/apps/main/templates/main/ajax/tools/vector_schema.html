@@ -1,0 +1,148 @@
+{% load main.templatetags %}
+{% if not errors %}
+<div id="cy" style="width:100%;height:90%;"></div>
+{% for key, value in config.sources.items %}
+<div id="info_{{ key }}" style="display: none;">
+{{ value|vector_item_to_yaml }}
+</div>
+{% endfor %}
+{% for key, value in config.transforms.items %}
+<div id="info_{{ key }}" style="display: none;">
+{{ value|vector_item_to_yaml }}
+</div>
+{% endfor %}
+{% for key, value in config.sinks.items %}
+<div id="info_{{ key }}" style="display: none;">
+{{ value|vector_item_to_yaml }}
+</div>
+{% endfor %}
+<script>
+window['current_vector_info_editor'] = null;
+var schema = cytoscape({
+    container: document.getElementById('cy'),
+    elements: [
+        {% for key, value in config.sources.items %}
+        {
+            data: {
+                id: '{{ key }}',
+                name: '{{ key }} [{{ value.type }}]',
+                background_color: '#a9a4ff',
+                image: '{{ static_address }}/images/vector/source.svg',
+            },
+        },
+        {% endfor %}
+
+        {% for key, value in config.sinks.items %}
+        {
+            data: {
+                id: '{{ key }}',
+                name: '{{ key }} [{{ value.type }}]',
+                background_color: '#ffb880',
+                image: '{{ static_address }}/images/vector/sink.svg',
+            }
+        },
+        {% endfor %}
+
+        {% for key, value in config.transforms.items %}
+        {
+            data: {
+                id: '{{ key }}',
+                name: '{{ key }}',
+                {% if value.type == 'filter' %}
+                background_color: '#adff80',
+                image: '{{ static_address }}/images/vector/filter.svg'
+                {% elif value.type == 'remap' %}
+                background_color: '#ff8080',
+                image: '{{ static_address }}/images/vector/remap.svg'
+                {% else %}
+                background_color: '#dbdbdb',
+                {% endif %}
+            }
+        },
+        {% endfor %}
+        {% for key, value in config.transforms.items %}
+            {% for input in value.inputs %}
+            {
+                data: {
+                    id: 'transform_{{ input }}_to_{{ key }}',
+                    source: '{{ input }}',
+                    target: '{{ key }}'
+                },
+            },
+            {% endfor %}
+        {% endfor %}
+
+        {% for key, value in config.sinks.items %}
+            {% for input in value.inputs %}
+            {
+                data: {
+                    id: 'sink_{{ input }}_to_{{ key }}',
+                    source: '{{ input }}',
+                    target: '{{ key }}',
+                }
+            },
+            {% endfor %}
+        {% endfor %}
+    ],
+    style: [
+        {
+          selector: 'node',
+          style: {
+            'background-color': 'data(background_color)',
+            'background-image': 'data(image)',
+            'label': 'data(name)',
+            'shape': 'round-rectangle',
+            'width': '450px',
+            'height': '70px',
+            'font-size': '20px',
+            'font-weight': '400',
+            'text-valign': 'center',
+            'text-halign': 'center',
+            'text-wrap': 'ellipsis',
+            'text-max-width': '430px',
+            'text-margin-y': '15px',
+            'background-position-x': 0,
+            'background-position-y': 0,
+          }
+        },
+        {
+          selector: "node:selected",
+          style: {
+              "border-width": "6px",
+              "border-color": "#AAD8FF",
+              "border-opacity": "0.5",
+              "background-color": "#77828C",
+              "text-outline-color": "#77828C"
+          }
+        },
+        {
+          selector: 'edge',
+          style: {
+            'width': 10,
+            'line-color': '#ccc',
+            'target-arrow-color': '#ccc',
+            'target-arrow-shape': 'triangle',
+            'curve-style': 'bezier',
+          }
+        }
+    ],
+    layout: {
+        name: 'dagre'
+    }
+});
+schema.on('click', 'node', function(evt){
+  let id = this.id()
+  let info = $(`#info_${id}`).html();
+  $(`#vector_item_info`).html('<div id="monaco_vector_info_editor"></div>');
+  current_editor = window['current_vector_info_editor'];
+  if (current_editor != null) {
+    current_editor.getModel().dispose()
+  }
+  window['current_vector_info_editor'] = init_minimonaco(info, 'yaml', 'monaco_vector_info_editor')
+})
+</script>
+{% else %}
+  {% for error in errors %}
+  {{ error }}{% if not foorlop.last %}<br>{% endif %}
+  {% endfor %}
+{% endif %}

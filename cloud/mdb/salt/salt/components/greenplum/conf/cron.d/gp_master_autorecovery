@@ -1,0 +1,16 @@
+{% from "components/greenplum/map.jinja" import gpdbvars with context %}
+{% set minutes = salt['pillar.get']('data:master_autorecovery:minutes', '1') %}
+{% set master_fqdns = ','.join(salt['mdb_greenplum.get_master_fqdns']()) %}
+{% set local_fqdn = salt['grains.get']('id') %}
+
+MAILTO=''
+GPHOME='{{ gpdbvars.gphome }}-{{ gpdbvars.gpmajver }}'
+PYTHONPATH='{{ gpdbvars.gphome }}-{{ gpdbvars.gpmajver }}/lib/python'
+PATH='{{ gpdbvars.gphome }}-{{ gpdbvars.gpmajver }}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin'
+LD_LIBRARY_PATH='{{ gpdbvars.gphome }}-{{ gpdbvars.gpmajver }}/lib'
+MASTER_DATA_DIRECTORY='{{ gpdbvars.masterdir }}/master/{{ gpdbvars.segprefix }}-1'
+
+# m h dom mon dow user command
+# */N means every N's minute of hour
+
+*/{{ minutes }} * * * * {{ gpdbvars.gpadmin }} flock -n /tmp/gp_master_recovery.lock /usr/bin/python /usr/local/yandex/gp_master_autorecovery.py --gp-master-data={{ gpdbvars.masterdir }}/master/gpseg-1 --gp-bin={{ gpdbvars.gphome }}-{{ gpdbvars.gpmajver }}/bin --local-fqdn={{ local_fqdn }} --master-fqdns={{ master_fqdns }}

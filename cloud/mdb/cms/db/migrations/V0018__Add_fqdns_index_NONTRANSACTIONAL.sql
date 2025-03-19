@@ -1,0 +1,1 @@
+CREATE INDEX CONCURRENTLY requests_fqdns_is_deleted ON cms.requests USING gin (fqdns) WITH (fastupdate=off) WHERE is_deleted;

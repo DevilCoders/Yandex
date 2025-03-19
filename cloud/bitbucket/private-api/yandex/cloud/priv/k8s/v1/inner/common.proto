@@ -1,0 +1,167 @@
+syntax = "proto3";
+
+import "google/protobuf/wrappers.proto";
+import "google/protobuf/timestamp.proto";
+
+import "yandex/cloud/priv/k8s/v1/cluster.proto";
+import "yandex/cloud/priv/k8s/v1/node_group.proto";
+import "yandex/cloud/priv/validation.proto";
+
+package yandex.cloud.priv.k8s.v1.inner;
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/k8s/v1/inner;k8s";
+option java_outer_classname = "PMKIV";
+
+message Version {
+  string major_version = 1 [(required) = true];
+  int64 revision = 2 [(value) = ">=0"];
+}
+
+message VersionQuery {
+  string major_version = 1;
+  google.protobuf.Int64Value revision = 2;
+}
+
+message ReleaseChannel {
+  string major_version = 1 [(required) = true];
+  string channel = 2 [(required) = true];
+}
+
+message ReleaseChannelQuery {
+  string major_version = 1;
+  string channel = 2;
+}
+
+message ComponentFilter {
+  oneof filter {
+    google.protobuf.BoolValue outdated = 1;
+    ReleaseChannelQuery release_channel = 2;
+    VersionQuery desired_version = 3;
+    VersionQuery actual_version = 4;
+  }
+}
+
+enum ComponentStatus {
+  COMPONENT_STATUS_UNSPECIFIED = 0;
+  PROVISIONING = 1;
+  RECONCILING = 2;
+  OUTDATED = 3;
+  CONSISTENT = 4;
+  DELETING = 5;
+}
+
+enum StopStatus {
+  STOP_STATUS_UNSPECIFIED = 0;
+  STOPPED = 1;
+  ACTIVE  = 2;
+  ACTIVATING = 3;
+  STOPPING = 4;
+}
+
+message MasterInfo {
+  string id = 1;
+  ReleaseChannel release_channel = 2;
+  Version desired_version = 3;
+  Version actual_version = 4;
+  ComponentStatus status = 5;
+  MasterMaintenancePolicy maintenance_policy = 6;
+
+  oneof master_type {
+    SinglenodeMasterInfo singlenode_master = 7;
+    HAMasterInfo ha_master = 8;
+  }
+
+  StopStatus stop_status = 9;
+  google.protobuf.Timestamp certs_expire_at = 10;
+
+  string cluster_id = 11;
+}
+
+message SinglenodeMasterInfo {
+  string service_ip = 1;
+  string instance_id = 2;
+}
+
+message HAMasterInfo {
+  string service_ip = 1;
+  repeated string instance_ids = 2;
+}
+
+message LackingQuota {
+  repeated string quotas = 1;
+}
+
+message NodeGroupInfo {
+  string id = 1;
+  ReleaseChannel release_channel = 2;
+  Version desired_version = 3;
+  Version actual_version = 4;
+  ComponentStatus status = 5;
+  NodeGroupMaintenancePolicy maintenance_policy = 6;
+  ScalePolicy scale_policy = 7;
+  int64 actual_size = 8;
+  string instance_group_id = 9;
+  StopStatus stop_status = 10;
+  string cluster_id = 11;
+  google.protobuf.Timestamp certs_expire_at = 12;
+  bool dirty = 13;
+  string dirty_diff = 14;
+
+  oneof prevent_upgrade_reason {
+    LackingQuota lacking_quotas = 20;
+  }
+
+  string cloud_id = 21;
+  string modifying_operation = 22;
+}
+
+enum PublicReleaseChannel {
+  PUBLIC_RELEASE_CHANNEL_UNSPECIFIED = 0;
+  STABLE = 1;
+  REGULAR = 2;
+  RAPID = 3;
+}
+
+enum ControllerColour {
+  CONTROLLER_COLOUR_UNSPECIFIED = 0;
+  BLUE = 1;
+  GREEN = 2;
+  COLOURLESS = 3;
+}
+
+message ClusterInfo {
+  string id = 1;
+  string folder_id = 2;
+  string cloud_id = 3;
+  PublicReleaseChannel release_channel = 4;
+  ControllerColour controller_colour = 5;
+  Cluster.Status status = 6;
+
+  MasterInfo master = 7;
+  repeated NodeGroupInfo node_groups = 8;
+
+  string modifying_operation = 9;
+}
+
+message VersionConfig {
+  message ComputeImages {
+    string master = 1;
+    string node = 2;
+    string gpu_node = 3;
+  }
+
+  message ContainerImages {
+    string pcng_controller = 1;
+  }
+
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    STATE_WITHDRAWN = 1;
+  }
+
+  Version version = 1;
+  ComputeImages compute_images = 2;
+  ContainerImages container_images = 3;
+  State state = 4;
+  bool tests_passed = 5;
+}

@@ -1,0 +1,36 @@
+{% extends "../../../base/alert.j2" %}
+
+{% set windowSecs = windowSecs | default(600) %}
+{% set checkExpression = "" %}
+{% set description = "https://docs.yandex-team.ru/yc-monitoring/compute-api/logbroker/topic-journald-messages-written" %}
+
+{% macro prog() %}
+let ts = group_lines('sum', {
+    'project'='kikimr',
+    'cluster'='yandexcloud_{{ env }}_logbroker_global',
+    'service'='pqproxy_writeSession',
+    'sensor'='MessagesWrittenOriginal',
+    'Account'='{{ account }}',
+    'TopicPath'='{{ topic_path }}',
+    'OriginDC'='cluster', 'host'='cluster'
+});
+let messages = avg(ts);
+
+alarm_if(messages < {{ alarm_limit|default(100) }});
+warn_if(messages < {{ warn_limit|default(500) }});
+{% endmacro %}
+
+{% block main %}
+    "name": "{{ team }} Logbroker MessagesWrittenOriginal @{{ env | upper }}",
+    "annotations": {
+        "topic": "[[labels.TopicPath]]",
+        "current_value": "[[expression.messages]]",
+        "service": "{{ service|default(config_name.replace('_', '-')) }}",
+        "host": "{{ host }}",
+        "description": "{{ description }}",
+        "wiki": "{{ wiki_url }}#{{ config_name.replace('_', '-') }}",
+        "dashboard": "{{ dashboard_url }}"
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

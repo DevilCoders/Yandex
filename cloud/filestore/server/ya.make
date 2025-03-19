@@ -1,0 +1,21 @@
+PROGRAM(filestore-server)
+
+OWNER(g:cloud-nbs)
+
+IF (PROFILE_MEMORY_ALLOCATIONS)
+    ALLOCATOR(LF_DBG)
+ELSE()
+    ALLOCATOR(TCMALLOC_TC)
+ENDIF()
+
+IF (BUILD_TYPE != "PROFILE" && BUILD_TYPE != "DEBUG")
+    SPLIT_DWARF()
+ENDIF()
+
+INCLUDE(${ARCADIA_ROOT}/cloud/filestore/server/sources.inc)
+
+END()
+
+RECURSE_FOR_TESTS(
+    lfdbg
+)

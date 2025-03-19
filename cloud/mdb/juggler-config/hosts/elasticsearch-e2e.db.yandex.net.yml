@@ -1,0 +1,51 @@
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    namespace: dbaas.elasticsearch
+    host: elasticsearch-e2e.db.yandex.net
+
+  tasks:
+    - juggler_facts: jserver_api=http://juggler-api.search.yandex.net:8998/api
+    - include_vars: ../configs/elasticsearch_dbs_resps.yml
+    - include_vars: ../configs/notifications_worktime.yml
+
+    - juggler_check:
+        host: "{{ host }}"
+        service: dbaas-e2e-porto-qa-elasticsearch
+        namespace: "{{ namespace }}"
+        aggregator: logic_or
+        notifications: "{{ notifications_sms }}"
+        refresh_time: 3600
+        ttl: 21600
+        children:
+            host: dbaas-e2e01k.db.yandex.net
+            service: dbaas-e2e-porto-qa-elasticsearch
+        __force__: True
+    - juggler_check:
+        host: "{{ host }}"
+        service: dbaas-e2e-compute-preprod-elasticsearch
+        namespace: "{{ namespace }}"
+        aggregator: logic_or
+        notifications: "{{ notifications_sms }}"
+        refresh_time: 3600
+        ttl: 21600
+        children:
+            host: dbaas-e2e-preprod01k.cloud-preprod.yandex.net
+            service: dbaas-e2e-compute-preprod-elasticsearch
+        __force__: True
+    - juggler_check:
+        host: "{{ host }}"
+        service: dbaas-e2e-compute-prod-elasticsearch
+        namespace: "{{ namespace }}"
+        aggregator: logic_or
+        notifications: "{{ notifications }}"
+        refresh_time: 3600
+        ttl: 21600
+        children:
+            host: dbaas-e2e01k.yandexcloud.net
+            service: dbaas-e2e-compute-prod-elasticsearch
+        __force__: True
+
+  post_tasks:
+    - juggler_cleanup: jcheck_mark={{ host }}

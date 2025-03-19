@@ -1,0 +1,39 @@
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    namespace: dbaas.core
+    host: mdb-deploy-salt-compute-prod
+    cgroup: mdb_deploy_salt_compute_prod
+    installation: compute_prod
+    nginx_5xx_graph: 'https://solomon.cloud.yandex-team.ru/?project=yandexcloud&cluster=mdb_deploy_salt_compute_prod&l.sensor=nginx_response_5xx_count&l.host=%21by_node&graph=auto&aggr=last&transform=diff&interpolate=left'
+    nginx_5xx_service: 'mdb-deploy-salt-nginx-5xx'
+
+  tasks:
+    - juggler_facts: jserver_api=http://juggler-api.search.yandex.net:8998/api
+    - include_vars: ../configs/core_resps.yml
+    - include_vars: ../configs/core_tags.yml
+    - include_vars: ../configs/common.yml
+    - include_vars: ../configs/notifications.yml
+    - include: ../checks/meta-unreach.yml
+    - include: ../checks/common.yml
+    - include: ../checks/unispace.yml
+    - include: ../checks/common-hw-pass.yml
+    - include: ../checks/common-act.yml
+    - include: ../checks/common-dns.yml
+    - include: ../checks/common-salt.yml
+    - include: ../checks/common-http-ping.yml
+    - include: ../checks/http-tls.yml
+    - include: ../checks/nginx-5xx.yml
+    - include: ../checks/mdb-deploy-salt-master-image-age.yml notifications_salt_master_image_age={{ notifications_worktime }}
+
+    - juggler_check:
+      args: "{{ common_checks | hash_merge( unreach_pass, item ) }}"
+      with_items:
+        - service: salt-master
+          refresh_time: 60
+          children:
+            service: salt_master
+
+  post_tasks:
+    - juggler_cleanup: jcheck_mark={{ host }}

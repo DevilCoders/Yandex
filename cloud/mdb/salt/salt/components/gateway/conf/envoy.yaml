@@ -1,0 +1,107 @@
+admin:
+  access_log_path: /dev/stdout
+  address:
+    socket_address:
+      address: 127.0.0.1
+      port_value: 9901
+dynamic_resources:
+  ads_config:
+    api_type: GRPC
+    grpc_services:
+    - envoy_grpc:
+        cluster_name: xds_cluster
+    rate_limit_settings: {}
+    transport_api_version: V3
+  cds_config:
+    ads: {}
+    resource_api_version: V3
+  lds_config:
+    ads: {}
+    resource_api_version: V3
+layered_runtime:
+  layers:
+  - name: static
+    static_layer:
+      envoy.reloadable_features.enable_deprecated_v2_api: true
+      tracing:
+        client_enabled: 0
+        global_enabled: 100
+        random_sampling: 0
+node:
+  cluster: api-gateway
+  id: any
+  locality:
+    region: ru-central1
+    zone: any
+static_resources:
+  clusters:
+  - common_http_protocol_options:
+      idle_timeout: 45s
+    connect_timeout: 10s
+    http2_protocol_options: {}
+    load_assignment:
+      cluster_name: xds_cluster
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: 127.0.0.1
+                port_value: 4435
+    name: xds_cluster
+    type: STATIC
+    upstream_connection_options:
+      tcp_keepalive:
+        keepalive_interval: 10
+        keepalive_probes: 1
+        keepalive_time: 10
+  - common_http_protocol_options:
+      idle_timeout: 45s
+    connect_timeout: 10s
+    http2_protocol_options: {}
+    load_assignment:
+      cluster_name: als
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: 127.0.0.1
+                port_value: 4436
+    name: als
+    type: STATIC
+    upstream_connection_options:
+      tcp_keepalive:
+        keepalive_interval: 10
+        keepalive_probes: 1
+        keepalive_time: 10
+  secrets:
+  - name: frontend_certs
+    tls_certificate:
+      certificate_chain:
+        filename: /etc/envoy/ssl/api-gateway.crt
+      private_key:
+        filename: /etc/envoy/ssl/api-gateway.key
+stats_config:
+  use_all_default_tags: true
+stats_sinks:
+- name: envoy.stat_sinks.statsd
+  typed_config:
+    '@type': type.googleapis.com/envoy.config.metrics.v3.StatsdSink
+    address:
+      socket_address:
+        address: 127.0.0.1
+        port_value: 9125
+tracing:
+  http:
+    name: envoy.tracers.dynamic_ot
+    typed_config:
+      '@type': type.googleapis.com/envoy.config.trace.v3.DynamicOtConfig
+      config:
+        reporter:
+          localAgentHostPort: 127.0.0.1:5775
+        sampler:
+          param: 1
+          type: const
+        service_name: api-gateway
+      library: /usr/local/lib/libjaegertracing_plugin.so

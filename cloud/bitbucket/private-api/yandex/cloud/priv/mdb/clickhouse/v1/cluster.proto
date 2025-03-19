@@ -1,0 +1,320 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.mdb.clickhouse.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "google/type/timeofday.proto";
+import "yandex/cloud/api/tools/options.proto";
+import "yandex/cloud/priv/mdb/clickhouse/v1/config/clickhouse.proto";
+import "yandex/cloud/priv/mdb/clickhouse/v1/maintenance.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/mdb/clickhouse/v1;clickhouse";
+option java_outer_classname = "PCC";
+
+// ClickHouse cluster.
+message Cluster {
+  // Deployment environment.
+  enum Environment {
+    ENVIRONMENT_UNSPECIFIED = 0;
+
+    // Stable environment with concervative update policy.
+    PRODUCTION = 1;
+
+    // Environment with more aggressive update policy in comparisson with
+    // production environment.
+    PRESTABLE = 2;
+  }
+
+  enum Health {
+    option (cloud.api.tools.enumeration).lint_skip.unspecified_value = true;
+    HEALTH_UNKNOWN = 0; // Cluster is in unknown state (we have no data)
+    ALIVE = 1; // Cluster is alive and well (all hosts are alive)
+    DEAD = 2; // Cluster is inoperable (it cannot perform any of its essential functions)
+    DEGRADED = 3; // Cluster is partially alive (it can perform some of its essential functions)
+  }
+
+  enum Status {
+    option (cloud.api.tools.enumeration).lint_skip.unspecified_value = true;
+    STATUS_UNKNOWN = 0; // Cluster status is unknown
+    CREATING = 1; // Cluster is being created
+    RUNNING = 2; // Cluster is running
+    ERROR = 3; // Cluster failed
+    UPDATING = 4; // Cluster is being updated
+    STOPPING = 5; // Cluster is stopping
+    STOPPED = 6; // Cluster stopped
+    STARTING = 7; // Cluster is starting
+  }
+
+  // Required. Unique ID of the ClickHouse cluster.
+  // This ID is assigned by MDB in the process of creating a ClickHouse cluster.
+  string id = 1;
+
+  // ID of the folder that the ClickHouse cluster belongs to.
+  string folder_id = 2;
+
+  // The time when the ClickHouse cluster was created.
+  google.protobuf.Timestamp created_at = 3;
+
+  // Name of the ClickHouse cluster.
+  // The name is unique within the folder. 1-64 characters long.
+  string name = 4;
+
+  // Description of the ClickHouse cluster. 0-256 characters long.
+  string description = 5;
+
+  map<string, string> labels = 6;
+
+  // Deployment environment of the ClickHouse cluster.
+  Environment environment = 7;
+
+  // Monitoring systems relevant to the ClickHouse cluster.
+  repeated Monitoring monitoring = 8;
+
+  // Configuration of the ClickHouse cluster.
+  ClusterConfig config = 9;
+
+  string network_id = 10;
+
+  // Aggregated cluster health
+  Health health = 11;
+
+  // Cluster status
+  Status status = 12;
+
+  // ID of the service account used for access to Yandex Object Storage.
+  string service_account_id = 13;
+
+  // Window of maintenance operations.
+  MaintenanceWindow maintenance_window = 14;
+
+  // Maintenance operation planned at nearest maintenance_window.
+  MaintenanceOperation planned_operation = 15;
+
+  // User security groups
+  repeated string security_group_ids = 16;
+
+  // Deletion Protection inhibits deletion of the cluster
+  bool deletion_protection = 17;
+}
+
+// Monitoring system.
+message Monitoring {
+  // Name of the monitoring system.
+  string name = 1;
+
+  // Description of the monitoring system.
+  string description = 2;
+
+  // Link to the monitoring system.
+  string link = 3;
+}
+
+message ClusterConfig {
+  message Clickhouse {
+    // Configuration settings of ClickHouse DBMS.
+    config.ClickhouseConfigSet config = 1;
+
+    // Resources allocated to ClickHouse hosts.
+    Resources resources = 2;
+  }
+
+  message Zookeeper {
+    // Resources allocated to Zookeeper hosts.
+    Resources resources = 1;
+  }
+
+  // Version of ClickHouse DBMS.
+  string version = 1;
+
+  Clickhouse clickhouse = 2;
+
+  Zookeeper zookeeper = 3;
+
+  // Start time for the daily backup in UTC timezone
+  google.type.TimeOfDay backup_window_start = 4;
+
+  // Access policy to DB
+  Access access = 5;
+
+  CloudStorage cloud_storage = 6;
+
+  // Whether database management through SQL commands is enabled.
+  google.protobuf.BoolValue sql_database_management = 7;
+
+  // Whether user management through SQL commands is enabled.
+  google.protobuf.BoolValue sql_user_management = 8;
+
+  // Whether database is accessible via mysql protocol.
+  google.protobuf.BoolValue mysql_protocol = 9;
+
+  // Whether database is accessible via postgresql protocol.
+  google.protobuf.BoolValue postgresql_protocol = 10;
+
+  // Whether cluster should use embedded Keeper instead of Zookeeper.
+  google.protobuf.BoolValue embedded_keeper = 11;
+}
+
+message Shard {
+  string name = 1;
+
+  string cluster_id = 2;
+
+  ShardConfig config = 3;
+}
+
+message ShardGroup {
+  // Name of the shard group
+  string name = 1;
+
+  // ID of the cluster that the shard belongs to.
+  string cluster_id = 2;
+
+  // Description of the ClickHouse cluster shard group. 0-256 characters long.
+  string description = 3;
+
+  // List of shard names contained in shard group
+  repeated string shard_names = 4;
+}
+
+message ShardConfig {
+  message Clickhouse {
+    config.ClickhouseConfigSet config = 1;
+
+    Resources resources = 2;
+
+    google.protobuf.Int64Value weight = 3;
+  }
+
+  Clickhouse clickhouse = 1;
+}
+
+message Host {
+  enum Type {
+    TYPE_UNSPECIFIED = 0;
+    CLICKHOUSE = 1;
+    ZOOKEEPER = 2;
+  }
+
+  enum Health {
+    option (cloud.api.tools.enumeration).lint_skip.unspecified_value = true;
+    UNKNOWN = 0; // Host is in unknown state (we have no data)
+    ALIVE = 1; // Host is alive and well (all services are alive)
+    DEAD = 2; // Host is inoperable (it cannot perform any of its essential functions)
+    DEGRADED = 3; // Host is partially alive (it can perform some of its essential functions)
+  }
+
+  message CPUMetric {
+      int64 timestamp = 1;
+      double used = 2;
+  }
+
+  message MemoryMetric {
+      int64 timestamp = 1;
+      int64 used = 2;
+      int64 total = 3;
+  }
+
+  message DiskMetric {
+      int64 timestamp = 1;
+      int64 used = 2;
+      int64 total = 3;
+  }
+
+  message SystemMetrics {
+      CPUMetric cpu = 1;
+      MemoryMetric memory = 2;
+      DiskMetric disk = 3;
+  }
+
+  // Required. Name of the host.
+  string name = 1;
+
+  // Required. ID of the ClickHouse cluster.
+  string cluster_id = 2;
+
+  // ID of the availability zone.
+  string zone_id = 3;
+
+  // Host type.
+  Type type = 4;
+
+  // Resources allocated to the host.
+  Resources resources = 5;
+
+  // Aggregated host health
+  Health health = 6;
+
+  repeated Service services = 7;
+
+  string subnet_id = 8;
+
+  bool assign_public_ip = 10;
+
+  string shard_name = 9;
+
+  // System metrics
+  SystemMetrics system = 11;
+}
+
+message Service {
+  enum Type {
+    TYPE_UNSPECIFIED = 0;
+    CLICKHOUSE = 1; // ClickHouse server
+    ZOOKEEPER = 2; // ZooKeeper service
+  }
+
+  enum Health {
+    option (cloud.api.tools.enumeration).lint_skip.unspecified_value = true;
+    UNKNOWN = 0; // Service is in unknown state (we have no data)
+    ALIVE = 1; // Service is alive and well
+    DEAD = 2; // service is dead or does not respond
+  }
+
+  // Type of service
+  Type type = 1;
+
+  // Service health
+  Health health = 2;
+}
+
+message Resources {
+  string resource_preset_id = 1;
+
+  // Volume of the storage available to a host.
+  int64 disk_size = 2;
+
+  string disk_type_id = 3;
+}
+
+message Access {
+  // Allow access for DataLens.
+  bool data_lens = 1;
+
+  // Allow access for Web SQL.
+  bool web_sql = 2;
+
+  // Allow access for Metrika.
+  bool metrika = 3;
+
+  // Allow access for Serverless.
+  bool serverless = 4;
+
+  // Allow access for DataTransfer.
+  bool data_transfer = 5;
+
+  // Allow access for YandexQuery.
+  bool yandex_query = 6;
+}
+
+message CloudStorage {
+  // Whether to use Yandex Object Storage for storing ClickHouse data.
+  bool enabled = 1;
+
+  google.protobuf.DoubleValue move_factor = 2 [(value) = "0-1"];
+
+  google.protobuf.BoolValue data_cache_enabled = 3;
+
+  google.protobuf.Int64Value data_cache_max_size = 4;
+}

@@ -1,0 +1,1 @@
+RECURSE(kubectl-saltformula)

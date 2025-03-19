@@ -1,0 +1,68 @@
+{%- set virtual_drive_size =  salt['grains.get']("cluster_map:lbs:virtual_drive_size", "25600M") -%}
+#!/bin/bash
+
+initlbs(){
+fillDrivesLists
+if [ ! -z ${hdd_devs+"1"} ] || [ ! -z ${ssd_devs+"1"} ]; then
+    systemctl start yc-lbs.service
+    while ! curl -i http://[::1]:7807/v1/pools &> /dev/null; do
+        echo "Waiting 3 secs, to re-check LBS API avalability";
+        sleep 3;
+    done
+    if [ ! -z ${hdd_devs+"1"} ]; then
+        echo "Creating HDD pool in LBS"
+        curl -X POST -d '{"name": "hdd", "type": "hdd", "enabled": true, "default": true}' http://[::1]:7807/v1/pool &> /dev/null
+        for dev in $hdd_devs; do
+            if curl -X POST -d '{"name": "'$dev'", "iopsSeqRead": 20000, "iopsSeqWrite": 20000, "iopsRandRead": 200, "iopsRandWrite": 200, "bpsSeqRead": 200000000, "bpsSeqWrite": 200000000, "bpsRandWrite": 10000000, "bpsRandRead": 10000000}' http://[::1]:7807/v1/pool/hdd/physdev &> /dev/null
+                then echo "Device $dev added to pool \"hdd\""
+                else echo "Something wrong with adding device $dev to \"hdd\" pool"
+            fi
+        done
+    fi
+    if [ ! -z ${ssd_devs+"1"} ]; then
+            echo "Creating SSD pool in LBS"
+            curl -X POST -d '{"name": "ssd", "type": "ssd", "enabled": true, "default": false}' http://[::1]:7807/v1/pool &> /dev/null
+            for dev in $ssd_devs; do
+                if curl -X POST -d '{"name": "'$dev'", "iopsSeqRead": 20000, "iopsSeqWrite": 20000, "iopsRandRead": 20000, "iopsRandWrite": 20000, "bpsSeqRead": 400000000, "bpsSeqWrite": 400000000, "bpsRandWrite": 400000000, "bpsRandRead": 400000000}}' http://[::1]:7807/v1/pool/ssd/physdev &> /dev/null
+                    then echo "Device $dev added to pool \"ssd\""
+                    else echo "Something wrong with adding device $dev to \"ssd\" pool"
+                fi
+            done
+    fi
+    mkdir -p /etc/systemd/system/yc-lbs.service.d
+    cat > /etc/systemd/system/yc-lbs.service.d/override.conf <<'EOF'
+[Service]
+ExecStartPre=/bin/sh -c 'for i in /sd? /ssd?; do test -f || continue; losetup -j $i | grep . && continue; losetup -f $i; done'
+EOF
+    systemctl daemon-reload
+    systemctl restart yc-lbs.service
+fi
+}
+
+fillDrivesLists(){
+devs='sda3 sdb3 sdc3 sdd3'
+if grep . /sys/block/md2/md/level; then
+        devs="$(ls /sys/block/md1/md | sed -ne '/dev/s/^dev-//p')"
+        umount /mnt/raid || true
+        mdadm --stop /dev/md2
+        sed -i '/\/mnt\/raid/d' /etc/fstab
+fi
+if test -b /dev/${devs%% *}; then
+        hdd_devs="${devs}"
+else
+        hdd_devs=""
+        for hdd_disk in a b c d e f; do
+                truncate -s {{ virtual_drive_size }} /sd$hdd_disk
+                dev="$(losetup --show -f /sd$hdd_disk)"
+                hdd_devs="${hdd_devs}${hdd_devs:+ }${dev##*/}"
+        done
+        ssd_devs=""
+        for ssd_disk in g h; do
+                truncate -s {{ virtual_drive_size }} /ssd$ssd_disk
+                dev="$(losetup --show -f /ssd$ssd_disk)"
+                ssd_devs="${ssd_devs}${ssd_devs:+ }${dev##*/}"
+        done
+fi
+}
+
+initlbs

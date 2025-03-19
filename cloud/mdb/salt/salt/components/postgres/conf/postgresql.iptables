@@ -1,0 +1,36 @@
+{% if salt.dbaas.is_compute() %}
+{%   set management_iface = 'eth1' %}
+{%   set zk = salt['pillar.get']('data:pgsync:zk_hosts', '').split(',') %}
+
+table filter {
+    chain OUTPUT {
+        policy ACCEPT;
+        mod state state (ESTABLISHED RELATED) ACCEPT;
+        daddr 169.254.169.254 mod owner uid-owner 'postgres' REJECT reject-with icmp-net-unreachable;
+        outerface {{management_iface}} {
+            mod owner uid-owner 'postgres' REJECT reject-with icmp-net-unreachable;
+        }
+    }
+}
+
+domain ip6 {
+    table filter {
+        chain OUTPUT {
+            policy ACCEPT;
+            mod state state (ESTABLISHED RELATED) ACCEPT;
+            outerface {{management_iface}} {
+                # The last match wins.
+{%   for host in salt['pillar.get']('data:access:management_hosts', []) %}
+                daddr '{{ host.fqdn }}' proto tcp dport {{host.port}} ACCEPT;
+{%   endfor %}
+                daddr (
+{%   for host in zk %}
+                    '{{host}}'
+{%   endfor %}
+                ) proto tcp dport 2181 ACCEPT;
+                mod owner uid-owner 'postgres' REJECT reject-with icmp-net-unreachable;
+            }
+        }
+    }
+}
+{% endif %}

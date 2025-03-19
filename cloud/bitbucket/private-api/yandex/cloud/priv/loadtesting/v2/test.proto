@@ -1,0 +1,276 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.loadtesting.v2;
+
+import "google/protobuf/timestamp.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/loadtesting/v2;loadtesting";
+
+message Test {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    CREATED = 1;
+    INITIATED = 2;
+    PREPARING = 3;
+    RUNNING = 4;
+    FINISHING = 5;
+    DONE = 6;
+    POST_PROCESSING = 7;
+    FAILED = 8;
+    STOPPING = 9;
+    STOPPED = 10;
+    AUTOSTOPPED = 11;
+  }
+
+  enum Generator {
+    GENERATOR_UNSPECIFIED = 0;
+    PANDORA = 1;
+    PHANTOM = 2;
+  }
+
+  string id = 1;
+  string folder_id = 2;
+  string name = 3;
+  string description = 4;
+  map<string, string> labels = 5;
+
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp started_at = 7;
+  google.protobuf.Timestamp finished_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+
+  Generator generator = 10;
+
+  // AgentInstance ID where Test is running.
+  string agent_instance_id = 11;
+
+  // Target VM ID.
+  string target_address = 12;
+  int64 target_port = 13;
+
+  // Version of object under test.
+  string target_version = 14;
+
+  // Test details
+  string config = 15;
+  oneof payload {
+    string payload_urls = 16;
+    string payload_id = 17;
+  }
+  repeated string cases = 18;
+
+  Status status = 19;
+  repeated string errors = 20;
+  bool favorite = 21;
+
+  int64 imbalance_point = 22;
+  int64 imbalance_ts = 23;
+  google.protobuf.Timestamp imbalance_at = 25;
+  string imbalance_comment = 26;
+
+  repeated Autostop autostops = 24;
+
+  string user_id = 27;
+}
+
+message Autostop {
+  enum AutostopType {
+    AUTOSTOP_TYPE_UNSPECIFIED = 0;
+    TIME = 1;
+    HTTP = 2;
+    NET = 3;
+    QUANTILE = 4;
+    INSTANCES = 5;
+    METRIC_LOWER = 6;
+    METRIC_HIGHER = 7;
+    STEADY_CUMULATIVE = 8;
+    LIMIT = 9;
+    TOTAL_TIME = 10;
+    TOTAL_HTTP = 11;
+    TOTAL_NET = 12;
+    NEGATIVE_HTTP = 13;
+    NEGATIVE_NET = 14;
+    HTTP_TREND = 15;
+  }
+
+  AutostopType autostop_type = 1;
+  string autostop_criteria = 2;
+  string autostop_case = 3;
+
+}
+
+message Report {
+  string test_id = 1;
+  repeated Chart charts = 2;
+  bool finished = 3;
+  int64 imbalance_point = 4;
+  int64 imbalance_ts = 5;
+  google.protobuf.Timestamp imbalance_at = 6;
+
+}
+
+enum ChartType {
+  CHART_TYPE_UNSPECIFIED = 0;
+  INSTANCES = 1;
+  QUANTILES = 2;
+  PROTO_CODES = 3;
+  NET_CODES = 4;
+}
+
+message Chart {
+  ChartType chart_type = 1;
+
+  string test_id = 2;
+  string name = 3;
+  string description = 4;
+
+  repeated int64 ts = 5;
+  repeated int64 responses_per_second = 6;
+  repeated int64 threads = 7;
+  repeated MetricData cases_data = 8;
+
+  string x_axis_label = 9;
+  string y_axis_label = 10;
+}
+
+message TestsComparisonChart {
+  ChartType chart_type = 1;
+  string name = 2;
+  string description = 3;
+
+  repeated int64 ts = 4;
+  repeated TestComparisonData tests = 5;
+
+  string x_axis_label = 6;
+  string y_axis_label = 7;
+}
+
+message TestComparisonData {
+  string test_id = 1;
+  repeated int64 responses_per_second = 2;
+  repeated int64 threads = 3;
+  repeated MetricData cases_data = 4;
+}
+
+message MonitoringReport {
+  string test_id = 1;
+  repeated MonitoringChart charts = 2;
+  bool finished = 3;
+}
+
+message MonitoringChart {
+  string monitored_host = 1;
+
+  string test_id = 2;
+  string name = 3;
+  string description = 4;
+
+  repeated int64 ts = 5;
+  repeated int64 responses_per_second = 6;
+  repeated int64 threads = 7;
+
+  repeated MetricData metric_data = 8;
+
+  string x_axis_label = 9;
+  string y_axis_label = 10;
+}
+
+message MetricData {
+  string case_name = 1;
+  string metric_name = 2;
+  repeated double metric_value = 3;
+  bool disabled = 4;
+}
+
+//  Load schedule string:
+// {duration: 180s, type: line, from: 1, to: 10000} for pandora,
+// step(25, 5, 5, 60) for phantom.
+message LoadSchedule {
+  // Schedule type: phantom.load_profile.schedule,
+  // rps.schedule.type in pandora.config_content.pool
+  enum ScheduleType {
+    SCHEDULE_TYPE_UNSPECIFIED = 0;
+    ONCE = 1;
+    CONST = 2;
+    LINE = 3;
+    STEP = 4;
+  }
+
+  ScheduleType type = 1;
+  int64 instances = 2;  // times for pandora
+  string duration = 3;
+  int64 rps_from = 4;
+  int64 rps_to = 5;
+  int64 step = 6;
+  int64 ops = 7;
+  string stpd_path = 8;
+}
+
+// Load profile in general: phantom.load_profile, pool schedule for pandora
+message Schedule {
+  // Load type: phantom.load_profile.load_type,
+  enum LoadType {
+    LOAD_TYPE_UNSPECIFIED = 0;
+    RPS = 1;
+    INSTANCES = 2;
+    STPD_FILE = 3;
+  }
+
+  LoadType load_type = 1;
+  repeated LoadSchedule load_schedule = 2;
+  repeated string load_profile = 3;
+}
+
+message Config {
+
+  // Payload type for generators: phantom.payload_type,
+  // payload.type in pandora.config_content.pool
+  enum PayloadType {
+    PAYLOAD_TYPE_UNSPECIFIED = 0;
+    HTTP_JSON = 1;
+    RAW = 2;
+    URI = 3;
+    URIPOST = 4;
+    PHANTOM = 5;
+    ACCESS = 6;
+  }
+  
+  Test.Generator generator = 5;
+  string target_address = 7 [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.length) = "<=50"];
+  int64 target_port = 8;
+  string target_version = 9 [(yandex.cloud.priv.length) = "<=50"];
+  int64 instances = 10;
+  Schedule load_schedule = 11;
+
+  repeated string payload_urls = 14 [(yandex.cloud.priv.length) = "<=1024"];
+  repeated string payload_headers = 15;
+  PayloadType payload_type = 16;
+  bool ssl = 17;
+
+  int64 imbalance_point = 18;
+  int64 imbalance_ts = 19;
+
+  repeated Autostop autostops = 21;
+}
+
+message TestSummary {
+  Test test_id = 1;
+  repeated string errors = 2;
+  repeated TestResults results = 3;
+}
+
+message TestResults{
+
+  message CodeResults {
+    int64 amount = 1;
+    double percentage = 2;
+  }
+
+  string case_name = 1;
+  map<string, double> quantiles = 2;
+  map<string, CodeResults> proto_codes = 3;
+  map<string, CodeResults> net_codes = 4;
+  int64 max_rps = 5;
+  int64 max_instances = 6;
+}

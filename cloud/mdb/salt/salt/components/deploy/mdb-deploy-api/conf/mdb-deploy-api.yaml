@@ -1,0 +1,75 @@
+{% set deploy_config = salt.pillar.get('data:mdb-deploy-api:config') -%}
+{% set blackbox_uri = salt.pillar.get('data:mdb-deploy-api:blackbox_uri') %}
+app:
+  instrumentation:
+    addr: "{{ salt.pillar.get('data:mdb-deploy-api:config:app:instrumentation:addr', '[::1]:6060') }}"
+  logging:
+    level: "{{ salt.pillar.get('data:mdb-deploy-api:config:app:logging:level', 'debug') }}"
+  sentry:
+    environment: {{ salt.pillar.get('data:sentry:environment') }}
+    dsn: {{ deploy_config.sentry.dsn  }}
+swagger:
+  logging:
+    enabled: false
+    log_request_body: false
+    log_response_body: false
+db: postgresql
+deploy_api:
+  master_check_period: 5s
+  master_check_fail_count: 120
+  master_max_tasks_per_thread: {{ deploy_config.deployapi.get('master_max_tasks_per_thread', 1) }}
+  failover_minions_period: 30s
+  failover_minions_size: 10
+{% if salt.pillar.get('data:mdb-deploy-api:config:deployapi:skip_shipments_fqdn_regexes', []) %}
+  skip_shipments_fqdn_regexes:
+{%     for regex in salt.pillar.get('data:mdb-deploy-api:config:deployapi:skip_shipments_fqdn_regexes') %}
+    - {{ regex }}
+{%     endfor %}
+{% endif %}
+  master_default_public_key: {{ salt.pillar.get('data:mdb-deploy-api:config:deployapi:master_default_public_key', '') | yaml_encode }}
+  saltapi:
+    http:
+      tls:
+        ca_file: /opt/yandex/allCAs.pem
+      logging:
+        enabled: false
+        log_request_body: false
+        log_response_body: false
+    auth:
+      user: {{  deploy_config.deployapi.saltapi.user }}
+      password: {{ deploy_config.deployapi.saltapi.password }}
+      eauth: {{ deploy_config.deployapi.saltapi.eauth }}
+  auth:
+{% set blackbox_enabled = salt['pillar.get']('data:mdb-deploy-api:config:deployapi:auth:blackbox_enabled', True)  %}
+    blackbox_enabled: {{ blackbox_enabled }}
+{% if blackbox_enabled %}
+    blackbox:
+      base_host: {{ salt.pillar.get('data:deploy:api_host') }}
+      tvmtool:
+        token: {{ salt.pillar.get('data:tvmtool:token', '__NOTOKEN__') }}
+        uri: http://localhost:{{ salt.pillar.get('data:tvmtool:port', '0') }}
+{% if blackbox_uri %}
+      blackbox_uri: {{ blackbox_uri }}
+{% endif %}
+      user_scopes: {{ salt.pillar.get('data:mdb-deploy-api:user_scopes', ['mdbdeployapi:read', 'mdbdeployapi:write']) | yaml }}
+      login_white_list: {{
+           salt.pillar.get('data:mdb-developers') |
+           union( ['robot-mdb-saltkeys', 'robot-pgaas-deploy'] ) |
+           union(salt.pillar.get('data:mdb-deploy-api:extra-login-white-list', [])) |
+           tojson }}
+      cache_ttl: 60s
+      cache_size: 1024
+{% endif %}
+{% set iam_enabled = salt['pillar.get']('data:mdb-deploy-api:config:deployapi:auth:iam_enabled', True) %}
+    iam_enabled: {{ iam_enabled }}
+{% if iam_enabled %}
+    iam:
+      host: {{ salt['pillar.get']('data:access_service:host') }}
+      permission: 'mdb.internal.deploy'
+      cloud_id: {{ salt['pillar.get']('data:iam:mdb_cloud_id') }}
+      client: 'mdb deploy'
+      grpc:
+        security:
+          tls:
+            ca_file: /opt/yandex/allCAs.pem
+{% endif %}

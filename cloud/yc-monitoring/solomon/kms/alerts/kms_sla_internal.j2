@@ -1,0 +1,47 @@
+{% extends "base_alert.j2" %}
+{% set checkExpression = "value < " + sla_limit %}
+{% set description = "SLA violations detected by internal metrics" %}
+{% set windowSecs = 300 %}
+
+{% macro prog() %}
+let requests_data = integrate(
+  group_lines(
+    'sum',
+    {
+      project='{{ project_id }}',
+      service='service',
+      cluster='cloud_{{ env }}_kms_cluster',
+      host='{{ host_regex }}',
+      sensor='grpc_statuses',
+      app='*server',
+      status='*'
+    }
+  )
+);
+let errors_data = integrate(
+  group_lines(
+    'sum',
+    {
+      project='{{ project_id }}',
+      service='service',
+      cluster='cloud_{{ env }}_kms_cluster',
+      host='{{ host_regex }}',
+      sensor='grpc_statuses',
+      app='*server',
+      status='UNAVAILABLE|UNKNOWN|DEADLINE_EXCEEDED|UNIMPLEMENTED|INTERNAL|DATA_LOSS'
+    }
+  )
+);
+let value = (requests_data - errors_data) / requests_data;
+{% endmacro %}
+
+{% block main %}
+  "name": "KMS {{ env | upper }}  SLA Internal ({{ sla_limit }})",
+  "annotations": {
+    "jugglerService": "cloud_{{ env }}_kms_cluster--SLA--internal",
+    "description": "[[expression.value]] availability ([[expression.errors_data]] errors per [[expression.requests_data]] requests)",
+    "wikiUrl": "https://nda.ya.ru/t/jHdqboln3VyzBu",
+    "jugglerTags" : "{{ jugglerTags }}"
+  },
+  "type": {{ type_expression() }}
+{% endblock %}

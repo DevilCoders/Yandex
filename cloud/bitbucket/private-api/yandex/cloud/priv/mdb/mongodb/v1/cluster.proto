@@ -1,0 +1,510 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.mdb.mongodb.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "google/type/timeofday.proto";
+import "yandex/cloud/api/tools/options.proto";
+import "yandex/cloud/priv/mdb/mongodb/v1/config/mongodb3_6.proto";
+import "yandex/cloud/priv/mdb/mongodb/v1/config/mongodb4_0.proto";
+import "yandex/cloud/priv/mdb/mongodb/v1/config/mongodb4_2.proto";
+import "yandex/cloud/priv/mdb/mongodb/v1/config/mongodb4_4.proto";
+import "yandex/cloud/priv/mdb/mongodb/v1/config/mongodb4_4_enterprise.proto";
+import "yandex/cloud/priv/mdb/mongodb/v1/config/mongodb5_0.proto";
+import "yandex/cloud/priv/mdb/mongodb/v1/config/mongodb5_0_enterprise.proto";
+import "yandex/cloud/priv/mdb/mongodb/v1/maintenance.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/mdb/mongodb/v1;mongodb";
+option java_outer_classname = "PMC";
+
+// MongoDB cluster.
+message Cluster {
+  // Deployment environment.
+  enum Environment {
+    ENVIRONMENT_UNSPECIFIED = 0;
+
+    // Stable environment with concervative update policy.
+    PRODUCTION = 1;
+
+    // Environment with more aggressive update policy in comparisson with
+    // production environment.
+    PRESTABLE = 2;
+  }
+
+  enum Health {
+    option (cloud.api.tools.enumeration).lint_skip.unspecified_value = true;
+    HEALTH_UNKNOWN = 0; // Cluster is in unknown state (we have no data)
+    ALIVE = 1; // Cluster is alive and well (all hosts are alive)
+    DEAD = 2; // Cluster is inoperable (it cannot perform any of its essential functions)
+    DEGRADED = 3; // Cluster is partially alive (it can perform some of its essential functions)
+  }
+
+  enum Status {
+    option (cloud.api.tools.enumeration).lint_skip.unspecified_value = true;
+    STATUS_UNKNOWN = 0; // Cluster status is unknown
+    CREATING = 1; // Cluster is being created
+    RUNNING = 2; // Cluster is running
+    ERROR = 3; // Cluster failed
+    UPDATING = 4; // Cluster is being updated
+    STOPPING = 5; // Cluster is stopping
+    STOPPED = 6; // Cluster stopped
+    STARTING = 7; // Cluster is starting
+  }
+
+  // Required. Unique ID of the MongoDB cluster.
+  // This ID is assigned by MDB in the process of creating a MongoDB cluster.
+  string id = 1;
+
+  // Required. ID of the folder that the MongoDB cluster belongs to.
+  string folder_id = 2;
+
+  // The time when the MongoDB cluster was created.
+  google.protobuf.Timestamp created_at = 3;
+
+  // Required. Name of the MongoDB cluster.
+  // The name is unique within the folder. 1-64 characters long.
+  string name = 4;
+
+  // Description of the MongoDB cluster. 0-256 characters long.
+  string description = 5;
+
+  map<string, string> labels = 6;
+
+  // Required. Deployment environment of the MongoDB cluster.
+  Environment environment = 7;
+
+  // Required. Monitoring systems relevant to the MongoDB cluster.
+  repeated Monitoring monitoring = 8;
+
+  // Required. Configuration of the MongoDB cluster.
+  ClusterConfig config = 9;
+
+  string network_id = 10;
+
+  // Aggregated cluster health
+  Health health = 11;
+
+  // Cluster status
+  Status status = 12;
+
+  // Sharding status
+  bool sharded = 13;
+
+  // Window of maintenance operations.
+  MaintenanceWindow maintenance_window = 14;
+
+  // Maintenance operation planned at nearest maintenance_window.
+  MaintenanceOperation planned_operation = 15;
+
+  // User security groups
+  repeated string security_group_ids = 16;
+
+  // Deletion Protection inhibits deletion of the cluster
+  bool deletion_protection = 17;
+}
+
+// Monitoring system.
+message Monitoring {
+  // Required. Name of the monitoring system.
+  string name = 1;
+
+  // Description of the monitoring system.
+  string description = 2;
+
+  // Required. Link to the monitoring system.
+  string link = 3;
+}
+
+message ClusterConfig {
+  // MongoDB version.
+  string version = 1;
+
+  // MongoDB feature compatibility version.
+  string feature_compatibility_version = 5;
+
+  oneof mongodb {
+    Mongodb3_6 mongodb_3_6 = 2 [json_name="mongodb_3_6"];
+    Mongodb4_0 mongodb_4_0 = 4 [json_name="mongodb_4_0"];
+    Mongodb4_2 mongodb_4_2 = 7 [json_name="mongodb_4_2"];
+    Mongodb4_4 mongodb_4_4 = 8 [json_name="mongodb_4_4"];
+    Mongodb5_0 mongodb_5_0 = 11 [json_name="mongodb_5_0"];
+
+    Mongodb4_4_enterprise mongodb_4_4_enterprise = 12 [json_name="mongodb_4_4_enterprise"];
+    Mongodb5_0_enterprise mongodb_5_0_enterprise = 13 [json_name="mongodb_5_0_enterprise"];
+  }
+
+  // Start time for the daily backup in UTC timezone
+  google.type.TimeOfDay backup_window_start = 3;
+
+  // Retain period of automatically created backup in days 
+  google.protobuf.Int64Value backup_retain_period_days = 9;
+
+  // Performance Diagnostic
+  PerformanceDiagnosticsConfig performance_diagnostics = 10;
+
+  // Access policy to DB
+  Access access = 6;
+}
+
+message Mongodb3_6 {
+  message Mongod {
+    config.MongodConfigSet3_6 config = 1;
+
+    // Resources allocated to mongod hosts.
+    Resources resources = 2;
+  }
+
+  message MongoCfg {
+    config.MongoCfgConfigSet3_6 config = 1;
+
+    // Resources allocated to mongocfg hosts.
+    Resources resources = 2;
+  }
+
+  message Mongos {
+    config.MongosConfigSet3_6 config = 1;
+
+    // Resources allocated to mongos hosts.
+    Resources resources = 2;
+  }
+
+  message MongoInfra {
+    config.MongosConfigSet3_6 config_mongos = 1;
+    config.MongoCfgConfigSet3_6 config_mongocfg = 2;
+
+    // Resources allocated to mongoinfra (mongos+mongocfg) hosts.
+    Resources resources = 3;
+  }
+
+  Mongod mongod = 1;
+  MongoCfg mongocfg = 2;
+  Mongos mongos = 3;
+  MongoInfra mongoinfra = 4;
+}
+
+message Mongodb4_0 {
+  message Mongod {
+    config.MongodConfigSet4_0 config = 1;
+
+    // Resources allocated to mongod hosts.
+    Resources resources = 2;
+  }
+
+  message MongoCfg {
+    config.MongoCfgConfigSet4_0 config = 1;
+
+    // Resources allocated to mongocfg hosts.
+    Resources resources = 2;
+  }
+
+  message Mongos {
+    config.MongosConfigSet4_0 config = 1;
+
+    // Resources allocated to mongos hosts.
+    Resources resources = 2;
+  }
+
+  message MongoInfra {
+    config.MongosConfigSet4_0 config_mongos = 1;
+    config.MongoCfgConfigSet4_0 config_mongocfg = 2;
+
+    // Resources allocated to mongoinfra (mongos+mongocfg) hosts.
+    Resources resources = 3;
+  }
+
+  Mongod mongod = 1;
+  MongoCfg mongocfg = 2;
+  Mongos mongos = 3;
+  MongoInfra mongoinfra = 4;
+}
+
+message Mongodb4_2 {
+  message Mongod {
+    config.MongodConfigSet4_2 config = 1;
+
+    // Resources allocated to mongod hosts.
+    Resources resources = 2;
+  }
+
+  message MongoCfg {
+    config.MongoCfgConfigSet4_2 config = 1;
+
+    // Resources allocated to mongocfg hosts.
+    Resources resources = 2;
+  }
+
+  message Mongos {
+    config.MongosConfigSet4_2 config = 1;
+
+    // Resources allocated to mongos hosts.
+    Resources resources = 2;
+  }
+
+  message MongoInfra {
+    config.MongosConfigSet4_2 config_mongos = 1;
+    config.MongoCfgConfigSet4_2 config_mongocfg = 2;
+
+    // Resources allocated to mongoinfra (mongos+mongocfg) hosts.
+    Resources resources = 3;
+  }
+
+  Mongod mongod = 1;
+  MongoCfg mongocfg = 2;
+  Mongos mongos = 3;
+  MongoInfra mongoinfra = 4;
+}
+
+message Mongodb4_4 {
+  message Mongod {
+    config.MongodConfigSet4_4 config = 1;
+
+    // Resources allocated to mongod hosts.
+    Resources resources = 2;
+  }
+
+  message MongoCfg {
+    config.MongoCfgConfigSet4_4 config = 1;
+
+    // Resources allocated to mongocfg hosts.
+    Resources resources = 2;
+  }
+
+  message Mongos {
+    config.MongosConfigSet4_4 config = 1;
+
+    // Resources allocated to mongos hosts.
+    Resources resources = 2;
+  }
+
+  message MongoInfra {
+    config.MongosConfigSet4_4 config_mongos = 1;
+    config.MongoCfgConfigSet4_4 config_mongocfg = 2;
+
+    // Resources allocated to mongoinfra (mongos+mongocfg) hosts.
+    Resources resources = 3;
+  }
+
+  Mongod mongod = 1;
+  MongoCfg mongocfg = 2;
+  Mongos mongos = 3;
+  MongoInfra mongoinfra = 4;
+}
+
+message Mongodb4_4_enterprise {
+  message Mongod {
+    config.MongodConfigSet4_4_enterprise config = 1;
+
+    // Resources allocated to mongod hosts.
+    Resources resources = 2;
+  }
+
+  message MongoCfg {
+    config.MongoCfgConfigSet4_4_enterprise config = 1;
+
+    // Resources allocated to mongocfg hosts.
+    Resources resources = 2;
+  }
+
+  message Mongos {
+    config.MongosConfigSet4_4_enterprise config = 1;
+
+    // Resources allocated to mongos hosts.
+    Resources resources = 2;
+  }
+
+  message MongoInfra {
+    config.MongosConfigSet4_4_enterprise config_mongos = 1;
+    config.MongoCfgConfigSet4_4_enterprise config_mongocfg = 2;
+
+    // Resources allocated to mongoinfra (mongos+mongocfg) hosts.
+    Resources resources = 3;
+  }
+
+  Mongod mongod = 1;
+  MongoCfg mongocfg = 2;
+  Mongos mongos = 3;
+  MongoInfra mongoinfra = 4;
+}
+
+message Mongodb5_0 {
+  message Mongod {
+    config.MongodConfigSet5_0 config = 1;
+
+    // Resources allocated to mongod hosts.
+    Resources resources = 2;
+  }
+
+  message MongoCfg {
+    config.MongoCfgConfigSet5_0 config = 1;
+
+    // Resources allocated to mongocfg hosts.
+    Resources resources = 2;
+  }
+
+  message Mongos {
+    config.MongosConfigSet5_0 config = 1;
+
+    // Resources allocated to mongos hosts.
+    Resources resources = 2;
+  }
+
+  message MongoInfra {
+    config.MongosConfigSet5_0 config_mongos = 1;
+    config.MongoCfgConfigSet5_0 config_mongocfg = 2;
+
+    // Resources allocated to mongoinfra (mongos+mongocfg) hosts.
+    Resources resources = 3;
+  }
+
+  Mongod mongod = 1;
+  MongoCfg mongocfg = 2;
+  Mongos mongos = 3;
+  MongoInfra mongoinfra = 4;
+}
+
+message Mongodb5_0_enterprise {
+  message Mongod {
+    config.MongodConfigSet5_0_enterprise config = 1;
+
+    // Resources allocated to mongod hosts.
+    Resources resources = 2;
+  }
+
+  message MongoCfg {
+    config.MongoCfgConfigSet5_0_enterprise config = 1;
+
+    // Resources allocated to mongocfg hosts.
+    Resources resources = 2;
+  }
+
+  message Mongos {
+    config.MongosConfigSet5_0_enterprise config = 1;
+
+    // Resources allocated to mongos hosts.
+    Resources resources = 2;
+  }
+
+  message MongoInfra {
+    config.MongosConfigSet5_0_enterprise config_mongos = 1;
+    config.MongoCfgConfigSet5_0_enterprise config_mongocfg = 2;
+
+    // Resources allocated to mongoinfra (mongos+mongocfg) hosts.
+    Resources resources = 3;
+  }
+
+  Mongod mongod = 1;
+  MongoCfg mongocfg = 2;
+  Mongos mongos = 3;
+  MongoInfra mongoinfra = 4;
+}
+
+message Shard {
+  string name = 1;
+
+  string cluster_id = 2;
+}
+
+message Host {
+  enum Type {
+    TYPE_UNSPECIFIED = 0;
+    MONGOD = 1;
+    MONGOS = 2;
+    MONGOCFG = 3;
+    MONGOINFRA = 4;
+  }
+
+  enum Role {
+    option (cloud.api.tools.enumeration).lint_skip.unspecified_value = true;
+    ROLE_UNKNOWN = 0; // Role is unknown (we have no data)
+    PRIMARY = 1;
+    SECONDARY = 2;
+  }
+
+  enum Health {
+    option (cloud.api.tools.enumeration).lint_skip.unspecified_value = true;
+    HEALTH_UNKNOWN = 0; // Host is in unknown state (we have no data)
+    ALIVE = 1; // Host is alive and well (all services are alive)
+    DEAD = 2; // Host is inoperable (it cannot perform any of its essential functions)
+    DEGRADED = 3; // Host is partially alive (it can perform some of its essential functions)
+  }
+
+  // Required. Name of the host.
+  string name = 1;
+
+  // Required. ID of the MongoDB cluster.
+  string cluster_id = 2;
+
+  // ID of the availability zone.
+  string zone_id = 3;
+
+  // Resources allocated to the host.
+  Resources resources = 4;
+
+  // Host's role
+  Role role = 5;
+
+  // Aggregated host health
+  Health health = 6;
+
+  // Host services
+  repeated Service services = 7;
+
+  string subnet_id = 8;
+
+  string shard_name = 9;
+
+  bool assign_public_ip = 10;
+
+  Type type = 11;
+}
+
+message Service {
+  enum Type {
+    TYPE_UNSPECIFIED = 0;
+    MONGOD = 1; // Mongos service
+    MONGOS = 2; // Mongod service
+    MONGOCFG = 3; // Mongocfg service
+  }
+
+  enum Health {
+    option (cloud.api.tools.enumeration).lint_skip.unspecified_value = true;
+    HEALTH_UNKNOWN = 0; // Service is in unknown state (we have no data)
+    ALIVE = 1; // Service is alive and well
+    DEAD = 2; // service is dead or does not respond
+  }
+
+  // Type of service
+  Type type = 1;
+
+  // Service health
+  Health health = 2;
+}
+
+message Resources {
+  string resource_preset_id = 1;
+
+  // Volume of the storage available to a host.
+  int64 disk_size = 2;
+
+  string disk_type_id = 3;
+}
+
+message Access {
+  // Allow access for DataLens.
+  bool data_lens = 1;
+
+  // Allow access for Web SQL.
+  bool web_sql = 2;
+
+  // Allow access for DataTransfer.
+  bool data_transfer = 3;
+
+  // Allow access for Serverless.
+  // NOTE: Do not propagate to public API until Serverless integration is required.
+  bool serverless = 4;
+}
+
+message PerformanceDiagnosticsConfig {
+    bool profiling_enabled = 1;
+}

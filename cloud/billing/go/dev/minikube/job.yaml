@@ -1,0 +1,52 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    app.kubernetes.io/name: logbroker
+    app.kubernetes.io/instance: dev
+    app.kubernetes.io/part-of: logbroker
+    app.kubernetes.io/component: ydb-migration
+  name: migrate-ydb
+  namespace: logbroker
+spec:
+  ttlSecondsAfterFinished: 60
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: logbroker
+        app.kubernetes.io/instance: dev
+        app.kubernetes.io/part-of: logbroker
+        app.kubernetes.io/component: ydb-migration
+      name: migrate-ydb
+    spec:
+      initContainers:
+        - name: sql-source
+          command: ["cp", "-r"]
+          args:
+            - /source
+            - /scripts
+          volumeMounts:
+            - mountPath: /scripts
+              name: scripts
+          image: for-minikube/dev-ydb-sql:stable
+          imagePullPolicy: Never
+      containers:
+        - name: migrate
+          tty: true
+          command: ["run_scripts.sh"]
+          args:
+            - /scripts
+          env:
+            - name: YDB_PROFILE
+              value: service
+          volumeMounts:
+            - mountPath: /scripts
+              name: scripts
+          image: for-minikube/dev-ydb-client:stable
+          imagePullPolicy: Never
+      restartPolicy: OnFailure
+      serviceAccountName: logbroker
+      terminationGracePeriodSeconds: 0
+      volumes:
+        - name: scripts
+          emptyDir: {}

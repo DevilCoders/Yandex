@@ -1,0 +1,47 @@
+info: MAJOR update of MongoDB 4.0 version to 4.2
+clusters_selection:
+  db: >-
+    SELECT c.cid FROM (
+      SELECT cid 
+      FROM dbaas.clusters
+      WHERE
+        status = 'RUNNING'
+        AND type = 'mongodb_cluster'
+    ) c
+    JOIN dbaas.versions
+      ON versions.cid = c.cid
+        AND versions.component = 'mongodb'
+        AND versions.major_version = '4.0'
+pillar_change: >-
+  UPDATE dbaas.versions p SET
+    major_version = '4.2',
+    minor_version = default_v.minor_version,
+    package_version = default_v.package_version
+  FROM (
+    SELECT
+      dv.minor_version,
+      dv.package_version
+    FROM (
+      SELECT *,
+        'mongodb' AS component
+      FROM dbaas.clusters
+      WHERE clusters.cid = :cid
+    ) c
+    JOIN dbaas.versions v USING (cid, component)
+    JOIN dbaas.default_versions dv ON
+      dv.type = c.type
+      AND dv.component = v.component
+      AND dv.env = c.env
+      AND dv.edition = v.edition
+      AND dv.major_version = '4.2'
+  ) as default_v
+  WHERE p.cid = :cid AND component = 'mongodb'
+worker:
+  operation_type: mongodb_cluster_modify
+  task_type: mongodb_cluster_maintenance
+  task_args:
+    run_highstate: true
+    restart: true
+  timeout: 48h
+max_delay_days: 21
+min_days: 7

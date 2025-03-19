@@ -1,0 +1,516 @@
+{%- set peer_groups = {'downstream': downstream,
+                       'upstream4': upstream4|default({}),
+                       'upstream6': upstream6|default({}),
+                       'cloud_border': cloud_border|default({}),
+                       'reflector': reflector|default({})} %}
+{%- set hostname = grains['fqdn'] %}
+{%- set host_roles = grains['cluster_map']['hosts'][hostname]['roles'] -%}
+{%- set host_tags = salt['grains.get']('cluster_map:hosts:%s:tags' % hostname) %}
+{%- set base_role = salt['grains.get']('cluster_map:hosts:%s:base_role' % hostname) %}
+{%- set environment = grains['cluster_map']['environment'] %}
+{%- set rejected_rts_downstream = salt['pillar.get']('rejected_rts:downstream:%s' % environment, []) %}
+{# Use rkn only at special tagged cgws #}
+{%- set is_rkn_enabled = False %}
+{%- if 'rkn-cgw' in host_tags %}
+{%- set is_rkn_enabled = True %}
+{%- endif %}
+{%- set is_bgp2vpp = False %}
+{%-if 'bgp2vpp' in host_tags %}
+{%- set is_bgp2vpp = True %}
+{%- endif %}
+{%- set is_ipv6_mpls_enabled = False %}
+{%- if base_role == 'loadbalancer-node' or 'ipv6-mpls' in host_tags %}
+{%- set is_ipv6_mpls_enabled = True %}
+{%- endif %}
+{#- Note that using comment before code inside macro prevent from blank lines#}
+{#- Process all groups #}
+{%- macro iterate_group(filter=[]) %}
+{%-  for group in peer_groups %}
+{%-   if (not filter or group in filter) and peer_groups[group] and not peer_groups[group]['disabled'] %}
+{#- hack #}{{ caller(group) }}
+{%-   endif %}
+{%-  endfor %}
+{%- endmacro %}
+{#- Process all acl #}
+{%- macro iterate_acl(acl) %}
+{%- if acl %}
+{%-  for type in acl %}
+{%-   if acl[type] %}
+{#- hack #}{{ caller(type) }}
+{%-   endif %}
+{%-  endfor %}
+{%- endif %}
+{%- endmacro %}
+{#- Process acl prefixlength. Here we can't allow extra blank line #}
+{%- macro process_acl_prefix_legth(prefix) %}
+{%-  if prefix.length_from is defined or prefix.length_to is defined %}
+{%-   set is_ip6 = ':' in prefix.prefix %}
+{%-   set max = 128 if is_ip6 else 32 %}
+{%-   set from = prefix.length_from|default(0) %}
+{%-   set to = prefix.length_to|default(max)%}
+{#- hack #}  masklength-range: {{from}}..{{to}}
+{%-  endif %}
+{%- endmacro %}
+global:
+    config:
+        router-id: {{ router_id }}
+        as: {{ own_as }}
+    apply-policy:
+          config:
+              import-policy-list:
+{%-call(group) iterate_group(['downstream', 'upstream4', 'upstream6', 'reflector']) %}
+                  - {{ group }}-in
+{%- endcall %}
+                  - api-in
+{%-call(group) iterate_group(['reflector']) %}
+                  - yaggr-in
+{%- if is_rkn_enabled %}
+                  - reflector-rkn-in
+                  - upstream4-rkn-in
+{%- endif %}
+{%- endcall %}
+
+              default-import-policy: reject-route
+              export-policy-list:
+{%-call(group) iterate_group() %}
+                  - {{ group }}-out
+{%- endcall %}
+              default-export-policy: reject-route
+
+defined-sets:
+    neighbor-sets:
+{%-call(group) iterate_group() %}
+        - neighbor-set-name: {{ group }}
+          neighbor-info-list:
+{%- for peer in peer_groups[group]['peer_addresses'] %}
+              - {{ peer }}
+{%- endfor %}
+{%- endcall %}
+
+    prefix-sets:
+{%-call(group) iterate_group(['upstream6', 'reflector', 'cloud_border']) %}
+{%- set acl = peer_groups[group].get('acl') %}
+  {%- call(type) iterate_acl(acl)%}
+        - prefix-set-name: {{ group }}-{{ type }}
+    {%- if 'ipv6_mpls' in type %}
+          family: ipv6-labelled-unicast
+    {%- elif 'ipv6_l3vpn' in type %}
+          family: l3vpn-ipv6-unicast
+    {%- endif %}
+          prefix-list:
+    {%- for prefix in acl[type] %}
+              - ip-prefix: {{ prefix['prefix'] }}
+              {{ process_acl_prefix_legth(prefix) }}
+    {%- endfor %}
+  {%- endcall %}
+{%- endcall %}
+        - prefix-set-name: yaggr
+          prefix-list:
+              - ip-prefix: 0.0.0.0/0
+                masklength-range: 0..23
+        - prefix-set-name: l3vpn-ipv4-specifics
+          family: l3vpn-ipv4-unicast
+          prefix-list:
+              - ip-prefix: 0.0.0.0/0
+                masklength-range: 32..32
+        - prefix-set-name: l3vpn-ipv6-specifics
+          family: l3vpn-ipv6-unicast
+          prefix-list:
+              - ip-prefix: ::/0
+                masklength-range: 128..128
+
+    bgp-defined-sets:
+        ext-community-sets:
+{%- call(group) iterate_group(['reflector']) %}
+  {%- if peer_groups[group].get('rt_import') %}
+            - ext-community-set-name: {{group}}-rt-import
+              ext-community-list:
+    {%- for rt in peer_groups[group].get('rt_import') %}
+                - {{ rt }}
+    {%- endfor %}
+  {%- endif %}
+{%- endcall %}
+            - ext-community-set-name: downstream-rt-import
+              ext-community-list:
+{%- if 'cgw-nat' in host_roles %}
+  {%- for rt in vrf.get('tenant_route_targets', []) %}
+                - rt:{{ rt }}
+  {%- endfor %}
+{%- else %}
+  {%- if 'loadbalancer-node' in host_roles %}
+    {%- for rt in vrf.get('tenant_route_targets', []) %}
+                - rt:{{ rt }}
+    {%- endfor %}
+  {%- endif %}
+  {%- call(group) iterate_group(['upstream6']) %}
+                - rt:{{ vrf['import_route_targets']['ip6'] }}
+  {%- endcall %}
+  {%- call(group) iterate_group(['reflector']) %}
+                - rt:{{ vrf['import_route_targets']['ip4'] }}
+                - rt:{{ yaggr['upstream_rt'] }}
+  {%- endcall %}
+{%- endif %}
+{%- if rejected_rts_downstream %}
+            - ext-community-set-name: downstream-rt-reject
+              ext-community-list:
+{%- for rt in rejected_rts_downstream %}
+                - rt:{{ rt }}
+{%- endfor %}
+{%- endif %}
+        community-sets:
+            - community-set-name: community-api-import
+              community-list:
+                - 65535:65282
+            - community-set-name: community-yaggr
+              community-list:
+                - {{ yaggr['community'] }}
+            - community-set-name: community-border
+              community-list:
+                - 13238:35130
+                - 13238:35131
+{%- if is_rkn_enabled %}
+            - community-set-name: community-rkn-filter-node       ##added for rfn testing purpuises
+              community-list:                                     ##added for rfn testing purpuises
+                - 13238:35160                                     ##added for rfn testing purpuises
+            - community-set-name: community-rkn-all-routes        ##added for rfn testing purpuises
+              community-list:                                     ##added for rfn testing purpuises
+                - 65000:6600                                      ##added for rfn testing purpuises
+            - community-set-name: community-rkn-blacklist-routes  ##added for rfn testing purpuises
+              community-list:                                     ##added for rfn testing purpuises
+                - 65000:6602                                      ##added for rfn testing purpuises
+{%- endif %}
+
+policy-definitions:
+    - name: api-in
+      statements:
+        - conditions:
+            bgp-conditions:
+                as-path-length:
+                    operator: eq
+                    value: 0
+                match-community-set:
+                    community-set: community-api-import
+          actions:
+            bgp-actions:
+                set-community:
+                    options: remove
+                    set-community-method:
+                        communities-list:
+                            - 65535:65282
+            route-disposition: accept-route
+
+
+{%-call(group) iterate_group(['reflector']) %}
+    - name: yaggr-in
+      statements:
+        - conditions:
+            match-neighbor-set:
+                neighbor-set: {{ group }}
+            match-prefix-set:
+                prefix-set: yaggr
+            bgp-conditions:
+              match-community-set:
+                  community-set: community-yaggr
+          actions:
+            route-disposition: accept-route
+{%- if is_rkn_enabled %}
+    - name: {{ group }}-rkn-in
+      statements:
+        - conditions:
+            match-neighbor-set:
+                neighbor-set: {{ group }}
+            bgp-conditions:
+              match-community-set:
+                  community-set: community-rkn-all-routes
+          actions:
+            route-disposition: accept-route
+        - conditions:
+            match-neighbor-set:
+                neighbor-set: {{ group }}
+            bgp-conditions:
+              match-community-set:
+                  community-set: community-rkn-blacklist-routes
+          actions:
+            route-disposition: accept-route
+{%- endif %}
+{%- endcall %}
+
+    - name: downstream-in
+      statements:
+{%- if rejected_rts_downstream %}
+        - conditions:
+            match-neighbor-set:
+                neighbor-set: downstream
+            bgp-conditions:
+                match-ext-community-set:
+                    ext-community-set: downstream-rt-reject
+          actions:
+            route-disposition: reject-route
+{%- endif %}
+{%- for prefix_set in ['l3vpn-ipv4-specifics','l3vpn-ipv6-specifics'] %}
+        - conditions:
+            match-neighbor-set:
+                neighbor-set: downstream
+            match-prefix-set:
+                prefix-set: {{ prefix_set }}
+            bgp-conditions:
+{#- CLOUD-18787 lb-node accept all announce from another AZ for creating GRE tunnels #}
+{%- if base_role != 'loadbalancer-node' %}
+                {#- CLOUD-10725 accept only routes from own AZ #}
+                as-path-length:
+                    operator: eq
+                {#- Note: if CLOUD-10698 is done this should be changed by 0 #}
+                    value: 1
+{%- endif %}
+                match-ext-community-set:
+                    ext-community-set: downstream-rt-import
+          actions:
+            route-disposition: accept-route
+{%- endfor %}
+
+{%-call(group) iterate_group(['upstream4']) %}
+    - name: {{ group }}-in
+      statements:
+        - conditions:
+            match-neighbor-set:
+                neighbor-set: {{ group }}
+            bgp-conditions:
+                match-community-set:
+                    community-set: community-border
+          actions:
+            route-disposition: accept-route
+{%- if is_rkn_enabled %}
+    - name: {{ group }}-rkn-in
+      statements:
+        - conditions:
+            match-neighbor-set:
+                neighbor-set: {{ group }}
+            bgp-conditions:
+              match-community-set:
+                  community-set: community-rkn-filter-node
+          actions:
+            route-disposition: accept-route
+{%- endif %}
+{%- endcall %}
+
+{%- call(group) iterate_group(['upstream6', 'reflector']) %}
+    - name: {{ group }}-in
+      statements:
+  {%- if peer_groups[group].get('acl') and peer_groups[group]['acl'].get('prefix_list_deny_in') %}
+        - conditions:
+            match-neighbor-set:
+                neighbor-set: {{ group }}
+            match-prefix-set:
+                prefix-set: {{ group }}-prefix_list_deny_in
+          actions:
+            route-disposition: reject-route
+  {%- endif %}
+  {%- if peer_groups[group].get('rt_import') %}
+        - conditions:
+            match-neighbor-set:
+                neighbor-set: {{ group }}
+            bgp-conditions:
+                match-ext-community-set:
+                    ext-community-set: {{ group }}-rt-import
+          actions:
+            route-disposition: accept-route
+  {%- endif %}
+  {%- set was_types = [] %}
+  {%- for type in ['prefix_list_allow_in', 'prefix_list_allow_in_ipv6_mpls', 'prefix_list_allow_in_ipv6_l3vpn'] %}
+    {%- if peer_groups[group].get('acl') and peer_groups[group]['acl'].get(type) %}
+      {%- do was_types.append(type) %}
+        - conditions:
+            match-neighbor-set:
+                neighbor-set: {{ group }}
+            match-prefix-set:
+                prefix-set: {{ group }}-{{ type }}
+          actions:
+            route-disposition: accept-route
+    {%- endif %}
+  {%- endfor %}
+  {%- if not was_types %}
+        - conditions:
+            match-neighbor-set:
+                neighbor-set: {{ group }}
+          actions:
+            route-disposition: accept-route
+  {%- endif %}
+{%- endcall %}
+
+{%- call(group) iterate_group(['upstream6', 'reflector', 'cloud_border']) %}
+    - name: {{ group }}-out
+      statements:
+  {%- if peer_groups[group].get('acl') and peer_groups[group]['acl'].get('prefix_list_deny_out') %}
+        - conditions:
+            match-neighbor-set:
+                neighbor-set: {{ group }}
+            match-prefix-set:
+                prefix-set: {{ group }}-prefix_list_deny_out
+          actions:
+            route-disposition: reject-route
+  {%- endif %}
+  {%- set was_types = [] %}
+  {%- for type in ['prefix_list_allow_out', 'prefix_list_allow_out_ipv6_mpls', 'prefix_list_allow_out_ipv6_l3vpn'] %}
+    {%- if peer_groups[group].get('acl') and peer_groups[group]['acl'].get(type) %}
+      {%- do was_types.append(type) %}
+        - conditions:
+            match-neighbor-set:
+                neighbor-set: {{ group }}
+            match-prefix-set:
+                prefix-set: {{ group }}-{{type}}
+          actions:
+            bgp-actions:
+                set-next-hop: self
+                set-med: {{ peer_groups[group]['med'] }}
+{%- if peer_groups[group].get('communities, []') %}
+                set-community:
+                    options: ADD
+                    set-community-method:
+                        communities-list:
+      {%- for comm in peer_groups[group]['communities'] %}
+                           - {{ comm }}
+      {%- endfor %}
+{%- endif %}
+      {%- if 'local_pref' in peer_groups[group]%}
+                set-local-pref: {{ peer_groups[group]['local_pref']}}
+      {%- endif %}
+            route-disposition: accept-route
+    {%- endif %}
+  {%- endfor %}
+  {%- if not was_types %}
+        - conditions:
+            match-neighbor-set:
+                neighbor-set: {{ group }}
+          actions:
+            bgp-actions:
+                set-next-hop: self
+                set-med: {{ peer_groups[group]['med'] }}
+{%- if peer_groups[group].get('communities', []) %}
+                set-community:
+                    options: ADD
+                    set-community-method:
+                        communities-list:
+      {%- for comm in peer_groups[group].get('communities', []) %}
+                           - {{ comm }}
+      {%- endfor %}
+{%- endif %}
+      {%- if 'local_pref' in peer_groups[group]%}
+                set-local-pref: {{ peer_groups[group]['local_pref']}}
+      {%- endif %}
+            route-disposition: accept-route
+  {%- endif %}
+{%- endcall %}
+
+    - name: downstream-out
+      statements:
+        - conditions:
+            match-neighbor-set:
+                neighbor-set: downstream
+          actions:
+            bgp-actions:
+                set-med: {{ downstream['med'] }}
+                set-next-hop: self
+            route-disposition: accept-route
+
+{%-call(group) iterate_group(['upstream4']) %}
+    - name: {{ group }}-out
+      statements:
+        - conditions:
+            match-neighbor-set:
+                neighbor-set: {{ group }}
+          actions:
+            bgp-actions:
+                set-med: {{ peer_groups[group]['med'] }}
+                set-next-hop: self
+                set-community:
+                    options: ADD
+                    set-community-method:
+                        communities-list:
+    {%- for comm in upstream4['communities'] %}
+                           - {{ comm }}
+    {%- endfor %}
+            route-disposition: accept-route
+{%- endcall %}
+
+
+{%- set upstream_group_downstream_family_map = {'upstream6': 'l3vpn-ipv6-unicast',
+                                                'reflector': 'l3vpn-ipv4-unicast'} %}
+{%- set downstream_families = [] %}
+
+{%- call(group) iterate_group(['upstream6', 'reflector']) %}
+{%- set _ = downstream_families.append(upstream_group_downstream_family_map[group]) %}
+{%- endcall %}
+{# CLOUD-22115 disable upstream6, but accept l3vpn-ipv6-unicast announces from oct #}
+{%- if base_role == 'loadbalancer-node' and 'l3vpn-ipv6-unicast' not in downstream_families %}
+{%- do downstream_families.append('l3vpn-ipv6-unicast') %}
+{%- endif %}
+
+{%- set group_afi_safi_map = {'downstream': downstream_families,
+                              'upstream6': ['ipv6-unicast'],
+                              'upstream4': ['ipv4-labelled-unicast'],
+                              'cloud_border': ['ipv4-unicast'],
+                              'reflector': ['ipv4-unicast']} %}
+{%- if is_ipv6_mpls_enabled %}
+{%- do group_afi_safi_map['reflector'].extend(['ipv6-labelled-unicast','l3vpn-ipv6-unicast']) %}
+{%- do group_afi_safi_map['cloud_border'].extend(['ipv6-labelled-unicast','l3vpn-ipv6-unicast']) %}
+{%- endif %}
+peer-groups:
+{%- call(group) iterate_group(['downstream', 'upstream4', 'upstream6', 'reflector', 'cloud_border']) %}
+    - config:
+        peer-group-name: {{ group }}
+        peer-as: {{ peer_groups[group]['peer_as'] }}
+        local-as: {{ peer_groups[group]['local_as'] }}
+      ebgp-multihop:
+        config:
+          enabled: True
+          multihop-ttl: 64
+      as-path-options:
+        config:
+            allow-own-as: 5
+      ebgp-multihop:
+        config:
+          enabled: True
+          multihop-ttl: 64
+      timers:
+        config:
+          hold-time: 30
+          keepalive-interval: 10
+          connect-retry: 5
+  {%- if 'local_address' in peer_groups[group] %}
+      transport:
+        config:
+            local-address: {{ peer_groups[group].get('local_address') }}
+  {%- endif %}
+      afi-safis:
+  {%- for afi_safi in group_afi_safi_map[group] %}
+        - config:
+            afi-safi-name: {{ afi_safi }}
+  {%- endfor %}
+  {%- if is_bgp2vpp %}
+      graceful-restart:
+        config:
+          enabled: true
+          restart-time: 120
+  {%- endif %}
+{%- endcall %}
+
+{%- set group_peer_address_map = {'downstream': 'peer_addresses',
+                              'upstream6': 'full_addresses',
+                              'upstream4': 'peer_addresses',
+                              'cloud_border': 'peer_addresses',
+                              'reflector': 'peer_addresses'} %}
+neighbors:
+{%- call(group) iterate_group(['upstream6', 'upstream4', 'reflector', 'cloud_border', 'downstream']) %}
+{%- for peer in peer_groups[group][group_peer_address_map[group]] %}
+    - config:
+        neighbor-address: {{ peer }}
+        peer-group: {{ group }}
+{%- if is_bgp2vpp %}
+{#- CLOUD-18380: handle announces with own AS for gobgp 1.33 #}
+      as-path-options:
+        config:
+            allow-own-as: 5
+{%- endif %}
+{%- endfor %}
+{%- endcall %}
+

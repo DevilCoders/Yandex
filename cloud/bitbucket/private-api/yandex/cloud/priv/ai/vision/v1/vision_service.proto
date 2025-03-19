@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.ai.vision.v1;
+
+import "yandex/cloud/priv/ai/vision/v1/text_detection.proto";
+import "yandex/cloud/priv/ai/vision/v1/face_detection.proto";
+import "yandex/cloud/priv/ai/vision/v1/classification.proto";
+import "yandex/cloud/priv/ai/vision/v1/image_copy_search.proto";
+import "yandex/cloud/priv/validation.proto";
+import "yandex/cloud/priv/sensitive.proto";
+
+import "google/rpc/status.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/ai/vision/v1;vision";
+
+service VisionService {
+  rpc BatchAnalyze(BatchAnalyzeRequest) returns (BatchAnalyzeResponse) {
+  }
+}
+
+message BatchAnalyzeRequest {
+  repeated AnalyzeSpec analyze_specs = 1 [(size) = "1-8"];
+  string folder_id = 2 [(length) = "<=50"];
+}
+
+message AnalyzeSpec {
+  oneof source {
+    option (exactly_one) = true;
+
+    bytes content = 1 [(length) = "<=10485760", (sensitive) = true, (sensitive_type) = SENSITIVE_REMOVE];
+    string url = 2 [(length) = "<=2083"];
+    string signature = 5 [(length) = "<=16384"];
+  }
+  repeated Feature features = 3 [(size) = "1-8"];
+  string mime_type = 4 [(length) = "<=255"];
+}
+
+message Feature {
+  enum Type {
+    // Unspecified feature type.
+    TYPE_UNSPECIFIED = 0;
+    // OCR
+    TEXT_DETECTION = 1;
+    // Classification
+    CLASSIFICATION = 2;
+    // Face detection
+    FACE_DETECTION = 3;
+    // Image copy search
+    IMAGE_COPY_SEARCH = 4;
+  }
+  Type type = 1;
+  oneof config {
+    FeatureClassificationConfig classification_config = 2;
+    FeatureTextDetectionConfig text_detection_config = 3;
+  }
+}
+
+message FeatureClassificationConfig {
+  string model = 1 [(length) = "<=256"];
+}
+
+message FeatureTextDetectionConfig {
+  repeated string language_codes = 1 [(size) = "1-8", (length) = "<=3"];
+  string model = 2 [(length) = "<=50"];
+}
+
+message BatchAnalyzeResponse {
+  repeated AnalyzeResult results = 1;
+}
+
+message AnalyzeResult {
+  repeated FeatureResult results = 2;
+  // Return error in case of error with file processing
+  google.rpc.Status error = 1;
+}
+
+message FeatureResult {
+  oneof feature {
+    TextAnnotation text_detection = 2;
+    ClassAnnotation classification = 3;
+    FaceAnnotation face_detection = 4;
+    ImageCopySearchAnnotation image_copy_search = 5;
+  }
+  // Return error in case of error in feature application
+  google.rpc.Status error = 1;
+}

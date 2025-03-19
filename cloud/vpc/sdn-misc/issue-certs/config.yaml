@@ -1,0 +1,908 @@
+yc_crt:
+  profiles:
+    test:
+      endpoint: https://crt.cloud-preprod.yandex.net/
+      ca_type: ca
+      ca_name: "Yandex.Cloud PreProd Root CA"
+    prod:
+      endpoint: https://crt.cloud.yandex.net/
+      ca_type: ca
+      ca_name: YandexCloudInternalIntermediateCA
+    gpn:
+      endpoint: https://crt.cloud.yandex.net/
+      ca_type: gpn_ca
+      ca_name: GPNInternalRootCA
+  desired_ttl_days: 366
+  abc_service: 3023   # ycvpc
+
+secret_service:
+  agent_base_path: /usr/share/yc-secrets
+  base_role_abc_groups:
+    oct-head: &all_vpc
+      - abc_ycvpc
+    vpc-control: *all_vpc
+    vpc-api: *all_vpc
+    cgw: *all_vpc
+    cgw-dc: *all_vpc
+    cgw-ipv4: *all_vpc
+    cgw-ipv6: *all_vpc
+    cgw-nat: *all_vpc
+    loadbalancer-node: *all_vpc
+    loadbalancer-ctrl: *all_vpc
+    healthcheck-node: *all_vpc
+    healthcheck-ctrl: *all_vpc
+    head:
+      - abc_ycvpc
+      - abc_yccompute2
+    compute:
+      - abc_ycvpc
+      - abc_yccompute2
+      - abc_ycinfra
+  allowed_base_roles:
+    - oct-head
+    - vpc-control
+    - cgw
+    - cgw-dc
+    - cgw-ipv4
+    - cgw-ipv6
+    - cgw-nat
+    - loadbalancer-node
+    - loadbalancer-ctrl
+    - healthcheck-node
+    - healthcheck-ctrl
+    - vpc-api
+    - cloudvm
+    # NOTE: the following roles are only allowed for HW-LAB (dev env)
+    # - head
+    # - compute
+    # NOTE: the following roles are only allowed for HW-LAB, but exist only there
+    - compute-node-vm
+
+clusters:
+  monops:
+    hosts:
+      monops-lb:
+      - monops-preprod.cloud.yandex.net
+      - monops.cloud.yandex.net
+
+  cloudvm:
+    bootstrap_stand: dev
+    secret_profile: testing
+    prefix: cloudvm_oct
+    is_cloudvm: True
+    hosts:
+      oct-head: &cloudvm-oct-head
+      - oct-head1.cloud-lab.yandex.net
+      - oct-head2.cloud-lab.yandex.net
+      - oct-head3.cloud-lab.yandex.net
+      - oct-head4.cloud-lab.yandex.net
+      - oct-head5.cloud-lab.yandex.net
+      - oct-head6.cloud-lab.yandex.net
+      - oct-head7.cloud-lab.yandex.net
+      - oct-head8.cloud-lab.yandex.net
+      - oct-head9.cloud-lab.yandex.net
+      ipv6@oct-head: &cloudvm-oct-v6-head
+      - oct-head1-v6.cloud-lab.yandex.net
+      - oct-head2-v6.cloud-lab.yandex.net
+      - oct-head3-v6.cloud-lab.yandex.net
+      - oct-head4-v6.cloud-lab.yandex.net
+      - oct-head5-v6.cloud-lab.yandex.net
+      - oct-head6-v6.cloud-lab.yandex.net
+      - oct-head7-v6.cloud-lab.yandex.net
+      - oct-head8-v6.cloud-lab.yandex.net
+      - oct-head9-v6.cloud-lab.yandex.net
+    clients:
+      oct-clients: &cloudvm-oct-clients
+        head:
+        - head-oct-client.cloud-lab.yandex.net
+        vpc-api:
+        - vpc-api-oct-client.cloud-lab.yandex.net
+        e2e:
+        - e2e-oct-client.cloud-lab.yandex.net
+        provision:
+        - provision-oct-client.cloud-lab.yandex.net
+        discovery:
+        - discovery-oct-client.cloud-lab.yandex.net
+  hw-lab:
+    # NOTE: use the same set of certificates that is used on cloudvm for hw-labs
+    # hence the same prefix
+    bootstrap_stand: dev
+    secret_profile: testing
+    prefix: cloudvm_oct
+    hosts:
+      oct-head: *cloudvm-oct-head
+      ipv6@oct-head: *cloudvm-oct-v6-head
+    clients:
+      oct-clients: *cloudvm-oct-clients
+  hw-load-lab:
+    bootstrap_stand: dev
+    secret_profile: testing
+    hosts:
+      compute-node-vm:
+      - "*.svc.hw-load.cloud-lab.yandex.net"
+  hw11-lab:
+    bootstrap_stand: dev
+    secret_profile: testing
+    hosts:
+      compute-node-vm:
+      - "*.svc.hw11.cloud-lab.yandex.net"
+  sas@hw11-lab:
+    bootstrap_stand: dev
+    secret_profile: testing
+    zone_id: ru-lab1-b
+    scope: sas
+    prefix: hw11-lab_sas_oct
+    hosts:
+      oct-head:
+      - oct-sas1.v4.svc.hw11.cloud-lab.yandex.net
+      - oct-sas2.v4.svc.hw11.cloud-lab.yandex.net
+      - oct-sas3.v4.svc.hw11.cloud-lab.yandex.net
+      ipv6@oct-head:
+      - oct-sas1.svc.hw11.cloud-lab.yandex.net
+      - oct-sas2.svc.hw11.cloud-lab.yandex.net
+      - oct-sas3.svc.hw11.cloud-lab.yandex.net
+
+  ###############
+  #   TESTING   #
+  ###############
+  testing:
+    bootstrap_stand: testing
+    secret_profile: testing
+    hosts:
+      grpcsnhproxy@oct-head:
+      - oct-introspect.private-api.cloud-testing.yandex.net
+      vpc-control@vpc-control:
+      - vpc-control.private-api.cloud-testing.yandex.net
+      vpc-api@vpc-api:
+      - network-api-internal.private-api.cloud-testing.yandex.net
+      lb@loadbalancer-ctrl:
+      - lb.private-api.cloud-testing.yandex.net
+      hc@healthcheck-ctrl:
+      - hc.private-api.cloud-testing.yandex.net
+      loadbalancer-ctrl:
+      - lb-ctrl-rc1a-01.svc.cloud-testing.yandex.net
+      - lb-ctrl-rc1a-02.svc.cloud-testing.yandex.net
+      - lb-ctrl-rc1a-03.svc.cloud-testing.yandex.net
+      - lb-ctrl-rc1a-04.svc.cloud-testing.yandex.net
+      - lb-ctrl-rc1a-05.svc.cloud-testing.yandex.net
+      - lb-ctrl-rc1b-01.svc.cloud-testing.yandex.net
+      - lb-ctrl-rc1b-02.svc.cloud-testing.yandex.net
+      - lb-ctrl-rc1b-03.svc.cloud-testing.yandex.net
+      - lb-ctrl-rc1b-04.svc.cloud-testing.yandex.net
+      - lb-ctrl-rc1b-05.svc.cloud-testing.yandex.net
+      - lb-ctrl-rc1c-01.svc.cloud-testing.yandex.net
+      - lb-ctrl-rc1c-02.svc.cloud-testing.yandex.net
+      - lb-ctrl-rc1c-03.svc.cloud-testing.yandex.net
+      - lb-ctrl-rc1c-04.svc.cloud-testing.yandex.net
+      - lb-ctrl-rc1c-05.svc.cloud-testing.yandex.net
+      healthcheck-ctrl:
+      - hc-ctrl-rc1a-01.svc.cloud-testing.yandex.net
+      - hc-ctrl-rc1a-02.svc.cloud-testing.yandex.net
+      - hc-ctrl-rc1a-03.svc.cloud-testing.yandex.net
+      - hc-ctrl-rc1a-04.svc.cloud-testing.yandex.net
+      - hc-ctrl-rc1a-05.svc.cloud-testing.yandex.net
+      - hc-ctrl-rc1b-01.svc.cloud-testing.yandex.net
+      - hc-ctrl-rc1b-02.svc.cloud-testing.yandex.net
+      - hc-ctrl-rc1b-03.svc.cloud-testing.yandex.net
+      - hc-ctrl-rc1b-04.svc.cloud-testing.yandex.net
+      - hc-ctrl-rc1b-05.svc.cloud-testing.yandex.net
+      - hc-ctrl-rc1c-01.svc.cloud-testing.yandex.net
+      - hc-ctrl-rc1c-02.svc.cloud-testing.yandex.net
+      - hc-ctrl-rc1c-03.svc.cloud-testing.yandex.net
+      - hc-ctrl-rc1c-04.svc.cloud-testing.yandex.net
+      - hc-ctrl-rc1c-05.svc.cloud-testing.yandex.net
+      healthcheck-node:
+      - hc-node-rc1a-01.svc.cloud-testing.yandex.net
+      - hc-node-rc1a-02.svc.cloud-testing.yandex.net
+      - hc-node-rc1a-03.svc.cloud-testing.yandex.net
+      - hc-node-rc1a-04.svc.cloud-testing.yandex.net
+      - hc-node-rc1a-05.svc.cloud-testing.yandex.net
+      - hc-node-rc1b-01.svc.cloud-testing.yandex.net
+      - hc-node-rc1b-02.svc.cloud-testing.yandex.net
+      - hc-node-rc1b-03.svc.cloud-testing.yandex.net
+      - hc-node-rc1b-04.svc.cloud-testing.yandex.net
+      - hc-node-rc1b-05.svc.cloud-testing.yandex.net
+      - hc-node-rc1c-01.svc.cloud-testing.yandex.net
+      - hc-node-rc1c-02.svc.cloud-testing.yandex.net
+      - hc-node-rc1c-03.svc.cloud-testing.yandex.net
+      - hc-node-rc1c-04.svc.cloud-testing.yandex.net
+      - hc-node-rc1c-05.svc.cloud-testing.yandex.net
+      loadbalancer-node:
+      - lb-node-vla1.svc.cloud-testing.yandex.net
+      - lb-node-vla2.svc.cloud-testing.yandex.net
+      - lb-node-vla3.svc.cloud-testing.yandex.net
+      - lb-node-vla4.svc.cloud-testing.yandex.net
+      - lb-node-vla5.svc.cloud-testing.yandex.net
+      - lb-node-vla6.svc.cloud-testing.yandex.net
+      - lb-node-sas1.svc.cloud-testing.yandex.net
+      - lb-node-sas2.svc.cloud-testing.yandex.net
+      - lb-node-sas3.svc.cloud-testing.yandex.net
+      - lb-node-sas4.svc.cloud-testing.yandex.net
+      - lb-node-sas5.svc.cloud-testing.yandex.net
+      - lb-node-sas6.svc.cloud-testing.yandex.net
+      - lb-node-myt1.svc.cloud-testing.yandex.net
+      - lb-node-myt2.svc.cloud-testing.yandex.net
+      - lb-node-myt3.svc.cloud-testing.yandex.net
+      - lb-node-myt4.svc.cloud-testing.yandex.net
+      - lb-node-myt5.svc.cloud-testing.yandex.net
+      - lb-node-myt6.svc.cloud-testing.yandex.net
+    clients:
+      oct-clients:
+        head:
+        - head.oct-client.cloud-testing.yandex.net
+        vpc-api:
+        - vpc-api.oct-client.cloud-testing.yandex.net
+        e2e:
+        - e2e.oct-client.cloud-testing.yandex.net
+        provision:
+        - provision.oct-client.cloud-testing.yandex.net
+        discovery:
+        - discovery.oct-client.cloud-testing.yandex.net
+  vla@testing:
+    bootstrap_stand: testing
+    secret_profile: testing
+    scope: vla
+    zone_id: ru-central1-a
+    hosts:
+      oct-head:
+      - oct-vla1.v4.svc.cloud-testing.yandex.net
+      - oct-vla2.v4.svc.cloud-testing.yandex.net
+      - oct-vla3.v4.svc.cloud-testing.yandex.net
+      ipv6@oct-head:
+      - oct-vla1.svc.cloud-testing.yandex.net
+      - oct-vla2.svc.cloud-testing.yandex.net
+      - oct-vla3.svc.cloud-testing.yandex.net
+  sas@testing:
+    bootstrap_stand: testing
+    secret_profile: testing
+    scope: sas
+    zone_id: ru-central1-b
+    hosts:
+      oct-head:
+      - oct-sas1.v4.svc.cloud-testing.yandex.net
+      - oct-sas2.v4.svc.cloud-testing.yandex.net
+      - oct-sas3.v4.svc.cloud-testing.yandex.net
+      ipv6@oct-head:
+      - oct-sas1.svc.cloud-testing.yandex.net
+      - oct-sas2.svc.cloud-testing.yandex.net
+      - oct-sas3.svc.cloud-testing.yandex.net
+  myt@testing:
+    bootstrap_stand: testing
+    secret_profile: testing
+    scope: myt
+    zone_id: ru-central1-c
+    hosts:
+      oct-head:
+      - oct-myt1.v4.svc.cloud-testing.yandex.net
+      - oct-myt2.v4.svc.cloud-testing.yandex.net
+      - oct-myt3.v4.svc.cloud-testing.yandex.net
+      ipv6@oct-head:
+      - oct-myt1.svc.cloud-testing.yandex.net
+      - oct-myt2.svc.cloud-testing.yandex.net
+      - oct-myt3.svc.cloud-testing.yandex.net
+
+  ###############
+  #   PREPROD   #
+  ###############
+  preprod:
+    bootstrap_stand: preprod
+    secret_profile: preprod
+    hosts:
+      grpcsnhproxy@oct-head:
+      - oct-introspect.private-api.cloud-preprod.yandex.net
+      vpc-control@vpc-control:
+      - vpc-control.private-api.cloud-preprod.yandex.net
+      vpc-api@vpc-api:
+      - network-api-internal.private-api.cloud-preprod.yandex.net
+      lb@loadbalancer-ctrl:
+      - lb.private-api.cloud-preprod.yandex.net
+      hc@healthcheck-ctrl:
+      - hc.private-api.cloud-preprod.yandex.net
+      loadbalancer-ctrl:
+      - lb-ctrl-rc1a-01.svc.cloud-preprod.yandex.net
+      - lb-ctrl-rc1a-02.svc.cloud-preprod.yandex.net
+      - lb-ctrl-rc1a-03.svc.cloud-preprod.yandex.net
+      - lb-ctrl-rc1b-01.svc.cloud-preprod.yandex.net
+      - lb-ctrl-rc1b-02.svc.cloud-preprod.yandex.net
+      - lb-ctrl-rc1b-03.svc.cloud-preprod.yandex.net
+      - lb-ctrl-rc1c-01.svc.cloud-preprod.yandex.net
+      - lb-ctrl-rc1c-02.svc.cloud-preprod.yandex.net
+      - lb-ctrl-rc1c-03.svc.cloud-preprod.yandex.net
+      healthcheck-ctrl:
+      - hc-ctrl-rc1a-01.svc.cloud-preprod.yandex.net
+      - hc-ctrl-rc1a-02.svc.cloud-preprod.yandex.net
+      - hc-ctrl-rc1a-03.svc.cloud-preprod.yandex.net
+      - hc-ctrl-rc1b-01.svc.cloud-preprod.yandex.net
+      - hc-ctrl-rc1b-02.svc.cloud-preprod.yandex.net
+      - hc-ctrl-rc1b-03.svc.cloud-preprod.yandex.net
+      - hc-ctrl-rc1c-01.svc.cloud-preprod.yandex.net
+      - hc-ctrl-rc1c-02.svc.cloud-preprod.yandex.net
+      - hc-ctrl-rc1c-03.svc.cloud-preprod.yandex.net
+      healthcheck-node:
+      - hc-node-rc1a-01.svc.cloud-preprod.yandex.net
+      - hc-node-rc1a-02.svc.cloud-preprod.yandex.net
+      - hc-node-rc1a-03.svc.cloud-preprod.yandex.net
+      - hc-node-rc1b-01.svc.cloud-preprod.yandex.net
+      - hc-node-rc1b-02.svc.cloud-preprod.yandex.net
+      - hc-node-rc1b-03.svc.cloud-preprod.yandex.net
+      - hc-node-rc1c-01.svc.cloud-preprod.yandex.net
+      - hc-node-rc1c-02.svc.cloud-preprod.yandex.net
+      - hc-node-rc1c-03.svc.cloud-preprod.yandex.net
+      loadbalancer-node:
+      - lb-node-vla1.svc.cloud-preprod.yandex.net
+      - lb-node-vla2.svc.cloud-preprod.yandex.net
+      - lb-node-vla3.svc.cloud-preprod.yandex.net
+      - lb-node-vla4.svc.cloud-preprod.yandex.net
+      - lb-node-vla5.svc.cloud-preprod.yandex.net
+      - lb-node-vla6.svc.cloud-preprod.yandex.net
+      - lb-node-sas1.svc.cloud-preprod.yandex.net
+      - lb-node-sas2.svc.cloud-preprod.yandex.net
+      - lb-node-sas3.svc.cloud-preprod.yandex.net
+      - lb-node-sas4.svc.cloud-preprod.yandex.net
+      - lb-node-sas5.svc.cloud-preprod.yandex.net
+      - lb-node-sas6.svc.cloud-preprod.yandex.net
+      - lb-node-myt1.svc.cloud-preprod.yandex.net
+      - lb-node-myt2.svc.cloud-preprod.yandex.net
+      - lb-node-myt3.svc.cloud-preprod.yandex.net
+      - lb-node-myt4.svc.cloud-preprod.yandex.net
+      - lb-node-myt5.svc.cloud-preprod.yandex.net
+      - lb-node-myt6.svc.cloud-preprod.yandex.net
+    clients:
+      oct-clients:
+        head:
+        - head.oct-client.cloud-preprod.yandex.net
+        vpc-api:
+        - vpc-api.oct-client.cloud-preprod.yandex.net
+        e2e:
+        - e2e.oct-client.cloud-preprod.yandex.net
+        provision:
+        - provision.oct-client.cloud-preprod.yandex.net
+        discovery:
+        - discovery.oct-client.cloud-preprod.yandex.net
+  vla@preprod:
+    bootstrap_stand: preprod
+    secret_profile: preprod
+    scope: vla
+    zone_id: ru-central1-a
+    hosts:
+      oct-head:
+      - oct-vla1.v4.svc.cloud-preprod.yandex.net
+      - oct-vla2.v4.svc.cloud-preprod.yandex.net
+      - oct-vla3.v4.svc.cloud-preprod.yandex.net
+      - oct-vla4.v4.svc.cloud-preprod.yandex.net
+      - oct-vla5.v4.svc.cloud-preprod.yandex.net
+      ipv6@oct-head:
+      - oct-vla1.svc.cloud-preprod.yandex.net
+      - oct-vla2.svc.cloud-preprod.yandex.net
+      - oct-vla3.svc.cloud-preprod.yandex.net
+      - oct-vla4.svc.cloud-preprod.yandex.net
+      - oct-vla5.svc.cloud-preprod.yandex.net
+  sas@preprod:
+    bootstrap_stand: preprod
+    secret_profile: preprod
+    scope: sas
+    zone_id: ru-central1-b
+    hosts:
+      oct-head:
+      - oct-sas1.v4.svc.cloud-preprod.yandex.net
+      - oct-sas2.v4.svc.cloud-preprod.yandex.net
+      - oct-sas3.v4.svc.cloud-preprod.yandex.net
+      - oct-sas4.v4.svc.cloud-preprod.yandex.net
+      - oct-sas5.v4.svc.cloud-preprod.yandex.net
+      ipv6@oct-head:
+      - oct-sas1.svc.cloud-preprod.yandex.net
+      - oct-sas2.svc.cloud-preprod.yandex.net
+      - oct-sas3.svc.cloud-preprod.yandex.net
+      - oct-sas4.svc.cloud-preprod.yandex.net
+      - oct-sas5.svc.cloud-preprod.yandex.net
+  myt@preprod:
+    bootstrap_stand: preprod
+    secret_profile: preprod
+    scope: myt
+    zone_id: ru-central1-c
+    hosts:
+      oct-head:
+      - oct-myt1.v4.svc.cloud-preprod.yandex.net
+      - oct-myt2.v4.svc.cloud-preprod.yandex.net
+      - oct-myt3.v4.svc.cloud-preprod.yandex.net
+      - oct-myt4.v4.svc.cloud-preprod.yandex.net
+      - oct-myt5.v4.svc.cloud-preprod.yandex.net
+      ipv6@oct-head:
+      - oct-myt1.svc.cloud-preprod.yandex.net
+      - oct-myt2.svc.cloud-preprod.yandex.net
+      - oct-myt3.svc.cloud-preprod.yandex.net
+      - oct-myt4.svc.cloud-preprod.yandex.net
+      - oct-myt5.svc.cloud-preprod.yandex.net
+
+  ###############
+  #    PROD     #
+  ###############
+  prod:
+    bootstrap_stand: prod
+    secret_profile: prod
+    hosts:
+      grpcsnhproxy@oct-head:
+      - oct-introspect.private-api.cloud.yandex.net
+      vpc-control@vpc-control:
+      - vpc-control.private-api.cloud.yandex.net
+      vpc-api@vpc-api:
+      - network-api.private-api.cloud.yandex.net
+      lb@loadbalancer-ctrl:
+      - lb.private-api.cloud.yandex.net
+      hc@healthcheck-ctrl:
+      - hc.private-api.cloud.yandex.net
+      loadbalancer-ctrl:
+      - lb-ctrl-rc1a-01.svc.cloud.yandex.net
+      - lb-ctrl-rc1a-02.svc.cloud.yandex.net
+      - lb-ctrl-rc1a-03.svc.cloud.yandex.net
+      - lb-ctrl-rc1a-04.svc.cloud.yandex.net
+      - lb-ctrl-rc1a-05.svc.cloud.yandex.net
+      - lb-ctrl-rc1a-06.svc.cloud.yandex.net
+      - lb-ctrl-rc1b-01.svc.cloud.yandex.net
+      - lb-ctrl-rc1b-02.svc.cloud.yandex.net
+      - lb-ctrl-rc1b-03.svc.cloud.yandex.net
+      - lb-ctrl-rc1b-04.svc.cloud.yandex.net
+      - lb-ctrl-rc1b-05.svc.cloud.yandex.net
+      - lb-ctrl-rc1b-06.svc.cloud.yandex.net
+      - lb-ctrl-rc1c-01.svc.cloud.yandex.net
+      - lb-ctrl-rc1c-02.svc.cloud.yandex.net
+      - lb-ctrl-rc1c-03.svc.cloud.yandex.net
+      - lb-ctrl-rc1c-04.svc.cloud.yandex.net
+      - lb-ctrl-rc1c-05.svc.cloud.yandex.net
+      - lb-ctrl-rc1c-06.svc.cloud.yandex.net
+      healthcheck-ctrl:
+      - hc-ctrl-rc1a-01.svc.cloud.yandex.net
+      - hc-ctrl-rc1a-02.svc.cloud.yandex.net
+      - hc-ctrl-rc1a-03.svc.cloud.yandex.net
+      - hc-ctrl-rc1a-04.svc.cloud.yandex.net
+      - hc-ctrl-rc1a-05.svc.cloud.yandex.net
+      - hc-ctrl-rc1a-06.svc.cloud.yandex.net
+      - hc-ctrl-rc1b-01.svc.cloud.yandex.net
+      - hc-ctrl-rc1b-02.svc.cloud.yandex.net
+      - hc-ctrl-rc1b-03.svc.cloud.yandex.net
+      - hc-ctrl-rc1b-04.svc.cloud.yandex.net
+      - hc-ctrl-rc1b-05.svc.cloud.yandex.net
+      - hc-ctrl-rc1b-06.svc.cloud.yandex.net
+      - hc-ctrl-rc1c-01.svc.cloud.yandex.net
+      - hc-ctrl-rc1c-02.svc.cloud.yandex.net
+      - hc-ctrl-rc1c-03.svc.cloud.yandex.net
+      - hc-ctrl-rc1c-04.svc.cloud.yandex.net
+      - hc-ctrl-rc1c-05.svc.cloud.yandex.net
+      - hc-ctrl-rc1c-06.svc.cloud.yandex.net
+      healthcheck-node:
+      - hc-node-rc1a-01.svc.cloud.yandex.net
+      - hc-node-rc1a-02.svc.cloud.yandex.net
+      - hc-node-rc1a-03.svc.cloud.yandex.net
+      - hc-node-rc1a-04.svc.cloud.yandex.net
+      - hc-node-rc1a-05.svc.cloud.yandex.net
+      - hc-node-rc1a-06.svc.cloud.yandex.net
+      - hc-node-rc1a-07.svc.cloud.yandex.net
+      - hc-node-rc1a-08.svc.cloud.yandex.net
+      - hc-node-rc1a-09.svc.cloud.yandex.net
+      - hc-node-rc1a-10.svc.cloud.yandex.net
+      - hc-node-rc1a-11.svc.cloud.yandex.net
+      - hc-node-rc1a-12.svc.cloud.yandex.net
+      - hc-node-rc1a-13.svc.cloud.yandex.net
+      - hc-node-rc1a-14.svc.cloud.yandex.net
+      - hc-node-rc1a-15.svc.cloud.yandex.net
+      - hc-node-rc1a-16.svc.cloud.yandex.net
+      - hc-node-rc1a-17.svc.cloud.yandex.net
+      - hc-node-rc1a-18.svc.cloud.yandex.net
+      - hc-node-rc1a-19.svc.cloud.yandex.net
+      - hc-node-rc1a-20.svc.cloud.yandex.net
+      - hc-node-rc1b-01.svc.cloud.yandex.net
+      - hc-node-rc1b-02.svc.cloud.yandex.net
+      - hc-node-rc1b-03.svc.cloud.yandex.net
+      - hc-node-rc1b-04.svc.cloud.yandex.net
+      - hc-node-rc1b-05.svc.cloud.yandex.net
+      - hc-node-rc1b-06.svc.cloud.yandex.net
+      - hc-node-rc1b-07.svc.cloud.yandex.net
+      - hc-node-rc1b-08.svc.cloud.yandex.net
+      - hc-node-rc1b-09.svc.cloud.yandex.net
+      - hc-node-rc1b-10.svc.cloud.yandex.net
+      - hc-node-rc1b-11.svc.cloud.yandex.net
+      - hc-node-rc1b-12.svc.cloud.yandex.net
+      - hc-node-rc1b-13.svc.cloud.yandex.net
+      - hc-node-rc1c-01.svc.cloud.yandex.net
+      - hc-node-rc1c-02.svc.cloud.yandex.net
+      - hc-node-rc1c-03.svc.cloud.yandex.net
+      - hc-node-rc1c-04.svc.cloud.yandex.net
+      - hc-node-rc1c-05.svc.cloud.yandex.net
+      - hc-node-rc1c-06.svc.cloud.yandex.net
+      - hc-node-rc1c-07.svc.cloud.yandex.net
+      - hc-node-rc1c-08.svc.cloud.yandex.net
+      - hc-node-rc1c-09.svc.cloud.yandex.net
+      - hc-node-rc1c-10.svc.cloud.yandex.net
+      - hc-node-rc1c-11.svc.cloud.yandex.net
+      - hc-node-rc1c-12.svc.cloud.yandex.net
+      - hc-node-rc1c-13.svc.cloud.yandex.net
+      loadbalancer-node:
+      - honey-lb-node-myt1.svc.cloud.yandex.net
+      - honey-lb-node-myt2.svc.cloud.yandex.net
+      - honey-lb-node-sas1.svc.cloud.yandex.net
+      - honey-lb-node-sas2.svc.cloud.yandex.net
+      - honey-lb-node-vla1.svc.cloud.yandex.net
+      - honey-lb-node-vla2.svc.cloud.yandex.net
+      - lb-node-myt1.svc.cloud.yandex.net
+      - lb-node-myt2.svc.cloud.yandex.net
+      - lb-node-myt3.svc.cloud.yandex.net
+      - lb-node-myt4.svc.cloud.yandex.net
+      - lb-node-myt5.svc.cloud.yandex.net
+      - lb-node-myt6.svc.cloud.yandex.net
+      - lb-node-myt7.svc.cloud.yandex.net
+      - lb-node-myt8.svc.cloud.yandex.net
+      - lb-node-myt9.svc.cloud.yandex.net
+      - lb-node-myt10.svc.cloud.yandex.net
+      - lb-node-sas1.svc.cloud.yandex.net
+      - lb-node-sas2.svc.cloud.yandex.net
+      - lb-node-sas3.svc.cloud.yandex.net
+      - lb-node-sas4.svc.cloud.yandex.net
+      - lb-node-sas5.svc.cloud.yandex.net
+      - lb-node-sas6.svc.cloud.yandex.net
+      - lb-node-sas7.svc.cloud.yandex.net
+      - lb-node-sas8.svc.cloud.yandex.net
+      - lb-node-sas9.svc.cloud.yandex.net
+      - lb-node-sas10.svc.cloud.yandex.net
+      - lb-node-vla1.svc.cloud.yandex.net
+      - lb-node-vla2.svc.cloud.yandex.net
+      - lb-node-vla3.svc.cloud.yandex.net
+      - lb-node-vla4.svc.cloud.yandex.net
+      - lb-node-vla5.svc.cloud.yandex.net
+      - lb-node-vla6.svc.cloud.yandex.net
+      - lb-node-vla7.svc.cloud.yandex.net
+      - lb-node-vla8.svc.cloud.yandex.net
+      - lb-node-vla9.svc.cloud.yandex.net
+      - lb-node-vla10.svc.cloud.yandex.net
+      - lb-node-vla11.svc.cloud.yandex.net
+      - lb-node-vla12.svc.cloud.yandex.net
+      - lb-node-vla13.svc.cloud.yandex.net
+      - lb-node-vla14.svc.cloud.yandex.net
+      - lb-node-vla15.svc.cloud.yandex.net
+      - lb-node-vla16.svc.cloud.yandex.net
+      - lb-node-vla17.svc.cloud.yandex.net
+      - lb-node-vla18.svc.cloud.yandex.net
+      - lb-node-vla19.svc.cloud.yandex.net
+      - lb-node-vla20.svc.cloud.yandex.net
+      - lb-node-vla21.svc.cloud.yandex.net
+      - lb-node-vla22.svc.cloud.yandex.net
+      - lb-node-vla23.svc.cloud.yandex.net
+      - lb-node-vla24.svc.cloud.yandex.net
+      - lb-node-vla25.svc.cloud.yandex.net
+      - lb-node-vla26.svc.cloud.yandex.net
+      - lb-node-vla27.svc.cloud.yandex.net
+      - lb-node-vla28.svc.cloud.yandex.net
+      - lb-node-vla29.svc.cloud.yandex.net
+      - lb-node-vla30.svc.cloud.yandex.net
+    clients:
+      oct-clients:
+        head:
+        - head.oct-client.cloud.yandex.net
+        vpc-api:
+        - vpc-api.oct-client.cloud.yandex.net
+        e2e:
+        - e2e.oct-client.cloud.yandex.net
+        provision:
+        - provision.oct-client.cloud.yandex.net
+        discovery:
+        - discovery.oct-client.cloud.yandex.net
+  vla@prod:
+    bootstrap_stand: prod
+    secret_profile: prod
+    scope: vla
+    zone_id: ru-central1-a
+    hosts:
+      oct-head:
+      - oct-vla1.v4.svc.cloud.yandex.net
+      - oct-vla2.v4.svc.cloud.yandex.net
+      - oct-vla3.v4.svc.cloud.yandex.net
+      - oct-vla4.v4.svc.cloud.yandex.net
+      - oct-vla5.v4.svc.cloud.yandex.net
+      ipv6@oct-head:
+      - oct-vla1.svc.cloud.yandex.net
+      - oct-vla2.svc.cloud.yandex.net
+      - oct-vla3.svc.cloud.yandex.net
+      - oct-vla4.svc.cloud.yandex.net
+      - oct-vla5.svc.cloud.yandex.net
+  sas@prod:
+    bootstrap_stand: prod
+    secret_profile: prod
+    scope: sas
+    zone_id: ru-central1-b
+    hosts:
+      oct-head:
+      - oct-sas1.v4.svc.cloud.yandex.net
+      - oct-sas2.v4.svc.cloud.yandex.net
+      - oct-sas3.v4.svc.cloud.yandex.net
+      - oct-sas4.v4.svc.cloud.yandex.net
+      - oct-sas5.v4.svc.cloud.yandex.net
+      ipv6@oct-head:
+      - oct-sas1.svc.cloud.yandex.net
+      - oct-sas2.svc.cloud.yandex.net
+      - oct-sas3.svc.cloud.yandex.net
+      - oct-sas4.svc.cloud.yandex.net
+      - oct-sas5.svc.cloud.yandex.net
+  myt@prod:
+    bootstrap_stand: prod
+    secret_profile: prod
+    scope: myt
+    zone_id: ru-central1-c
+    hosts:
+      oct-head:
+      - oct-myt1.v4.svc.cloud.yandex.net
+      - oct-myt2.v4.svc.cloud.yandex.net
+      - oct-myt3.v4.svc.cloud.yandex.net
+      - oct-myt4.v4.svc.cloud.yandex.net
+      - oct-myt5.v4.svc.cloud.yandex.net
+      ipv6@oct-head:
+      - oct-myt1.svc.cloud.yandex.net
+      - oct-myt2.svc.cloud.yandex.net
+      - oct-myt3.svc.cloud.yandex.net
+      - oct-myt4.svc.cloud.yandex.net
+      - oct-myt5.svc.cloud.yandex.net
+
+  ###############
+  #    GPN      #
+  ###############
+  private-gpn-1:
+    bootstrap_stand: private-gpn-1
+    secret_profile: prod
+    hosts:
+      grpcsnhproxy@oct-head:
+      - oct-introspect.private-api.gpn.yandexcloud.net
+      vpc-control@vpc-control:
+      - vpc-control.private-api.gpn.yandexcloud.net
+      vpc-api@vpc-api:
+      - network-api-internal.private-api.gpn.yandexcloud.net
+
+      lb@loadbalancer-ctrl:
+      - lb.private-api.gpn.yandexcloud.net
+      hc@healthcheck-ctrl:
+      - hc.private-api.gpn.yandexcloud.net
+      loadbalancer-ctrl:
+      - lb-ctrl-spb99-01.svc.gpn.yandexcloud.net
+      - lb-ctrl-spb99-02.svc.gpn.yandexcloud.net
+      - lb-ctrl-spb99-03.svc.gpn.yandexcloud.net
+      healthcheck-ctrl:
+      - hc-ctrl-spb99-01.svc.gpn.yandexcloud.net
+      - hc-ctrl-spb99-02.svc.gpn.yandexcloud.net
+      - hc-ctrl-spb99-03.svc.gpn.yandexcloud.net
+      healthcheck-node:
+      - hc-node-spb99-01.svc.gpn.yandexcloud.net
+      - hc-node-spb99-02.svc.gpn.yandexcloud.net
+      - hc-node-spb99-03.svc.gpn.yandexcloud.net
+      loadbalancer-node:
+      - lb-node-spb99-1.svc.gpn.yandexcloud.net
+      - lb-node-spb99-2.svc.gpn.yandexcloud.net
+      - lb-node-spb99-3.svc.gpn.yandexcloud.net
+    clients:
+      oct-clients:
+        head:
+        - head.oct-client.gpn.yandexcloud.net
+        vpc-api:
+        - vpc-api.oct-client.gpn.yandexcloud.net
+        e2e:
+        - e2e.oct-client.gpn.yandexcloud.net
+        provision:
+        - provision.oct-client.gpn.yandexcloud.net
+        discovery:
+        - discovery.oct-client.gpn.yandexcloud.net
+
+  lnx@private-gpn-1:
+    bootstrap_stand: private-gpn-1
+    secret_profile: prod
+    scope: spb99
+    zone_id: ru-gpn-spb99
+    hosts:
+      oct-head:
+      - oct-spb99-1.v4.svc.gpn.yandexcloud.net
+      - oct-spb99-2.v4.svc.gpn.yandexcloud.net
+      - oct-spb99-3.v4.svc.gpn.yandexcloud.net
+      - oct-spb99-4.v4.svc.gpn.yandexcloud.net
+      - oct-spb99-5.v4.svc.gpn.yandexcloud.net
+      ipv6@oct-head:
+      - oct-spb99-1.svc.gpn.yandexcloud.net
+      - oct-spb99-2.svc.gpn.yandexcloud.net
+      - oct-spb99-3.svc.gpn.yandexcloud.net
+      - oct-spb99-4.svc.gpn.yandexcloud.net
+      - oct-spb99-5.svc.gpn.yandexcloud.net
+
+  ###############
+  #   PRIVATE   #
+  #   TESTING   #
+  ###############
+  private-testing:
+    bootstrap_stand: private-testing
+    secret_profile: testing
+    hosts:
+      grpcsnhproxy@oct-head:
+      - oct-introspect.private-api.private-testing.yandexcloud.net
+      vpc-control@vpc-control:
+      - vpc-control.private-api.private-testing.yandexcloud.net
+      vpc-api@vpc-api:
+      - network-api-internal.private-api.private-testing.yandexcloud.net
+      lb@loadbalancer-ctrl:
+      - lb.private-api.private-testing.yandexcloud.net
+      hc@healthcheck-ctrl:
+      - hc.private-api.private-testing.yandexcloud.net
+      loadbalancer-ctrl:
+      - lb-ctrl-sas-01.svc.private-testing.yandexcloud.net
+      - lb-ctrl-sas-02.svc.private-testing.yandexcloud.net
+      - lb-ctrl-sas-03.svc.private-testing.yandexcloud.net
+      healthcheck-ctrl:
+      - hc-ctrl-sas-01.svc.private-testing.yandexcloud.net
+      - hc-ctrl-sas-02.svc.private-testing.yandexcloud.net
+      - hc-ctrl-sas-03.svc.private-testing.yandexcloud.net
+      healthcheck-node:
+      - hc-node-sas-01.svc.private-testing.yandexcloud.net
+      - hc-node-sas-02.svc.private-testing.yandexcloud.net
+      - hc-node-sas-03.svc.private-testing.yandexcloud.net
+      loadbalancer-node:
+      - lb-node-sas-1.svc.private-testing.yandexcloud.net
+      - lb-node-sas-2.svc.private-testing.yandexcloud.net
+      - lb-node-sas-3.svc.private-testing.yandexcloud.net
+    clients:
+      oct-clients:
+        head:
+        - head.oct-client.private-testing.yandexcloud.net
+        vpc-api:
+        - vpc-api.oct-client.private-testing.yandexcloud.net
+        e2e:
+        - e2e.oct-client.private-testing.yandexcloud.net
+        provision:
+        - provision.oct-client.private-testing.yandexcloud.net
+        discovery:
+        - discovery.oct-client.private-testing.yandexcloud.net
+
+  sas@private-testing:
+    bootstrap_stand: private-testing
+    secret_profile: testing
+    scope: sas
+    zone_id: ru-private-testing
+    hosts:
+      oct-head:
+      - oct-sas-1.v4.svc.private-testing.yandexcloud.net
+      - oct-sas-2.v4.svc.private-testing.yandexcloud.net
+      - oct-sas-3.v4.svc.private-testing.yandexcloud.net
+      - oct-sas-4.v4.svc.private-testing.yandexcloud.net
+      - oct-sas-5.v4.svc.private-testing.yandexcloud.net
+      ipv6@oct-head:
+      - oct-sas-1.svc.private-testing.yandexcloud.net
+      - oct-sas-2.svc.private-testing.yandexcloud.net
+      - oct-sas-3.svc.private-testing.yandexcloud.net
+      - oct-sas-4.svc.private-testing.yandexcloud.net
+      - oct-sas-5.svc.private-testing.yandexcloud.net
+
+secret_groups:
+  monops:
+    base_roles:
+    - monops-lb
+    secrets:
+    - type: monops-pem
+      scope: HOST
+  oct-head:
+    base_roles:
+    - oct-head
+    secrets:
+    - type: oct-cloud-ca
+      scope: ROLE
+    - type: contrail-api-pem
+      scope: HOST
+    - type: oct-cassandra-truststore
+      scope: ROLE
+    - type: oct-cassandra-keystore
+      scope: HOST
+    - type: oct-database-secrets
+      scope: ROLE
+  oct-ipv6:
+    base_roles:
+    - ipv6@oct-head
+    secrets:
+    - type: contrail-api-v6-pem
+      scope: HOST
+  oct-rabbitmq:
+    base_roles:
+    - oct-head
+    secrets:
+    - type: oct-rabbitmq-ca
+      scope: ROLE
+    - type: oct-rabbitmq-key
+      scope: HOST
+    - type: oct-rabbitmq-cookie
+      scope: ROLE
+    - type: oct-rabbitmq-secrets
+      scope: ROLE
+  oct-clients:
+    client_group: oct-clients
+    secrets:
+    - type: oct-client-head
+      scope: ROLE
+    - type: oct-client-vpc-api
+      scope: ROLE
+    - type: oct-client-e2e
+      scope: ROLE
+    - type: oct-client-provision
+      scope: ROLE
+    - type: oct-client-discovery
+      scope: ROLE
+  grpcsnhproxy:
+    base_roles:
+    - grpcsnhproxy@oct-head
+    secrets:
+    - type: grpcsnhproxy-cert-pem
+      scope: ROLE
+    - type: grpcsnhproxy-key-pem
+      scope: ROLE
+  vpc-api:
+    base_roles:
+    - vpc-api@vpc-api
+    secrets:
+    - type: vpc-api-server-pem
+      scope: ROLE
+  vpc-control:
+    base_roles:
+    - vpc-control@vpc-control
+    secrets:
+    - type: vpc-control-cert-pem
+      scope: ROLE
+    - type: vpc-control-key-pem
+      scope: ROLE
+  # wildcard certificates for vpc-node (only for labs)
+  vpc-node-compute:
+    all_hosts_cert: true
+    base_roles:
+    - compute-node-vm
+    secrets:
+    - type: vpc-node-wildcard-cert-pem
+      scope: ROLE
+    - type: vpc-node-wildcard-key-pem
+      scope: ROLE
+    - type: vpc-node-wildcard-ca-pem
+      scope: ROLE
+  compute_node:
+    all_hosts_cert: true
+    base_roles:
+      - compute-node-vm
+    secrets:
+      - type: compute-node-wildcard-pem
+        scope: ROLE
+
+  ylb-host-tls-lb-node:
+    base_roles:
+    - loadbalancer-node
+    secrets:
+    - type: ylb-host-cert-lb-node-pem
+      scope: HOST
+
+  ylb-host-tls-hc-node:
+    base_roles:
+    - healthcheck-node
+    secrets:
+    - type: ylb-host-cert-hc-node-pem
+      scope: HOST
+
+  ylb-host-tls-lb-ctrl:
+    base_roles:
+    - loadbalancer-ctrl
+    secrets:
+    - type: ylb-host-cert-lb-ctrl-pem
+      scope: HOST
+
+  ylb-host-tls-hc-ctrl:
+    base_roles:
+    - healthcheck-ctrl
+    secrets:
+    - type: ylb-host-cert-hc-ctrl-pem
+      scope: HOST
+
+  hc-ctrl-api:
+    base_roles:
+    - hc@healthcheck-ctrl
+    secrets:
+    - type: hc-ctrl-server-pem
+      scope: ROLE
+  lb-ctrl-api:
+    base_roles:
+    - lb@loadbalancer-ctrl
+    secrets:
+    - type: lb-ctrl-server-pem
+      scope: ROLE

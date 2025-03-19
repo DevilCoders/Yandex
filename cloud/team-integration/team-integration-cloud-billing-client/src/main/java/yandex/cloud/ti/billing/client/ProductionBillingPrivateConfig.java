@@ -1,0 +1,26 @@
+package yandex.cloud.ti.billing.client;
+
+import java.time.Duration;
+
+import lombok.Value;
+import org.jetbrains.annotations.NotNull;
+
+@Value
+public class ProductionBillingPrivateConfig implements BillingPrivateConfig {
+
+    @NotNull
+    String host;
+
+    int maxRetries;
+
+    int port;
+
+    @NotNull
+    Duration tcpKeepaliveInterval;
+
+    @NotNull
+    Duration timeout;
+
+    boolean tls;
+
+}

@@ -1,0 +1,106 @@
+{
+  "variables":
+  {
+    "endpoint": "{{env `YC_ENDPOINT`}}",
+    "service_account_key_file": "{{env `YC_BUILD_SERVICE_ACCOUNT_SECRET`}}",
+    "mkt_s3_access_key": "{{env `YC_MKT_DISTR_S3_ACCESS_KEY`}}",
+    "mkt_s3_secret_key": "{{env `YC_MKT_DISTR_S3_SECRET_KEY`}}",
+
+    "source_image_name": "windows-2019-dc-base-v20200824",
+    "source_image_folder_id": "{{env `YC_DIRTY_IMAGES_FOLDER_ID`}}",
+
+    "licenses_count": "5",
+    "agreement_number": "88637253",
+
+    "image_family": "windows-2019-dc-gvlk-rds-{{user `licenses_count`}}",
+    "image_description": "Microsoft Windows Server 2019 Datacenter with {{user `licenses_count`}} RDS licenses",
+    
+    "folder_id": "{{env `YC_BUILD_FOLDER_ID`}}",
+    "zone": "{{env `YC_ZONE`}}",
+    "subnet_id": "{{env `YC_BUILD_SUBNET`}}",
+
+    "username": "Administrator",
+    "generated_password": "{{ split uuid \"-\" 4 }}P@sS!1"
+  },
+  "builders":
+  [
+    {
+      "type": "yandex",
+      "name": "{{user `image_family`}}",
+      "endpoint": "{{user `endpoint`}}",
+      "service_account_key_file": "{{user `service_account_key_file`}}",
+
+      "source_image_name": "{{user `source_image_name`}}",
+      "source_image_folder_id": "{{user `source_image_folder_id`}}",
+
+      "image_name": "{{user `image_family`}}-v{{isotime \"20060102-0304\"}}",
+      "image_family": "{{user `image_family`}}",
+      "image_description": "{{user `image_description`}}",
+
+      "folder_id": "{{user `folder_id`}}",
+      "instance_name": "{{build_name}}-v{{isotime \"20060102-0304\"}}",
+      "metadata": { "user-data": "net user Administrator \"{{user `generated_password`}}\"" },
+      "platform_id": "standard-v2",
+      "instance_cores": "4",
+      "instance_mem_gb": "8",
+      "disk_size_gb": 50,
+      "disk_type": "network-ssd",
+      "zone": "{{user `zone`}}",
+      "subnet_id": "{{user `subnet_id`}}",
+      "use_internal_ip": "true",
+      "use_ipv4_nat": true,
+
+      "communicator": "winrm",
+      "winrm_username": "{{user `username`}}",
+      "winrm_password": "{{user `generated_password`}}",
+      "winrm_use_ssl": "true",
+      "winrm_insecure": "true",
+      "winrm_use_ntlm": "true",
+      "winrm_timeout": "30m",
+      "state_timeout": "30m",
+      "max_retries": 30
+    }
+  ],
+  "provisioners":
+  [
+    { "type": "shell-local", "inline": ["echo \"pwd is {{ user `generated_password` }}\""] },
+    {
+      "type": "powershell",
+      "elevated_user": "Administrator",
+      "elevated_password": "{{user `generated_password`}}",
+      "environment_vars": [
+        "AWS_ACCESS_KEY_ID={{user `mkt_s3_access_key`}}",
+        "AWS_SECRET_ACCESS_KEY={{user `mkt_s3_secret_key`}}"
+      ],
+      "script": "ensure-bootstrapped.ps1"
+    },
+    {
+      "type": "powershell",
+      "inline": ["& C:\\bootstrap\\windows-scripts\\invoke-buildstep.ps1 -StepAction Ensure -StepSetting rdls -StepArgs '-Count {{user `licenses_count`}} -Agreement {{user `agreement_number`}}'"]
+    },
+    {
+      "type": "powershell",
+      "environment_vars": [
+        "AWS_ACCESS_KEY_ID={{user `mkt_s3_access_key`}}",
+        "AWS_SECRET_ACCESS_KEY={{user `mkt_s3_secret_key`}}"
+      ],
+      "inline": [
+        "& C:\\bootstrap\\windows-scripts\\invoke-buildstep.ps1 -StepAction Ensure -StepSetting CloudbaseInit"
+      ]
+    },
+    { "type": "powershell", "inline": [ "& C:\\bootstrap\\windows-scripts\\invoke-buildstep.ps1 -StepAction Ensure -StepSetting Activaded" ] },
+    { "type": "powershell", "inline": [ "& C:\\bootstrap\\windows-scripts\\invoke-buildstep.ps1 -StepAction Ensure -StepSetting adminpwdneverexp" ] },
+    { "type": "powershell", "inline": [ "& C:\\bootstrap\\windows-scripts\\invoke-buildstep.ps1 -StepAction Ensure -StepSetting Packertasksremoved" ] },
+    { "type": "powershell", "inline": [ "& C:\\bootstrap\\windows-scripts\\invoke-buildstep.ps1 -StepAction Ensure -StepSetting UserdataRemoved" ] },
+    { "type": "powershell", "inline": [ "& C:\\bootstrap\\windows-scripts\\invoke-buildstep.ps1 -StepAction Ensure -StepSetting Cleanup" ] },
+    { "type": "powershell", "inline": [ "shutdown /s /t 30" ] },
+    { "type": "shell-local", "pause_before": "5m", "inline": ["echo \"some time to shutdown :-(\""] }
+  ],
+  "post-processors": [
+    {
+      "type": "manifest",
+      "output": "{{ pwd }}/manifest.json",
+      "strip_path": true
+    }
+  ]
+}

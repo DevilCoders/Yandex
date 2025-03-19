@@ -1,0 +1,64 @@
+USE %YT_CLUSTER%;
+
+PRAGMA yt.InferSchema = '1';
+PRAGMA yt.Pool = "cloud_analytics_pool";
+
+$format = DateTime::Format("%Y-%m-%d %H:%M:%S");
+
+$table_name_date_format = '%Y-%m-%dT%H:%M:%S+00:00';
+$dt_parse = DateTime::Parse($table_name_date_format);
+
+$cloud_owners_inc = (
+    select
+      max_by(_other, tt.created_at) as _other,
+      max_by(cloud_created_at, tt.created_at) as cloud_created_at,
+      tt.cloud_id,
+      max_by(cloud_name, tt.created_at) as cloud_name,
+      max_by(cloud_status, tt.created_at) as cloud_status,
+      max_by(email, tt.created_at) as email,
+      max_by(first_name, tt.created_at) as first_name,
+      max_by(id, tt.created_at) as id,
+      max_by(last_name, tt.created_at) as last_name,
+      maX_by(login, tt.created_at) as login,
+      maX_by(mail_billing, tt.created_at) as mail_billing,
+      maX_by(mail_event, tt.created_at) as mail_event,
+      maX_by(mail_feature, tt.created_at) as mail_feature,
+      maX_by(mail_info, tt.created_at) as mail_info,
+      maX_by(mail_marketing, tt.created_at) as mail_marketing,
+      maX_by(mail_promo, tt.created_at) as mail_promo,
+      maX_by(mail_support, tt.created_at) as mail_support,
+      maX_by(mail_tech, tt.created_at) as mail_tech,
+      maX_by(mail_technical, tt.created_at) as mail_technical,
+      maX_by(mail_testing, tt.created_at) as mail_testing,
+      maX_by(passport_uid, tt.created_at) as passport_uid,
+      maX_by(phone, tt.created_at) as phone,
+      maX_by(timezone, tt.created_at) as timezone,
+      maX_by(user_settings_email, tt.created_at) as user_settings_email,
+      maX_by(user_settings_language, tt.created_at) as user_settings_language
+    from (
+        SELECT
+           $format($dt_parse(t.cloud_created_at)) as created_at,
+           t.*
+          from range(`//home/cloud_analytics/import/iam/cloud_owners/1h`) as t
+    ) as tt
+    group by tt.cloud_id
+);
+
+insert into `//home/cloud_analytics/import/iam/cloud_owners_history` with truncate
+select t.*
+  from $cloud_owners_inc as t
+  where 1=1
+    and t.passport_uid not in (select passport_uid from `//home/cloud_analytics/dwh/stg/iam_anonimize`)
+    and t.cloud_id not in (select cloud_id from `//home/cloud_analytics/dwh/stg/iam_anonimize`)
+  union all
+  select hist.*
+    from `//home/cloud_analytics/import/iam/cloud_owners_history` as hist
+    left
+    only
+    join $cloud_owners_inc as inc
+      on hist.cloud_id = inc.cloud_id
+   where 1=1
+     and hist.passport_uid not in (select passport_uid from `//home/cloud_analytics/dwh/stg/iam_anonimize`)
+     and hist.cloud_id not in (select cloud_id from `//home/cloud_analytics/dwh/stg/iam_anonimize`)
+;
+

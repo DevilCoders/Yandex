@@ -1,0 +1,34 @@
+#cloud-config
+preserve_hostname: false
+fqdn: ${fqdn}
+hostname: ${fqdn}
+write_files:
+- path: /etc/yc/schecker/migrator/yc-schecker-migrator.config.yaml
+  permissions: "0660"
+  content: |
+    ${indent(4, "${migrator-config}")}
+- path: /etc/yc/schecker/schecker-swiss-knife/yc-schecker-swiss-knife.config.yaml
+  permissions: "0660"
+  content: |
+    ${indent(4, "${schecker-swiss-knife-config}")}
+- path: /etc/yc/schecker/syncer/yc-schecker-syncer.config.yaml
+  permissions: "0660"
+  content: |
+    ${indent(4, "${syncer-config}")}
+- path: /etc/yc/schecker/parser/yc-schecker-parser.config.yaml
+  permissions: "0660"
+  content: |
+    ${indent(4, "${parser-config}")}
+runcmd:
+- echo deb http://yandex-cloud-secure.dist.yandex.ru/yandex-cloud-secure unstable/amd64/ | tee /etc/apt/sources.list.d/yandex-cloud-secure-unstable.list
+- echo deb http://yandex-cloud-secure.dist.yandex.ru/yandex-cloud-secure unstable/all/ | tee -a /etc/apt/sources.list.d/yandex-cloud-secure-unstable.list
+- apt update && apt install -o Dpkg::Options::="--force-confold" -y yc-schecker-migrator yc-schecker-parser yc-schecker-swiss-knife yc-schecker-syncer
+- mkdir -p /var/log/schecker && chmod 777 /var/log/schecker/
+- usermod -G root yc-schecker-swiss-knife
+- usermod -G root yc-schecker-parser
+- usermod -G root yc-schecker-syncer
+- /usr/bin/yc-schecker-migrator -cfg /etc/yc/schecker/migrator/yc-schecker-migrator.config.yaml
+- systemctl enable yc-schecker-swiss-knife && systemctl start yc-schecker-swiss-knife
+- systemctl enable yc-schecker-parser && systemctl start yc-schecker-parser
+- systemctl enable yc-schecker-syncer && systemctl start yc-schecker-syncer
+

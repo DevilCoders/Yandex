@@ -1,0 +1,83 @@
+{
+  "variables": {
+    "endpoint": "{{env `YC_ENDPOINT`}}",
+    "service_account_key_file": "{{env `YC_BUILD_SERVICE_ACCOUNT_SECRET`}}",
+    "subnet_id": "{{env `YC_BUILD_SUBNET`}}",
+    "zone": "{{env `YC_ZONE`}}",
+    "folder_id": "{{env `YC_BUILD_FOLDER_ID`}}",
+    "dirty_images_folder_id": "{{env `YC_DIRTY_IMAGES_FOLDER_ID`}}"
+  },
+  "builders": [
+    {
+      "type": "yandex",
+      "endpoint": "{{user `endpoint`}}",
+      "folder_id": "{{user `folder_id`}}",
+      "subnet_id": "{{user `subnet_id`}}",
+      "zone": "{{user `zone`}}",
+      "labels": {},
+      "use_ipv4_nat": true,
+      "use_internal_ip": true,
+      "service_account_key_file": "{{user `service_account_key_file`}}",
+      "image_name": "debian-10-gpu-{{isotime \"060102-1504\"}}",
+      "image_family": "debian-10-gpu",
+      "image_labels": {},
+      "image_description": "debian 10 gpu",
+      "source_image_folder_id": "{{user `dirty_images_folder_id`}}",
+      "source_image_name": "debian-10-gpu-dirty",
+      "platform_id": "gpu-standard-v1",
+      "disk_size_gb": 30,
+      "disk_type": "network-hdd",
+      "instance_gpus": "1",
+      "instance_cores": "8",
+      "instance_mem_gb": "96",
+      "ssh_username": "debian"
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "shell-local",
+      "inline": [
+        "wget \"https://storage.yandexcloud.net/yc-marketplace-image-tests/yc-image-cleanup.sh\""
+      ]
+    },
+    {
+      "type": "file",
+      "source": "yc-image-cleanup.sh",
+      "destination": "yc-image-cleanup.sh",
+      "generated": true
+    },
+    {
+      "type": "shell-local",
+      "inline": [
+        "rm yc-image-cleanup.sh"
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "while [ ! -f /var/lib/cloud/instance/boot-finished ]; do echo 'Waiting for cloud-init...'; sleep 5; done"
+      ]
+    },
+    {
+      "type": "shell",
+      "execute_command": "sudo {{ .Vars }} bash '{{ .Path }}'",
+      "pause_before": "5s",
+      "scripts": [
+        "install.sh"
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "sudo bash -c 'chmod u+x yc-image-cleanup.sh && ./yc-image-cleanup.sh -c && ./yc-image-cleanup.sh -d'"
+      ]
+    }
+  ],
+  "post-processors": [
+    {
+      "type": "manifest",
+      "output": "{{ pwd }}/manifest.json",
+      "strip_path": true
+    }
+  ]
+}

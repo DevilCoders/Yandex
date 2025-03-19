@@ -1,0 +1,144 @@
+apiVersion: v1
+kind: PodList
+items:
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: api-infrastructure
+    namespace: kube-system
+    annotations:
+      config_digest: ${infra_config_digest}
+      scheduler.alpha.kubernetes.io/critical-pod: ""
+    labels:
+      role: api
+  spec:
+    priority: 2000000001
+    hostNetwork: true
+    hostPID: true
+    priorityClassName: system-cluster-critical
+    initContainers:
+      - name: deploy-infra-configs
+        image: cr.yandex/crp7nvlkttssi7kapoho/infra/metadata:${metadata_version}
+        command:
+          - /usr/bin/metadata
+          - --attribute-name
+          - infra-configs
+        imagePullPolicy: Always
+        volumeMounts:
+          - name: all-configs
+            mountPath: /etc
+            terminationGracePeriodSeconds: 30
+    containers:
+      - name: solomon-agent
+        image: cr.yandex/crpr3khkepsccf25vvt6/solomon-agent:${solomon_version}
+        resources:
+          requests:
+            memory: "512Mi"
+          limits:
+            memory: "512Mi"
+        volumeMounts:
+          - name: solomon-agent-config
+            mountPath: /etc/solomon-agent/
+            readOnly: true
+    volumes:
+      - name: all-configs
+        hostPath:
+          path: /etc
+          type: DirectoryOrCreate
+      - name: var-log
+        hostPath:
+          path: /var/log
+      - name: solomon-agent-config
+        hostPath:
+          path: /etc/solomon-agent
+      - name: run-ycm
+        hostPath:
+          type: DirectoryOrCreate
+          path: /run/ycm
+      - name: etc-certs
+        hostPath:
+          path: /etc/ssl/certs/
+      - name: usr-local-certs
+        hostPath:
+          path: /usr/local/share/ca-certificates
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: api-static
+    namespace: kube-system
+    labels:
+      role: api
+    annotations:
+      config_digest: ${config_digest}
+      scheduler.alpha.kubernetes.io/critical-pod: ""
+  spec:
+    priority: 2000000001
+    priorityClassName: system-cluster-critical
+    hostNetwork: true
+    initContainers:
+    - name: deploy-configs
+      image: cr.yandex/crp7nvlkttssi7kapoho/infra/metadata:${metadata_version}
+      volumeMounts:
+      - name: all-configs
+        mountPath: /etc
+        terminationGracePeriodSeconds: 30
+      - name: usr-local
+        mountPath: /usr/local
+        terminationGracePeriodSeconds: 30
+    containers:
+    - name: certificate-manager-data-plane
+      image: cr.yandex/crpqpgm64ssf3f4rhpj4/certificate-manager-data-plane:${application_version}
+      resources:
+        requests:
+          memory: ${java_pod_memory}
+        limits:
+          memory: ${java_pod_memory}
+      env:
+      - name: APPLICATION_YAML
+        value: /etc/certificate-manager/application.yaml
+      - name: APPLICATION_LOG_DIR
+        value: /var/log/certificate-manager
+      - name: APPLICATION_LOG_FILE_MAX_FILES
+        value: "3"
+      - name: APPLICATION_ACCESS_LOG_FILE_MAX_FILES
+        value: "3"
+      - name: JAVA_TOOL_OPTIONS
+        value: "-Xmx${java_heap_memory} -XX:-UseContainerSupport -Djava.net.preferIPv6Addresses=true -Dfile.encoding=UTF-8 -Dlog4j2.contextSelector=org.apache.logging.log4j.core.async.AsyncLoggerContextSelector -Dlog4j2.asyncQueueFullPolicy=Discard -Dlog4j2.discardThreshold=OFF -Xlog:gc*:file=/var/log/certificate-manager/gc.log:time,uptime:filecount=10,filesize=100M"
+      volumeMounts:
+      - name: certificate-manager-configs
+        mountPath: /etc/certificate-manager
+        readOnly: true
+      - name: run-certificate-manager
+        mountPath: /run/certificate-manager
+        readOnly: true
+      - name: var-certificate-manager
+        mountPath: /var/certificate-manager
+        terminationGracePeriodSeconds: 30
+      - name: var-log-certificate-manager
+        mountPath: /var/log/certificate-manager
+    volumes:
+    - name: all-configs
+      hostPath:
+        path: /etc
+        type: DirectoryOrCreate
+    - name: certificate-manager-configs
+      hostPath:
+        path: /etc/certificate-manager
+        type: DirectoryOrCreate
+    - name: run-certificate-manager
+      hostPath:
+        path: /run/certificate-manager
+        type: DirectoryOrCreate
+    - name: usr-local
+      hostPath:
+       path: /usr/local
+       type: DirectoryOrCreate
+    - name: var-certificate-manager
+      hostPath:
+        path: /var/certificate-manager
+        type: DirectoryOrCreate
+    - name: var-log-certificate-manager
+      hostPath:
+        path: /var/log/certificate-manager
+        type: DirectoryOrCreate
+${api_podmanifest}

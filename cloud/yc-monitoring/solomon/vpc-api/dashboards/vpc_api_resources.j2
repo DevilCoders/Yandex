@@ -1,0 +1,33 @@
+{% extends "../../base/dashboard.j2" %}
+
+{% macro render_resource(title, allocator, resource_id, subtitle) %}
+    {% set query = "sensor=resources_allocator_usage&allocator=" + allocator + "&graph=vpc-api-allocator_resources&resource_id=" + resource_id %}
+    {{ render_panel(title, "cloud_" + env + "_vpc-api", "vpc-config-plane", query, subtitle) }}
+{% endmacro %}
+
+{% macro render_fip4_addresses(address_type, subtitle) %}
+{
+  "panels": [
+    {% for az in zones_by_env[env] %}
+        {{ render_resource(address_type + " @ " + az.prefix|upper, "fip4", address_type + "@" + az.zone, subtitle) }}
+        {% if not loop.last %},{% endif %}
+    {% endfor %}
+  ]
+}
+{% endmacro %}
+
+{% block rows %}
+[
+    {{ render_fip4_addresses(address_type="public",         subtitle="public ip") }},
+    {{ render_fip4_addresses(address_type="qrator",         subtitle="ddos protected ip") }},
+    {{ render_fip4_addresses(address_type="smtp-direct",    subtitle="smtp enabled ip") }},
+    {{ render_fip4_addresses(address_type="martian",        subtitle="go to yandex until CLOUD-19802") }},
+    {{ render_fip4_addresses(address_type="ukraine",        subtitle="ukraine-enabled ip") }},
+    {{ render_fip4_addresses(address_type="ukraine-qrator", subtitle="ukraine-enabled ddos protected ip") }},
+    {{ render_fip4_addresses(address_type="datalens",       subtitle="datalens ip") }},
+    { "panels": [
+        {{ render_resource("Route Targets (GLOBAL)", allocator="route_targets", resource_id="*", subtitle="Used to peer subnets within network") }},
+        {{ render_resource("Communities (GLOBAL)",   allocator="communities",   resource_id="*", subtitle="Used to add routes to subnets from route tables") }}
+    ]}
+]
+{% endblock %}

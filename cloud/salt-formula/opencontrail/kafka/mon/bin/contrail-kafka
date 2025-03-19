@@ -1,0 +1,63 @@
+#! /usr/bin/env python
+# -*- coding: utf-8 -*-
+
+import introspect
+import json
+import psutil
+import subprocess
+import sys
+
+"""Monitoring for OpenContrail kafka broker"""
+
+def get_partitions_count(zookeeper, partition_filter):
+    KAFKA_TOPICS_CMD = ['/usr/share/kafka/bin/kafka-topics.sh',
+        '--describe',
+        '--{0}'.format(partition_filter),
+        '--zookeeper',
+        ','.join(zookeeper),
+        ]
+    p = subprocess.Popen(KAFKA_TOPICS_CMD, stderr = subprocess.PIPE, stdout = subprocess.PIPE)
+    (lines, err) = p.communicate()
+    if p.returncode > 0:
+        formatted_error = json.dumps(str(err).splitlines())
+        raise RuntimeError('Failed to get partitions count from kafka: {}'.format(formatted_error))
+    return lines.count('\n')
+
+def get_service_status(zookeeper):
+    status = introspect.STATUS_CRIT
+    messages = None
+    try:
+        kafka_running = False
+        for proc in psutil.process_iter():
+            if 'kafka.Kafka' in proc.cmdline():
+                kafka_running = True
+                break
+        if not kafka_running:
+            return status, 'Kafka process is not found'
+
+        unavailable_partitions = get_partitions_count(zookeeper, 'unavailable-partitions')
+        under_replicated_partitions = get_partitions_count(zookeeper, 'under-replicated-partitions')
+        if unavailable_partitions == 0:
+            if under_replicated_partitions > 0:
+                status = introspect.STATUS_WARN
+            else:
+                status = introspect.STATUS_OK
+        messages = 'There are {} unavailable and {} under-replicated partitions'.format(unavailable_partitions,
+                                                                                        under_replicated_partitions)
+    except OSError as e:
+        messages = 'Service is unavailable ({}) '.format(e.strerror)
+    except Exception as e:
+        messages = 'Service is unavailable ({}) '.format(e)
+    return status, messages
+
+def main():
+    try:
+        config = introspect.load_config('contrail-kafka.conf')
+        status, messages = get_service_status(config['zookeeper'])
+        introspect.print_for_monitoring('contrail-kafka', status, messages)
+    except IOError:
+        introspect.print_for_monitoring('contrail-kafka', introspect.STATUS_CRIT, 'Can\'t load config file for monitoring')
+    sys.exit(0)
+
+if __name__ == '__main__':
+    main()

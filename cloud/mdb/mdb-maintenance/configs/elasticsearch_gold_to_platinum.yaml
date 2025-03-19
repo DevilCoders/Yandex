@@ -1,0 +1,22 @@
+info: Upgrade from gold to platinum edition (no restart)
+clusters_selection:
+  db: >-
+    SELECT
+      cid
+    FROM dbaas.clusters c JOIN dbaas.pillar p USING(cid) WHERE
+      c.type = 'elasticsearch_cluster'
+      AND c.status = 'RUNNING'
+      AND value->'data'->'elasticsearch'->>'edition' = 'gold'
+pillar_change: >-
+  UPDATE dbaas.pillar p
+     SET value = jsonb_set(value, '{data,elasticsearch,edition}', to_jsonb(CAST('platinum' AS text)))
+   WHERE
+     p.cid = :cid
+worker:
+    operation_type: elasticsearch_cluster_modify
+    task_type: elasticsearch_cluster_maintenance
+    task_args:
+        run_highstate: true
+    timeout: 4h
+max_delay_days: 21
+min_days: 7

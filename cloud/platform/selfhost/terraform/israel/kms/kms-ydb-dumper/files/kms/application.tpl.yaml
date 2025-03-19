@@ -1,0 +1,86 @@
+localWorkingDirectory: /root
+removeBackupsOlderThan: P7D
+
+cron:
+  expression: "0 0 * * * ?"
+  backedUpDirectory: main
+
+ydb:
+  serviceAccountId: yc.kms.ydb-sa
+  endpoint: grpcs://u-lb.kms-israel.ydb.yandexcloud.co.il:2135
+  database: /israel_global/kms
+  testQueries:
+    - "SELECT COUNT(*) > 100 FROM `%s/keys`"
+    - "SELECT COUNT(*) > 100 FROM `%s/key_versions`"
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/keys`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/keys`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 14;"
+
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/folder_to_keys`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/folder_to_keys`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 14;"
+
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/key_next_rotate_at`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/key_next_rotate_at`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 40;"
+
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/key_versions`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/key_versions`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 18;"
+
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/special_keys`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/special_keys`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 10;"
+
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/version_destroy_at`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/version_destroy_at`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 130;"
+
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/version_to_keys`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/version_to_keys`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 200;"
+
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/Quota`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/Quota`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 35;"
+
+    - "$count1 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/keys`);
+       $count2 = (SELECT COUNT(DISTINCT key_id) FROM `{{TEST_DIR}}/key_versions`);
+       SELECT $count1 == $count2;"
+
+    - "$values = (SELECT version_id FROM `{{TEST_DIR}}/version_to_keys`);
+       $count = (SELECT COUNT(k1.version_id) FROM `{{TEST_DIR}}/version_destroy_at` as k1
+       WHERE k1.version_id NOT IN $values);
+       SELECT $count == 0;"
+
+    - "$numberOfKeysInVersionToKeys = (SELECT COUNT(DISTINCT key_id) FROM `{{TEST_DIR}}/version_to_keys`);
+       $numberOfKeys = (SELECT COUNT(key_id) FROM `{{TEST_DIR}}/keys`);
+       SELECT $numberOfKeys == $numberOfKeysInVersionToKeys;"
+
+    - "$numberOfKeys = (SELECT COUNT(key_id) FROM `{{TEST_DIR}}/keys`);
+       $numberOfKeysInFolder = (SELECT COUNT(DISTINCT key_id) FROM `{{TEST_DIR}}/folder_to_keys`);
+       SELECT $numberOfKeys == $numberOfKeysInFolder;"
+
+kms:
+  isRoot: true
+  hosts: [root-kms-1.crypto.yandexcloud.co.il, root-kms-2.crypto.yandexcloud.co.il]
+  port: 4301
+  keyId: rootKmsBackupKeyId1
+
+storages:
+  cloudS3:
+    endpoint: storage.cloudil.com:443
+    bucket: kms-backups
+    accessKeyPath: /run/kms/s3-access-key
+    secretKeyPath: /run/kms/s3-secret-key
+
+solomon:
+  host: solomon.yandexcloud.co.il
+  project: yc.kms.service-cloud
+  cluster: cloud_israel_kms_cluster
+  service: service
+
+tokenService:
+  host: ts.private-api.yandexcloud.co.il
+  port: 14282
+  timeout: PT10S

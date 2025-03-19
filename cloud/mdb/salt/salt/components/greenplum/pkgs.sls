@@ -1,0 +1,46 @@
+{% from "components/greenplum/map.jinja" import dep with context %}
+
+Install-GPDB-required-pkgs:
+  pkg.installed:
+    - pkgs:
+      - bzip2
+      - ethtool
+      - libxml2
+      - net-tools
+      - openssl
+      - perl
+      - python-behave
+      - python-epydoc
+      - python-ldap
+      - python-lockfile
+      - python-mock
+      - python-paramiko
+      - python3-paramiko
+      - python-psutil
+      - python3-psutil
+      - python-parse
+      - python-psycopg2
+      - python3-psycopg2
+      - libapr1
+      - libaprutil1 
+      - cgroup-tools
+      - iproute2
+      - krb5-multidev
+      - libldap-2.4-2
+      - libcurl4
+      - libevent-2.1-6
+      - libyaml-0-2
+      - libzstd1
+      - libcgroup1
+      - openssh-client
+      - libreadline5
+      - libssl1.1
+      - zlib1g
+      - libcurl3-gnutls
+      - patch
+      - ldap-utils
+      - libldap-common
+      - python-tenacity
+      - python3-tenacity
+    - prereq_in:
+      - cmd: repositories-ready

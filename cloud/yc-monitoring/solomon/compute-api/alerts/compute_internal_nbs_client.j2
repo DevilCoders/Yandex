@@ -1,0 +1,48 @@
+{% extends "../../base/alert.j2" %}
+
+{% set notificationChannels = ["compute_api_duty_telegram"] %}
+{% set windowSecs = 600 %}
+{% set checkExpression = "" %}
+{% set repeatNotifySecs = 3600 %}
+
+{% set resolvedEmptyPolicy = "RESOLVED_EMPTY_MANUAL" %}
+
+{% set service = 'compute_tasks' %}
+{% set sensor = 'nbs_client_requests' %}
+{% set ok_statuses = ["OK"] %}
+{% set description = "https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-internal-nbs-client" %}
+
+{% macro prog() %}
+    let error_graph = {
+        project='{{ project_id }}',
+        cluster='cloud_{{ env }}_head',
+        sensor='{{ sensor }}',
+        error_type!='{{ ok_statuses | join ("|") }}' };
+    ok_if(size(error_graph) == 0);
+
+    let api_errors = group_lines('sum', diff(integrate_fn(error_graph)));
+    let error_graph = '';
+
+    let total = group_lines('sum', diff(integrate_fn({
+        project='{{ project_id }}',
+        cluster='cloud_{{ env }}_head',
+        service='{{ service }}',
+        sensor='{{ sensor }}'})));
+    ok_if(sum(api_errors) < {{ min_error_count }});
+
+    let errors = sum(api_errors) * 100 / sum(total);
+    let readable = to_fixed(errors, 2);
+    alarm_if(errors > {{ alarm }});
+    warn_if(errors > {{ warn }});
+{% endmacro %}
+
+{% block main %}
+    "name": "Alert on compute-tasks NBS client errors @{{ env | upper }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+    "error_part": "[[expression.readable]]",
+    "description": "{{ description }}"
+    },
+    "description": "Notifies about errors occurred in NBS client\n\nSee {{ description }} for instructions.",
+    "type": {{ type_expression() }}
+{% endblock %}

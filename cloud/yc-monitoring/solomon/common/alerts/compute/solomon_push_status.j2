@@ -1,0 +1,48 @@
+{% extends "../../../base/alert.j2" %}
+
+{% set windowSecs = 600 %}
+{% set checkExpression = "" %}
+
+{% set is_compute_node = compute_node|default(False) %}
+
+{% macro prog() %}
+let ok = sum({
+    project='{{ project_id }}',
+    cluster='cloud_{{ env }}_{{ unit }}',
+    service='solomon_agent',
+    host='*',
+    sensor='dataPusher.requestOk',
+    serviceId='total',
+    clusterId='total',
+    projectId='total'});
+
+let err = sum({
+    project='{{ project_id }}',
+    cluster='cloud_{{ env }}_{{ unit }}',
+    service='solomon_agent',
+    host='*',
+    sensor='dataPusher.requestError',
+    serviceId='total',
+    clusterId='total',
+    projectId='total'});
+
+let error_part = err * 100/ (ok + err);
+let error_part_human = to_fixed(error_part, 2);
+
+alarm_if(error_part > {{ alarm }});
+warn_if(error_part > {{ warn }});
+
+{% endmacro %}
+
+{% block main %}
+    "name": "Solomon-agent push status for {{ service_name }} @{{ env | upper }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "host": "{{ compute_node_fqdn() if is_compute_node else svm_fqdn() }}",
+        "tags": "{{ tags }}",
+        "service": "{{ service_name }}-solomon-push-status",
+        "details": "Problems with pushing from solomon-agent: [[expression.error_part_human]]% push requests have failed."
+    },
+    "description": "https://docs.yandex-team.ru/yc-monitoring/shared/solomon-push-status",
+    "type": {{ type_expression() }}
+{% endblock %}

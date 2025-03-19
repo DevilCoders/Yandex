@@ -1,0 +1,19 @@
+{% from "components/greenplum/map.jinja" import gpdbvars with context %}
+{% set vacuum_start_hours = salt['pillar.get']('data:vacuum:start:hours', '22') %}
+{% set vacuum_start_minutes = salt['pillar.get']('data:vacuum:start:minutes', '00') %}
+{% set vacuum_stop_hours = salt['pillar.get']('data:vacuum:stop:hours', '08') %}
+{% set vacuum_stop_minutes = salt['pillar.get']('data:vacuum:stop:minutes', '00') %}
+{% set vacuum_max_db_simulate_process = salt['pillar.get']('data:vacuum:max_db_simulate_process', 2) %}
+{% set vacuum_max_processes_per_db = salt['pillar.get']('data:vacuum:max_processes_per_db', 1) %}
+{% set analyze_max_parallel_processes = salt['pillar.get']('data:analyze:max_parallel_processes', 5) %}
+
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
+MAILTO=''
+
+# m h dom mon dow user command
+# catalog maintenance
+00 */8 * * * {{ gpdbvars.gpadmin }} /usr/local/yandex/gp_is_master && flock -w 600 /tmp/db_maintenance.lock /usr/local/yandex/gp_maintenance/daily_operations.py --action vacuum --system --max-processes {{ vacuum_max_db_simulate_process }} --max-processes-per-db {{ vacuum_max_processes_per_db }} --analyzedb >> {{ gpdbvars.gplog }}/daily_operations.log 2>&1
+# db vacuum
+{{ vacuum_start_minutes }} {{ vacuum_start_hours }} * * * {{ gpdbvars.gpadmin }} /usr/local/yandex/gp_is_master && flock -w 3600 /tmp/db_maintenance.lock /usr/local/yandex/gp_maintenance/daily_operations.py --action vacuum --max-processes {{ vacuum_max_db_simulate_process }} --max-processes-per-db {{ vacuum_max_processes_per_db }} --stop-time {{ vacuum_stop_hours }}:{{ vacuum_stop_minutes }} >> {{ gpdbvars.gplog }}/daily_operations.log 2>&1
+# db analyze
+{{ vacuum_stop_minutes }} {{ vacuum_stop_hours }} * * * {{ gpdbvars.gpadmin }} /usr/local/yandex/gp_is_master && flock -w 3600 /tmp/db_maintenance.lock /usr/local/yandex/gp_maintenance/daily_operations.py --analyzedb --max-processes {{ analyze_max_parallel_processes }} >> {{ gpdbvars.gplog }}/daily_operations.log 2>&1

@@ -1,0 +1,384 @@
+{
+ "appConfig": {},
+ "application": "yc-nbs-testing",
+ "id": "ad62f548-004b-4bd3-9b6b-4dcabf29d12f",
+ "index": 1,
+ "keepWaitingPipelines": false,
+ "lastModifiedBy": "librarian@yandex-team.ru",
+ "limitConcurrent": false,
+ "name": "Build",
+ "parameterConfig": [
+  {
+   "default": "releases/ydb/stable-22-2",
+   "description": "Full path release branch (eg releases/ydb/stable-22-2)",
+   "hasOptions": false,
+   "label": "Release branch",
+   "name": "releaseBranch",
+   "options": [
+    {
+     "value": ""
+    }
+   ],
+   "pinned": false,
+   "required": true
+  },
+  {
+   "default": "nbs",
+   "description": "Choose project to release",
+   "hasOptions": true,
+   "label": "Release Project",
+   "name": "releaseProject",
+   "options": [
+    {
+     "value": "nbs"
+    },
+    {
+     "value": "nfs"
+    },
+    {
+     "value": "disk_manager"
+    },
+    {
+     "value": "snapshot"
+    },
+    {
+     "value": "ydb"
+    },
+    {
+     "value": "disk_agent"
+    }
+   ],
+   "pinned": false,
+   "required": true
+  },
+  {
+   "default": "stable-22-2-XX",
+   "description": "Previous Tag",
+   "hasOptions": false,
+   "label": "Previous Tag",
+   "name": "previousTag",
+   "options": [
+    {
+     "value": ""
+    }
+   ],
+   "pinned": false,
+   "required": false
+  },
+  {
+   "default": "",
+   "description": "Current Tag",
+   "hasOptions": false,
+   "label": "Current Tag",
+   "name": "currentTag",
+   "options": [
+    {
+     "value": ""
+    }
+   ],
+   "pinned": false,
+   "required": false
+  },
+  {
+   "default": "",
+   "description": "Version of currently built packages",
+   "hasOptions": false,
+   "label": "Packages Version",
+   "name": "packagesVersion",
+   "options": [
+    {
+     "value": ""
+    }
+   ],
+   "pinned": false,
+   "required": false
+  },
+  {
+   "default": "no",
+   "description": "",
+   "hasOptions": true,
+   "label": "Skip Build",
+   "name": "skipBuild",
+   "options": [
+    {
+     "value": "no"
+    },
+    {
+     "value": "yes"
+    }
+   ],
+   "pinned": false,
+   "required": false
+  }
+ ],
+ "spelEvaluator": "v4",
+ "stages": [
+  {
+   "failOnFailedExpressions": true,
+   "name": "Evaluate variables",
+   "refId": "1",
+   "requisiteStageRefIds": [],
+   "type": "evaluateVariables",
+   "variables": [
+    {
+     "key": "release_branch_name",
+     "value": "${parameters.releaseBranch}"
+    },
+    {
+     "key": "release_project_for_release_tool",
+     "value": "${ parameters.releaseProject == \"nbs\" ? \"nbs\" : parameters.releaseProject == \"nfs\" ? \"nfs\" : parameters.releaseProject == \"disk_manager\" ? \"cloud/disk_manager\" : parameters.releaseProject == \"snapshot_service\" ? \"cloud/snapshot_service\" : \"nbs\" }"
+    },
+    {
+     "key": "trigger_user",
+     "value": "${trigger.user.replace(\"@yandex-team.ru\", \"\")}"
+    },
+    {
+     "key": "previous_tag",
+     "value": "${parameters.previousTag}"
+    },
+    {
+     "key": "release_tag",
+     "value": "${parameters.currentTag}"
+    },
+    {
+     "key": "docker_version",
+     "value": "${ parameters.currentTag != '' ? parameters.currentTag.replace('stable-', '').replace('-', '.') : parameters.currentTag}"
+    },
+    {
+     "key": "skip_build",
+     "value": "${parameters.skipBuild}"
+    }
+   ]
+  },
+  {
+   "attempts": 1,
+   "buildConfigurationId": "NBS_CreateNewRelease",
+   "buildParameters": [
+    {
+     "key": "env.BRANCH",
+     "value": "${release_branch_name}"
+    },
+    {
+     "key": "env.PROJECT",
+     "value": "${release_project_for_release_tool}"
+    }
+   ],
+   "logicalBranchName": "",
+   "name": "Launch kikimr release tool",
+   "parseArtifacts": [
+    {
+     "artifactPath": "artifact.json",
+     "outputVariable": "kikimr"
+    }
+   ],
+   "refId": "10",
+   "requisiteStageRefIds": [
+    "1"
+   ],
+   "stageEnabled": {
+    "expression": "${release_tag == ''}",
+    "type": "expression"
+   },
+   "tcProfile": "aw",
+   "type": "teamcityBuild"
+  },
+  {
+   "attempts": 1,
+   "buildConfigurationId": "NBS_ReleaseDocker",
+   "buildParameters": [
+    {
+     "key": "arc-commit",
+     "value": "arcadia-arc:/#tags/releases/nbs/${release_tag}"
+    },
+    {
+     "key": "docker-tag",
+     "value": "${docker_version}"
+    }
+   ],
+   "name": "Build Docker Image",
+   "parseArtifacts": [
+    {
+     "artifactPath": "packages.json",
+     "outputVariable": "docker_packages"
+    }
+   ],
+   "refId": "28",
+   "requisiteStageRefIds": [
+    "40"
+   ],
+   "stageEnabled": {
+    "expression": "${skip_build == \"no\"}",
+    "type": "expression"
+   },
+   "tcProfile": "aw",
+   "type": "teamcityBuild"
+  },
+  {
+   "attempts": 1,
+   "buildConfigurationId": "NBS_Release",
+   "buildParameters": [
+    {
+     "key": "arc-commit",
+     "value": "arcadia-arc:/#tags/releases/nbs/${release_tag}"
+    }
+   ],
+   "name": "Build packages",
+   "parseArtifacts": [
+    {
+     "artifactPath": "packages.json",
+     "outputVariable": "packages"
+    }
+   ],
+   "refId": "29",
+   "requisiteStageRefIds": [
+    "40"
+   ],
+   "stageEnabled": {
+    "expression": "${skip_build == \"no\"}",
+    "type": "expression"
+   },
+   "tcProfile": "aw",
+   "type": "teamcityBuild"
+  },
+  {
+   "failOnFailedExpressions": true,
+   "name": "Set build urls",
+   "refId": "31",
+   "requisiteStageRefIds": [
+    "28",
+    "29",
+    "32"
+   ],
+   "type": "evaluateVariables",
+   "variables": [
+    {
+     "key": "docker_image_tc_build_url",
+     "value": "${ docker_image_tc_build_url ?: #stage(\"Build Docker Image\")?.context?.builds[0]?.webUiUrl}"
+    },
+    {
+     "key": "packages_tc_build_url",
+     "value": "${ packages_tc_build_url ?: #stage(\"Build packages\").context.builds[0].webUiUrl}"
+    },
+    {
+     "key": "packages_version",
+     "value": "${packages_version ?: packages[0][\"version\"]}"
+    },
+    {
+     "key": "docker_image_url",
+     "value": "cr.yandex/crpmrci5rfvf3uu8np78/yandex-cloud-blockstore-server:${docker_version}"
+    },
+    {
+     "key": "changelog",
+     "value": "${changelog.changelog}"
+    }
+   ]
+  },
+  {
+   "attempts": 1,
+   "buildConfigurationId": "NBS_CreateChangelog",
+   "buildParameters": [
+    {
+     "key": "env.TAG",
+     "value": "${release_tag}"
+    },
+    {
+     "key": "env.PROJECT",
+     "value": "${release_project_for_release_tool}"
+    },
+    {
+     "key": "env.PREVIOUS_TAG",
+     "value": "${previous_tag}"
+    }
+   ],
+   "name": "Create Changelog",
+   "parseArtifacts": [
+    {
+     "artifactPath": "artifact.json",
+     "outputVariable": "changelog"
+    }
+   ],
+   "refId": "32",
+   "requisiteStageRefIds": [
+    "40"
+   ],
+   "stageEnabled": {
+    "expression": "!release_tag.endsWith(\"-1\")",
+    "type": "expression"
+   },
+   "tcProfile": "aw",
+   "type": "teamcityBuild"
+  },
+  {
+   "failOnFailedExpressions": true,
+   "name": "Set variables",
+   "refId": "39",
+   "requisiteStageRefIds": [
+    "10"
+   ],
+   "type": "evaluateVariables",
+   "variables": [
+    {
+     "key": "docker_version",
+     "value": "${kikimr?.docker_version ?: docker_version}"
+    },
+    {
+     "key": "release_tag",
+     "value": "${kikimr?.release_tag ?: release_tag}"
+    }
+   ]
+  },
+  {
+   "completeOtherBranchesThenFail": false,
+   "continuePipeline": true,
+   "failOnFailedExpressions": false,
+   "failPipeline": false,
+   "name": "Join branches [noop]",
+   "refId": "40",
+   "requisiteStageRefIds": [
+    "39",
+    "41"
+   ],
+   "stageEnabled": {
+    "type": "expression"
+   },
+   "type": "evaluateVariables",
+   "variables": [
+    {
+     "key": "docker_version",
+     "value": "${docker_version}"
+    },
+    {
+     "key": "release_tag",
+     "value": "${release_tag}"
+    }
+   ]
+  },
+  {
+   "completeOtherBranchesThenFail": false,
+   "continuePipeline": false,
+   "failOnFailedExpressions": false,
+   "failPipeline": false,
+   "name": "We have tag already",
+   "refId": "41",
+   "requisiteStageRefIds": [
+    "1"
+   ],
+   "stageEnabled": {
+    "expression": "${release_tag != ''}",
+    "type": "expression"
+   },
+   "type": "evaluateVariables",
+   "variables": [
+    {
+     "key": "docker_version",
+     "value": "${docker_version}"
+    },
+    {
+     "key": "release_tag",
+     "value": "${release_tag}"
+    }
+   ]
+  }
+ ],
+ "triggers": []
+}

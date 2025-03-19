@@ -1,0 +1,619 @@
+service: yandexcloudbilling
+title: YC Billing backend
+
+arcanum:
+  auto_merge:
+    requirements:
+      - system: arcanum
+        type: approved
+        disabling_policy: need_reason
+        data:
+          min_approvers_count: 1
+          ignore_self_ship: true
+      - system: arcanum
+        type: comment_issues_closed
+      - system: arcanum
+        type: st_issue_linked
+        disabling_policy: need_reason
+        data:
+          in_commit_message: true
+      - system: ci
+        type: build
+      - system: ci
+        type: tests
+  review:
+    auto_assign: true
+
+    groups:
+      - name: go-developers
+        roles: ["developer"]
+
+    rules:
+      - subpaths: "piper/**, public_api/**"
+        reviewers:
+          - name: go-developers
+            ship: 1
+            assign: 1
+
+ci_templates: # Common aliases for CI flows
+  - &flow_command_config
+    fixed_sandbox_resources:
+      - key: jq
+        resource_id: 910505905
+    arc_mount_config:
+      enabled: true
+      revision_hash: "${context.branch}"
+    logs_config:
+      redirect_stderr_to_stdout: true
+      stdout_ci_badge: true
+  - &with_teamcity_token
+    secret_environment_variables:
+      - key: TC_AUTH_TOKEN
+        secret_spec:
+          key: teamcity.aw.cloud.token
+  - &tracker_config
+    secret:
+      key: startrek.token
+    link:
+      type: FROM_PREVIOUS_STABLE
+      max_commits: 999
+      queues:
+        - CLOUD
+
+ci:
+  secret: sec-01fkd2hqchtde5zanp0m4xt6y9
+
+  runtime:
+    sandbox-owner: YC-BILLING
+
+  actions:
+    impulse:
+      flow: impulse-scan
+      triggers:
+        - on: pr
+          filters:
+            - sub-paths: ["**/*.go"]
+
+  releases:
+    release-monitoring-ru-public:
+      title: Billing Monitoring release (RU PUBLIC)
+      flow: release-monitoring-ru-public
+      auto: false
+      branches:
+        pattern: releases/ycbilling/monitoring/release-${version}
+        auto-create: true
+      stages:
+        - id: public-cloud-ru
+          title: Update juggler checks for ru-central public cloud
+    release-monitoring-ru-internal:
+      title: Billing Monitoring release (RU INTERNAL)
+      flow: release-monitoring-ru-internal
+      auto: false
+      branches:
+        pattern: releases/ycbilling/monitoring/release-${version}
+        auto-create: true
+      stages:
+        - id: internal-cloud-ru
+          title: Update juggler checks for ru-central internal cloud
+    release-monitoring-il:
+      title: Billing Monitoring release (IL)
+      flow: release-monitoring-il
+      auto: false
+      branches:
+        pattern: releases/ycbilling/monitoring/release-${version}
+        auto-create: true
+      stages:
+        - id: public-cloud-il
+          title: Update juggler checks for il public cloud
+    release-piper:
+      title: Billing Piper release
+      flow: release-piper
+      auto: false
+
+      branches:
+        pattern: releases/ycbilling/piper/release-${version}
+        auto-create: true
+
+      stages:
+        - id: start
+          title: Release start
+        - id: build
+          title: Build images
+        - id: preprod
+          title: Deploy to preprod
+        - id: prod
+          title: Deploy to prod
+        - id: done
+          title: Release done
+
+  flows:
+    release-monitoring-ru-public:
+      title: Billing Monitoring release (RU PUBLIC)
+      jobs:
+
+        start:
+          title: Flow start
+          stage: public-cloud-ru
+          task: dummy
+
+        run-terraform-public-cloud-ru-preprod:
+          title: Terraform Run public-preprod
+          task: projects/cloud/billing/aw_build
+          needs:
+            - start
+          input:
+            build_type:
+              id: Billing_ArcTerraform
+              properties:
+                arc_branch: "${context.branch}"
+                tg_module: "billing/preprod"
+
+        run-terraform-public-cloud-ru-production:
+          title: Terraform Run public-production
+          task: projects/cloud/billing/aw_build
+          needs:
+            - start
+          input:
+            build_type:
+              id: Billing_ArcTerraform
+              properties:
+                arc_branch: "${context.branch}"
+                tg_module: "billing/prod"
+
+        public-cloud-ru:
+          title: Public YC
+          stage: public-cloud-ru
+          task: dummy
+          needs:
+            - run-terraform-public-cloud-ru-preprod
+            - run-terraform-public-cloud-ru-production
+
+    release-monitoring-ru-internal:
+      title: Billing Monitoring release (RU INTERNAL)
+      jobs:
+
+        start:
+          title: Flow start
+          stage: internal-cloud-ru
+          task: dummy
+
+        run-terraform-internal-cloud-ru-preprod:
+          title: Terraform Run internal-preprod
+          task: projects/cloud/billing/aw_build
+          needs:
+            - start
+          input:
+            build_type:
+              id: Billing_ArcTerraform
+              properties:
+                arc_branch: "${context.branch}"
+                tg_module: "billing/internal-prestable"
+
+        run-terraform-internal-cloud-ru-production:
+          title: Terraform Run internal-production
+          task: projects/cloud/billing/aw_build
+          needs:
+            - start
+          input:
+            build_type:
+              id: Billing_ArcTerraform
+              properties:
+                arc_branch: "${context.branch}"
+                tg_module: "billing/internal-prod"
+
+        internal-cloud-ru:
+          title: Internal YC
+          stage: internal-cloud-ru
+          task: dummy
+          needs:
+            - run-terraform-internal-cloud-ru-preprod
+            - run-terraform-internal-cloud-ru-production
+
+    release-monitoring-il:
+      title: Billing Monitoring release (IL)
+      jobs:
+
+        start:
+          title: Flow start
+          stage: public-cloud-il
+          task: dummy
+
+        run-terraform-public-cloud-il-production:
+          title: Terraform Run public-production
+          task: projects/cloud/billing/aw_build
+          needs:
+            - start
+          input:
+            build_type:
+              id: Billing_ArcTerraform
+              properties:
+                arc_branch: "${context.branch}"
+                tg_module: "billing/israel-prod"
+
+        public-cloud-il-production:
+          title: Public YC IL
+          stage: public-cloud-il
+          task: dummy
+          needs:
+            - run-terraform-public-cloud-il-production
+
+    release-piper:
+      title: Billing Piper release
+      jobs:
+        start:
+          title: Flow start
+          stage: start
+          task: dummy
+        set-version:
+          title: Commit new piper image version
+          task: common/misc/run_command
+          needs:
+            - start
+          input:
+            config:
+              <<: *flow_command_config
+              result_output:
+                - path: release_date
+                - path: piper_version
+                - path: tools_version
+                - path: image
+              cmd_line: |
+                export JQ_BIN={jq}
+                cd $ARCADIA_PATH/cloud/billing/go/deploy/ci
+                date +%Y-%m-%d > $RESULT_RESOURCES_PATH/release_date
+                ./packer-piper-image-versions.sh ${context.version_info.full}
+                ./set-image-version.sh piper ${context.version_info.full}
+                ./commit.sh "bump images versions"
+        release-ticket:
+          title: Create release ticket
+          task: common/tracker/create_issue
+          needs:
+            - set-version
+          input:
+            config:
+              <<: *tracker_config
+            template:
+              queue: CLOUD
+              type: Релиз
+              summary: "[ ${tasks.set-version.result_output[?path=='release_date'].string | single(@)[0]} ][ Deploy ] [ CI ] YC-Billing: ${context.title}"
+              description: |
+                === ${context.title}
+                * Версия: ${context.version_info.full}
+                * Ссылка в CI: ((${context.ci_url}))
+                * Ревизия: {{revision}}
+
+                ===+ Версии в сборке
+                * Compute image: ${tasks.set-version.result_output[?path=='image'].string | single(@)[0]}
+                * Piper: ${tasks.set-version.result_output[?path=='piper_version'].string | single(@)[0]}
+                * Tools: ${tasks.set-version.result_output[?path=='tools_version'].string | single(@)[0]}
+
+                === Тикеты
+                {{issues}}
+                ===+Коммиты
+                {{commits}}
+
+              assignee: ${context.flow_triggered_by}
+              tags:
+                - dataPlane
+              components:
+                - Release management
+                - YC-Billing
+              linked_queues:
+                CLOUD:
+                  comment: |
+                    Задача добавлена в релиз ${context.version_info.full} ((${context.ci_url} ${context.title}))
+        build:
+          title: Build start
+          stage: build
+          task: dummy
+          needs:
+            - set-version
+            - release-ticket
+        say-build-start-to-ticket:
+          title: Report build start
+          task: common/tracker/transit_issue
+          needs:
+            - build
+          input:
+            config:
+              <<: *tracker_config
+            transition:
+              status: В работе
+            update_template:
+              comment: |
+                Запущена сборка образа ${tasks.set-version.result_output[?path=='image'].string | single(@)[0]}
+        build-piper:
+          title: "Run TeamCity Billing/ARC: Build piper"
+          task: projects/cloud/billing/aw_build
+          needs:
+            - build
+          input:
+            build_type:
+              id: Billing_ArcBuildPiper
+              properties:
+                arc-branch: "${context.branch}"
+        build-piper-configs:
+          title: "Run TeamCity Billing/ARC: Build piper configs"
+          task: projects/cloud/billing/aw_build
+          needs:
+            - build
+          input:
+            build_type:
+              id: Billing_ArcBuildPiperConfigs
+              properties:
+                arc-branch: "${context.branch}"
+        packer:
+          title: Run piper packer
+          task: projects/cloud/billing/aw_build
+          needs:
+            - build-piper
+            - build-piper-configs
+          input:
+            build_type:
+              id: Billing_ArcPiperPacker
+              properties:
+                branch: "${context.branch}"
+        say-packer-done-to-ticket:
+          title: Report build done
+          task: common/tracker/update_issue
+          needs:
+            - packer
+            - say-build-start-to-ticket
+          input:
+            config:
+              <<: *tracker_config
+            update_template:
+              comment: |
+                Сборка образа завершена: ((${tasks.packer.build.url}))
+        commit-packer-manifest:
+          title: Download and commit manifest
+          task: common/misc/run_command
+          needs:
+            - packer
+          input:
+            config:
+              <<: *flow_command_config
+              <<: *with_teamcity_token
+              cmd_line: |
+                cd $ARCADIA_PATH/cloud/billing/go/deploy/ci
+                ./download_teamcity_artifact.sh ${tasks.packer.build_artifacts[0].url} $ARCADIA_PATH/cloud/billing/go/deploy/packer/piper/manifests/yandex-export-manifest.json
+                ./commit.sh "add packer manifest"
+        distribute-image:
+          title: Copy image to all installations
+          task: projects/cloud/billing/aw_build
+          needs:
+            - commit-packer-manifest
+          input:
+            build_type:
+              id: Billing_ArcPiperImageHopper
+              properties:
+                branch: "${context.branch}"
+                in.manifest: "cloud/billing/go/deploy/packer/piper/manifests/yandex-export-manifest.json"
+        build-done:
+          title: Report build stage done
+          task: common/tracker/update_issue
+          needs:
+            - distribute-image
+            - say-packer-done-to-ticket
+          input:
+            config:
+              <<: *tracker_config
+            update_template:
+              comment: |
+                Образ скопирован для установки: ((${tasks.distribute-image.build.url}))
+
+        preprod:
+          title: Deploy to preprod
+          stage: preprod
+          task: dummy
+          needs:
+            - distribute-image
+            - build-done
+        say-preprod-ready-to-ticket:
+          title: Report preprod ready to deploy
+          task: common/tracker/update_issue
+          needs:
+            - preprod
+          input:
+            config:
+              <<: *tracker_config
+            transition:
+              status: Ждет выкладки
+            update_template:
+              comment: |
+                **Препрод готов к обновлению**
+                Надо убедиться что нет блокеров к установке обновления (известных проблем с инфраструктурой, смежными сервисами и т.п.)
+                Если все хорошо, то в ((${context.ci_url} flow)) надо запустить следующий шаг.
+                План обновления:
+                  * обновление canary хоста
+                  * проверка работоспособности (ручное действие)
+                  * обновление остальных хостов
+                  * проверка работоспособности (ручное действие)
+        update-preprod-canary:
+          title: Terraform apply preprod/piper-canary
+          task: projects/cloud/billing/aw_build
+          manual: true
+          needs:
+            - say-preprod-ready-to-ticket
+          input:
+            build_type:
+              id: Billing_ArcTerraform
+              properties:
+                arc_branch: "${context.branch}"
+                tg_module: "preprod/piper-canary"
+        preprod-canary-updated:
+          title: Write canary update status
+          task: common/tracker/update_issue
+          needs:
+            - update-preprod-canary
+          input:
+            config:
+              <<: *tracker_config
+            update_template:
+              comment: |
+                **Препрод: canary хост обновлен**
+                Проверь, что хост доступен по ssh, сервис запущен, отсутствуют ошибки, монитортинги и графики в норме или проблемы не связаны с релизом.
+                Проведи шаги по подгтовке обновления остальных хостов в соответствии с изменениями в деплое.
+                Если все хорошо, то в ((${context.ci_url} flow)) запускай следующий шаг.
+        update-preprod:
+          title: Terraform apply preprod/piper
+          task: projects/cloud/billing/aw_build
+          manual: true
+          needs:
+            - preprod-canary-updated
+          input:
+            build_type:
+              id: Billing_ArcTerraform
+              properties:
+                arc_branch: "${context.branch}"
+                tg_module: "preprod/piper"
+        preprod-updated:
+          title: Write preprod update status
+          task: common/tracker/update_issue
+          needs:
+            - update-preprod
+          input:
+            config:
+              <<: *tracker_config
+            transition:
+              status: Testing at RC
+            update_template:
+              comment: |
+                **Препрод: обновлен**
+                Проверь, что хосты доступны по ssh, сервис запущен, отсутствуют ошибки, монитортинги и графики в норме или проблемы не связаны с релизом.
+                Если все хорошо, то в ((${context.ci_url} flow)) запускай следующий шаг.
+
+        prod:
+          title: Deploy to prod
+          stage: prod
+          task: dummy
+          manual: true
+          needs:
+            - preprod-updated
+        say-prod-ready-to-ticket:
+          title: Report prod ready to deploy
+          task: common/tracker/update_issue
+          needs:
+            - prod
+          input:
+            config:
+              <<: *tracker_config
+            transition:
+              status: Ждет выкладки
+            update_template:
+              comment: |
+                **Прод готов к обновлению**
+                Надо убедиться что нет блокеров к установке обновления (известных проблем с инфраструктурой, смежными сервисами и т.п.)
+                Если все хорошо, то в ((${context.ci_url} flow)) надо запустить следующий шаг.
+                План обновления:
+                  * обновление версии образа для canary хоста (автоматически)
+                  * обновление canary хоста
+                  * проверка работоспособности (ручное действие)
+
+        update-prod-canary:
+          title: Terraform apply prod/piper-canary
+          task: projects/cloud/billing/aw_build
+          manual: true
+          needs:
+            - say-prod-ready-to-ticket
+          input:
+            build_type:
+              id: Billing_ArcTerraform
+              properties:
+                arc_branch: "${context.branch}"
+                tg_module: "prod/piper-canary"
+        prod-canary-updated:
+          title: Write canary update status
+          task: common/tracker/update_issue
+          needs:
+            - update-prod-canary
+          input:
+            config:
+              <<: *tracker_config
+            update_template:
+              comment: |
+                **Прод: canary хост обновлен**
+                Проверь, что хост доступен по ssh, сервис запущен, отсутствуют ошибки, монитортинги и графики в норме или проблемы не связаны с релизом.
+                Проведи шаги по подгтовке обновления остальных хостов в соответствии с изменениями в деплое.
+                Если все хорошо, то в ((${context.ci_url} flow)) запускай следующий шаг.
+        update-prod:
+          title: Terraform apply prod/piper
+          task: projects/cloud/billing/aw_build
+          manual: true
+          needs:
+            - prod-canary-updated
+          input:
+            build_type:
+              id: Billing_ArcTerraform
+              properties:
+                arc_branch: "${context.branch}"
+                tg_module: "prod/piper"
+        prod-updated:
+          title: Write prod update status
+          task: common/tracker/update_issue
+          needs:
+            - update-prod
+          input:
+            config:
+              <<: *tracker_config
+            transition:
+              status: Выложили
+            update_template:
+              comment: |
+                **Прод: обновлен**
+
+        update-finished:
+          title: Write prod updated
+          stage: done
+          task: common/tracker/transit_issue
+          needs:
+            - prod-updated
+          input:
+            config:
+              <<: *tracker_config
+            transition:
+              status: Выложили
+            update_template:
+              comment: |
+                **Деплой выполнен**
+                Коммитим изменения в транк
+
+        push-branch-changes:
+          title: Push changes from release branch to trunk
+          task: common/misc/run_command
+          needs:
+            - update-finished
+          input:
+            config:
+              <<: *flow_command_config
+              cmd_line: |
+                cd $ARCADIA_PATH/cloud/billing/go/deploy/ci
+                ./pr-to-trunk.sh ${tasks.release-ticket.issue.issue}
+
+        close-ticket:
+          title: Close release ticket
+          task: common/tracker/transit_issue
+          needs:
+            - push-branch-changes
+          input:
+            config:
+              <<: *tracker_config
+            transition:
+              status: Закрыт
+              resolution: Решен
+            update_template:
+              comment: |
+                Обновление завершено, pr с изменениями из релизной ветки создан.
+
+    impulse-scan:
+      title: Security scan
+      jobs:
+        impulse: # https://wiki.yandex-team.ru/security/impulse/
+          title: imPulse
+          task: common/security/impulse
+          input:
+            organization_id: 45
+            project_id: 434
+            target: "cloud/billing/go"
+            analysers:
+              - gosec_scan

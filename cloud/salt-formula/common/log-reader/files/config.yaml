@@ -1,0 +1,30 @@
+{%- set conf = {"prod": {"topic": "yandexcloud--prod-log", "tvm_id": 2001287},
+                "pre-prod": {"topic": "yandexcloud--pre-production-log", "tvm_id": 2001287},
+                "pre-df": {"topic": "yandexcloud-test--pre-dogfood-log", "tvm_id": 2001289}}-%}
+{%- set default_conf = {"topic": "yandexcloud-test--df-log", "tvm_id": 2001289} -%}
+{%- set cluster = grains["cluster_map"]["environment"] -%}
+lock_path: /var/lib/yc/yc-log-reader/
+lock_file: reader.lock
+log_level: info
+offset_limit: 100000
+buffer_size: 1000
+publisher:
+  name: logbroker-api
+  opts:
+    host: logbroker.yandex.net
+    port: 2135
+    topic: {{ conf.get(cluster, default_conf)["topic"] }}
+  auth:
+    client_id: {{ conf.get(cluster, default_conf)["tvm_id"] }}
+    secret_path: "/etc/yc/log-reader/secret.txt"
+    tvm_client_id: 2001059
+reader:
+  name: journal
+  opts:
+    cursor_path: /var/lib/yc/log-reader
+    cursor_file: reader.cursor
+debug:
+  port: 6180
+watchdog:
+  check_interval: 5
+  delay_threshold: 1800

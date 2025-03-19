@@ -1,0 +1,102 @@
+{% extends "main/base.html" %}
+{% load meta.templatetags %}
+{% block title %}Health UA - {% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <div class="row">
+    <div id="noodle-sidebar" class="noodle-sidebar noodle-sidebar-xl">
+      <div id="noodle-sidebar-head" class="noodle-sidebar-head noodle-sidebar-head-no-label">
+      </div>
+      <div id="noodle-sidebar-body" class="noodle-sidebar-body">
+        <div id="health_ua_tree"></div>
+      </div>
+      {% include "lib/includes/sidebar_footer.html" %}
+    </div>
+    <div id="noodle-sidebar-main" class="col-lg-24 noodle-sidebar-main">
+      <div id="section-content">
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+{% with url="/ui/main/ajax/tools/health_ua" href="/ui/main/tools/health_ua" %}
+var tree_selector = $('#health_ua_tree')
+tree_selector.jstree({
+    'core' : {
+        'check_callback' : true,
+        'dblclick_toggle' : false,
+        'data' : [
+          {% for env_type in env_types %}
+          {
+            "id": "env_{{ env_type.0 }}",
+            "parent": "#",
+            "text": "{{ env_type.1 }}"
+            {% if selected_env == env_type.0 %}, "state": {"opened": true}{% endif %}
+          },
+            {% for agg_type in agg_types %}
+            {
+              "id": "env_{{ env_type.0 }}_agg_type_{{ agg_type }}",
+              "parent": "env_{{ env_type.0 }}",
+              "text": "{{ agg_type|title }}"
+              {% if selected_env == env_type.0 and agg_type == selected_agg_type %}, "state": {"opened": true}{% endif %}
+            },
+              {% for cluster_type in cluster_types %}
+              {
+                "id": "env_{{ env_type.0 }}_agg_type_{{ agg_type }}_{{ cluster_type.0 }}",
+                "parent": "env_{{ env_type.0 }}_agg_type_{{ agg_type }}",
+                "text": "{{ cluster_type.1 }}",
+                "data": {
+                  "params": {
+                    "url": "{{ url }}",
+                    "href": "{{ href }}?agg_type={{ agg_type }}&c_type={{ cluster_type.0 }}&env={{ env_type.0 }}",
+                    "agg_type": "{{ agg_type }}",
+                    "c_type": "{{ cluster_type.0 }}",
+                    "env": "{{ env_type.0 }}",
+                  }
+                },
+                "icon": "{% cluster_image cluster_type.0 True %}"
+                {% if selected_env == env_type.0 and agg_type == selected_agg_type and cluster_type.0 == selected_c_type %}, "state": {"opened": true, "selected": true}{% endif %}
+              },
+              {% endfor %}
+            {% endfor %}
+          {% endfor %}
+        ],
+        'themes': {
+            'name': 'noodle',
+            'stripes': false,
+            'variant': 'large'
+        }
+    },
+    'types' : {
+        'default': {
+            'icon': 'fas fa-folder'
+        },
+        'opened': {
+            'icon': 'fas fa-folder-open'
+        },
+        'empty': {
+            'icon': 'far fa-folder'
+        },
+    },
+    'plugins': [
+        'wholerow',
+        'types'
+    ],
+});
+tree_selector.on('select_node.jstree', function (Event, data) {
+  get_health_ua_data(data.node.data);
+});
+{% if selected_env and selected_agg_type and selected_c_type %}
+get_health_ua_data({
+  'params': {
+    'url': '{{ url }}',
+    'href': '{{ href }}?agg_type={{ selected_agg_type }}&c_type={{ selected_c_type }}&env={{ selected_env }}',
+    'env': '{{ selected_env }}',
+    'agg_type': '{{ selected_agg_type }}',
+    'c_type': '{{ selected_c_type }}',
+  }
+})
+{% endif %}
+</script>
+{% endwith %}
+{% endblock %}

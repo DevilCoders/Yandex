@@ -1,0 +1,25 @@
+{% extends "../../base/alert.j2" %}
+{% macro prog() %}
+let rps = group_lines('sum', {cluster='cloud_{{ env }}_compute', service='nginx', subsystem='compute-metadata', name='rps', method='*', status='*', host='{{dc|capitalize}}'});
+let errors = group_lines('sum', {cluster='cloud_{{ env }}_compute', service='nginx', subsystem='compute-metadata', name='rps', method='*', status='5*', host='{{dc|capitalize}}'});
+ok_if(count(errors) == 0);
+let error_percent = max(errors/rps * 100);
+
+let is_red = error_percent > {{ red_threshold }};
+let is_yellow = error_percent > {{ yellow_threshold }};
+let trafficColor = is_red ? 'red' : (is_yellow ? 'yellow' : 'green');
+let description = 'Max (per compute-node) nginx metadata error percent in {{dc}}: ' + error_percent + '%';
+{% endmacro %}
+
+{% block main %}
+    "name": "vpc sli for compute metadata @ {{ env }} {{ dc }}",
+    "annotations": {
+        "tags": "Solomon",
+        "host": "vpc-sli-{{ env }}-{{ dc }}",
+        "service": "sli-compute-metadata-nginx",
+        "trafficLight.color": "[[expression.trafficColor]]",
+        "details": "[[expression.description]]"
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

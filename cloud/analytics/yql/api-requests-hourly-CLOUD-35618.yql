@@ -1,0 +1,223 @@
+use hahn;
+PRAGMA yt.Pool = 'cloud_analytics_pool';
+$result = '//home/cloud_analytics/import/api-request-log/requests';
+$result_aggr = '//home/cloud_analytics/import/api-request-log/requests_aggr';
+
+$fn = ($table) -> {
+    RETURN DateTime::MakeDate(DateTime::ParseIso8601($table ||"+0300"))
+            >= CAST(DateTime::FromSeconds(
+                CAST(DateTime::ToSeconds(CurrentUtcDate()) - 86400 AS UInt32))
+            AS Date)
+};
+
+$empti_trace_part = (
+    SELECT
+        String::SplitToList(authority, '.')[0] as service,
+        authority,
+        request_uri as requestUrl,
+        client_trace_id,
+        CASE
+            WHEN grpc_status_code = 0 THEN 200
+            WHEN grpc_status_code = 1 THEN 499
+            WHEN grpc_status_code = 2 THEN 500
+            WHEN grpc_status_code = 3 THEN 400
+            WHEN grpc_status_code = 4 THEN 504
+            WHEN grpc_status_code = 5 THEN 404
+            WHEN grpc_status_code = 6 THEN 409
+            WHEN grpc_status_code = 7 THEN 403
+            WHEN grpc_status_code = 8 THEN 429
+            WHEN grpc_status_code = 9 THEN 400
+            WHEN grpc_status_code = 10 THEN 409
+            WHEN grpc_status_code = 11 THEN 400
+            WHEN grpc_status_code = 12 THEN 501
+            WHEN grpc_status_code = 13 THEN 500
+            WHEN grpc_status_code = 14 THEN 503
+            WHEN grpc_status_code = 15 THEN 500
+            WHEN grpc_status_code = 16 THEN 401
+            ELSE 200
+        END as responseStatus,
+        CAST(unixtime as UInt64) as unixtime,
+        `timestamp`,
+        duration as requestTime,
+        request_method as requestMethod
+    FROM FILTER('//logs/yc-api-request-log/30min', $fn)
+    WHERE
+        app = 'gateway'
+        AND authority LIKE '%cloud.yandex.net%'
+        AND ( client_trace_id = '' OR client_trace_id = '-')
+);
+$source = (
+    SELECT
+        String::SplitToList(authority, '.')[0] as service,
+        authority,
+        request_uri as requestUrl,
+        client_trace_id,
+        CASE
+            WHEN grpc_status_code = 0 THEN 200
+            WHEN grpc_status_code = 1 THEN 499
+            WHEN grpc_status_code = 2 THEN 500
+            WHEN grpc_status_code = 3 THEN 400
+            WHEN grpc_status_code = 4 THEN 504
+            WHEN grpc_status_code = 5 THEN 404
+            WHEN grpc_status_code = 6 THEN 409
+            WHEN grpc_status_code = 7 THEN 403
+            WHEN grpc_status_code = 8 THEN 429
+            WHEN grpc_status_code = 9 THEN 400
+            WHEN grpc_status_code = 10 THEN 409
+            WHEN grpc_status_code = 11 THEN 400
+            WHEN grpc_status_code = 12 THEN 501
+            WHEN grpc_status_code = 13 THEN 500
+            WHEN grpc_status_code = 14 THEN 503
+            WHEN grpc_status_code = 15 THEN 500
+            WHEN grpc_status_code = 16 THEN 401
+            ELSE 200
+        END as responseStatus,
+        CAST(unixtime as UInt64) as unixtime,
+        `timestamp`,
+        duration as requestTime,
+        request_method as requestMethod
+    FROM FILTER('//logs/yc-api-request-log/30min', $fn)
+    WHERE
+        app = 'gateway'
+        AND authority LIKE '%cloud.yandex.net%'
+        AND client_trace_id != ''
+        AND client_trace_id != '-'
+);
+--INSERT INTO @source SELECT * FROM $source ORDER BY `timestamp`;
+--COMMIT;
+
+$reduce_function = @@
+
+def reduce(keys, records):
+    for tup in records:
+        response,unixtime,timestamp,duration,method = tup[0],tup[1],tup[2],tup[3],tup[4]
+        record_dict = {
+            'service': keys[0],
+            'authority': keys[1],
+            'requestUrl': keys[2],
+            'client_trace_id': keys[3],
+            'responseStatus': response,
+            'unixtime': unixtime,
+            'timestamp': timestamp,
+            'requestTime': duration,
+            'requestMethod': method
+        }
+        if response != 503:
+            yield record_dict
+
+    if response == 503:
+        yield record_dict
+@@;
+
+$udf = Python::reduce(Callable<(
+    Tuple<
+        String?,
+        String?,
+        String?,
+        String?
+    >,
+    Stream<Tuple<
+        Int32,
+        UInt64?,
+        String?,
+        UInt64?,
+        String?
+    >>
+) -> Stream<Struct<
+        service:String?,
+        authority:String?,
+        requestUrl:String?,
+        client_trace_id:String?,
+        responseStatus:Uint64?,
+        unixtime:Uint64?,
+        `timestamp`:String?,
+        requestTime:Uint64?,
+        requestMethod:String?>>>,
+    $reduce_function
+);
+
+
+$trace_part = (
+REDUCE $source
+PRESORT `timestamp`
+ON service,authority,requestUrl,client_trace_id
+USING $udf(AsTuple(responseStatus,unixtime,`timestamp`,requestTime,requestMethod))
+);
+
+$requests = (
+SELECT 
+    *
+FROM $trace_part
+UNION ALL
+SELECT 
+    *
+FROM $empti_trace_part
+);
+
+$requests_aggr = (
+SELECT
+    unixtime,
+    authority,
+    requestMethod,
+    requestUrl,
+    responseStatus,
+    service,
+    COUNT(*) as requests,
+    SUM(requestTime) as requestTime
+FROM(
+    SELECT
+        CAST(Math::Round(`unixtime`/300, 0)*300 AS UInt64) as unixtime,
+        `client_trace_id`,
+        `requestTime`,
+        `authority`,
+        `requestMethod`,
+        `requestUrl`,
+        `timestamp`,
+        `responseStatus`,
+        `service`
+    FROM $requests
+)
+GROUP BY
+    unixtime,
+    authority,
+    requestMethod,
+    requestUrl,
+    responseStatus,
+    service
+);
+
+$clean_today = (
+SELECT
+    *
+FROM $result
+WHERE
+    CAST(DateTime::FromSeconds(CAST(unixtime AS Uint32)) AS Date) < CAST(DateTime::FromSeconds(CAST(DateTime::ToSeconds(CurrentUtcDate()) - 86400 AS UInt32)) AS Date)
+
+);
+$clean_today_aggr = (
+SELECT
+    *
+FROM $result_aggr
+WHERE
+    CAST(DateTime::FromSeconds(CAST(unixtime AS Uint32)) AS Date) < CAST(DateTime::FromSeconds(CAST(DateTime::ToSeconds(CurrentUtcDate()) - 86400 AS UInt32)) AS Date)
+);
+
+INSERT INTO $result WITH TRUNCATE
+    SELECT
+        *
+    FROM $requests
+    UNION ALL
+    SELECT
+        *
+    FROM $clean_today
+;
+     
+INSERT INTO $result_aggr WITH TRUNCATE
+     SELECT
+        *
+    FROM $requests_aggr
+    UNION ALL
+    SELECT
+        *
+    FROM $clean_today_aggr
+;

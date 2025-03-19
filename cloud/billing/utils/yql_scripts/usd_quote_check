@@ -1,0 +1,26 @@
+$hour_offset = 20;
+
+$format_date = DateTime::Format("%Y-%m-%d");
+$get_date_by_timestamp = ($timestamp) -> {{ RETURN $format_date(AddTimezone(DateTime::FromSeconds(CAST($timestamp AS Uint32)), 'Europe/Moscow')); }};
+
+$date_to_check = $get_date_by_timestamp(Datetime::ToSeconds(CurrentUtcTimestamp()) - $hour_offset * 3600);
+
+$src_table = "{src_table}";
+$quote_table = "{quote_table}";
+
+
+$quotes = (SELECT `date`, quote
+FROM $quote_table
+WHERE `date` <= $date_to_check AND currency = "USD");
+
+$cube = (SELECT billing_record_cost_rub, billing_record_cost, billing_record_date
+FROM $src_table
+WHERE billing_record_date <= $date_to_check
+AND billing_account_currency = "USD");
+
+$to_check = (SELECT a.billing_record_cost_rub AS cost_rub, a.billing_record_cost * b.quote AS cost_prod_quote, b.`date` as `date`
+from $cube as a
+left join $quotes as b
+on a.billing_record_date = b.`date`);
+
+select * from $to_check where cost_rub != cost_prod_quote;

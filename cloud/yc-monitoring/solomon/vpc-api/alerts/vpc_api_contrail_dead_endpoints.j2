@@ -1,0 +1,47 @@
+{% extends "vpc_api_base_alert.j2" %}
+
+{% set service = "vpc-api-contrail-dead-endpoints" %}
+
+{% macro prog() %}
+let signal_ts = {
+    cluster='cloud_{{env}}_vpc-api'
+    ,service='vpc-config-plane'
+    ,sensor='contrail_pinger'
+    ,host='vpc-api-*'
+    ,type='total'
+};
+// There should be alive or dead contrails for this vpc-api host
+no_data_if(count(signal_ts) == 0);
+
+let ts = series_max({
+    cluster='cloud_{{env}}_vpc-api'
+    ,service='vpc-config-plane'
+    ,sensor='contrail_pinger'
+    ,host='vpc-api-*'
+    ,type='dead'
+});
+
+// It's ok, just no 5xx for a while
+ok_if(count(ts) == 0);
+
+let contrail_dead_endpoints_count = max(ts);
+
+alarm_if(contrail_dead_endpoints_count > 3);
+warn_if(contrail_dead_endpoints_count > 2);
+{% endmacro %}
+
+{% block main %}
+    "name": "VPC API dead contrail endpoints {{env}}",
+    "annotations": {
+        "contrail_dead_endpoints_count": "[[expression.contrail_dead_endpoints_count]]",
+        "description": "'VPC API dead contrail endpoints: [[expression.contrail_dead_endpoints_count]]",
+        "host": "{{ svm_fqdn() }}",
+        "service": "{{ service }}",
+        "dashboard": "{{ vpc_api_dashboard() }}",
+        "wiki": "{{ wiki_url(service) }}"
+    },
+    "type": {{ type_expression() }},
+    "groupByLabels": [
+        "host"
+    ]
+{% endblock %}

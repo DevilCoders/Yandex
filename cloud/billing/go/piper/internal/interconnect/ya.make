@@ -1,0 +1,9 @@
+RECURSE(
+    auth
+    cloudmeta
+    grpccon
+    iam
+    lockbox
+    team_integration
+    unified_agent
+)

@@ -1,0 +1,2 @@
+include:
+    - components.clickhouse.models

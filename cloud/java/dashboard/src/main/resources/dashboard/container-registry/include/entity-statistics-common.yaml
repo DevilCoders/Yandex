@@ -1,0 +1,54 @@
+tags: [ 'ycp', 'ycp-cr', 'ycp-cr-@1' ]
+
+queryDefaults:
+  labels: 'project=yc.cr.cloud, cluster=yc.cr.metrics, service=manager-ma, host!=cluster'
+
+graphDefaults:
+  datasource: @2
+  width: 8
+  height: 8
+
+variables:
+  replacement:
+    base_labels: "project='yc.cr.cloud', cluster='yc.cr.metrics', service='manager-ma', host!='cluster'"
+    heartbeat_timeseries: "drop_below(diff(group_by_time(3m, 'max', {@base_labels, name='monitoringjob_mon_heartbeat'})), 1)"
+  repeat:
+    sensor:
+      values: [registry_count, image_count, blob_size]
+      variables:
+        title: ["Registries count", "Images count", "Summary blobs size"]
+        yfmt: [short, short, decbytes]
+    sensor_for_image:
+      values: [image_push_count, image_pull_count]
+      variables:
+        title: ["Images push rps", "Image pull rps"]
+
+panels:
+  - type: graph
+    repeat: sensor
+    title: '@sensor:title'
+    display: { stack: true, fill: 7 }
+    yAxes: [{ format: '@sensor:yfmt', min: 0 }]
+    draw:
+      - { alias: active, color: '#0F0' }
+      - { alias: inactive, color: '#C0C0C0' }
+      - { alias: public, color: '#00F' }
+      - { alias: inner, color: '#FFC' }
+    queries:
+      - expr: "alias(group_lines('max', group_by_time(3m, 'max', {@base_labels, name='statistics_@{sensor}', registry_type='active'}) * @heartbeat_timeseries), 'active')"
+      - expr: "alias(group_lines('max', group_by_time(3m, 'max', {@base_labels, name='statistics_@{sensor}', registry_type='inactive'}) * @heartbeat_timeseries), 'inactive')"
+      - expr: "alias(group_lines('max', group_by_time(3m, 'max', {@base_labels, name='statistics_@{sensor}', registry_type='public'}) * @heartbeat_timeseries), 'public')"
+      - expr: "alias(group_lines('max', group_by_time(3m, 'max', {@base_labels, name='statistics_@{sensor}', registry_type='inner'}) * @heartbeat_timeseries), 'inner')"
+
+  - type: graph
+    repeat: sensor_for_image
+    templates: [{ name: rps, sumLines: ['max', 'registry_type']}, { name: alias }]
+    title: '@sensor_for_image:title'
+    draw:
+      - { alias: customer, color: '#0F0' }
+      - { alias: public, color: '#00F' }
+      - { alias: inner, color: '#FFC' }
+    queries:
+      - params: { labels: 'name=statistics_@{sensor_for_image}, registry_type=active'}
+      - params: { labels: 'name=statistics_@{sensor_for_image}, registry_type=public'}
+      - params: { labels: 'name=statistics_@{sensor_for_image}, registry_type=inner'}

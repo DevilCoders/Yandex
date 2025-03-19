@@ -1,0 +1,38 @@
+#!/bin/bash
+# a simplified version of debian pg_listclusters, for greenplum
+
+if [[ -z "${MASTER_DATA_DIRECTORY}" ]]; then
+    MASTER_DATA_DIRECTORY=/var/lib/greenplum/data1/master/gpseg-1
+fi
+
+if [[ -n "${GPHOME}" ]]; then
+    VERSION=${GPHOME##*greenplum-db-}
+else
+    VERSION=6
+fi
+
+pidfile="${MASTER_DATA_DIRECTORY}/postmaster.pid"
+if [[ -e "${pidfile}" ]]; then
+    pid=$(cat "${pidfile}" | head -1)
+    if [[ -e "/proc/$pid/comm" ]]; then
+        comm=$(cat /proc/$pid/comm)
+        if [[ "${comm}" == 'postgres' ]]; then
+            STATUS="online"
+        else
+            STATUS="down"
+        fi
+    else
+        STATUS="down"
+    fi
+else
+    STATUS="down"
+fi
+if [[ -e "${MASTER_DATA_DIRECTORY}/recovery.conf" ]]; then
+    STATUS="${STATUS},recovery"
+fi
+LOGFILE="${MASTER_DATA_DIRECTORY}/pg_log/greenplum-${VERSION}-data.csv"
+CLUSTERNAME="data"
+OWNER="gpadmin"
+PGPORT="5432"
+
+echo "${VERSION} ${CLUSTERNAME} ${PGPORT} ${STATUS} ${OWNER} ${MASTER_DATA_DIRECTORY} ${LOGFILE}"

@@ -1,0 +1,92 @@
+{% from "components/mysql/map.jinja" import mysql with context %}
+
+{% if restore_config and salt.pillar.get('restore-from:cid') %}
+
+{% set defaults_file = '/home/mysql/.restore.my.cnf' %}
+{% set pgp_key_path = '/etc/wal-g/RESTORE_PGP_KEY' %}
+{% set s3_bucket = salt.pillar.get('data:restore-from-pillar-data:s3_bucket', 'mdb') %}
+{% set cid = salt.pillar.get('restore-from:cid') %}
+
+{% else %}
+
+{% if replica_config and salt.pillar.get('replica') %}
+{% set defaults_file = '/home/mysql/.replica.my.cnf' %}
+{% else %}
+{% set defaults_file = '/home/mysql/.my.cnf' %}
+{% endif %}
+{% set pgp_key_path = '/etc/wal-g/PGP_KEY' %}
+{% set s3_bucket = salt.pillar.get('data:s3_bucket', 'mdb') %}
+{% set cid = salt.pillar.get('data:dbaas:cluster_id') %}
+
+{% endif %}
+
+{% set walg_io_limit = salt.pillar.get('data:dbaas:flavor:io_limit') | int // 2 %}
+{% set walg_network_limit = salt.pillar.get('data:dbaas:flavor:network_limit') | int // 2 %}
+{% set cpu_guarantee = salt.pillar.get('data:dbaas:flavor:cpu_guarantee') %}
+{% if cpu_guarantee < 4 %}
+{% set backup_threads = 1 %}
+{% else %}
+{% set backup_threads = (cpu_guarantee | int // 2) | int %}
+{% endif %}
+
+{% set environment = salt['pillar.get']('yandex:environment', 'dev') %}
+{% set memory_guarantee_gb = (salt.pillar.get('data:dbaas:flavor:memory_guarantee', 0)|int) / (1024**3) %}
+{% set space_limit_bytes = salt.pillar.get('data:dbaas:space_limit', 0)|int %}
+{% set space_limit_gb = space_limit_bytes / (1024**3) %}
+{% set multipart_chunk_size = 20 * 1024**2 %}
+{% if memory_guarantee_gb <= 4 %}
+{%   set multipart_chunk_size = 5 * 1024**2 %}
+{% endif %}
+
+{% set s3_max_parts_count = 10000 %}
+{% set compression_estimation = salt.pillar.get('data:walg:compression_estimation', 2) %}
+{% set multipart_chunk_size_crit = (space_limit_bytes / s3_max_parts_count / compression_estimation)| int %}
+{% set multipart_chunk_size = [multipart_chunk_size, multipart_chunk_size_crit]| max %}
+{% set default_splitter_partitions = [ 16, backup_threads | int ] | min %}
+
+# Uncomment following lines to enable go debugging features:
+#HTTP_LISTEN: localhost:9876
+#HTTP_EXPOSE_PPROF: True
+
+WALG_COMPRESSION_METHOD: {{ salt.pillar.get('data:walg:compression', 'brotli') }}
+WALG_GPG_KEY_ID: ''
+WALG_PGP_KEY_PATH: {{ pgp_key_path }}
+
+GOMAXPROCS: {{ backup_threads|int + 1 }}
+WALG_DISK_RATE_LIMIT: {{ walg_io_limit|int }}
+WALG_NETWORK_RATE_LIMIT: {{ walg_network_limit|int }}
+WALG_UPLOAD_CONCURRENCY: 1
+
+WALG_STREAM_SPLITTER_PARTITIONS: {{ salt.pillar.get('data:walg:splitter_partitions', default_splitter_partitions)|int }}
+WALG_STREAM_SPLITTER_BLOCK_SIZE: 1048576
+
+WALG_S3_PREFIX: {{ "s3://{0}/wal-g/{1}/{2}/".format(s3_bucket, cid, mysql.version.num) }}
+AWS_ENDPOINT: {{ salt.pillar.get('data:s3:endpoint', 'https://s3.mds.yandex.net/').replace('https+path','https').replace('http+path','http') }}
+AWS_S3_FORCE_PATH_STYLE: {{ (not salt.pillar.get('data:s3:virtual_addressing_style', False)) }}
+{% if salt.pillar.get('data:s3:access_key_id') %}
+AWS_ACCESS_KEY_ID: {{ salt.pillar.get('data:s3:access_key_id') }}
+{% endif %}
+{% if salt.pillar.get('data:s3:access_secret_key') %}
+AWS_SECRET_ACCESS_KEY: {{ salt.pillar.get('data:s3:access_secret_key') }}
+{% endif %}
+{% if salt.pillar.get('data:s3:region') %}
+AWS_REGION: {{ salt.pillar.get('data:s3:region') }}
+{% endif %}
+WALG_S3_MAX_PART_SIZE: {{ multipart_chunk_size }}
+
+WALG_MYSQL_DATASOURCE_NAME: {{ "admin:{0}@tcp({1}:3307)/mysql".format(salt.pillar.get('data:mysql:users:admin:password'), salt['grains.get']('fqdn')) }}
+{% if salt.pillar.get('data:mysql:use_ssl', True) %}
+WALG_MYSQL_SSL_CA: /etc/mysql/ssl/allCAs.pem
+{% endif %}
+
+WALG_MYSQL_TAKE_BINLOGS_FROM_MASTER: True
+WALG_MYSQL_BINLOG_DST: /var/lib/mysql/.oldbinlogs
+WALG_STREAM_CREATE_COMMAND: >
+    xtrabackup --backup --stream=xbstream {% if salt.pillar.get('data:mysql:use_xtrabackup_ddl_lock', True) %}--lock-ddl --lock-ddl-timeout=3600{% endif %} --parallel={{ [4, backup_threads|int]|min }} --datadir=/var/lib/mysql
+WALG_STREAM_RESTORE_COMMAND: >
+    xbstream --extract --parallel={{ backup_threads|int }} --directory=/var/lib/mysql
+WALG_MYSQL_CHECK_GTIDS: True
+WALG_MYSQL_BINLOG_REPLAY_COMMAND: >
+    (mysqlbinlog --stop-datetime="$WALG_MYSQL_BINLOG_END_TS" "$WALG_MYSQL_CURRENT_BINLOG"
+    | mysql --defaults-file={{ defaults_file }} --ssl-mode=VERIFY_CA --port=3308)
+    && mysql --defaults-file={{ defaults_file }} --ssl-mode=VERIFY_CA --port=3308 -e "PURGE BINARY LOGS BEFORE NOW()"

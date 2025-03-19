@@ -1,0 +1,99 @@
+mlock:
+  host: {{ salt['dbaas.pillar']('data:mdb_cms:mlock:host') }}
+  transport:
+    security:
+      tls:
+        ca_file: "/opt/yandex/allCAs.pem"
+swagger:
+  logging:
+    enabled: true
+    log_request_body: true
+    log_response_body: true
+auth:
+  tvmtool:
+    alias: {{ salt['pillar.get']('data:tvmtool:config:client') }}
+    token: {{ salt['pillar.get']('data:tvmtool:token') }}
+    uri: http://localhost:{{ salt['pillar.get']('data:tvmtool:port', 50001) }}
+  blackbox_uri: http://blackbox.yandex-team.ru
+  blackbox_alias: 'blackbox'
+cms:
+  respect_autoduty_decision: true
+  groups_white_list:
+    {{ salt['dbaas.pillar']('data:mdb_cms:cms:groups_white_list', []) | yaml(False) | indent(4) }}
+  groups_black_list:
+    {{ salt['dbaas.pillar']('data:mdb_cms:cms:groups_black_list', []) | yaml(False) | indent(4) }}
+  pgass_int_test_c_group: dbaas_infra_test_vms
+  pgass_int_test_allow_at_once: 1
+  downtime_juggler_namespaces:
+    - dbaas.core
+    - dbaas.clickhouse
+    - dbaas.dataproc
+    - dbaas.mongodb
+    - dbaas.mysql
+    - dbaas.redis
+    - dbaas.postgresql
+    - dbaas.sqlserver
+    - dbaas.s3
+    - dbaas.elasticsearch
+    - dbaas.kafka
+  ok_hours_at_walle: 24
+  ok_friday_hours_at_walle: 2
+  ok_hours_unfinished: 3
+  duty_decision_threshold_min: 5
+  steps:
+    register_minion:
+      group: {{ salt['dbaas.pillar']('data:mdb_cms:cms:steps:deploy_minion_group') }}
+    new_hosts:
+      group_id: {{ salt['dbaas.pillar']('data:mdb_cms:cms:steps:conductor_dom0_group') }}
+    shipments:
+      timeout_minutes: 120
+      max_errors: 0
+      parallel: 1
+    selfdns:
+      wait_minutes: 10
+    drills:
+{% for drill in salt['pillar.get']('data:mdb_cms:cms:steps:drills', []) %}
+      - from: {{ drill['from'] }}
+        till: {{ drill['till'] }}
+        availability_zones: {{ drill['availability_zones'] | json_encode_list }}
+        ticket: {{ drill['ticket'] }}
+        wait_before: {{ drill['wait_before'] }}
+        wait_after: {{ drill['wait_after'] }}
+{% endfor %}
+  mutating_dom0_limit: 40
+  ui_host: {{ salt['pillar.get']('data:ui:address') }}
+health:
+  host: {{ salt['pillar.get']('data:mdb_cms:health:host') }}
+juggler:
+  token: {{ salt['pillar.get']('data:mdb_cms:juggler:oauth') }}
+conductor:
+  oauth: {{ salt['dbaas.pillar']('data:mdb_cms:conductor:oauth', 'not available') }}
+deploy:
+  token: {{ salt['pillar.get']('data:mdb_cms:deploy:token') }}
+  uri: https://{{ salt['pillar.get']('data:mdb_cms:deploy:hostname') }}
+  transport:
+    logging:
+      enabled: true
+    tls:
+      ca_file: "/opt/yandex/allCAs.pem"
+saltkey: {{ salt['pillar.get']('data:mdb-cms:saltkey', '') }}
+dbm:
+  token: {{ salt['pillar.get']('data:mdb_cms:dbm:token') }}
+  host: {{ salt['pillar.get']('data:mdb_cms:dbm:host') }}
+app:
+  logging:
+    level: debug
+  instrumentation:
+    addr: "[::1]:{{ salt['pillar.get']('data:mdb_cms:instrumentation:port') }}"
+  sentry:
+    environment: {{ salt['pillar.get']('data:sentry:environment') }}
+    dsn: {{ salt['pillar.get']('data:mdb_cms:sentry:dsn') }}
+  service_account:
+    id: {{ salt['dbaas.pillar']('data:mdb_cms:service_account:id') }}
+    key_id: {{ salt['dbaas.pillar']('data:mdb_cms:service_account:key_id') }}
+    private_key: {{ salt['dbaas.pillar']('data:mdb_cms:service_account:private_key') | yaml_encode }}
+  app_name: cms
+  environment:
+    {{ salt['dbaas.pillar']('data:environment') | yaml(False) | indent(4) }}
+instance:
+  host: {{ salt['dbaas.pillar']('data:cms:address') }}

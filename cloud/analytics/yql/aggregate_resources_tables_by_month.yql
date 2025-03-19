@@ -1,0 +1,100 @@
+USE hahn;
+PRAGMA yt.InferSchema = '1';
+PRAGMA yt.MinPublishedAvgChunkSize = '0';
+
+$from_path = "home/cloud_analytics/import/resources/1h";
+$folder_paths = (
+    SELECT AGGREGATE_LIST(Path)
+    FROM FOLDER($from_path, "row_count")
+    WHERE Type = "map_node"
+);
+
+DEFINE ACTION $drop_aggregated_table($table) AS
+    DROP TABLE $table;
+END DEFINE;
+
+DEFINE ACTION $aggregate_tables($tables, $output_table) AS
+    INSERT INTO $output_table SELECT * FROM EACH ($tables);
+END DEFINE;
+
+DEFINE ACTION $merge_table_chunks($table) AS
+    INSERT INTO $table WITH TRUNCATE  SELECT * FROM $table;
+END DEFINE;
+
+DEFINE ACTION $stack_table($agg_name, $table_path) AS
+    insert into @stacked_table
+    select
+        t.end          as t,
+        $agg_name   as agg_name,
+        t.$agg_name as agg_value,
+        t.node_name    as node_name,
+        t.platform     as platform,
+        t.zone_id      as zone_id,
+        t.metric       as metric
+      from $table_path as t;
+END DEFINE;
+
+$yesterday_ts = CurrentUtcTimestamp() - Interval("P1D");
+$year = (SELECT CAST(DateTime::GetYear($yesterday_ts) as String));
+$month_ = (SELECT CAST(DateTime::GetMonth($yesterday_ts) as String));
+$month = (
+    SELECT
+        CASE
+            WHEN length($month_) = 1
+            THEN '0' || $month_
+            ELSE $month_
+  END
+);
+$today = (SELECT CAST(DateTime::GetDayOfMonth(CurrentUtcTimestamp()) as String));
+$tables_exclude = "/" || $year || "-" || $month || "-" || $today || "%" ?? "";
+$tables_filter = "/" || $year || "-" || $month || "-%" ?? "";
+$agg_folder = "//home/cloud_analytics/import/solomon/nodes/1mon";
+$agg_table = $agg_folder || "/" || $year || "-" || $month ?? "";
+
+DEFINE ACTION $process_folder($folder_path) AS
+    $output_folder = String::ReplaceAll($folder_path, "/1h", "/1mon");
+    $output_table = $output_folder || "/" || $year || "-" || $month ?? "";
+    $agg_name =ListLast(String::SplitToList($folder_path, "/"));
+    $tables_to_agregate = (
+        SELECT AGGREGATE_LIST(Path)
+        FROM FOLDER($folder_path, "row_count")
+        WHERE
+            Type = "table"
+            AND Path LIKE $folder_path || $tables_filter
+            AND Path NOT LIKE $folder_path || $tables_exclude
+            AND Yson::LookupInt64(Attributes, "row_count") > 0
+    );
+    $tables_to_merge_chunks = (
+        SELECT AGGREGATE_LIST(Path)
+            FROM FOLDER($output_folder, "chunk_count")
+            WHERE
+                Type = "table"
+                AND Path NOT LIKE $output_table
+                AND Yson::LookupInt64(Attributes, "chunk_count") > 1
+    );
+    EVALUATE FOR $tb IN $tables_to_agregate
+        DO $stack_table($agg_name, $tb);
+    EVALUATE IF $tables_to_agregate IS NOT Null
+        DO $aggregate_tables($tables_to_agregate, $output_table);
+    EVALUATE FOR $tb IN $tables_to_agregate
+        DO $drop_aggregated_table($tb);
+    EVALUATE FOR $tb IN $tables_to_merge_chunks
+        DO $merge_table_chunks($tb);
+END DEFINE;
+
+EVALUATE FOR $folder_path IN $folder_paths DO $process_folder($folder_path);
+
+COMMIT;
+
+insert into $agg_table
+select
+    t,
+    node_name,
+    platform,
+    zone_id,
+    metric,
+    max(if(agg_name = "max", agg_value)) as max,
+    min(if(agg_name = "min", agg_value)) as min,
+    avg(if(agg_name = "avg", agg_value)) as avg,
+from @stacked_table
+group by t, node_name, platform, zone_id, metric;

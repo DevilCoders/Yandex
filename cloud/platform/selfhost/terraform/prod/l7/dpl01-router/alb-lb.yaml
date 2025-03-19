@@ -1,0 +1,78 @@
+# Update:
+#  $ ycp --profile=prod platform alb load-balancer update -r alb-lb.yaml
+#
+
+# Fields used for creation:
+#folder_id: "b1gvgqhc57450av0d77p"
+#internal: true
+
+load_balancer_id: ds7eljjtj8npuq7fm325
+
+# diff -y  <(ycp --profile=prod platform alb load-balancer get ds7eljjtj8npuq7fm325) <(ycp --profile=prod platform alb load-balancer update -r alb-lb.yaml)
+dry_run: true
+update_mask:
+  paths:
+  - labels
+  - listener_specs
+
+name: "dpl01"
+description: "AI dataplane"
+labels:
+  internal-instance-name: dpl01-router-ig
+  internal-solomon-cluster: cloud_prod_dpl01
+  internal-conductor-group: l7-dpl01-router
+  internal-enable-remote-als: yyy
+  internal-disable-local-als: yyy
+listener_specs:
+- name: frontend-v6-tls
+  port: 443
+  external_address_spec:
+    address: "::"
+    ip_version: IPV6
+  tls:
+    default_handler:
+      http_handler:
+        http_router_id: ds7bg0fn5m8f3phddumq
+        is_edge: true
+        http2_options:
+          max_concurrent_streams: 100
+      tls:
+        certificate_ids: ["fpqe1c9bkgpmjfcsf4dc"]
+    tcp_options:
+      connection_buffer_limit_bytes: 32768 # 32 KiB
+- name: frontend-v4-tls
+  port: 443
+  external_address_spec:
+    address: "0.0.0.0"
+    ip_version: IPV4
+  tls:
+    default_handler:
+      http_handler:
+        http_router_id: ds7bg0fn5m8f3phddumq
+        is_edge: true
+        http2_options:
+          max_concurrent_streams: 100
+      tls:
+        certificate_ids: ["fpqe1c9bkgpmjfcsf4dc"]
+    tcp_options:
+      connection_buffer_limit_bytes: 32768 # 32 KiB
+- name: plaintext
+  endpoint_specs:
+  - ports: [80]
+    address_specs:
+    - external_ipv4_address_spec: {}
+    - external_ipv6_address_spec: {}
+  http:
+    handler:
+      http_router_id: ds7bk7l1vse12umrielf # common plaintext router (from api-router)
+      is_edge: true
+      http2_options:
+        max_concurrent_streams: 100
+    tcp_options:
+      connection_buffer_limit_bytes: 32768 # 32 KiB
+
+allocation_policy:
+  locations:
+  - { zone_id: ru-central1-a, subnet_id: e9bi9drqb7rddf4od5jk }
+  - { zone_id: ru-central1-b, subnet_id: e2lo6auqjjfru2tfnorm }
+  - { zone_id: ru-central1-c, subnet_id: b0c3id3uje06qohkgmlg }

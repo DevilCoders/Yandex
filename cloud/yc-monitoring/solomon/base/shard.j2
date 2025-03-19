@@ -1,0 +1,33 @@
+{% set service = config_name.split("@")[0] %}
+{% set cluster = config_name.split("@")[1] %}
+{% set conductor_group = "cloud_" + (env if cluster == "_ALL" else env + "_" + cluster) %}
+{% set cluster_name = cluster_name | default(conductor_group) %}
+{% set service_name = service_name | default(service) %}
+{% set state = state | default("RW") %}
+
+{% set id_prefix = "" if no_project_id_prefix else project_id + "_" %} {# Legacy, should not be used in new projects #}
+{% set cluster_id = cluster_id | default(id_prefix + conductor_group) %}
+{% set service_id = service_id | default(id_prefix + service) %}
+{% set shard_id = id_override | default(id_prefix + conductor_group + "_" + service) %}
+
+{% if env in ("testing", "preprod") %}
+    {% set short_ttl = override_short_ttl|default(3) %}
+    {# 1. For TESTING & PRE-PROD envs, there is no need to store a lot of data.
+    {# To prevent shards from hitting QUOTA_ERROR, reduce TTL by default. #}
+    {# 2. In special (rare) cases, we need to increase (override) this TTL. #}
+    {% set ttl_days = [short_ttl, ttl_days|default(short_ttl)|int]|min %}
+{% endif %}
+
+{
+    "id": "{{ shard_id }}",
+    "projectId": "{{ project_id }}",
+    "clusterId": "{{ cluster_id }}",
+    "clusterName": "{{ cluster_name }}",
+    "serviceId": "{{ service_id }}",
+    "serviceName": "{{ service_name }}",
+    {% if ttl_days %}"sensorsTtlDays": {{ ttl_days }},{% endif %}
+    "decimPolicy": "UNDEFINED",
+    "validationMode": "legacySkip",
+    "sensorNameLabel": "",
+    "state": "{{ state }}"
+}

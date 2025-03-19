@@ -1,0 +1,166 @@
+apiVersion: v1
+kind: PodList
+items:
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: api-infrastructure
+    namespace: kube-system
+    annotations:
+      config_digest: ${infra_config_digest}
+      scheduler.alpha.kubernetes.io/critical-pod: ""
+    labels:
+      role: api
+  spec:
+    priority: 2000000001
+    hostNetwork: true
+    hostPID: true
+    priorityClassName: system-cluster-critical
+    initContainers:
+    - name: deploy-infra-configs
+      image: cr.yandex/crp7nvlkttssi7kapoho/infra/metadata:${metadata_version}
+      command:
+      - /usr/bin/metadata
+      - --attribute-name
+      - infra-configs
+      imagePullPolicy: Always
+      volumeMounts:
+      - name: all-configs
+        mountPath: /etc
+        terminationGracePeriodSeconds: 30
+    containers:
+    - name: push-client
+      image: cr.yandex/crpr3khkepsccf25vvt6/push-client:${push_client_version}
+      resources:
+        requests:
+          memory: "256Mi"
+        limits:
+          memory: "256Mi"
+      volumeMounts:
+      - name: var-log
+        mountPath: /var/log
+        terminationGracePeriodSeconds: 30
+      - name: var-spool
+        mountPath: /var/spool
+        terminationGracePeriodSeconds: 30
+      - name: push-client-config
+        mountPath: /etc/yandex/statbox-push-client
+        readOnly: true
+      - name: run-push-client
+        mountPath: /run/push-client
+        readOnly: true
+    - name: push-client-yc-logbroker
+      image: cr.yandex/crpr3khkepsccf25vvt6/push-client:${push_client_version}
+      command: ["/usr/bin/push-client", "-f", "-c", "/etc/yandex/statbox-push-client/push-client-yc-logbroker.yaml"]
+      resources:
+        requests:
+          memory: "256Mi"
+        limits:
+          memory: "256Mi"
+      volumeMounts:
+      - name: var-log
+        mountPath: /var/log
+        terminationGracePeriodSeconds: 30
+      - name: var-spool
+        mountPath: /var/spool
+        terminationGracePeriodSeconds: 30
+      - name: push-client-config
+        mountPath: /etc/yandex/statbox-push-client
+        readOnly: true
+      - name: run-push-client
+        mountPath: /run/push-client
+        readOnly: true
+    volumes:
+    - name: all-configs
+      hostPath:
+       path: /etc
+       type: DirectoryOrCreate
+    - name: var-log
+      hostPath:
+        path: /var/log
+    - name: var-spool
+      hostPath:
+        path: /var/spool
+    - name: var-spool-push-client
+      hostPath:
+        path: /var/spool/push-client
+    - name: push-client-config
+      hostPath:
+        path: /etc/yandex/statbox-push-client
+    - name: run-push-client
+      hostPath:
+        path: /run/push-client
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: api-static
+    namespace: kube-system
+    labels:
+      role: api
+    annotations:
+      config_digest: ${config_digest}
+      scheduler.alpha.kubernetes.io/critical-pod: ""
+  spec:
+    priority: 2000000001
+    priorityClassName: system-cluster-critical
+    hostNetwork: true
+    initContainers:
+    - name: deploy-configs
+      image: cr.yandex/crp7nvlkttssi7kapoho/infra/metadata:${metadata_version}
+      volumeMounts:
+      - name: all-configs
+        mountPath: /etc
+        terminationGracePeriodSeconds: 30
+      - name: usr-local
+        mountPath: /usr/local
+        terminationGracePeriodSeconds: 30
+    containers:
+    - name: certificate-manager-ydb-dumper
+      image: cr.yandex/crpr3khkepsccf25vvt6/ydb-dumper:${application_version}
+      env:
+      - name: APPLICATION_YAML
+        value: /etc/certificate-manager/application.yaml
+      - name: APPLICATION_LOG_DIR
+        value: /var/log/certificate-manager
+      - name: APPLICATION_LOG_FILE_MAX_FILES
+        value: "3"
+      - name: APPLICATION_ACCESS_LOG_FILE_MAX_FILES
+        value: "3"
+      - name: JAVA_TOOL_OPTIONS
+        value: "-XX:-UseContainerSupport -Djava.net.preferIPv6Addresses=true -Dfile.encoding=UTF-8 -Xlog:gc*:file=/var/log/certificate-manager/gc.log::filecount=10,filesize=100M"
+      volumeMounts:
+      - name: certificate-manager-configs
+        mountPath: /etc/certificate-manager
+        readOnly: true
+      - name: var-certificate-manager
+        mountPath: /var/certificate-manager
+        terminationGracePeriodSeconds: 30
+      - name: var-log-certificate-manager
+        mountPath: /var/log/certificate-manager
+      - name: run-ycm
+        mountPath: /run/ycm
+    volumes:
+    - name: all-configs
+      hostPath:
+        path: /etc
+        type: DirectoryOrCreate
+    - name: certificate-manager-configs
+      hostPath:
+        path: /etc/certificate-manager
+        type: DirectoryOrCreate
+    - name: usr-local
+      hostPath:
+       path: /usr/local
+       type: DirectoryOrCreate
+    - name: var-certificate-manager
+      hostPath:
+        path: /var/certificate-manager
+        type: DirectoryOrCreate
+    - name: var-log-certificate-manager
+      hostPath:
+        path: /var/log/certificate-manager
+        type: DirectoryOrCreate
+    - name: run-ycm
+      hostPath:
+        type: DirectoryOrCreate
+        path: /run/ycm

@@ -1,0 +1,44 @@
+{% extends "../../base/alert.j2" %}
+
+{% set idc="fail-%dmin" % minutes %}
+{% set description="Is check in Mr. Prober VM failed?" %}
+
+{% set windowSecs=minutes * 60 %}
+{% set delaySecs=15 %}
+{% set resolvedEmptyPolicy="RESOLVED_EMPTY_NO_DATA" %}
+{% set noPointsPolicy="NO_POINTS_NO_DATA" %}
+
+{% block main %}
+    "name": "Did prober fail in last {{ minutes }} minute{{ "" if minutes == 1 else "s" }}?",
+    "groupByLabels": [
+		"cluster",
+   		"prober_slug",
+    	"host",
+    	"cluster_slug"
+	],
+    "annotations": {
+        "host": "[[labels.host]]",
+        "stand": "[[labels.cluster]]",
+        "service": "mr-prober-[[labels.prober_slug]]-{{ minutes }}min",
+        "prober": "[[labels.prober_slug]]",
+        "cluster": "[[labels.cluster_slug]]",
+        "logs": "{{ s3_viewer_url }}/mr-prober-logs?key=[[labels.cluster]]%2Fprobers%2F[[labels.cluster_slug]]%2F[[labels.host]]%2F[[labels.prober_slug]]%2F",
+        "fails graph": "{{ solomon_endpoint }}/?project={{ project_id }}&service=metrics&l.metric=fail&cluster=[[labels.cluster]]&l.prober_slug=[[labels.prober_slug]]&l.host=[[labels.host]]&l.cluster_slug=[[labels.cluster_slug]]&graph=auto&b=1h&e=&downsamplingFill=previous"
+    },
+    "type": {
+        "threshold": {
+            "selectors": "{service='metrics', metric='fail'}",
+            "timeAggregation": "AT_LEAST_ONE",
+            "predicate": "GTE",
+            "threshold": 1,
+            "predicateRules": [
+                {
+                    "thresholdType": "AT_LEAST_ONE",
+                    "comparison": "GTE",
+                    "threshold": 1,
+                    "targetStatus": "ALARM"
+                }
+            ]
+        }        
+    }
+{% endblock %}

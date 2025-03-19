@@ -1,0 +1,28 @@
+info: Minor update of MongoDB 5.0 version to "5.0.5"
+disabled: true
+min_days: 4
+clusters_selection:
+  db: >-
+    SELECT
+      cid
+    FROM dbaas.clusters c JOIN dbaas.pillar p USING(cid) WHERE
+      c.type = 'mongodb_cluster'
+      AND c.status = 'RUNNING'
+      AND CAST(p.value #>> '{data,mongodb,version,major_num}' AS int) = 500
+      AND (
+          p.value #>> '{data,mongodb,version,full_num}' IS NULL
+          OR CAST(p.value #>> '{data,mongodb,version,full_num}' AS int) < 50005
+      )
+pillar_change: >-
+  UPDATE dbaas.pillar p
+     SET value = jsonb_set(value, '{data,mongodb,version,full_num}', to_jsonb(CAST('50005' AS text)))
+   WHERE
+     p.cid = :cid
+worker:
+  operation_type: mongodb_cluster_modify
+  task_type: mongodb_cluster_maintenance
+  task_args:
+    run_highstate: true
+    restart: true
+  timeout: 24h
+max_delay_days: 21

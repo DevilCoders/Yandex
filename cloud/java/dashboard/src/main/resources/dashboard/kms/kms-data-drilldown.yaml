@@ -1,0 +1,642 @@
+uid: yc-kms-data-drilldown
+refresh: 1m
+title: YC KMS Data Drilldown
+
+tags: [ 'yc-kms', 'yc-kms-data-drilldown' ]
+
+variables:
+  ui:
+    datasource: { values: [ 'Solomon Cloud', 'Solomon Cloud Preprod' ] }
+    project:
+      values: [ 'kms', 'aoelnudsaq38ftolajvs' ]
+      titles: [ 'Solomon Cloud', 'Solomon Cloud Preprod' ]
+    cluster: { values: [prod, preprod, testing, gpn] }
+  replacement:
+    !include ../include/errors.yaml
+  repeat:
+    tx_duration_sensor:
+      values: ['tx_attempt_duration_seconds', 'tx_total_duration_seconds']
+      titles: ['Tx Attempt Duration', 'Tx Total Duration']
+    jvm_memory_area:
+      values: ['heap', 'nonheap']
+      titles: ['Heap', 'Non-Heap']
+
+links:
+  - { title: 'L3 kms.yandex', url: 'https://grafana.yandex-team.ru/d/rQPhsZcWk/l3-vs-kms-yandex' }
+  - { title: 'Dashboards', tags: ['yc-kms'] }
+
+graphDefaults: { datasource: '${datasource}', width: 8, height: 6 }
+queryDefaults: { labels: 'project=${project}, service=service, cluster=${cluster}, host=kms-data*' }
+
+rows:
+  - title: Private L7
+    drilldowns:
+      - uid: yc-kms-data-private-l7-host-data
+        tags: [ 'yc-kms', 'yc-kms-host' ]
+        ui:
+          datasource: datasource
+          project: project
+          cluster: cluster
+        uiQuery:
+          host:
+            multi: true
+        uiRepeat: host
+        labels: 'host=$host'
+
+    graphDefaults: { width: 8 }
+    queryDefaults: { labels: 'service=private_envoy' }
+    panels:
+      - type: graph
+        title: 'Private L7 RPS'
+        templates: { name: rps, sensor: rate }
+        queries:
+          - params: { labels: 'sensor=envoy_http_downstream_rq_total, envoy_http_conn_manager_prefix=ingress_http' }
+
+      - type: graph
+        title: 'Private L7 Errors'
+        templates: { name: errors, sumLines: true }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'sensor=envoy_http_downstream_rq_xx, envoy_http_conn_manager_prefix=ingress_http, envoy_response_code_class=4' }
+          - params: { labels: 'sensor=envoy_http_downstream_rq_xx, envoy_http_conn_manager_prefix=ingress_http, envoy_response_code_class=5' }
+        draw:
+          - { color: '#147', alias: '4xx' }
+          - { color: '#da7', alias: '5xx' }
+        display: { stack: true }
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        title: 'Private L7 Upstream Errors'
+        templates: { name: errors, sumLines: true }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'sensor=envoy_cluster_upstream_rq_xx, envoy_response_code_class=4' }
+          - params: { labels: 'sensor=envoy_cluster_upstream_rq_xx, envoy_response_code_class=5' }
+          - params: { labels: 'sensor=envoy_cluster_upstream_rq, envoy_response_code=503' }
+        draw:
+          - { color: '#147', alias: '4xx' }
+          - { color: '#da7', alias: '5xx' }
+          - { color: '#b20', alias: '503' }
+        display: { stack: true }
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        title: 'Private L7 Response Duration'
+        templates: { name: percentile, groupLines: true, format: solomon, sensor: rate }
+        queries:
+          - params: { labels: 'sensor=envoy_cluster_upstream_rq_time' }
+        yAxes: [{ format: 'ms' }]
+
+      - type: graph
+        title: 'Private L7 Failed Healthcheck'
+        queries:
+          - params: { labels: 'sensor=envoy_cluster_health_check_failure' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'failures' }
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        title: 'Private L7 Outlier Detection'
+        queries:
+          - params: { labels: 'sensor=envoy_cluster_outlier_detection_ejections_active' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'ejections' }
+        yAxes: [{ min: 0 }]
+
+  - title: Public L7
+    drilldowns:
+      - uid: yc-kms-data-public-l7-host-data
+        tags: [ 'yc-kms', 'yc-kms-host' ]
+        ui:
+          datasource: datasource
+          project: project
+          cluster: cluster
+        uiQuery:
+          host:
+            multi: true
+        uiRepeat: host
+        labels: 'host=$host'
+
+    graphDefaults: { width: 8 }
+    queryDefaults: { labels: 'service=public_envoy, cluster=${cluster}' }
+    panels:
+      - type: graph
+        title: 'Public L7 RPS'
+        templates: { name: rps, sensor: rate }
+        queries:
+          - params: { labels: 'sensor=envoy_http_downstream_rq_total, envoy_http_conn_manager_prefix=frontend_*' }
+
+      - type: graph
+        title: 'Public L7 Errors'
+        templates: { name: errors, sumLines: true }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'sensor=envoy_http_downstream_rq_xx, envoy_http_conn_manager_prefix=frontend_*, envoy_response_code_class=4' }
+          - params: { labels: 'sensor=envoy_http_downstream_rq_xx, envoy_http_conn_manager_prefix=frontend_*, envoy_response_code_class=5' }
+        draw:
+          - { color: '#147', alias: '4xx' }
+          - { color: '#da7', alias: '5xx' }
+        display: { stack: true }
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        title: 'Public L7 Response Duration'
+        templates: { name: percentile, groupLines: true, format: solomon, sensor: rate }
+        queries:
+          - params: { labels: 'sensor=envoy_cluster_upstream_rq_time' }
+        yAxes: [{ format: 'ms' }]
+
+  - title: Key Cache
+    drilldowns:
+      - uid: yc-kms-keycache-host-data
+        tags: [ 'yc-kms', 'yc-kms-host' ]
+        ui:
+          datasource: datasource
+          project: project
+          cluster: cluster
+        uiQuery:
+          host:
+            multi: true
+        uiRepeat: host
+        labels: 'host=$host'
+
+    graphDefaults: { width: 8 }
+    panels:
+      - type: graph
+        title: 'Big Key Cache Size'
+        queries:
+          - params: { labels: 'sensor=symKeyBigCacheSize' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'symKeyBigCacheSize' }
+        yAxes: [{ decimals: 0 }]
+      - type: graph
+        title: 'Big Version Cache Size'
+        queries:
+          - params: { labels: 'sensor=symKeyBigVersionCacheSize' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'symKeyBigVersionCacheSize' }
+        yAxes: [{ decimals: 0 }]
+      - type: graph
+        title: 'Small Key Cache Size'
+        queries:
+          - params: { labels: 'sensor=symKeySmallCacheSize' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'symKeySmallCacheSize' }
+        yAxes: [{ decimals: 0, min: 0 }]
+      - type: graph
+        title: 'Small Version Cache Size'
+        queries:
+          - params: { labels: 'sensor=symKeySmallVersionCacheSize' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'symKeySmallVersionCacheSize' }
+        yAxes: [{ decimals: 0, min: 0 }]
+      - type: graph
+        title: 'Key Cache Hit Rate'
+        queries:
+          - params: { labels: 'sensor=symKeyBigKeyCacheHitRate' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['avg', 'name'], alias: 'symKeyBigKeyCacheHitRate' }
+          - params: { labels: 'sensor=symKeySmallKeyCacheHitRate' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['avg', 'name'], alias: 'symKeySmallKeyCacheHitRate' }
+        display: { stack: true }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Version Cache Hit Rate'
+        queries:
+          - params: { labels: 'sensor=symKeyBigVersionCacheHitRate' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['avg', 'name'], alias: 'symKeyBigVersionCacheHitRate' }
+          - params: { labels: 'sensor=symKeySmallVersionCacheHitRate' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['avg', 'name'], alias: 'symKeySmallVersionCacheHitRate' }
+        display: { stack: true }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Cache Refresh Fails'
+        queries:
+          - params: { labels: 'sensor=symKeyRefreshFail' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'symKeyRefreshFail' }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Cache Refresh Time'
+        queries:
+          - params: { labels: 'sensor=symKeyRefreshSeconds' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'symKeyRefreshSeconds' }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Time Since Last Cache Refresh'
+        queries:
+          - params: { labels: 'sensor=symKeySecondsSinceLastRefresh' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'symKeySecondsSinceLastRefresh' }
+        yAxes: [{ min: 0 }]
+
+  - title: Special Keys
+    drilldowns:
+      - uid: yc-kms-specialkeys-host-data
+        tags: [ 'yc-kms', 'yc-kms-host' ]
+        ui:
+          datasource: datasource
+          project: project
+          cluster: cluster
+        uiQuery:
+          host:
+            multi: true
+        uiRepeat: host
+        labels: 'host=$host'
+
+    graphDefaults: { width: 8 }
+    panels:
+      - type: graph
+        title: 'Special Keys Refresh Fails'
+        queries:
+          - params: { labels: 'sensor=specialKeysRefreshFail' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'specialKeysRefreshFail' }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Special Keys Refresh Time'
+        queries:
+          - params: { labels: 'sensor=specialKeysRefreshSeconds' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'specialKeysRefreshSeconds' }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Time Since Last Special Keys Refresh'
+        queries:
+          - params: { labels: 'sensor=specialKeysSecondsSinceLastRefresh' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'specialKeysSecondsSinceLastRefresh' }
+        yAxes: [{ min: 0 }]
+
+  - title: Encryption
+    drilldowns:
+      - uid: yc-kms-encryption-host-data
+        tags: [ 'yc-kms', 'yc-kms-host' ]
+        ui:
+          datasource: datasource
+          project: project
+          cluster: cluster
+        uiQuery:
+          host:
+            multi: true
+        uiRepeat: host
+        labels: 'host=$host'
+
+    graphDefaults: { width: 8 }
+    queryDefaults: { labels: 'host=cluster-data-all' }
+    panels:
+      - type: graph
+        title: 'Validation Fails'
+        queries:
+          - params: { labels: 'sensor=encryptionValidateFailed' }
+            groupByTime: { max: default }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Decrypt Ciphertext Size'
+        queries:
+          - params: { labels: 'sensor=decryptPlaintextSize' }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Encrypt Plaintext Size'
+        queries:
+          - params: { labels: 'sensor=encryptPlaintextSize' }
+        yAxes: [{ min: 0 }]
+
+  - title: JVM and System
+    drilldowns:
+      - uid: yc-kms-system-host-data
+        tags: [ 'yc-kms', 'yc-kms-host' ]
+        ui:
+          datasource: datasource
+          project: project
+          cluster: cluster
+        uiQuery:
+          host:
+            multi: true
+        uiRepeat: host
+        labels: 'host=$host'
+
+    graphDefaults: { width: 8 }
+    panels:
+      - type: graph
+        title: 'Instances'
+        queries:
+          - params: { labels: 'sensor=instanceHealthy' }
+        display: { empty: false, stack: true }
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        title: 'JVM @{jvm_memory_area:title} Memory'
+        repeat: jvm_memory_area
+        queries:
+          - params: { labels: 'sensor=jvm_memory_bytes_used, area=@{jvm_memory_area}' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'] }
+        yAxes: [{ format: bytes }]
+      - type: graph
+        title: 'Sum JVM @{jvm_memory_area:title} Memory'
+        repeat: jvm_memory_area
+        queries:
+          - params: { labels: 'sensor=jvm_memory_bytes_used, area=@{jvm_memory_area}' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'] }
+        yAxes: [{ format: bytes }]
+      - type: graph
+        title: 'JVM Threads'
+        queries:
+          - params: { labels: 'sensor=jvm_threads_state, state=*' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'state'] }
+        display: { empty: false, stack: true }
+      - type: graph
+        title: 'Load Average (1 min)'
+        queries:
+          - params: { labels: 'service=sys, path=/Proc/LoadAverage1min' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'la' }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Sum Load Average (1 min)'
+        queries:
+          - params: { labels: 'service=sys, path=/Proc/LoadAverage1min' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'la' }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Sum CPU time'
+        queries:
+          - params: { labels: 'service=sys, path=/System/IdleTime' }
+            groupByTime: { avg: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'idle' }
+          - params: { labels: 'service=sys, path=/System/IoWaitTime' }
+            groupByTime: { avg: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'iowait' }
+          - params: { labels: 'service=sys, path=/System/IrqTime' }
+            groupByTime: { avg: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'irq' }
+          - params: { labels: 'service=sys, path=/System/NiceTime' }
+            groupByTime: { avg: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'nice' }
+          - params: { labels: 'service=sys, path=/System/SystemTime' }
+            groupByTime: { avg: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'system' }
+          - params: { labels: 'service=sys, path=/System/UserTime' }
+            groupByTime: { avg: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'user' }
+        display: { stack: true }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Memory'
+        queries:
+          - params: { labels: 'service=sys, path=/Memory/ActiveAnon' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'anon' }
+          - params: { labels: 'service=sys, path=/Memory/ActiveFile' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'file' }
+          - params: { labels: 'service=sys, path=/Memory/MemTotal' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'total' }
+        yAxes: [{ format: bytes, min: 0 }]
+      - type: graph
+        title: 'Sum Memory'
+        queries:
+          - params: { labels: 'service=sys, path=/Memory/ActiveAnon' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'anon' }
+          - params: { labels: 'service=sys, path=/Memory/ActiveFile' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'file' }
+          - params: { labels: 'service=sys, path=/Memory/MemTotal' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'total' }
+        yAxes: [{ format: bytes, min: 0 }]
+      - type: graph
+        title: 'Network Bytes'
+        queries:
+          - params: { labels: 'service=sys, path=/Net/Ifs/RxBytes, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'rx' }
+          - params: { labels: 'service=sys, path=/Net/Ifs/TxBytes, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'tx' }
+        display: { stack: true }
+        yAxes: [{ format: bytes, min: 0 }]
+      - type: graph
+        title: 'Network Packets'
+        queries:
+          - params: { labels: 'service=sys, path=/Net/Ifs/RxPackets, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'rx' }
+          - params: { labels: 'service=sys, path=/Net/Ifs/TxPackets, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'tx' }
+        display: { stack: true }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Network Drop & Err'
+        queries:
+          - params: { labels: 'service=sys, path=/Net/Ifs/RxDrop, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'rx drop' }
+          - params: { labels: 'service=sys, path=/Net/Ifs/TxDrop, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'tx drop' }
+          - params: { labels: 'service=sys, path=/Net/Ifs/RxErrs, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'rx errs' }
+          - params: { labels: 'service=sys, path=/Net/Ifs/TxErrs, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'tx errs' }
+        display: { stack: true }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'File Descriptors'
+        queries:
+          - params: { labels: 'sensor=process_open_fds' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: ['max', 'name'], alias: 'max FDs' }
+      - type: graph
+        title: 'Free Space'
+        queries:
+          - params: { labels: 'service=sys, path=/Filesystem/FreeB' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['min', 'name'], alias: 'space' }
+        yAxes: [{ format: bytes, min: 0 }]
+      - type: graph
+        title: 'IO Ops'
+        queries:
+          - params: { labels: 'service=sys, path=/Io/Disks/Reads' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'reads' }
+          - params: { labels: 'service=sys, path=/Io/Disks/Writes' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'writes' }
+        display: { stack: true }
+      - type: graph
+        title: 'IO Bytes'
+        queries:
+          - params: { labels: 'service=sys, path=/Io/Disks/ReadBytes' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'reads' }
+          - params: { labels: 'service=sys, path=/Io/Disks/WriteBytes' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'writes' }
+        display: { stack: true }
+        yAxes: [{ format: bytes }]
+      - type: graph
+        title: 'IO Waits'
+        queries:
+          - params: { labels: 'service=sys, path=/Io/Disks/ReadWaitMillisec' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'reads msec' }
+          - params: { labels: 'service=sys, path=/Io/Disks/WriteWaitMillisec' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'writes msec' }
+        display: { stack: true }
+      - type: graph
+        title: 'Major Page Faults'
+        queries:
+          - params: { labels: 'service=sys, path=/Memory/MajorPageFaults' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'faults' }
+
+  - title: Data Plane Clients
+    drilldowns:
+      - uid: yc-kms-clients-host-data
+        tags: [ 'yc-kms', 'yc-kms-host' ]
+        ui:
+          datasource: datasource
+          project: project
+          cluster: cluster
+        uiQuery:
+          host:
+            multi: true
+        uiRepeat: host
+        labels: 'host=$host'
+
+    panels:
+
+      - type: graph
+        templates: { name: rps, rate: rps }
+        title: 'Auth client rps ($cluster)'
+        queries:
+          - params: { labels: 'sensor=grpc_requests, app=auth_client, meter_type=count' }
+
+      - type: graph
+        templates: { name: errors, sensor: rate }
+        title: 'Auth client errors ($cluster)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'sensor=grpc_statuses, app=auth_client, status=@4xx' }
+          - params: { labels: 'sensor=grpc_statuses, app=auth_client, status=@503' }
+          - params: { labels: 'sensor=grpc_statuses, app=auth_client, status=@5xx' }
+        draw: [{ alias: '4xx', color: '#147', at: right }, { alias: '503', color: '#da7', at: left }, { alias: '5xx', color: '#b20', at: left }]
+
+      - type: graph
+        templates: { name: percentile, format: solomon, groupLines: true, sensor: rate }
+        title: 'Auth client response duration ($cluster)'
+        queries:
+          - params: { labels: 'sensor=grpc_durations, app=auth_client' }
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        templates: { name: rps, rate: rps }
+        title: 'Kikimr client rps ($cluster)'
+        queries:
+          - params: { labels: 'sensor=grpc_requests, app=kikimr_client, meter_type=count' }
+
+      - type: graph
+        templates: { name: errors, sensor: rate }
+        title: 'Kikimr client errors ($cluster)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'sensor=grpc_statuses, app=kikimr_client, status=@4xx' }
+          - params: { labels: 'sensor=grpc_statuses, app=kikimr_client, status=@503' }
+          - params: { labels: 'sensor=grpc_statuses, app=kikimr_client, status=@5xx' }
+        draw: [{ alias: '4xx', color: '#147', at: right }, { alias: '503', color: '#da7', at: left }, { alias: '5xx', color: '#b20', at: left }]
+
+      - type: graph
+        templates: { name: percentile, format: solomon, groupLines: true, sensor: rate }
+        title: 'Kikimr client response duration ($cluster)'
+        queries:
+          - params: { labels: 'sensor=grpc_durations, app=kikimr_client' }
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        templates: { name: rps, rate: rps }
+        title: 'Root KMS client rps ($cluster)'
+        queries:
+          - params: { labels: 'sensor=grpc_requests, app=root-kms_client, meter_type=count' }
+
+      - type: graph
+        templates: { name: errors, sensor: rate }
+        title: 'Root KMS client errors ($cluster)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'sensor=grpc_statuses, app=root-kms_client, status=@4xx' }
+          - params: { labels: 'sensor=grpc_statuses, app=root-kms_client, status=@503' }
+          - params: { labels: 'sensor=grpc_statuses, app=root-kms_client, status=@5xx' }
+        draw: [{ alias: '4xx', color: '#147', at: right }, { alias: '503', color: '#da7', at: left }, { alias: '5xx', color: '#b20', at: left }]
+
+      - type: graph
+        templates: { name: percentile, format: solomon, groupLines: true, sensor: rate }
+        title: 'Root KMS client response duration ($cluster)'
+        queries:
+          - params: { labels: 'sensor=grpc_durations, app=root-kms_client' }
+        yAxes: [{ min: 0 }]
+
+  - title: Data Plane Kikimr
+    drilldowns:
+      - uid: yc-kms-kikimr-host-data
+        tags: [ 'yc-kms', 'yc-kms-host' ]
+        ui:
+          datasource: datasource
+          project: project
+          cluster: cluster
+        uiQuery:
+          host:
+            multi: true
+        uiRepeat: host
+        labels: 'host=$host'
+
+    panels:
+
+      - type: graph
+        title: 'Tx Attempt Count'
+        templates: { name: percentile, format: solomon, groupLines: true, sensor: rate }
+        yAxes: [{ decimals: 1, format: short, min: 0 }]
+        queries:
+          - params: { labels: 'tx_name=*, sensor=tx_attempts' }
+
+      - type: graph
+        repeat: tx_duration_sensor
+        title: '@{tx_duration_sensor:title}'
+        templates: { name: percentile, format: solomon, groupLines: true, sensor: rate }
+        queries:
+          - params: { labels: 'tx_name=*, sensor=@{tx_duration_sensor}' }
+
+      - type: graph
+        title: 'Tx Result RPS'
+        queries:
+          - params: { labels: 'tx_name=*, sensor=tx_result, result=*' }
+            groupByTime: { max: default }
+            select: { nn_deriv: [], group_by_labels: ['sum', 'result'], alias: '{{result}} RPS' }
+
+      - type: graph
+        title: 'Session Count'
+        queries:
+          - params: { labels: 'sensor=sessions_count, type=active|idle' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'type'] }
+        display: { stack: true }
+
+      - type: graph
+        title: 'Session Timings (Used)'
+        templates: { name: percentile, format: solomon, groupLines: true, sensor: rate }
+        queries:
+          - params: { labels: 'sensor=sessions_timings, type=used' }

@@ -1,0 +1,112 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.platform.alb.v1.inner;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+import "yandex/cloud/api/tools/options.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/platform/alb/v1/inner;alb";
+option java_outer_classname = "PALIOS";
+
+service OperationService {
+    rpc ListIncomplete(ListIncompleteOperationsRequest) returns (ListIncompleteOperationsResponse);
+    // Like ListIncomplete but without newly created and tainted.
+    rpc ListHung(ListIncompleteOperationsRequest) returns (ListHungResponse);
+    rpc ForceCompleteOperation(ForceCompleteOperationRequest) returns (google.protobuf.Empty) {
+        option (yandex.cloud.api.tools.method).lint_skip.contains_resource_name = true;
+    };
+    rpc ListForEntity(ListForEntityRequest) returns (ListForEntityResponse);
+    rpc Describe(DescribeOperationRequest) returns (DescribeOperationResponse);
+    rpc UpdateMeta(UpdateMetaRequest) returns (google.protobuf.Empty);
+    rpc DeleteBefore(DeleteBeforeRequest) returns (DeleteBeforeResponse);
+}
+
+message DeleteBeforeRequest {
+    google.protobuf.Timestamp delete_before = 1 [(required) = true];
+    bool dry_run = 2;
+}
+
+message DeleteBeforeResponse {
+    repeated string operation_ids = 1;
+}
+
+message OperationMeta {
+    bool tainted = 1;
+    google.protobuf.Duration poll_interval = 2;
+    map<string, string> labels = 3;
+    string request_id = 4;
+    string comment = 5;
+    int64 progress = 6;
+}
+
+message UpdateMetaRequest {
+    string operation_id = 1 [(required) = true];
+    google.protobuf.FieldMask update_mask = 2;
+
+    // Use |update_mask| to reset.
+    bool tainted = 3;
+    // Ignored when 0.
+    google.protobuf.Duration poll_interval = 4;
+    // Ignored when empty.
+    map<string, string> labels = 5;
+    // Ignored when empty.
+    string comment = 6;
+}
+
+message DescribeOperationRequest {
+    string operation_id = 1 [(required) = true];
+}
+
+message DescribeOperationResponse {
+    operation.Operation operation = 1;
+    google.protobuf.Any target_state = 2;
+    google.protobuf.Any details = 3;
+    string target_spec = 4;
+    OperationMeta meta = 5;
+    string spec = 6;
+}
+
+message StringLinesDetails {
+    repeated string lines = 1;
+}
+
+message ListIncompleteOperationsRequest {
+    int64 page_size = 1 [(value) = "0-1000"];
+    string page_token = 2 [(length) = "<=100"];
+    string filter = 3 [(length) = "<=1000"];
+
+    repeated string operation_types = 4;
+}
+
+message ListIncompleteOperationsResponse {
+    repeated operation.Operation operations = 1;
+    string next_page_token = 2;
+}
+
+message ListHungResponse {
+    repeated DescribeOperationResponse operations = 1;
+    string next_page_token = 2;
+}
+
+message ForceCompleteOperationRequest {
+    string operation_id = 1 [(required) = true];
+    string reason = 2 [(required) = true];
+}
+
+message ListForEntityRequest {
+    int64 page_size = 1 [(value) = "0-1000"];
+    string page_token = 2 [(length) = "<=100"];
+    string entity_id = 3;
+}
+
+message ListForEntityResponse {
+    repeated operation.Operation operations = 1;
+    string next_page_token = 2;
+}

@@ -1,0 +1,98 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: view-nodes
+  labels:
+    # Add these permissions to the "view" default role.
+    rbac.authorization.k8s.io/aggregate-to-view: "true"
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch"]
+
+---
+
+{{- range $.Values.teams }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ . }}
+---
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ . }}-sa
+  namespace: {{ . }}
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: use-eds
+  namespace: {{ . }}
+rules:
+- apiGroups: ["datadoghq.com"]
+  resources: ["extendeddaemonsets", "extendeddaemonsetreplicasets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: use-eds
+  namespace: {{ . }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: use-eds
+subjects:
+- kind: ServiceAccount
+  name: {{ . }}-sa
+  namespace: {{ . }}
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: use-salt-operator
+  namespace: {{ . }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: salt-operator-saltformula-editor-role
+subjects:
+- kind: ServiceAccount
+  name: {{ . }}-sa
+  namespace: {{ . }}
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ . }}-ro
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+- kind: ServiceAccount
+  name: {{ . }}-sa
+  namespace: {{ . }}
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ . }}
+  namespace: {{ . }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: edit
+subjects:
+- kind: ServiceAccount
+  name: {{ . }}-sa
+  namespace: {{ . }}
+---
+{{- end }}

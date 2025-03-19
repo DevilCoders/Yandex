@@ -1,0 +1,59 @@
+{
+  "variables": {
+    "endpoint": "{{env `YC_ENDPOINT`}}",
+    "service_account_key_file": "{{env `YC_BUILD_SERVICE_ACCOUNT_SECRET`}}",
+    "subnet_id": "{{env `YC_BUILD_SUBNET`}}",
+    "zone": "{{env `YC_ZONE`}}",
+    "folder_id": "{{env `YC_BUILD_FOLDER_ID`}}"
+  },
+  "builders": [
+    {
+      "type": "yandex",
+      "endpoint": "{{user `endpoint`}}",
+      "folder_id": "{{user `folder_id`}}",
+      "subnet_id": "{{user `subnet_id`}}",
+      "zone": "{{user `zone`}}",
+      "labels": {},
+      "use_ipv4_nat": true,
+      "use_internal_ip": true,
+      "service_account_key_file": "{{user `service_account_key_file`}}",
+      "image_name": "ipsec-instance-ubuntu-{{timestamp}}",
+      "image_family": "ipsec-instance-ubuntu",
+      "image_labels": {},
+      "image_description": "ipsec-instance-ubuntu",
+      "source_image_family": "ubuntu-1804-lts",
+      "disk_size_gb": 3,
+      "disk_type": "network-hdd",
+      "ssh_clear_authorized_keys": true,
+      "ssh_username": "ubuntu"
+    }
+  ],
+  "provisioners": [
+        {
+            "type": "shell",
+            "inline": [
+                "sudo mkdir -p /opt/yc-marketplace/assets",
+                "sudo chown -R ubuntu:ubuntu /opt/yc-marketplace/",
+                "wget --retry-connrefused --waitretry=1 --read-timeout=20 --timeout=15 -t 3 https://storage.yandexcloud.net/temp-files/framework.tar.gz -O /opt/yc-marketplace/framework.tar.gz",
+                "tar -zxvf /opt/yc-marketplace/framework.tar.gz -C /opt/yc-marketplace --strip 1",
+                "while [ ! -f /var/lib/cloud/instance/boot-finished ]; do echo 'Waiting for cloud-init...'; sleep 5; done"
+            ]
+        },
+        {
+            "type": "shell",
+            "execute_command": "sudo {{ .Vars }} bash '{{ .Path }}'",
+            "pause_before": "5s",
+            "scripts": [
+                "install.sh",
+                "cleanup.sh"
+            ]
+        }
+  ],
+  "post-processors": [
+    {
+      "type": "manifest",
+      "output": "{{ pwd }}/manifest.json",
+      "strip_path": true
+    }
+  ]
+}

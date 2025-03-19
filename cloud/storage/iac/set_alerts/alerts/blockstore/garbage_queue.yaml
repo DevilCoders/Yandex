@@ -1,0 +1,36 @@
+definitions:
+  - &alert_id "{{.ID}}_nbs_server_garbage_queue"
+  - &alert_name "{{.Name}} NBS Garbage queue bytes"
+  - &alert_annotations_tag "yc-{{.Cluster}}-nbs-solomon"
+  - &alert_annotations_host "{{`{{labels.host}}`}}.{{.HostDomain}}"
+  - &alert_annotations_service "solomon_alert_nbs_garbage_queue"
+  - &alert_juggler_description "(doc: https://nda.ya.ru/t/eE7fbWKV5FnAvT)"
+alerts:
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_juggler_description
+    group_by_labels:
+      - host
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - prod_vla
+      - prod_sas
+      - prod_myt
+      - israel
+      - preprod
+    expression:
+      program: |-
+        let bytes_count = {project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="service", type="-", sensor="BytesCount", host="{{.Hosts}}"};
+        let garbage_queue_bytes_count = {project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="service", type="-", sensor="GarbageQueueBytes", host="{{.Hosts}}"};
+
+        // to avoid zero bytes_count
+        let adjusted_bytes_count = map(bytes_count, x -> x + 1);
+
+        alarm_if(max(garbage_queue_bytes_count/adjusted_bytes_count) >= 0.1);
+

@@ -1,0 +1,43 @@
+PRAGMA DqEngine = "auto";
+PRAGMA yt.InferSchema;
+PRAGMA yt.QueryCacheMode = "disable";
+PRAGMA AnsiInForEmptyOrNullableItemsCollections;
+
+USE hahn;
+
+$cluster = "prod";
+--- $cloud_id = "";
+
+$from_time = CAST("2020-05-08T00:00:00Z" AS DateTime);
+$to_time = CAST("2020-06-08T00:00:00Z" AS DateTime);
+
+$billing_storage_sku = "1eicgre1bd9tn9iah";
+$billing_encryptdecrypt_sku = "2lgpoih6ecj2feiv1";
+$billing_generatedatakey_sku = "kmnu1a4g5l5jcedcn";
+
+$billing_records_table_name = "home/cloud/billing/exported-billing-tables/billing_records_" || $cluster;
+$storage = (
+    SELECT SUM(pricing_quantity) AS storage_pricing_quantity,
+        DateTime::FromMilliseconds(MIN(start_time) * 1000) AS storage_min_time,
+        DateTime::FromMilliseconds(MAX(end_time) * 1000) AS storage_max_time
+    FROM $billing_records_table_name
+    WHERE cloud_id = $cloud_id
+    AND DateTime::FromMilliseconds(start_time * 1000) >= $from_time
+    AND DateTime::FromMilliseconds(start_time * 1000) < $to_time
+    AND sku_id LIKE '%' || $billing_storage_sku
+);
+
+$ops = (
+    SELECT SUM(pricing_quantity) AS ops_pricing_quantity,
+        DateTime::FromMilliseconds(MIN(start_time) * 1000) AS ops_min_time,
+        DateTime::FromMilliseconds(MAX(end_time) * 1000) AS ops_max_time
+    FROM $billing_records_table_name
+    WHERE cloud_id = $cloud_id
+    AND DateTime::FromMilliseconds(start_time * 1000) >= $from_time
+    AND DateTime::FromMilliseconds(start_time * 1000) < $to_time
+    AND (sku_id LIKE '%' || $billing_encryptdecrypt_sku
+        OR sku_id LIKE '%' || $billing_generatedatakey_sku)
+);
+
+SELECT * FROM $storage;
+SELECT * FROM $ops;

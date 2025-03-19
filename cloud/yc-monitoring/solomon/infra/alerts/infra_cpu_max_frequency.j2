@@ -1,0 +1,73 @@
+{% extends "../../base/alert.j2" %}
+
+{% set description="Проверяем что средняя за последние 5 минут частота ЦПУ изменилась относительно средней за 30 минут (со сдвигом 1 час).\\n" +
+"- Если изменение более чем на 30%, то отправляем warning \\n" +
+"- Если изменение более чем на 50%, то отправляем alarm \\n" +
+"- Если изменение небольшое, но минимальная частота <= 1600MHz, отправляем warn \\n" +
+"- Если изменение небольшое, но минимальная частота <= 1500MHz, отправляем alarm" %}
+{% set windowSecs = 1800 %}
+
+{% macro prog() %}
+let outlier_above = 4000;
+let warn_threshold_percent = 30;
+let warn_threshold_value = 1600;
+let alarm_threshold_percent = 50;
+let alarm_threshold_value = 1500;
+
+let CPU0_data = drop_above({
+    project="{{ project_id }}",
+    cluster="{{ cluster }}",
+    service="sys",
+    path="/Cpu/PhysicalCpuFrequency/Max",
+    PhysicalCpuId="0",
+    host="{{ host_prefix }}*"}, outlier_above);
+
+let CPU1_data = drop_above({
+    project="{{ project_id }}",
+    cluster="{{ cluster }}",
+    service="sys",
+    path="/Cpu/PhysicalCpuFrequency/Max",
+    PhysicalCpuId="1",
+    host="{{ host_prefix }}*"}, outlier_above);
+
+no_data_if(count(CPU0_data) == 0 || count(CPU1_data) == 0);
+
+let current_CPU0 = avg(tail(CPU0_data, 5m));
+let current_CPU1 = avg(tail(CPU1_data, 5m));
+let avarage_CPU0 = avg(shift(CPU0_data, 1h));
+let avarage_CPU1 = avg(shift(CPU1_data, 1h));
+let diff_CPU0 = (avarage_CPU0 - current_CPU0) / avarage_CPU0 * 100;
+let diff_CPU1 = (avarage_CPU1 - current_CPU1) / avarage_CPU1 * 100;
+
+let readable_diff_CPU0 = ceil(diff_CPU0);
+let readable_diff_CPU1 = ceil(diff_CPU1);
+let readable_current_CPU0 = ceil(current_CPU0);
+let readable_current_CPU1 = ceil(current_CPU1);
+let readable_avarage_CPU0 = ceil(avarage_CPU0);
+let readable_avarage_CPU1 = ceil(avarage_CPU1);
+
+let reason = "CPU max frequency is below threshold: CPU0: {{readable_current_CPU0}}; CPU1: {{readable_current_CPU1}}";
+let is_red = (current_CPU0 <= alarm_threshold_value || current_CPU1 <= alarm_threshold_value);
+let is_yellow = (current_CPU1 <= warn_threshold_value || current_CPU1 <= warn_threshold_value);
+
+let reason = "CPU0 max frequency changed by {{readable_diff_CPU0}}%; Cur: {{readable_current_CPU0}}; Avg: {{readable_avarage_CPU0}}. CPU1 max frequency changed by {{readable_diff_CPU1}}%; Cur: {{readable_current_CPU1}}; Avg: {{readable_avarage_CPU1}}.";
+let is_red = (diff_CPU0 >= alarm_threshold_percent || diff_CPU1 >= alarm_threshold_percent);
+let is_yellow = (diff_CPU0 >= warn_threshold_percent || diff_CPU1 >= warn_threshold_percent);
+
+warn_if(is_yellow);
+alarm_if(is_red);
+
+let reason = "CPU maximum frequency is OK";
+{% endmacro %}
+
+{% block main %}
+    "name": "yc_infra_cpu_max_frequency @ {{ env }}/{{ cluster }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "reason": "[[expression.reason]]",
+        "host": "[[labels.host]]{{ host_suffix }}",
+        "tags": "yc_infra_cpu_max_frequency, {{ env }}, {{ cluster }}",
+        "service": "cpu_frequency"
+    },
+    "type": {{ type_expression() }}
+{% endblock %}

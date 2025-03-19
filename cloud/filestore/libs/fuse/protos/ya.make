@@ -1,0 +1,11 @@
+PROTO_LIBRARY()
+
+OWNER(g:cloud-nbs)
+
+EXCLUDE_TAGS(GO_PROTO JAVA_PROTO PY_PROTO PY3_PROTO)
+
+SRCS(
+    session.proto
+)
+
+END()

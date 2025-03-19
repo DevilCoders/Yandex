@@ -1,0 +1,93 @@
+{
+    "variables": {
+        "commit_author": "{{env `COMMIT_AUTHOR`}}",
+        "commit_message": "{{env `COMMIT_MESSAGE`}}",
+        "user": "{{env `LOGNAME`}}",
+        "version": "{{env `VERSION`}}"
+    },
+    "builders": [
+        {
+            "type": "yandex",
+            "endpoint": "api.cloud.yandex.net:443",
+            "service_account_id": "{{user `service_account_id`}}",
+            "folder_id": "{{user `folder_id`}}",
+            "target_image_folder_id": "{{user `target_image_folder_id`}}",
+            "subnet_id": "{{user `subnet_id`}}",
+            "zone": "{{user `zone`}}",
+            "image_name": "{{user `image_family`}}-{{ timestamp }}",
+            "image_family": "{{user `image_family`}}",
+            "image_description": "{{user `image_description`}}",
+            "source_image_family": "ubuntu-2004-lts",
+            "use_ipv4_nat": false,
+            "use_ipv6": true,
+            "disk_type": "network-hdd",
+            "ssh_username": "ubuntu",
+            "instance_mem_gb": "2",
+            "platform_id": "standard-v1",
+            "labels": {
+                "skip_update_ssh_keys": "true"
+            },
+            "disk_size_gb": "10"
+        }
+    ],
+    "provisioners": [
+        {
+            "type": "shell",
+            "inline": [
+                "mkdir /tmp/image-bootstrap"
+            ]
+        },
+        {
+            "source": "10-airflow-help",
+            "destination": "/tmp/image-bootstrap/10-airflow-help",
+            "type": "file"
+        },
+        {
+            "source": "pip-constraints-airflow-2.2.3-python-3.8.txt",
+            "destination": "/tmp/image-bootstrap/pip-airflow-constraints.txt",
+            "type": "file"
+        },
+        {
+            "source": "image-init.sh",
+            "destination": "/tmp/image-bootstrap/image-init.sh",
+            "type": "file"
+        },
+        {
+            "source": "systemd/airflow-init.service",
+            "destination": "/tmp/image-bootstrap/airflow-init.service",
+            "type": "file"
+        },
+        {
+            "source": "systemd/airflow-webserver.service",
+            "destination": "/tmp/image-bootstrap/airflow-webserver.service",
+            "type": "file"
+        },
+        {
+            "source": "systemd/airflow-scheduler.service",
+            "destination": "/tmp/image-bootstrap/airflow-scheduler.service",
+            "type": "file"
+        },
+        {
+            "source": "airflow{{user `airflow_major_version`}}.cfg",
+            "destination": "/tmp/image-bootstrap/airflow.cfg",
+            "type": "file"
+        },
+        {
+            "source": "airflow-init.sh",
+            "destination": "/tmp/image-bootstrap/airflow-init.sh",
+            "type": "file"
+        },
+        {
+            "source": "cleanup.sh",
+            "destination": "/tmp/image-bootstrap/cleanup.sh",
+            "type": "file"
+        },
+        {
+            "type": "shell",
+            "inline": [
+                "chmod +x /tmp/image-bootstrap/image-init.sh",
+                "sudo AIRFLOW_MAJOR_VERSION={{user `airflow_major_version`}} /tmp/image-bootstrap/image-init.sh"
+            ]
+        }
+    ]
+}

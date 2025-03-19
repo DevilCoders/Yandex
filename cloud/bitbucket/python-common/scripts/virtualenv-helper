@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+#
+# Simplifies creation of relocatable virtualenv
+#
+
+set -exu
+
+if [ "$(uname)" == Darwin ]; then
+    shopt -s expand_aliases
+    alias sed=gsed
+fi
+
+die() {
+    echo "Error: $@" >&2
+    exit 1
+}
+
+check_absolute_paths() {
+    local path
+    for path in "$@"; do
+        [[ "$path" = /* ]] || die "'$1' must be an absolute path."
+    done
+}
+
+action="${1:-}"
+
+if [[ "$action" == create && $# -eq 3 ]]; then
+    venv_path="$2"
+    vendor_path="$3"
+    check_absolute_paths "$venv_path" "$venv_path"
+elif [[ "$action" = relocate && $# -eq 2 ]]; then
+    venv_path="$2"
+    check_absolute_paths "$venv_path"
+elif [[ "$action" = relocate-to && $# -eq 3 ]]; then
+    venv_path="$2"
+    new_venv_path="$3"
+    check_absolute_paths "$venv_path" "$new_venv_path"
+else
+    die "Invalid usage: $0 ( <create VENV_PATH VENDOR_PATH> | <relocate VENV_PATH> | <relocate-to VENV_PATH NEW_VENV_PATH> )"
+fi
+
+VIRTUALENV_OPTIONS="--verbose -p python3"
+
+if [[ "$action" == create ]]; then
+    echo "Creating $venv_path virtualenv..."
+    virtualenv $VIRTUALENV_OPTIONS --always-copy --never-download "$venv_path"
+fi
+
+# setup.py's setup_requires keyword (which is used by some packages) uses easy_install instead of pip which makes it to
+# ignore pip's --index-url, --no-index and --find-links options, so we have to configure them using distutils config
+# file (see https://pip.pypa.io/en/latest/reference/pip_install.html#controlling-setup-requires)
+distutils_config_path="$("$venv_path/bin/python" -c '
+import os.path
+import distutils
+print(os.path.join(os.path.dirname(distutils.__file__), "distutils.cfg"))
+')"
+[[ -e "$distutils_config_path" ]] || die "Unable to find distutils.cfg file."
+
+if [[ "$action" == create ]]; then
+    echo "Patching $distutils_config_path..."
+    mv "$distutils_config_path"{,.orig}
+    cat > "$distutils_config_path" <<EOF
+[easy_install]
+allow-hosts = localhost
+find-links = $vendor_path
+EOF
+elif [[ "$action" == relocate || "$action" == "relocate-to" ]]; then
+    echo "Reverting $distutils_config_path..."
+    mv "$distutils_config_path"{.orig,}
+
+    if [[ "$action" == "relocate-to" ]]; then
+        sed -i "s#$venv_path#$new_venv_path#g" "$venv_path"/bin/*
+    fi
+
+    virtualenv $VIRTUALENV_OPTIONS --relocatable "$venv_path"
+else
+    die "Logical error."
+fi

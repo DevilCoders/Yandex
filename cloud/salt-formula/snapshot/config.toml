@@ -1,0 +1,88 @@
+{%- import "common/kikimr/init.sls" as vars with context %}
+
+{%- set lb_endpoints = grains['cluster_map']['load_balancer']['endpoints'] %}
+{%- set hostname = grains['nodename'] %}
+{%- set default_zone_id = pillar['placement']['dc'] %}
+{%- set zone_id = salt['grains.get']('cluster_map:hosts:%s:location:zone_id' % hostname, default_zone_id) -%}
+
+{%- set kikimr_snapshot_host = 'localhost' if vars.subdomains|length > 1 else lb_endpoints.snapshot_kikimr_grpc.host %}
+{%- set kikimr_snapshot_port = pillar['kikimr_tenant_ports'][vars.snapshot_database]['grpc_port'] if vars.subdomains|length > 1 or vars.base_role == 'cloudvm' else lb_endpoints.snapshot_kikimr_grpc.port %}
+[General]
+Tmpdir = "/var/run/yc-snapshot"
+Storage = "kikimr+grpc"
+{%- if salt['grains.get']('overrides:snapshot_mode') == 'test' %}
+{#- Run Snapshot in local mode in which all data is stored locally #}
+{#- instead of KiKiMR, which significantly speeds up tests execution. #}
+DummyFsRoot = "/var/lib/yc/snapshot/data"
+{%- endif %}
+
+{%- if salt['grains.get']('cluster_map:stand_type') == 'virtual' %}
+StartSplit = 2
+{% else %}
+{#- Configure initial sharding for database scheme creation. #}
+{#- Let's assume we have 1/3 of all cross-dc (mirror-3) storage given to snapshot. #}
+{#- For our stands, we have 4 HDDs each having 12 TB of capacity. #}
+{#- Heuristically assume 100GB of external blobs per shard is OK. #}
+{#- shard_count = all_disk_space_in_global_kikimr / 3 (mirror-3) / 3 (snapshot's part of data) / 100 (GB per shard) #}
+{%- set global_kikimr_host_count = salt['grains.get']('cluster_map:kikimr:clusters:global:storage_nodes', []) | length %}
+{%- set shard_count = global_kikimr_host_count * 4 * 12 * 1024 // 3 // 3 // 100 %}
+StartSplit = {{ shard_count }}
+{%- endif %}
+
+[Kikimr]
+[Kikimr.default]
+Host = "{{ salt['grains.get']('overrides:kikimr_endpoint', (kikimr_snapshot_host, kikimr_snapshot_port)|join(':')) }}"
+Root = "/{{ vars.ydb_domain }}/{{ vars.snapshot_database }}/{{ grains['cluster_map']['stand_type'] }}/{{ salt['grains.get']('overrides:kikimr_id', salt['grains.get']('cluster_map:kikimr:shared_dir')) }}/snapshot"
+MaxSelectRows = 10000
+
+[S3]
+Dummy = true
+RegionName = "us-east-1"
+Endpoint = "http://s3-yc-test.yandex.net:8880"
+TokenEndpoint = "http://169.254.169.254:21212/latest"
+Profile = "s3mds-v2-596"
+
+[Nbs]
+{%- set base_role = salt['grains.get']('cluster_map:hosts:%s:base_role' % hostname) %}
+{%- if base_role in ('seed', 'head', 'snapshot') %}
+
+  {%- set kikimr_clusters = salt['grains.get']('cluster_map:kikimr:clusters', {}) %}
+  {%- for cluster in kikimr_clusters %}
+
+    {%- if vars.nbs_database in kikimr_clusters[cluster]['dynamic_nodes'] %}
+
+      {%- set nbs_host = kikimr_clusters[ cluster ]['storage_nodes'] | random %}
+      {%- set zone_id = salt['grains.get']('cluster_map:hosts:%s:location:zone_id' % nbs_host, default_zone_id) %}
+[Nbs.{{ zone_id }}]
+Host = "{{ nbs_host }}:9766"
+SSL = false
+    {%- endif %}
+  {%- endfor %}
+
+{%- else %}
+[Nbs.{{ zone_id }}]
+Host = "localhost:9766"
+SSL = false
+{%- endif %}
+
+[Server]
+SSL = false
+HTTPEndpoint = "tcp6://[::]:7628"
+GRPCEndpoint = "tcp6://[::]:7627"
+
+[Logging]
+Level = "debug"
+Output = "journald"
+
+[DebugServer]
+HTTPEndpoint = "tcp6://[::1]:7629"
+
+[GC]
+Enabled = true
+BatchSize = 100
+WorkersCount = 4
+Interval = "24h"
+FailedCreation = "24h"
+FailedConversion = "24h"
+FailedDeletion = "1h"
+Tombstone = "24h"

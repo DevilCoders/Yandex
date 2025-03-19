@@ -1,0 +1,44 @@
+{% extends "../../../base/alert.j2" %}
+
+{% set notificationChannels = [telegram_channel_id] if env in ["prod", "preprod", "testing"] else [] %}
+{% set windowSecs = 300 %}
+{% set checkExpression = "" %}
+
+{% macro prog() %}
+let graph = {
+    project='{{ project_id }}',
+    cluster='cloud_{{ env }}_compute_*',
+    metric="instance_freeze_time_during_migration",
+    host!="cluster",
+    migration_type='{{ migration_type }}'
+};
+
+// get migration time
+let data = group_by_labels(graph, 'host', v -> histogram_percentile({{ percentile }}, 'bucket', v));
+
+// Drop timepoints below threshold (sec). The dropped points
+// turn into NaN values. Drop NaN-s too.
+let res = drop_nan(drop_below(data, {{ threshold }}));
+let max_duration = max(res);
+let cnt = count(res);
+
+// cleanup vars to hide from plots
+let graph = '';
+let res = '';
+
+alarm_if(cnt > 0);
+{% endmacro %}
+
+{% set description = "https://docs.yandex-team.ru/yc-monitoring/core/" + destination + "-migration-max-time" %}
+
+{% block main %}
+    "name": "Alert on {{team_owner}} {{ destination }} migration max time @{{ env | upper }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "max duration": "[[expression.max_duration]]",
+        "host": "[[labels.host]]",
+        "description": "{{ description }}"
+    },
+    "description": "{{ description }}",
+    "type": {{ type_expression() }}
+{% endblock %}

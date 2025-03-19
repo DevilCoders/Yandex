@@ -1,0 +1,138 @@
+api_path: /alerts/
+entities:
+
+  compute_crashed_instances:  # legacy alert, to be replaced with CLOUD-71477
+    template: compute_bad_instances.j2
+    exclude: {env: [hw.*lab]}
+    context:
+      status: crashed
+      state: MUTED
+
+  compute_error_instances:  # legacy alert, to be replaced with CLOUD-71477
+    template: compute_bad_instances.j2
+    exclude: {env: [hw.*lab]}
+    context:
+      status: error
+      state: MUTED
+
+  compute_node_accounting_errors:
+    template: compute_node_accounting_errors.j2
+    exclude: {env: [hw.*lab]}
+
+  compute_node_compute_api_errors:
+    template: compute_node_compute_api_errors.j2
+    exclude: {env: [hw.*lab]}
+
+  compute_node_hanging_tasks:
+    template: compute_node_hanging_tasks.j2
+    exclude: {env: [hw.*lab]}
+
+  compute_node_failed_tasks:
+    template: compute_node_failed_tasks.j2
+    exclude: {env: [hw.*lab]}
+
+  compute_node_task_processing_errors:
+    template: compute_node_task_processing_errors.j2
+    exclude: {env: [hw.*lab]}
+
+  compute_node_token_agent:
+    template: compute_node_token_agent.j2
+    exclude: {env: [hw.*lab]}
+
+
+  compute_remote_migration_max_time:
+    template: ../../common/alerts/compute-node/migration_freeze_time.j2
+    exclude: {env: [hw.*lab]}
+    context:
+      percentile: 100
+      threshold: 15.001 # .001 to exclude 15-second values
+      migration_type: migration
+      destination: remote
+      telegram_channel_id: compute_node_migration_freeze_telegram
+      team_owner: Node
+
+  # GPU ServiceVM NVSwitch errors monitoring
+  compute_node_gpu_servicevm_nvswitch_errors:
+    template: compute_node_gpu_servicevm_nvswitch_errors.j2
+    exclude: {env: [hw.*lab]}
+
+  # solomon-agent monitoring
+  compute_node_solomon_agent_bytes_evicted:
+    template: ../../common/alerts/compute/solomon_agent_bytes_evicted.j2
+    exclude: {env: [hw.*-lab]}
+    context:
+      compute_node: True
+      units: ["compute"]
+      {% if env == "testing" %}
+      excluded_shards:
+        - "yandexcloud/public_network_metrics"  # No Cloud Solomon at TESTING -> user metrics are not pushed
+        - "yandexcloud/compute_new"             # No Cloud Solomon at TESTING -> user metrics are not pushed
+      {% elif env == "israel" %}
+      excluded_shards:
+        - "yandexcloud/bootstrap"               # No response from owners. https://t.me/c/1724396143/20103
+        - "yandexcloud/token_agent"             # No response from owners. https://t.me/c/1724396143/20101
+        - "yandexcloud/autoscale_agent"         # Legacy, will be removed soon. https://t.me/c/1724396143/14689
+        - "yandexcloud/pings"                   # CGW, Legacy, not used.
+        - "yc_security/osquery"                 # https://st.yandex-team.ru/CLOUDDUTY-13786#62c0a2d372a57e3496e2d828
+      {% endif %}
+      alarm: 0
+      service_name: "compute-node"
+      tags: "yc-compute-node-team"
+
+  # capacity alerts
+
+{% import "capacity_flavours.yaml" as capacity_flavours %}
+{% for flavour in capacity_flavours[env] %}
+{% set capacity_alert_name = "compute_capacity_" ~  flavour["platform"] ~ "_c" ~ flavour["cores"] ~ "-m" ~ flavour["memory"] ~ "-f" ~ flavour["fraction"] ~ "-hg_service" %}
+  {{ capacity_alert_name }}:
+    template: compute_capacity_alerts.j2
+    exclude: {env: [hw.*lab]}
+    context:
+      platform: {{flavour["platform"]}}
+      cores: {{flavour["cores"]}}
+      memory: {{flavour["memory"]}}
+      fraction: {{flavour["fraction"]}}
+{% endfor %}
+
+
+# compute licensed pools
+{% import "licensed_pool_thresholds.yaml" as lp_thresholds %}
+{% for lp_rec in lp_thresholds["limits"] %}
+{% set compute_licensed_pool_alert_name = "compute_licensed_pool_" ~ lp_rec["pool_slug"] ~ "_z_" ~ lp_rec["zone_id"] %}
+  {{ compute_licensed_pool_alert_name }}:
+    template: compute_licensed_pool_alerts.j2
+    exclude: {env: [hw.*lab,preprod,testing,israel]}
+    context:
+      pool: {{lp_rec["pool"]}}
+      zone_id: {{lp_rec["zone_id"]}}
+      threshold: {{lp_rec["threshold"]}}
+      pool_slug: {{lp_rec["pool_slug"]}}
+{% endfor %}
+
+# compute-node solomon fetch status
+
+  compute_node_solomon_fetch_status:
+    template: ../../common/alerts/compute/solomon_fetch_status.j2
+    exclude: {env: [hw.*-lab]}
+    context:
+      warn: 10
+      alarm: 20
+      service_name: "compute-node"
+      tags: "yc-compute-node-team"
+      shards:
+        compute: ["compute_node", "gpu_servicevm", "solomon_agent", "compute"]
+        scheduler: ["resources", "compute_resources"]
+        {% for az in zones_by_env[env] %}
+        compute_{{ az.prefix }}: ["sys", "internals"]
+        {% endfor %}
+
+  compute_node_solomon_push_status:
+    template: ../../common/alerts/compute/solomon_push_status.j2
+    exclude: { env: [ hw.*-lab ] }
+    context:
+      compute_node: True
+      warn: 30
+      alarm: 50
+      service_name: "compute-node"
+      tags: "yc-compute-node-team"
+      unit: "compute"

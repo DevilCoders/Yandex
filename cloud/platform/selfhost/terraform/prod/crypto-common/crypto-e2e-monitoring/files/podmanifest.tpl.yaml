@@ -1,0 +1,213 @@
+apiVersion: v1
+kind: PodList
+items:
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: api-infrastructure
+    namespace: kube-system
+    annotations:
+      config_digest: ${infra_config_digest}
+      scheduler.alpha.kubernetes.io/critical-pod: ""
+    labels:
+      role: api
+  spec:
+    priority: 2000000001
+    hostNetwork: true
+    hostPID: true
+    priorityClassName: system-cluster-critical
+    initContainers:
+    - name: deploy-infra-configs
+      image: cr.yandex/crp7nvlkttssi7kapoho/infra/metadata:${metadata_version}
+      command:
+      - /usr/bin/metadata
+      - --attribute-name
+      - infra-configs
+      imagePullPolicy: Always
+      volumeMounts:
+      - name: all-configs
+        mountPath: /etc
+        terminationGracePeriodSeconds: 30
+    containers:
+    - name: solomon-agent
+      image: cr.yandex/crpr3khkepsccf25vvt6/solomon-agent:${solomon_version}
+      command: ["timeout", "4111s", "/usr/local/bin/solomon-agent", "--config", "/etc/solomon-agent/agent.conf"] # kind of protection against agent memory leaks
+      resources:
+        requests:
+          memory: "512Mi"
+        limits:
+          memory: "512Mi"
+      volumeMounts:
+      - name: solomon-agent-config
+        mountPath: /etc/solomon-agent/
+        readOnly: true
+    - name: push-client
+      image: cr.yandex/crpr3khkepsccf25vvt6/push-client:${push_client_version}
+      resources:
+        requests:
+          memory: "256Mi"
+        limits:
+          memory: "256Mi"
+      env:
+      - name: PUSH_CLIENT_TVM_SECRET
+        value: ${push_client_tvm_secret}
+      volumeMounts:
+      - name: var-log
+        mountPath: /var/log
+        terminationGracePeriodSeconds: 30
+      - name: var-spool
+        mountPath: /var/spool
+        terminationGracePeriodSeconds: 30
+      - name: push-client-config
+        mountPath: /etc/yandex/statbox-push-client
+        readOnly: true
+    volumes:
+    - name: all-configs
+      hostPath:
+       path: /etc
+       type: DirectoryOrCreate
+    - name: var-log
+      hostPath:
+        path: /var/log
+    - name: var-spool
+      hostPath:
+        path: /var/spool
+    - name: var-spool-push-client
+      hostPath:
+        path: /var/spool/push-client
+    - name: push-client-config
+      hostPath:
+        path: /etc/yandex/statbox-push-client
+    - name: solomon-agent-config
+      hostPath:
+        path: /etc/solomon-agent
+
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: api-static
+    namespace: kube-system
+    labels:
+      role: api
+    annotations:
+      config_digest: ${config_digest}
+      scheduler.alpha.kubernetes.io/critical-pod: ""
+  spec:
+    priority: 2000000001
+    priorityClassName: system-cluster-critical
+    hostNetwork: true
+    initContainers:
+    - name: deploy-configs
+      image: cr.yandex/crp7nvlkttssi7kapoho/infra/metadata:${metadata_version}
+      volumeMounts:
+      - name: all-configs
+        mountPath: /etc
+        terminationGracePeriodSeconds: 30
+    containers:
+    - name: ipv4-e2e-monitoring
+      image: cr.yandex/crpsas5pofdoe237m5qm/crypto-e2e-monitoring:${application_version}
+      resources:
+        requests:
+          memory: "1280Mi"
+        limits:
+          memory: "1280Mi"
+      env:
+      - name: APPLICATION_YAML
+        value: /etc/e2e-monitoring/application.yaml
+      - name: APPLICATION_LOG_DIR
+        value: /var/log/e2e-monitoring/ipv4
+      - name: APPLICATION_LOG_FILE_MAX_FILES
+        value: "3"
+      - name: APPLICATION_ACCESS_LOG_FILE_MAX_FILES
+        value: "3"
+      - name: APPLICATION_AUDIT_LOG_FILE_MAX_FILES
+        value: "3"
+      - name: YANDEX_CLOUD_LOG_LEVEL
+        value: debug
+      - name: JAVA_TOOL_OPTIONS
+        value: "-Xmx1024m -XX:-UseContainerSupport -Djava.net.preferIPv4Addresses=true -Dfile.encoding=UTF-8 -Xlog:gc*:file=/var/log/e2e-monitoring/ipv4/gc.log:time,uptime:filecount=10,filesize=100M"
+      - name: REDIS_PASSWORD
+        value: ${redis_password}
+      - name: METRICS_PORT
+        value: "4302"
+      - name: GRPC_PORT
+        value: "8443"
+      - name: LOGS_AWS_ACCESS_KEY_ID
+        value: ${logs_aws_access_key}
+      - name: LOGS_AWS_SECRET_ACCESS_KEY
+        value: ${logs_aws_secret_key}
+      volumeMounts:
+      - name: e2e-monitoring-configs
+        mountPath: /etc/e2e-monitoring
+        readOnly: true
+      - name: var-e2e-monitoring
+        mountPath: /var/e2e-monitoring
+        terminationGracePeriodSeconds: 30
+      - name: var-log-e2e-monitoring-ipv4
+        mountPath: /var/log/e2e-monitoring/ipv4
+    - name: ipv6-e2e-monitoring
+      image: cr.yandex/crpsas5pofdoe237m5qm/crypto-e2e-monitoring:${application_version}
+      resources:
+        requests:
+          memory: "1280Mi"
+        limits:
+          memory: "1280Mi"
+      env:
+        - name: APPLICATION_YAML
+          value: /etc/e2e-monitoring/application.yaml
+        - name: APPLICATION_LOG_DIR
+          value: /var/log/e2e-monitoring/ipv6
+        - name: APPLICATION_LOG_FILE_MAX_FILES
+          value: "3"
+        - name: APPLICATION_ACCESS_LOG_FILE_MAX_FILES
+          value: "3"
+        - name: APPLICATION_AUDIT_LOG_FILE_MAX_FILES
+          value: "3"
+        - name: YANDEX_CLOUD_LOG_LEVEL
+          value: debug
+        - name: JAVA_TOOL_OPTIONS
+          value: "-Xmx1024m -XX:-UseContainerSupport -Djava.net.preferIPv6Addresses=true -Dfile.encoding=UTF-8 -Xlog:gc*:file=/var/log/e2e-monitoring/ipv6/gc.log:time,uptime:filecount=10,filesize=100M"
+        - name: REDIS_PASSWORD
+          value: ${redis_password}
+        - name: METRICS_PORT
+          value: "4303"
+        - name: GRPC_PORT
+          value: "8444"
+        - name: LOGS_AWS_ACCESS_KEY_ID
+          value: ${logs_aws_access_key}
+        - name: LOGS_AWS_SECRET_ACCESS_KEY
+          value: ${logs_aws_secret_key}
+      volumeMounts:
+        - name: e2e-monitoring-configs
+          mountPath: /etc/e2e-monitoring
+          readOnly: true
+        - name: var-e2e-monitoring
+          mountPath: /var/e2e-monitoring
+          terminationGracePeriodSeconds: 30
+        - name: var-log-e2e-monitoring-ipv6
+          mountPath: /var/log/e2e-monitoring/ipv6
+    volumes:
+    - name: all-configs
+      hostPath:
+        path: /etc
+        type: DirectoryOrCreate
+    - name: e2e-monitoring-configs
+      hostPath:
+        path: /etc/e2e-monitoring
+        type: DirectoryOrCreate
+    - name: var-e2e-monitoring
+      hostPath:
+        path: /var/e2e-monitoring
+        type: DirectoryOrCreate
+    - name: var-log-e2e-monitoring
+      hostPath:
+        path: /var/log/e2e-monitoring
+        type: DirectoryOrCreate
+    - name: var-log-e2e-monitoring-ipv4
+      hostPath:
+        path: /var/log/e2e-monitoring/ipv4
+        type: DirectoryOrCreate
+    - name: var-log-e2e-monitoring-ipv6
+      hostPath:
+        path: /var/log/e2e-monitoring/ipv6
+        type: DirectoryOrCreate

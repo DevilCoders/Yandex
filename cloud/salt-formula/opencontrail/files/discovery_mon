@@ -1,0 +1,166 @@
+#!/usr/bin/env python
+# -*-coding: utf-8 -*-
+# vim: sw=4 ts=4 expandtab ai
+
+"""Monitoring for OpenContrail services using contrail-discovery API"""
+
+from __future__ import print_function
+import sys
+import requests
+import argparse
+
+DEFAULT_REQUIRED_SERVICES = [  # Script will report a problem if this service not found
+    'ApiServer',
+    'IfmapServer',
+    'xmpp-server',
+    'dns-server'
+]
+DEFAULT_HOST = '127.0.0.1'
+DEFAULT_PORT = 5998
+
+ESC_RED = '\033[91m'
+ESC_GREEN = '\033[92m'
+ESC_YELLOW = '\033[93m'
+ESC_END = '\033[0m'
+
+# Status codes for monitoring (monrun)
+
+STATUS_OK = 0
+STATUS_WARN = 1
+STATUS_CRIT = 2
+
+
+def query_daemon(host, port):
+    """Query discovery daemon using HTTP API"""
+    statuses = []
+    daemon_response = None
+    try:
+        response = requests.get('http://{}:{}/services.json'.format(host, port))
+        daemon_response = response.json()
+    except Exception as err:
+        statuses.append([STATUS_CRIT, 'Error querying discovery API: {}'.format(str(err))])
+    return statuses, daemon_response
+
+
+def check_services_status(response, required_services):
+    """Check services: all enabled should be up, all required should exist"""
+
+    if not isinstance(response, dict) or 'services' not in response:
+        return [[STATUS_CRIT, 'Discovery API returned status in unknown format']]
+
+    statuses = []
+    services_to_find = list(required_services)
+
+    for service in response['services']:
+        # All required services should exist
+        if service['service_type'] in services_to_find:
+            services_to_find.remove(service['service_type'])
+
+        # All enabled services should be up
+        admin_state = 'enabled' if service['admin_state'].lower() == 'up' else 'disabled'
+        if admin_state == 'enabled':
+            if service['oper_state'].lower() == 'up':
+                code = STATUS_OK
+            else:
+                code = STATUS_CRIT
+        else:
+            code = STATUS_WARN
+
+        service_line = '{}({}) is {}/{}'.format(service['service_type'],
+                                                service['remote'],
+                                                admin_state,
+                                                service['oper_state'])
+        if service['oper_state_msg']:
+            service_line += ' ({})'.format(service['oper_state_msg'])
+
+        statuses.append([code, service_line])
+
+    for service in services_to_find:
+        message = 'Required service "{}" was not found in discovery response'.format(service)
+        statuses.append([STATUS_CRIT, message])
+
+    return statuses
+
+
+class LoadArgsFromFile(argparse.Action):
+    """Load arguments from config file"""
+    def __call__(self, parser, namespace, values, option_string=None):
+        with values as f:
+            parser.parse_args(f.read().split(), namespace)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description='Check for contrail-discovery',
+        formatter_class=lambda prog: argparse.HelpFormatter(prog, max_help_position=30))
+
+    parser.add_argument('-t', '--test',
+                        help='output for tests/human (default: for monitoring)',
+                        action='store_true')
+
+    parser.add_argument('-o', '--host',
+                        default=DEFAULT_HOST,
+                        help='host to connect to (default: {})'.format(DEFAULT_HOST))
+
+    parser.add_argument('-p', '--port',
+                        default=DEFAULT_PORT,
+                        help='discovery port (default: {})'.format(DEFAULT_PORT))
+
+    parser.add_argument('-r', '--require',
+                        default=DEFAULT_REQUIRED_SERVICES,
+                        metavar='NAME',
+                        dest='required_services',
+                        nargs='*',
+                        help='names of required services (default: {})'.format(
+                            ', '.join(DEFAULT_REQUIRED_SERVICES)))
+
+    parser.add_argument('-f', '--config',
+                        type=open,
+                        action=LoadArgsFromFile,
+                        metavar='FILE',
+                        help='file name to load arguments from')
+
+    return parser.parse_args()
+
+
+def print_for_human(statuses):
+    colors = {
+        STATUS_OK: ESC_GREEN,
+        STATUS_WARN: ESC_YELLOW,
+        STATUS_CRIT: ESC_RED
+    }
+    descriptions = {
+        STATUS_OK: 'OK',
+        STATUS_WARN: 'Warning',
+        STATUS_CRIT: 'Critical'
+    }
+    for code, message in statuses:
+        print('{}{:8}: {}{}'.format(colors[code], descriptions[code], message, ESC_END))
+
+
+def print_for_monitoring(max_code, statuses):
+    all_messages = ', '.join([message for _, message in statuses]) or 'OK'
+    print('PASSIVE-CHECK:contrail-discovery;{};{}'.format(max_code, all_messages))
+
+
+def main():
+    args = parse_args()
+
+    statuses, daemon_response = query_daemon(args.host, args.port)
+    if daemon_response:
+        statuses += check_services_status(daemon_response, args.required_services)
+
+    max_code = STATUS_OK
+    for code, _ in statuses:
+        if code > max_code:
+            max_code = code
+
+    if args.test:
+        print_for_human(statuses)
+        sys.exit(max_code)
+    else:
+        print_for_monitoring(max_code, statuses)
+
+
+if __name__ == '__main__':
+    main()

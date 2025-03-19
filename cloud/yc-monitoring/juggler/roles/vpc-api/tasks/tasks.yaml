@@ -1,0 +1,96 @@
+- name: 'juggler_check: api errors'
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, default_timed_limits) }}"
+  with_items:
+    - service: vpc-api-errors
+
+- name: 'juggler_check: dead contrail endpoints'
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, default_timed_limits) }}"
+  with_items:
+    - service: vpc-api-contrail-dead-endpoints
+
+- name: 'juggler_check: contrail errors'
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, default_timed_limits) }}"
+  with_items:
+    - service: vpc-api-contrail-errors
+
+- name: 'juggler_check: certificates-validity'
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, default_timed_limits) }}"
+  with_items:
+    - service: certificates-validity
+
+- name: 'juggler_check: healthcheck'
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, default_timed_limits) }}"
+  with_items:
+    - service: healthcheck
+      refresh_time: 10
+      active: https
+      active_kwargs:
+        port: 8440
+        path: "/ping"
+        allow_self_signed: true
+
+- name: 'juggler_check: l3-tt-status'
+  juggler_check: ''
+  when: env in ["prod", "preprod", "testing"]
+  args: "{{ silent_check | hash_merge(item, default_timed_limits) }}"
+  with_items:
+    - service: l3-tt-status
+      children:
+        - host: "tag=slbcloghandler & service={{ l3tt_name }}"
+          service: all
+          type: EVENTS
+      meta:
+        urls:
+          - title: Description
+            url: 'https://wiki.yandex-team.ru/cloud/devel/sdn/duty/juggler/#l3-status'
+
+- name: 'juggler_check: l7-status'
+  juggler_check: ''
+  when: env in ["prod", "preprod"]  # no l7 at testing clusters
+  args: "{{ silent_check | hash_merge(item, default_timed_limits) }}"
+  with_items:
+    - service: l7-status
+      children:
+        - host: "tag=vpc-api-l7-status & tag={{ env }}"
+          service: all
+          type: EVENTS
+      meta:
+        urls:
+          - title: Description
+            url: 'https://wiki.yandex-team.ru/cloud/devel/sdn/duty/juggler/#l7-status'
+      timed_more_than_limit_is_problem:
+          nodata_mode: skip
+
+- name: 'juggler_check : push-client'
+  juggler_check: ''
+  args: "{{ silent_check | hash_merge(item, default_timed_limits) }}"
+  with_items:
+    - service: push-client
+      meta:
+        urls:
+          - title: Description
+            url: 'https://wiki.yandex-team.ru/cloud/devel/sdn/duty/juggler/#push-client'
+
+- name: 'juggler_check : e2e-tests'
+  juggler_check: ''
+  when: env in ["prod", "preprod", "testing"]
+  args: "{{ silent_check | hash_merge(item, default_timed_limits) }}"
+  with_items:
+    - service: e2e-tests-vpc
+      # 2 часа. Если события не будут приходить в течении 2х часов - то загорится NO DATA.
+      # Такой ttl выбран из соображений - e2e запускаются раз в час, плюс нужно время на сами тесты.
+      # Сейчас тестов не много, и они пробегают быстро, но со временем их станет больше, и они могут 
+      # занимать гораздо больше времени.
+      ttl: 7200
+      children: []
+    - service: e2e-tests-nlb
+      ttl: 7200
+      children: []
+    - service: e2e-tests-hcaas
+      ttl: 7200
+      children: []

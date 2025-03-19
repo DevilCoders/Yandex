@@ -1,0 +1,62 @@
+use hahn;
+PRAGMA yt.InferSchema = '1';
+$now = Unwrap(RemoveTimezone(CurrentTzDate("Europe/Moscow")));
+$start = Unwrap(RemoveTimezone(DateTime::MakeTzDate(DateTime::StartOfMonth($now - Interval("P2D")))));
+
+$bu_data = AsList(
+ AsStruct(859u as abc_service, "10185419-ХОСТ/2021" as contract, "VS500" as oebs_service, 92817669u as client_id, "ООО «Яндекс.Вертикали»" as counterparty, "verticals" as bu, ),
+AsStruct(773u as abc_service, "10185419-ХОСТ/2021." as contract, "VR310" as oebs_service, 92817669u as client_id, "ООО «Яндекс.Вертикали»" as counterparty, "autoru" as bu, ),
+AsStruct(34781u as abc_service, "10185419-ХОСТ/2021....." as contract, "VR501" as oebs_service, 92817669u as client_id, "ООО «Яндекс.Вертикали»" as counterparty, "cmexpert" as bu, ),
+AsStruct(4041u as abc_service, "10185835-ХОСТ/2021.." as contract, "AD566" as oebs_service, 92817949u as client_id, "ООО «Яндекс.Еда»" as counterparty, "yandexlavka" as bu, ),
+AsStruct(861u as abc_service, "10184762-ХОСТ/2021" as contract, "MS901" as oebs_service, 92817724u as client_id, "ООО «Яндекс.Медиасервисы»" as counterparty, "meta_media" as bu, ),
+AsStruct(119u as abc_service, "10185419-ХОСТ/2021..." as contract, "VS400" as oebs_service, 92817669u as client_id, "ООО «Яндекс.Вертикали»" as counterparty, "realty" as bu, ),
+AsStruct(645u as abc_service, "10185346-ХОСТ/2021" as contract, "MS201" as oebs_service, 92817724u as client_id, "ООО «Кинопоиск»" as counterparty, "kp" as bu, ),
+AsStruct(905u as abc_service, "10346043-ХОСТ/2021" as contract, "AD200" as oebs_service, 92817448u as client_id, "ООО «Яндекс.Маркет»" as counterparty, "meta_market" as bu, ),
+AsStruct(113u as abc_service, "10185419-ХОСТ/2021.." as contract, "VS300" as oebs_service, 92817669u as client_id, "ООО «Яндекс.Вертикали»" as counterparty, "rabota" as bu, ),
+AsStruct(2228u as abc_service, "10185835-ХОСТ/2021" as contract, "AD560" as oebs_service, 92817949u as client_id, "ООО «Яндекс.Еда»" as counterparty, "eda" as bu, ),
+AsStruct(1796u as abc_service, "10321206-ХОСТ/2021" as contract, "GE117" as oebs_service, 92818398u as client_id, "ООО \"Яндекс.Каршеринг\"" as counterparty, "yandexcarsharing" as bu, ),
+AsStruct(435u as abc_service, "10185869-ХОСТ/2021" as contract, "AD500" as oebs_service, 92818296u as client_id, "ООО «Яндекс.Такси»" as counterparty, "mlu" as bu, ),
+AsStruct(17359u as abc_service, "10185419-ХОСТ/2021...." as contract, "VS610" as oebs_service, 92817669u as client_id, "ООО «Яндекс.Вертикали»" as counterparty, "classified" as bu, ),
+AsStruct(1488u as abc_service, "10304200-ХОСТ/2021" as contract, "AD506" as oebs_service, 92817589u as client_id, "ООО «Яндекс Беспилотные Технологии»" as counterparty, "yandexsdc" as bu, ),
+);
+
+$data = (SELECT
+SUM(`cube`.billing_record_cost_rub) as total,
+`date`,
+bu
+FROM
+`//home/cloud/billing/analytics_cube/realtime/internal` as `cube`
+INNER JOIN
+`//statbox/heavy-dict/abc/last` as abc
+ON String::AsciiToLower(`cube`.billing_account_name) = String::AsciiToLower(`abc`.slug) and `cube`.billing_record_date = `abc`.`date`
+WHERE `cube`.billing_record_month > "2021-09" -- september was done manually
+GROUP BY abc.top_to_oebs as bu, `cube`.billing_record_date as `date`
+);
+
+
+$result = (SELECT
+$product_id as `product_id`,
+data.total as amount,
+case when bu.bu = "mlu" then "taxi" else bu.bu end as project_id,
+`date`
+FROM
+$data as data
+INNER JOIN
+AS_TABLE($bu_data) as bu
+ON String::AsciiToLower(`bu`.bu) = String::AsciiToLower(data.bu)
+);
+
+DEFINE ACTION $data_to_day_table($day) AS
+    $path = $base_dest || $day;
+    INSERT INTO $path
+    WITH TRUNCATE
+    SELECT
+        *
+    FROM $result
+    WHERE `date` = $day;
+    COMMIT;
+END DEFINE;
+
+
+EVALUATE FOR $day in ListFromRange($start, Unwrap($now+Interval("P1D")))
+    DO $data_to_day_table(cast($day as string));

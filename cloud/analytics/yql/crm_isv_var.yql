@@ -1,0 +1,47 @@
+use hahn;
+
+PRAGMA yt.InferSchema = '1';
+PRAGMA AnsiInForEmptyOrNullableItemsCollections;
+
+PRAGMA File('libcrypta_identifier_udf.so', 'yt://hahn/home/crypta/public/udfs/stable/libcrypta_identifier_udf.so');
+PRAGMA Udf('libcrypta_identifier_udf.so');
+
+$email_to_canonical = ($email) -> {
+    RETURN Identifiers::Email($email).Normalize;
+};
+
+$crm_leads = (
+    select
+        id as crm_id,
+        ba_id,
+        date_modified,
+        primary_email,
+        lead_source,
+        isv_status,
+        var_status
+    from (
+        SELECT
+            id,
+            max_by(ba_id, date_modified) as ba_id,
+            max(date_modified) as date_modified,
+            max_by(primary_email, date_modified) as primary_email,
+            max_by(lead_source, date_modified) as lead_source,
+            max_by(if(lc.lead_source = 'isv', lc.status), date_modified) as isv_status,
+            max_by(if(lc.lead_source = 'var', lc.status), date_modified) as var_status
+        from `//home/cloud_analytics/import/crm/leads/history/leads` as lc
+        where String::ToLower(lc.lead_source) in ('var', 'isv')
+        group by lc.id
+    )
+);
+
+insert into `//home/cloud_analytics/import/crm/crm_leads_isv_var` WITH TRUNCATE
+select
+    l.dwh_id as dwh_id,
+    l.email as email,
+    c.isv_status as isv_status,
+    c.var_status as var_status
+from $crm_leads as c
+join `//home/cloud_analytics/leads/dyn_table` as l
+  on $email_to_canonical(c.primary_email) = $email_to_canonical(l.crm_email)
+where c.isv_status is not null or c.var_status is not null
+;

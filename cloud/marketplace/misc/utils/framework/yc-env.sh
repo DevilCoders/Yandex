@@ -1,0 +1,2 @@
+AWS_METADATA_IP=169.254.169.254
+GCLOUD_METADATA_HOST=metadata.google.internal

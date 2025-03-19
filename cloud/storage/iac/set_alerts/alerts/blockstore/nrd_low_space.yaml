@@ -1,0 +1,44 @@
+definitions:
+  - &alert_id "{{.ID}}_nbs_nrd_low_space"
+  - &alert_name "{{.Name}} NBS NRD low space"
+  - &alert_window_secs 300
+  - &alert_delay_secs 0
+  - &alert_annotations_tag "yc-{{.Cluster}}-nbs-solomon"
+  - &alert_annotations_host "solomon-alert-cloud_{{.Cluster}}_nbs_{{.Zone}}"
+  - &alert_annotations_service "solomon_alert_nbs_nrd_low_space"
+  - &alert_juggler_description "(doc: https://nda.ya.ru/t/W45mkXZa5FnKyq)"
+  - &alert_program |-
+      let free = last({project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="disk_registry", host="control-{{.Zone}}", sensor="FreeBytes"});
+      let total = last({project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="disk_registry", host="control-{{.Zone}}", sensor="TotalBytes"});
+
+      let free_debug = to_fixed(free / 1024 / 1024 / 1024 / 1024, 4) + " TiB";
+      let total_debug = to_fixed(total / 1024 / 1024 / 1024 / 1024, 4) + " TiB";
+
+      alarm_if(free < 0.05 * total);
+      warn_if(free < 0.10 * total);
+  - &alert_debug "free: {{expression.free_debug}}; total: {{expression.total_debug}}"
+
+alerts:
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_juggler_description
+    window_secs: *alert_window_secs
+    delay_secs: *alert_delay_secs
+    debug: *alert_debug
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - prod_myt
+      - prod_sas
+      - prod_vla
+      - preprod_myt
+      - preprod_sas
+      - preprod_vla
+      - israel
+    expression:
+      program: *alert_program

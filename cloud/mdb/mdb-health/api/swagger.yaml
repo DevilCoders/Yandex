@@ -1,0 +1,604 @@
+swagger: "2.0"
+info:
+  description: "Accumulates cluster metrics per fqdn and allows querying accumulated data."
+  version: "1.0.0"
+  title: "MDB Health"
+  contact:
+    email: "sidh@yandex-team.ru"
+  license:
+    name: "Proprietary"
+basePath: "/v1"
+schemes:
+- "http"
+- "https"
+consumes:
+- "application/json"
+produces:
+- "application/json"
+paths:
+  /listhostshealth:
+    parameters:
+    - $ref: '#/parameters/RequestIdHeader'
+    post:
+      tags:
+      - "listhostshealth"
+      summary: "Returns hosts status and metrics"
+      operationId: "ListHostsHealth"
+      parameters:
+      - name: "body"
+        in: "body"
+        description: "List of hosts fqdn for collect health status"
+        required: true
+        schema:
+          $ref: "#/definitions/HostsList"
+      responses:
+        200:
+          description: "Data for requested hosts"
+          schema:
+            $ref: "#/definitions/HostsHealthResp"
+        default:
+          $ref: "#/responses/Error"
+  /hostshealth:
+    parameters:
+      - $ref: '#/parameters/RequestIdHeader'
+    get:
+      tags:
+      - "hostshealth"
+      summary: "Returns host status and metrics"
+      operationId: "GetHostsHealth"
+      parameters:
+      - name: "fqdns"
+        in: "query"
+        description: "List of fqdns to retrieve data for"
+        required: true
+        type: array
+        collectionFormat: csv
+        items:
+          type: string
+      responses:
+        200:
+          description: "Data for requested hosts"
+          schema:
+            $ref: "#/definitions/HostsHealthResp"
+        default:
+          $ref: "#/responses/Error"
+    put:
+      tags:
+      - "hostshealth"
+      summary: "Update host status and metric"
+      operationId: "UpdateHostHealth"
+      parameters:
+      - name: "body"
+        in: "body"
+        description: "Host health to be updated"
+        required: true
+        schema:
+          $ref: "#/definitions/HostHealthUpdate"
+      - name: X-Signature
+        in: header
+        description: "Base64-encoded signature of request body. Uses RSA-PSS to sign SHA512(body)."
+        required: true
+        type: string
+      responses:
+        200:
+          description: "Host's health data updated"
+        default:
+          $ref: "#/responses/Error"
+  /hostneighbours:
+    parameters:
+      - $ref: '#/parameters/RequestIdHeader'
+    get:
+      tags:
+      - "hostneighbours"
+      summary: "Returns db host neighbours information"
+      operationId: "GetHostNeighbours"
+      parameters:
+      - name: "fqdns"
+        in: "query"
+        description: "List of fqdns to retrieve data for"
+        required: true
+        type: array
+        collectionFormat: csv
+        items:
+          type: string
+      responses:
+        200:
+          description: "Data for requested hosts"
+          schema:
+            $ref: "#/definitions/HostNeighboursResp"
+        default:
+          $ref: "#/responses/Error"
+  /clusterhealth:
+    parameters:
+      - $ref: '#/parameters/RequestIdHeader'
+    get:
+      tags:
+      - "clusterhealth"
+      summary: "Returns cluster health information"
+      operationId: "GetClusterHealth"
+      parameters:
+      - name: "cid"
+        in: "query"
+        description: "Cluster ID to retrieve data for"
+        required: true
+        type: string
+      responses:
+        200:
+          description: "Data for requested cluster"
+          schema:
+            $ref: "#/definitions/ClusterHealth"
+        default:
+          $ref: "#/responses/Error"
+  /ping:
+    parameters:
+      - $ref: '#/parameters/RequestIdHeader'
+    get:
+      tags:
+      - health
+      summary: "Reports service status"
+      operationId: "Ping"
+      responses:
+        200:
+          description: "Service is alive and well"
+        default:
+          $ref: "#/responses/Error"
+  /stats:
+    get:
+      tags:
+      - health
+      summary: "Reports service stats"
+      operationId: "Stats"
+      responses:
+        200:
+          description: "Reports service stats"
+          schema:
+            $ref: "#/definitions/Stats"
+        default:
+          $ref: "#/responses/Error"
+  /unhealthyaggregatedinfo:
+    parameters:
+      - $ref: '#/parameters/RequestIdHeader'
+    get:
+      tags:
+      - unhealthyaggregatedinfo
+      summary: "Reports unhealthy aggregated info"
+      operationId: "GetUnhealthyAggregatedInfo"
+      parameters:
+      - name: "agg_type"
+        in: "query"
+        description: "Type of aggregation"
+        required: true
+        type: string
+        enum:
+          - "clusters"
+          - "shards"
+      - name: "c_type"
+        in: "query"
+        description: "Type of cluster to aggregate"
+        required: true
+        type: string
+      - name: "env"
+        in: "query"
+        description: "Environment of cluster"
+        type: string
+      responses:
+        200:
+          description: "Reports aggregated info"
+          schema:
+            $ref: "#/definitions/UAInfo"
+        default:
+          $ref: "#/responses/Error"
+parameters:
+  RequestIdHeader:
+    name: X-Request-Id
+    in: header
+    description: Unique request ID (must be generated for each separate request, even retries)
+    type: string
+responses:
+  Error:
+    description: "Error"
+    schema:
+      $ref: "#/definitions/Error"
+definitions:
+  HostMode:
+    description: "Host mode information like read and write availability."
+    type: object
+    required:
+    - timestamp
+    properties:
+      timestamp:
+        description: "The timestamp of data in Unix Time format."
+        type: integer
+        format: int64
+        x-nullable: false
+      write:
+        description: "Is write to host available"
+        type: boolean
+        x-nullable: false
+      read:
+        description: "Is read from host available"
+        type: boolean
+        x-nullable: false
+      instance_userfault_broken:
+        description: "Is instance broken by user fault (space limit reached etc)"
+        type: boolean
+        x-nullable: false
+  HostStatus:
+    description: "Allowed cluster statuses"
+    type: string
+    enum:
+    - "Alive"   # Alive and well
+    - "Degraded"# Some services is dead, but host work well
+    - "Dead"    # Definitely dead
+    - "Unknown" # We have no information
+  ClusterStatus:
+    description: "Allowed cluster statuses"
+    type: string
+    enum:
+    - "Alive"   # Alive and well
+    - "Degraded"# Some services is dead, but cluster work well
+    - "Dead"    # Definitely dead
+    - "Unknown" # We have no information
+  ServiceStatus:
+    description: "Allowed service statuses"
+    type: string
+    enum:
+    - "Alive"   # Alive and well
+    - "Dead"    # Definitely dead
+    - "Unknown" # We have no information
+  ServiceRole:
+    description: "Allowed service roles"
+    type: string
+    enum:
+    - "Master"
+    - "Replica"
+    - "Unknown" # We have no information
+  ServiceReplicaType:
+    description: "Replica type for service"
+    type: string
+    enum:
+    - "Unknown"
+    - "Async"
+    - "Quorum"
+    - "Sync"
+  CPUMetrics:
+    description: "CPU used metrics"
+    type: object
+    properties:
+      used:
+        description: "Summary usage of CPU"
+        type: number
+        format: float64
+        x-nullable: false
+      timestamp:
+        description: "Time and date in UNIX time format. Date of collecting CPU metrics"
+        type: integer
+        format: int64
+        x-nullable: false
+  MemoryMetrics:
+    description: "Memory used metrics"
+    type: object
+    properties:
+      used:
+        description: "Usage volume of memory"
+        type: integer
+        format: int64
+        x-nullable: false
+      total:
+        description: "Total volume of memory"
+        type: integer
+        format: int64
+        x-nullable: false
+      timestamp:
+        description: "Time and date in UNIX time format. Date of collecting memory metrics"
+        type: integer
+        format: int64
+        x-nullable: false
+  DiskMetrics:
+    description: "Disk used metrics"
+    type: object
+    properties:
+      used:
+        description: "Usage volume of disk"
+        type: integer
+        format: int64
+        x-nullable: false
+      total:
+        description: "Total volume of disk"
+        type: integer
+        format: int64
+        x-nullable: false
+      timestamp:
+        description: "Time and date in UNIX time format. Date of collecting disk metrics"
+        type: integer
+        format: int64
+        x-nullable: false
+  HostSystemMetrics:
+    description: "Collection of system metrics"
+    type: object
+    properties:
+      cpu:
+        $ref: "#/definitions/CPUMetrics"
+      mem:
+        $ref: "#/definitions/MemoryMetrics"
+      disk:
+        $ref: "#/definitions/DiskMetrics"
+  ServiceHealth:
+    type: object
+    required:
+    - name
+    - timestamp
+    - status
+    properties:
+      name:
+        description: "Service name"
+        type: string
+        x-nullable: false
+      timestamp:
+        description: "Time and date of data in Unix Time format. Available only when status is known."
+        type: integer
+        format: int64
+        x-nullable: false
+      status:
+        x-nullable: false
+        $ref: "#/definitions/ServiceStatus"
+      role:
+        x-nullable: false
+        $ref: "#/definitions/ServiceRole"
+      replicatype:
+        x-nullable: false
+        $ref: "#/definitions/ServiceReplicaType"
+      replica_upstream:
+        description: "Actual replication source FQDN. Available for replicas."
+        type: string
+        x-nullable: false
+      replica_lag:
+        description: "Replication lag in seconds"
+        type: integer
+        format: int64
+        x-nullable: false
+      metrics:
+        # Strong types?
+        description: "K/V map with metrics"
+        type: object
+        additionalProperties:
+          type: string
+  ClusterHealth:
+    type: object
+    required:
+    - status
+    properties:
+      status:
+        x-nullable: false
+        $ref: "#/definitions/ClusterStatus"
+      timestamp:
+        description: "The oldest known timestamp of service data in Unix Time format. It's mean we got status of cluster for this time."
+        type: integer
+        format: int64
+        x-nullable: false
+      lastalivetimestamp:
+        description: "Time and date of last alive cluster status in Unix Time format."
+        type: integer
+        format: int64
+        x-nullable: false
+  HostHealth:
+    type: object
+    required:
+    - cid
+    - fqdn
+    properties:
+      cid:
+        description: "Cluster ID this host belongs to"
+        type: string
+        x-nullable: false
+      fqdn:
+        description: "Host's fqdn"
+        type: string
+        x-nullable: false
+      services:
+        description: "List of services and their health"
+        type: array
+        items:
+          $ref: "#/definitions/ServiceHealth"
+      system:
+        $ref: "#/definitions/HostSystemMetrics"
+      status:
+        x-nullable: false
+        $ref: "#/definitions/HostStatus"
+      mode:
+        x-nullable: false
+        $ref: "#/definitions/HostMode"
+  HostsHealthResp:
+    description: "Health of number of hosts"
+    type: object
+    properties:
+      hosts:
+        description: "List of hosts with their health"
+        type: array
+        items:
+          $ref: "#/definitions/HostHealth"
+  HostNeighboursInfo:
+    type: object
+    required:
+      - fqdn
+    properties:
+      cid:
+        description: "Cluster ID this host belongs to"
+        type: string
+        x-nullable: false
+      sid:
+        description: "Shard ID this host belongs to"
+        type: string
+        x-nullable: false
+      env:
+        description: "Environment this host belongs to"
+        type: string
+        x-nullable: false
+      roles:
+        description: "List of roles this host belongs to"
+        type: array
+        items:
+          type: string
+        x-nullable: false
+      hacluster:
+        description: "This host belongs to HA cluster"
+        type: boolean
+        x-nullable: false
+      hashard:
+        description: "This host belongs to HA shard"
+        type: boolean
+        x-nullable: false
+      fqdn:
+        description: "Host's fqdn"
+        type: string
+        x-nullable: false
+      samerolestotal:
+        description: "Other total count of hosts in cluster or shard for same roles support"
+        type: integer
+        format: int64
+        x-nullable: false
+      samerolesalive:
+        description: "Other alive count of hosts in cluster or shard for same roles support"
+        type: integer
+        format: int64
+        x-nullable: false
+      samerolestimestamp:
+        description: "The oldest timestamp of same roles hosts"
+        type: integer
+        format: int64
+        x-nullable: false
+  HostNeighboursResp:
+    description: "Result for request about hosts neighbours"
+    type: object
+    properties:
+      hosts:
+        description: "List of hosts with information about hosts neighbours"
+        type: array
+        items:
+          $ref: "#/definitions/HostNeighboursInfo"
+  HostHealthUpdate:
+    description: "Update of host health"
+    type: object
+    required:
+    - hosthealth
+    properties:
+      ttl:
+        description: "The custom TTL value in seconds for host health data."
+        type: integer
+        format: int64
+        x-nullable: false
+      hosthealth:
+        description: "Host health data"
+        x-nullable: false
+        $ref: "#/definitions/HostHealth"
+  HostsList:
+    description: "Update of host health"
+    type: object
+    properties:
+      hosts:
+        description: "List of fqdns to retrieve data for"
+        type: array
+        items:
+          type: string
+  Stats:
+    description: "Collection of service stats"
+    type: array
+    items:
+      description: "Specific stats"
+      type: array
+      items:
+        type: object
+  Error:
+    type: object
+    properties:
+      message:
+        description: "Error description"
+        type: string
+  UAHealth:
+    description: "Array of status and its counts"
+    type: array
+    items:
+      type: object
+      properties:
+        status:
+          $ref: "#/definitions/ClusterStatus"
+        count:
+          type: integer
+          format: int64
+          x-omitempty: false
+        examples:
+          type: array
+          items:
+            type: string
+            description: "IDs of cluster or shard"
+  UAWarningGeo:
+    description: "Array of geos in warning state and its counts"
+    type: array
+    items:
+      type: object
+      properties:
+        geo:
+          type: string
+          description: "IDs of geo"
+        count:
+          type: integer
+          format: int64
+          x-omitempty: false
+        examples:
+          type: array
+          items:
+            type: string
+            description: "IDs of cluster or shard"
+  UAAvailability:
+    description: "Array of clusters/shards which are readable or writable and its read/write counts."
+    type: array
+    items:
+      type: object
+      properties:
+        writable:
+          type: boolean
+          x-omitempty: false
+        readable:
+          type: boolean
+          x-omitempty: false
+        userfaultBroken:
+          type: boolean
+          x-omitempty: false
+        count:
+          type: integer
+          format: int64
+          x-omitempty: false
+        no_read_count:
+          type: integer
+          format: int64
+          x-omitempty: false
+        no_write_count:
+          type: integer
+          format: int64
+          x-omitempty: false
+        examples:
+          type: array
+          items:
+            type: string
+            description: "IDs of cluster or shard"
+  UAInfo:
+    type: object
+    properties:
+      sla:
+        type: object
+        properties:
+          by_health:
+            $ref: "#/definitions/UAHealth"
+          by_availability:
+            $ref: "#/definitions/UAAvailability"
+          by_warning_geo:
+            $ref: "#/definitions/UAWarningGeo"
+      no_sla:
+        type: object
+        properties:
+          by_health:
+            $ref: "#/definitions/UAHealth"
+          by_availability:
+            $ref: "#/definitions/UAAvailability"
+          by_warning_geo:
+            $ref: "#/definitions/UAWarningGeo"

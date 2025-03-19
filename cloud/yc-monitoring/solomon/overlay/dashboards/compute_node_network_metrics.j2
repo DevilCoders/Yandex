@@ -1,0 +1,207 @@
+{% extends "../../base/dashboard.j2" %}
+
+{% set compute_cluster = "cloud_" + env + "_compute" %}
+
+{% block parameters %}
+{
+    "name": "host",
+    "value": "*"
+}
+{% endblock %}
+
+{% set drop_text = '[Wiki](https://wiki.yandex-team.ru/cloud/devel/sdn/dropstats/)' %}
+
+{% set default_params = "&graph=auto&stack=false&asc=false&downsamplingAggr=max&hideNoData=true" %}
+{% set top25_params = "&filter=top&filterLimit=25" %}
+
+{% macro render_vrouter_old(title, metric_group, metric, extra_labels="",
+                            params=default_params, subtitle="") %}
+    {% set query = "l.host={{host}}&l.metric_group=" ~ metric_group ~ "&l.metric=" ~ metric %}
+    {% if extra_labels %}
+        {% set query = query ~ "&" ~ extra_labels %}
+    {% endif %}
+
+    {{ render_panel(title, compute_cluster, "oct_vrouter",
+                    query ~ "&" ~ params, subtitle=subtitle) }}
+{% endmacro %}
+
+{% macro render_vrouter(title, service, name, extra_labels="",
+                        params=default_params, subtitle="") %}
+    {% set query = "l.host={{host}}&l.name=" ~ name %}
+    {% if extra_labels %}
+        {% set query = query ~ "&" ~ extra_labels %}
+    {% endif %}
+
+    {{ render_panel(title, compute_cluster, service,
+                    query ~ "&" ~ params, subtitle=subtitle) }}
+{% endmacro %}
+
+{% macro render_interfaces(title, path, intf, subtitle="") %}
+    {{ render_panel(title, compute_cluster ~ "_*", "sys|network-sys",
+                    "l.host={{host}}&l.path=" ~ path ~ "&l.intf=" ~ intf ~ "&" ~ default_params,
+                    subtitle=subtitle) }}
+{% endmacro %}
+
+{% block rows %}
+[{
+    "panels": [
+        {{ render_interfaces("INTERFACES: eth0vf* packets", "/Net/Ifs/RxPackets|/Net/Ifs/TxPackets", "eth0vf*") }},
+        {{ render_vrouter("FLOWS: Used", "oct_vrouter_snh_flows",
+                            "stats.flow.flow_active|kstate.flows.*.used",
+                            subtitle="Limit: 4M flows, 1M oflows") }},
+        {{ render_interfaces("INTERFACES: tap* packets",
+                             "/Net/Ifs/RxPackets|/Net/Ifs/TxPackets", "tap*") }}
+    ]
+},
+{
+    "panels": [
+        {{ render_interfaces("INTERFACES: eth0vf* bytes", "/Net/Ifs/RxBytes|/Net/Ifs/TxBytes", "eth0vf*") }},
+        {{ render_vrouter("FLOWS: Created/Aged", "oct_vrouter_snh_flows",
+                            "stats.flow.flow_created_per_second|stats.flow.flow_aged_per_second") }},
+        {{ render_interfaces("INTERFACES: tap* bytes",
+                             "/Net/Ifs/RxBytes|/Net/Ifs/TxBytes", "tap*") }}
+    ]
+},
+{
+    "panels": [
+        {{ render_interfaces("INTERFACES: eth0vf* drops",
+                             "/Net/Ifs/RxDrop|/Net/Ifs/TxDrop|/Net/Ifs/RxErrs|/Net/Ifs/TxErrs", "eth0vf*") }},
+        {{ render_vrouter("FLOWS: Enqueued Events", "oct_vrouter_snh_flows",
+                            "flowq.enqueues_per_second") }},
+        {{ render_vrouter("DROPS: In vrouter", "oct_vrouter_snh", "drop.packets_per_second",
+                          subtitle="All drops in vrouter for packets going both ways") }}
+    ]
+},
+{
+    "panels": [
+        {{ render_panel("PERF: Network CPU Idle", compute_cluster, "network_cpu_time",
+                        ("l.host={{host}}&l.metric=NetCPUTime&l.time_type=idle&l.net_cpu=*" ~
+                            "&stack=false&max=100&min=0&graph=auto"),
+                        subtitle="Non-idle CPUs (with idle → 0% might lead to eth0vf* drops)") }},
+        {{ render_vrouter("FLOWS: Errors", "oct_vrouter_snh_flows",
+                            "profile.vrouter_errors_per_second|stats.flow.flow_drop_due_to_*|" ~
+                            "stats.pkt.invalid_*|stats.pkt.no_handler_per_second|stats.pkt.pkt_dropped_per_second") }},
+        {{ render_vrouter("DROPS: Drops in vrouter on interface ingress",
+                          "oct_vrouter_snh_itf", "itf.drop.packets_per_second",
+                          extra_labels="l.instance_id=*",
+                          params=(default_params ~ top25_params),
+                          subtitle="Per-interface drops for packets going from VM") }}
+    ]
+},
+{
+    "panels": [
+        {{ render_vrouter_old("PERF: CPU Usage",
+                              "CPU", "cpuacct.usage",
+                              extra_labels="l.unit=contrail-vrouter-agent") }},
+        {{ render_vrouter("FLOWS: Top 25 VMs (agent)",
+                          "oct_vrouter_snh_vm_flows", "flows.count",
+                          extra_labels="l.instance_id=*",
+                          params=(default_params ~ top25_params),
+                          subtitle="These flows are handled by agent") }},
+        {{ render_vrouter("DROPS: Short Flows", "oct_vrouter_snh_flows", "shortflows.count_per_second") }}
+    ]
+},
+{
+    "panels": [
+        {{ render_vrouter("TASKS: Total Runtime", "oct_vrouter_snh_tasks",
+                          "tasks.entries.total_run_time_us_per_second",
+                          params=(default_params ~ "&stack=true")) }},
+        {{ render_vrouter("FLOWS: Top 25 VMs (subordinate)",
+                          "oct_vrouter_snh_subordinate_flows",
+                          "itf.flows.subordinate.count",
+                          extra_labels="l.instance_id=*",
+                          params=(default_params ~ top25_params),
+                          subtitle="Subordinate flows are only used by kernel module " ~
+                            "(in super-flow-v2.2 mode)") }},
+        {{ render_interfaces("DROPS: In tap interfaces",
+                             "/Net/Ifs/RxDrop|/Net/Ifs/TxDrop|/Net/Ifs/RxErrs|/Net/Ifs/TxErrs", "tap*",
+                             subtitle="Drops after vrouter") }}
+    ]
+},
+{
+    "panels": [
+        {{ render_vrouter("TASKS: Run Timings", "oct_vrouter_snh_tasks",
+                          "tasks.timings.events_per_second",
+                          params="graph=vrouter_task_times") }},
+        {{ render_vrouter("DNS: Requests", "oct_vrouter_snh_services",
+                          "services.dns.dns_requests_per_second|services.dns.dns_resolved_per_second") }},
+        {{ render_vrouter("ROUTES: All events", "oct_vrouter_snh_routes",
+                          "routes.all.event_count",
+                          subtitle="(for all vrfs, use routes.event_count to drilldown)") }}
+    ]
+},
+{
+    "panels": [
+        {{ render_vrouter_old("PERF: Memory RSS", "Memory", "rss",
+                              params=(default_params ~ "&min=0&max=18G"),
+                              extra_labels="l.unit=contrail-vrouter-agent") }},
+        {{ render_vrouter("DNS: Errors", "oct_vrouter_snh_services",
+                          "services.dns.dns_drops_per_second|services.dns.dns_failures_per_second|"~
+                            "services.dns.dns_non_matching_drops_per_second|services.dns.dns_retransmit_reqs_per_second|"~
+                            "services.dns.dns_unsupported_per_second") }},
+        {{ render_vrouter("ROUTES: Top 25 vrfs by path count",
+                          "oct_vrouter_snh_routes", "routes.path_count",
+                          extra_labels="l.subnet_id=*&l.ri_suffix=-",
+                          params=(default_params ~ top25_params)) }}
+    ]
+},
+{
+    "panels": [
+        {{ render_vrouter_old("PERF: Memory PgFault", "Memory", "pgfault",
+                              extra_labels="l.unit=contrail-vrouter-agent",
+                              params=(default_params ~ "&transform=differentiate"),
+                              subtitle="PgFault signal active memory allocation & write") }},
+        {{ render_markdown("-", "DNS Latency (not implemented)") }},
+        {{ render_panel("CHECKS: VRouter & E2E Juggler Events", compute_cluster, "juggler-events",
+                        ("l.host={{host}}&l.status=!OK&l.juggler_service=e2e-*|contrail-vrouter-agent|vrouter-uptime" ~
+                            default_params)) }}
+    ]
+},
+{
+    "panels": [
+        {{ render_vrouter("PKT LATENCY: Slow flows", "oct_vrouter_snh_packet_latency",
+                          "latency.*.flow-queue.packets_per_second",
+                          extra_labels="l.bin=1048576|4194304|inf",
+                          subtitle="Number of flows established slower than 64ms") }},
+        {{ render_vrouter("SERVICES: ARP & ICMP", "oct_vrouter_snh_services",
+                          "services.arp.*|services.icmp.*|services.icmpv6.*") }},
+        {{ render_vrouter("CHECKS: monitor states",
+                          "oct_vrouter_snh|oct_vrouter_snh_vports|oct_vrouter_snh_routes|oct_vrouter_snh_sf2rule",
+                          "*.state_count",
+                          extra_labels="l.status=!OK",
+                          subtitle="Non-OK juggler events") }}
+    ]
+},
+{
+    "panels": [
+        {{ render_vrouter("PKT LATENCY: Slow packets", "oct_vrouter_snh_packet_latency",
+                          "latency.*.forward-pkt.packets_per_second",
+                          extra_labels="l.bin=65536|inf",
+                          subtitle="Number of packets delivered slower than 1ms") }},
+        {{ render_vrouter("SERVICES: DHCP", "oct_vrouter_snh_services",
+                          "services.dhcp.*|services.dhcpv6.*") }},
+        {{ render_panel("CHECKS: Local meeseeks", env, "metrics",
+                        "l.host={{ host }}*&l.metric=fail&min=0&downsamplingFill=none" ~ default_params,
+                        project="cloud_mr_prober") }}
+    ]
+},
+{
+    "panels": [
+        {{ render_vrouter("XMPP: Events Count", "oct_vrouter_snh_xmpp", "xmpp.*_per_second") }},
+        {{ render_vrouter("SERVICES: Metadata", "oct_vrouter_snh_services",
+                          "services.metadata.*") }},
+        {{ render_panel("vrouter-port-control operations", compute_cluster, "oct_vrouter_port_control",
+                        ("l.host={{ host }}&l.exit_code=*&l.metric=call_count" ~ default_params)) }}
+    ]
+},
+{
+    "panels": [
+        {{ render_markdown("not implemented", "DB/IFMap: IFMap events") }},
+        {{ render_panel("metadata requests / errors (nginx)", compute_cluster, "nginx",
+                        ("subsystem=compute-metadata&name=rps&method=*&host={{host}}&graph=" ~
+                            project_id ~ "-vpc-" ~ env ~ "-compute-nginx-metadata")) }},
+        {{ render_vrouter("DB: OperDB Objects", "oct_vrouter_snh", "db.count",
+                          extra_labels="l.table=Acl|Vrf|Vn|Vm|Interface") }}
+    ]
+}]
+{% endblock %}

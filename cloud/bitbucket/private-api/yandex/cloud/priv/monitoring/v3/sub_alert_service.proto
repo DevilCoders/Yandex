@@ -1,0 +1,190 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.monitoring.v3;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "yandex/cloud/priv/monitoring/v3/alert.proto";
+import "yandex/cloud/priv/monitoring/v3/alert_timeseries.proto";
+import "yandex/cloud/priv/monitoring/v3/channel_state.proto";
+import "yandex/cloud/priv/monitoring/v3/evaluation_status.proto";
+import "yandex/cloud/priv/monitoring/v3/notification_status.proto";
+import "yandex/cloud/priv/monitoring/v3/notification_stats.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/monitoring/v3;monitoring";
+
+// A set of methods for managing Sub Alert resources.
+service SubAlertService {
+    // Get sub alert.
+    rpc Get (GetSubAlertRequest) returns (SubAlert) {
+        option (google.api.http) = { get: "/monitoring/v3/alerts/{alert_id}/subAlerts/{sub_alert_id}" };
+    }
+
+    // List sub alerts of the specified alert.
+    rpc List (ListSubAlertsRequest) returns (ListSubAlertsResponse) {
+        option (google.api.http) = { get: "/monitoring/v3/alerts/{alert_id}/subAlerts" };
+    }
+
+    rpc GetEvaluationState (GetSubAlertEvaluationStateRequest) returns (GetSubAlertEvaluationStateResponse) {
+        option (google.api.http) = { get: "/monitoring/v3/alerts/{alert_id}/subAlerts/{sub_alert_id}:getEvaluationState" };
+    }
+
+    rpc GetNotificationState (GetSubAlertNotificationStateRequest) returns (GetSubAlertNotificationStateResponse) {
+        option (google.api.http) = { get: "/monitoring/v3/alerts/{alert_id}/subAlerts/{sub_alert_id}:getNotificationState" };
+    }
+
+    rpc ExplainEvaluation (ExplainSubAlertEvaluationRequest) returns (ExplainSubAlertEvaluationResponse) {
+        option (google.api.http) = { post: "/monitoring/v3/alerts/{alert_id}/subAlerts/{sub_alert_id}:explainEvaluation" body: "*" };
+    }
+}
+
+message GetSubAlertRequest {
+    string folder_id = 1;
+
+    string alert_id = 2;
+
+    string sub_alert_id = 3;
+}
+
+message SubAlert {
+    string sub_alert_id = 1;
+
+    string folder_id = 2;
+
+    string alert_id = 3;
+
+    map<string, string> labels = 4;
+
+    Alert parent = 5;
+}
+
+message ListSubAlertsRequest {
+    // ID of the folder.
+    string folder_id = 1;
+
+    // ID of the alert.
+    string alert_id = 2;
+
+    // Filter sub alerts by evaluation status.
+    repeated EvaluationStatus filter_by_evaluation_status = 3;
+
+    // Filter sub alerts by associated channel IDs.
+    repeated string filter_by_channel_ids = 4;
+
+    // Filter sub alerts by labels.
+    string filter_by_labels = 5;
+
+    // Filter by notification status.
+    repeated NotificationStatus filter_by_notification_status = 6;
+
+    // Order by labels.
+    string order_by_labels = 7;
+
+    // Annotation keys shown in sub alerts.
+    repeated string annotation_keys = 8;
+
+    // The maximum number of results per page to return. If the number of available
+    // results is larger than [page_size], the service returns a [ListSubAlertsResponse.next_page_token]
+    // that can be used to get the next page of results in subsequent list requests.
+    int64 page_size = 9;
+
+    // Page token. To get the next page of results, set [page_token] to the
+    // [ListSubAlertsResponse.next_page_token] returned by a previous list request.
+    string page_token = 10;
+}
+
+message ListSubAlertsResponse {
+    repeated SubAlertListItem sub_alerts = 1;
+
+    string next_page_token = 2;
+}
+
+message SubAlertListItem {
+    // Unique identifier for sub alert.
+    string id = 1;
+
+    // Folder ID if own by this alert.
+    string folder_id = 2;
+
+    // Parent alert ID contains definition for alert.
+    string alert_id = 3;
+
+    // Unique list of labels of sub alert.
+    map<string, string> labels = 4;
+
+    // Latest evaluation status.
+    EvaluationStatus eval_status = 5;
+
+    // Latest evaluation time.
+    google.protobuf.Timestamp eval_time = 6;
+
+    // Statistic about alert notification.
+    NotificationStats notification_stats = 7;
+
+    // Filtered annotations.
+    map<string, string> annotations = 8;
+}
+
+message GetSubAlertEvaluationStateRequest {
+    string folder_id = 1;
+
+    string alert_id = 2;
+
+    string sub_alert_id = 3;
+}
+
+message GetSubAlertEvaluationStateResponse {
+    // Reference to folder_id that contains alert.
+    string folder_id = 1;
+
+    // Unique identity for alert.
+    string alert_id = 2;
+
+    // Unique identity for sub alert.
+    string sub_alert_id = 3;
+
+    // Version of alert that will be use to evaluate latest time. Each change of alert reset state.
+    int64 alert_version = 4;
+
+    // Evaluation status and details. It's status of latest change between statuses, for example from OK to ALARM.
+    EvaluationStatus status = 5;
+
+    // Time when evaluation state will changed latest time, for example from OK to ALARM.
+    google.protobuf.Timestamp since = 6;
+
+    // UNIX time when latest alert evaluation occurs.
+    // Since - LatestEval = how much time alert in particular state.
+    google.protobuf.Timestamp latest_eval = 7;
+
+    // Evaluation status and details.
+    // It's status of previous change between statuses, for example from OK to ALARM.
+    EvaluationStatus previous_status = 8;
+}
+
+message GetSubAlertNotificationStateRequest {
+    string folder_id = 1;
+
+    string alert_id = 2;
+
+    string sub_alert_id = 3;
+}
+
+message GetSubAlertNotificationStateResponse {
+    repeated ChannelState channel_states = 1;
+}
+
+message ExplainSubAlertEvaluationRequest {
+    string folder_id = 1;
+
+    string alert_id = 2;
+
+    string sub_alert_id = 3;
+
+    google.protobuf.Timestamp time = 4;
+}
+
+message ExplainSubAlertEvaluationResponse {
+    EvaluationStatus evaluation_status = 1;
+
+    repeated AlertTimeseries series = 2;
+}

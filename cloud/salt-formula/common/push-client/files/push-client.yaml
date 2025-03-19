@@ -1,0 +1,43 @@
+{%- from "common/push-client/map.jinja" import push_client with context -%}
+{%- set config = salt['pillar.get']('push_client:instances:%s' % instance_name, default=push_client.get('defaults', {}), merge=True) -%}
+
+---
+ident: {{ config.ident }}
+
+logger:
+  telemetry_interval: -1
+  remote: 0
+  mode: file
+  file: /var/log/statbox/{{ instance_name }}.log
+  level: 6
+
+network:
+  advice: {{ config.get('dc', 'my') }}
+  master-addr: {{ config.get('host', 'logbroker.yandex.net') }}
+
+{% if config.get("proto", "pq") == "pq" %}
+  proto: pq
+  master-port: 2135
+{%- if config.get('tvm', {}).get('enabled', False) %}
+  tvm-client-id: {{ config.tvm.client_id }}
+  tvm-server-id: {{ config.tvm.server_id }}
+  tvm-secret-file: {{ config.tvm.secret_file }}
+{%- endif %}
+{% else %}
+  proto: rt
+{% endif %}
+
+watcher:
+  state: /var/lib/push-client/{{ instance_name }}
+
+files:
+{%- for file in config.get('files') %}
+  - name: {{ file.name }}
+    log_type: {{ file.log_type }}
+    chunk_size: {{ file.get('chunk_size', 1048576) }}
+    ident: {{ file.get('ident', config.ident) }}
+{%- if file.get('pipe', None) %}
+    pipe: {{ file.pipe }}
+{%- endif %}
+    send_delay: {{ file.get('send_delay', 300) }}
+{%- endfor %}

@@ -1,0 +1,39 @@
+apiVersion: datadoghq.com/v1alpha1
+kind: ExtendedDaemonSet
+metadata:
+  name: compute-metadata
+  namespace: compute
+spec:
+  strategy:
+    canary:
+      replicas: 1
+  template:
+    metadata:
+      labels:
+        name: compute-metadata
+    spec:
+      nodeSelector:
+        compute-node: "1"
+      hostNetwork: true
+      securityContext: #run as compute-metadata
+        runAsUser: 120
+        runAsGroup: 129
+      initContainers:
+      - name: compute-metadata-check-token #check that it can get token from token-agent
+        image: cr.yandex/crpfc9niqhgtkgjjmu7b/ubuntu-curl:1
+        command: ['bash', '-c', 'curl -s --unix /var/run/yc/token-agent/http.sock http://localhost/tokenAgent/v1/token | grep iam_token']
+        volumeMounts:
+          - name: token-agent-uds
+            mountPath: /var/run/yc/token-agent/http.sock
+      containers:
+      - name: compute-metadata
+        image: cr.yandex/yc-bootstrap/ubuntu:xenial-20210114-2.0
+        command: ['bash', '-c', 'while [ 1 ]; do echo "Dummy compute metadata is running"; date; sleep 10; done']
+        volumeMounts:
+          - name: token-agent-uds
+            mountPath: /var/run/yc/token-agent/
+      volumes:
+      - name: token-agent-uds
+        hostPath:
+          type: Socket
+          path: /var/run/yc/token-agent/http.sock

@@ -1,0 +1,303 @@
+{
+    "appConfig": {},
+    "application": "kten-namespaces",
+    "id": "fb2e3718-59fc-4b4e-a495-dbb51fef5b29",
+    "index": 3,
+    "keepWaitingPipelines": false,
+    "limitConcurrent": true,
+    "name": "update-version-for-stand",
+    "parameterConfig": [
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": true,
+            "label": "",
+            "name": "stand",
+            "options": [
+                {
+                    "value": "testing"
+                },
+                {
+                    "value": "preprod"
+                },
+                {
+                    "value": "prod"
+                }
+            ],
+            "pinned": true,
+            "required": true
+        },
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "",
+            "name": "releaseTicket",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": true,
+            "required": true
+        },
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "",
+            "name": "chartVersion",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": false,
+            "required": true
+        }
+    ],
+    "spelEvaluator": "v4",
+    "stages": [
+        {
+            "failOnFailedExpressions": true,
+            "name": "Configure context",
+            "refId": "1",
+            "requisiteStageRefIds": [],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "stand",
+                    "value": "${{\"testing\", \"preprod\", \"prod\"}.contains(parameters.stand) ? parameters.stand : UnsupportedStand}"
+                },
+                {
+                    "key": "releaseTicket",
+                    "value": "${parameters.releaseTicket}"
+                },
+                {
+                    "key": "branchName",
+                    "value": "${parameters.releaseTicket + \"_\" + parameters.stand}"
+                },
+                {
+                    "key": "chartVersion",
+                    "value": "${parameters.chartVersion}"
+                }
+            ]
+        },
+        {
+            "actions": [
+                {
+                    "actionId": "cdf79792-0f69-436b-9c65-283ce5406de0",
+                    "actionName": "Check if branch exists for testing",
+                    "actionType": "getBranch",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branchName": "${branchName}",
+                    "outputVariable": "branchInfo",
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                }
+            ],
+            "completeOtherBranchesThenFail": false,
+            "continuePipeline": true,
+            "failPipeline": false,
+            "name": "Check if branch exists",
+            "refId": "10",
+            "requisiteStageRefIds": [
+                "1"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "actions": [
+                {
+                    "actionName": "create",
+                    "actionType": "createBranch",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branchName": "${branchName}",
+                    "outputVariable": "branchInfo",
+                    "project": "cloud",
+                    "repo": "k8s-deploy",
+                    "startPoint": "master"
+                }
+            ],
+            "name": "Create Branch",
+            "refId": "11",
+            "requisiteStageRefIds": [
+                "10"
+            ],
+            "stageEnabled": {
+                "expression": "${branchInfo == null}",
+                "type": "expression"
+            },
+            "type": "bitbucket"
+        },
+        {
+            "actions": [
+                {
+                    "actionName": "update vla hw",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "(  version:\\s).*",
+                            "replacement": "$1${chartVersion}"
+                        }
+                    ],
+                    "commitMessage": "Update namespaces helmchart version in VLA HW",
+                    "filePath": "${stand}/ru-central1-a/helmfiles/enginfra/namespaces/helmfile.yaml",
+                    "ignoreUnmodified": true,
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                },
+                {
+                    "actionName": "update vla svm",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "(  version:\\s).*",
+                            "replacement": "$1${chartVersion}"
+                        }
+                    ],
+                    "commitMessage": "Update namespaces helmchart version in VLA SVM",
+                    "filePath": "${stand}/ru-central1-a-svm/helmfiles/enginfra/namespaces/helmfile.yaml",
+                    "ignoreUnmodified": true,
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                },
+                {
+                    "actionName": "update sas hw",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "(  version:\\s).*",
+                            "replacement": "$1${chartVersion}"
+                        }
+                    ],
+                    "commitMessage": "Update namespaces helmchart version in SAS HW",
+                    "filePath": "${stand}/ru-central1-b/helmfiles/enginfra/namespaces/helmfile.yaml",
+                    "ignoreUnmodified": true,
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                },
+                {
+                    "actionName": "update sas svm",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "(  version:\\s).*",
+                            "replacement": "$1${chartVersion}"
+                        }
+                    ],
+                    "commitMessage": "Update namespaces helmchart version in SAS SVM",
+                    "filePath": "${stand}/ru-central1-b-svm/helmfiles/enginfra/namespaces/helmfile.yaml",
+                    "ignoreUnmodified": true,
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                },
+                {
+                    "actionName": "update myt hw",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "(  version:\\s).*",
+                            "replacement": "$1${chartVersion}"
+                        }
+                    ],
+                    "commitMessage": "Update namespaces helmchart version in MYT HW",
+                    "filePath": "${stand}/ru-central1-c/helmfiles/enginfra/namespaces/helmfile.yaml",
+                    "ignoreUnmodified": true,
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                },
+                {
+                    "actionName": "update myt svm",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "(  version:\\s).*",
+                            "replacement": "$1${chartVersion}"
+                        }
+                    ],
+                    "commitMessage": "Update namespaces helmchart version in MYT SVM",
+                    "filePath": "${stand}/ru-central1-c-svm/helmfiles/enginfra/namespaces/helmfile.yaml",
+                    "ignoreUnmodified": true,
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                },
+                {
+                    "actionId": "e0705394-6b74-4b83-8752-d866afed7bce",
+                    "actionName": "Create PR",
+                    "actionType": "createPullRequest",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "description": "Update namespaces helm chart version in ${stand} to ${chartVersion}",
+                    "findExisting": true,
+                    "fromRef": "${branchName}",
+                    "ignoreEmpty": true,
+                    "outputVariable": "pullRequest",
+                    "project": "cloud",
+                    "repo": "k8s-deploy",
+                    "title": "${releaseTicket} Update namespaces helm chart version in ${stand} to ${chartVersion}",
+                    "toRef": "master"
+                }
+            ],
+            "name": "Update Values",
+            "refId": "12",
+            "requisiteStageRefIds": [
+                "11",
+                "10"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "attempts": 1,
+            "buildConfigurationId": "Selfhost_GenerateK8sManifests",
+            "buildParameters": [
+                {
+                    "key": "env.PREFIX",
+                    "value": "enginfra/namespaces"
+                }
+            ],
+            "logicalBranchName": "${branchName}",
+            "name": "Generate Manifests",
+            "refId": "13",
+            "requisiteStageRefIds": [
+                "12"
+            ],
+            "tcProfile": "aw",
+            "type": "teamcityBuild"
+        },
+        {
+            "actions": [
+                {
+                    "actionName": "Wait PR",
+                    "actionType": "waitPullRequest",
+                    "source": "priorAction",
+                    "sourceActionId": "e0705394-6b74-4b83-8752-d866afed7bce"
+                }
+            ],
+            "name": "Wait for PR merged",
+            "refId": "14",
+            "requisiteStageRefIds": [
+                "13"
+            ],
+            "type": "bitbucket"
+        }
+    ],
+    "triggers": []
+}

@@ -1,0 +1,36 @@
+{%- from "api/gateway/map.jinja" import api_gateway, load_balancer with context -%}
+
+services:
+{%- for service in api_gateway.services %}
+  - id: {{ service.id }}
+    config:
+    {%- if 'location' in service %}
+      builtin_discovery: {}
+      upstream_location_type: {{ service.location }}
+    {% else %}
+      endpoint:
+        address: 127.0.0.1:4433
+    {% endif %}
+
+{% endfor %}
+  - id: yandex.cloud.operation.OperationService
+    config:
+      builtin_discovery: {}
+
+  - id: yandex.cloud.endpoint.ApiEndpointService
+    config:
+      endpoints:
+{%- for endpoint in api_gateway.endpoints %}
+      - id: {{ endpoint.name }}
+        address: "{{ endpoint.host }}:{{ endpoint.get('port', load_balancer.endpoints.api_gateway_ssl.port) }}"
+{% endfor %}
+discovery:
+  list:
+    endpoints:
+{%- for endpoint in api_gateway.discovery %}
+    - address: {{ endpoint.address }}
+      type: {{ endpoint.type }}
+      location_type: {{ endpoint.location_type }}
+      location: {{ endpoint.location }}
+      id_prefix: {{ endpoint.id_prefix }}
+{% endfor %}

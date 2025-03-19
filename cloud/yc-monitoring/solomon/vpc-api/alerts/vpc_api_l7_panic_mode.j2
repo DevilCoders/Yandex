@@ -1,0 +1,49 @@
+{% extends "vpc_api_base_alert.j2" %}
+
+{% set cluster = "cloud_{}_cpl".format(env) %}
+{% set service = "vpc-api-l7-panic-mode" %}
+
+{% set windowSecs = 300 %}
+
+{% macro prog() %}
+{# FIXME(wronglink): remove alb_cluster_name filtration as there is no alb_cluster_name metrics anymore #}
+{# See: https://t.me/c/1426447463/10793 #}
+// Use drop_below metrics can have a very tiny noise
+let requests_rate_with_panic = avg(drop_below(
+    non_negative_derivative({
+        project=platform
+        ,cluster='{{ cluster }}'
+        ,service=api_envoy_tags_ma
+        ,name=alb_lb_healthy_panic
+        ,host='*'
+        ,backend=vpc_api_backend
+        ,alb_cluster_name=-
+    }),
+    0.001
+));
+
+// Overcome NaN-s
+let requests_rate_with_panic = requests_rate_with_panic != requests_rate_with_panic ? 0 : requests_rate_with_panic;
+let requests_rate_with_panic_str = to_fixed(requests_rate_with_panic, 3);
+
+// Alarm if there are requests with panic mode
+alarm_if(requests_rate_with_panic > 0);
+{% endmacro %}
+
+{% block main %}
+    "name": "VPC API L7 panic mode {{env}}",
+    "annotations": {
+        "requests_rate_with_panic": "[[ expression.requests_rate_with_panic ]]",
+        "description": "VPC API L7 requests with panic mode",
+        "windowSecs": "{{ windowSecs }}",
+        "host": "[[ labels.host ]]",
+        "tags": "vpc-api-l7-status, {{ env }}",
+        "service": "{{ service }}",
+        "graph": "https://solomon.cloud.yandex-team.ru/?project=platform&cluster={{ cluster }}&service=api_envoy_tags_ma&l.backend=vpc_api_backend&l.name=alb_lb_healthy_panic&l.alb_cluster_name=-&l.host=*&graph=auto&transform=differentiate",
+        "wiki": "{{ wiki_url(service) }}" 
+    },
+    "type": {{ type_expression() }},
+    "groupByLabels": [
+        "host"
+    ]
+{% endblock %}

@@ -1,0 +1,196 @@
+#!/usr/bin/env python
+# -*-coding: utf-8 -*-
+# vim: sw=4 ts=4 expandtab ai
+
+import logging
+import socket
+import sys
+import time
+import subprocess
+import gevent
+
+import introspect
+import lxml.etree as et
+from cfgm_common.ifmap.client import client
+from cfgm_common.ifmap.id import Identity
+from cfgm_common.ifmap.request import NewSessionRequest, SearchRequest
+from cfgm_common.ifmap.response import newSessionResult
+
+
+# Disable all logs because ifmap.clent logger generate str with errors
+logging.disable(sys.maxint)
+
+"""Monitoring for OpenContrail ifmap-server """
+
+"""Part copy from schema_transformer/ifmap_view.py """
+
+
+class IfmapSearcher(object):
+    def __init__(self, username, password, ip='localhost', port='8443',
+                 search_identifier='contrail:config-root:root', max_depth=10):
+        """
+        .. attention:: username/passwd from right place
+        """
+        self._ip = ip
+        self._port = port
+        self._username = username
+        self._password = password
+        self._search_identifier = search_identifier
+        self._search_metas = None
+        self._result_metas = None
+        self._max_depth = str(max_depth)
+        self._CONTRAIL_XSD = "http://www.contrailsystems.com/vnc_cfg.xsd"
+
+        self._NAMESPACES = {
+            'a': 'http://www.w3.org/2003/05/soap-envelope',
+            'b': 'http://www.trustedcomputinggroup.org/2010/IFMAP/2',
+            'c': self._CONTRAIL_XSD
+        }
+
+        namespaces = {
+            'env': "http://www.w3.org/2003/05/soap-envelope",
+            'ifmap': "http://www.trustedcomputinggroup.org/2010/IFMAP/2",
+            'meta': "http://www.trustedcomputinggroup.org/"
+                    "2010/IFMAP-METADATA/2",
+            'contrail': self._CONTRAIL_XSD
+        }
+
+        mapclient = client(("%s" % (self._ip),
+                            "%s" % (self._port)),
+                           self._username,
+                           self._password, namespaces)
+        result = mapclient.call('newSession', NewSessionRequest())
+        mapclient.set_session_id(newSessionResult(result).get_session_id())
+        mapclient.set_publisher_id(newSessionResult(result).get_publisher_id())
+
+        self._mapclient = mapclient
+        self.soap_doc = None
+
+    # end __init__
+
+    def _search(self, start_id, match_meta=None, result_meta=None):
+        # set ifmap search parmeters
+        srch_params = {}
+        srch_params['max-depth'] = self._max_depth
+        srch_params['max-size'] = '50000000'
+
+        if match_meta is not None:
+            srch_params['match-links'] = match_meta
+
+        if result_meta is not None:
+            # all => don't set result-filter, so server returns all id + meta
+            if result_meta == "all":
+                pass
+            else:
+                srch_params['result-filter'] = result_meta
+        else:
+            # default to return match_meta metadata types only
+            srch_params['result-filter'] = match_meta
+
+        mapclient = self._mapclient
+        srch_req = SearchRequest(mapclient.get_session_id(), start_id,
+                                 search_parameters=srch_params
+                                 )
+        result = mapclient.call('search', srch_req)
+
+        return result
+
+    # end _search
+
+    def search(self):
+        if self._search_metas:
+            search_metas = ' or '.join(
+                self._search_metas.split(','))
+        else:
+            search_metas = None
+        if self._result_metas:
+            result_metas = ' or '.join(
+                self._result_metas.split(','))
+        else:
+            result_metas = None
+        start_id = str(
+            Identity(name=self._search_identifier,
+                     type='other', other_type='extended'))
+        soap_result = self._search(
+            start_id,
+            search_metas,
+            result_metas)
+        self.soap_doc = et.fromstring(soap_result)
+        self.result_items = self.soap_doc.xpath(
+            '/a:Envelope/a:Body/b:response/searchResult/resultItem',
+            namespaces={'a': 'http://www.w3.org/2003/05/soap-envelope',
+                        'b': 'http://www.trustedcomputinggroup.org/2010/IFMAP/2'})
+
+    def get_search_results(self):
+        return self.result_items
+
+
+def get_service_status(config):
+    ip = config['ip']
+    port = config['port']
+    username = config['username']
+    passwd = config['password']
+    search_identifier = config['search_identifier']
+    max_depth = config['max_depth']
+    timeout_warn_sec = float(config['timeout_warn_sec'])
+    timeout_crit_sec = float(config['timeout_crit_sec'])
+    timeout_full_sec = float(config['timeout_full_sec'])
+
+    try:
+        start_time = time.time()
+
+        # code inside is in fact gevent based
+        with gevent.Timeout(timeout_full_sec):
+            searcher = IfmapSearcher(username, passwd, ip, port, search_identifier, max_depth)
+            searcher.search()
+
+        elapsed = time.time() - start_time
+    except socket.error, err:
+        return introspect.STATUS_CRIT, 'Service is unavailable ({}) ({})'.format(ip, err)
+    except gevent.Timeout, err:
+        return introspect.STATUS_CRIT, "Service didn't answer within {} seconds ({})".format(timeout_full_sec, ip)
+
+    result = searcher.get_search_results()
+    # when everything is ok links to search_ident are also returned.
+    # When there is no ident len(result) == 1 and result[0] still has that item but without metadata.
+    if len(result) <= 1:
+        return introspect.STATUS_CRIT, 'No item {} on node {}'.format(search_identifier, ip)
+
+    if elapsed > timeout_crit_sec:
+        return introspect.STATUS_CRIT, 'CRIT. Response time: {:.2f} sec (< {:.2f} is OK)'.format(elapsed, timeout_warn_sec)
+
+    if elapsed > timeout_warn_sec:
+        return introspect.STATUS_WARN, 'WARN. Response time: {:.2f} sec (< {:.2f} is OK)'.format(elapsed, timeout_warn_sec)
+
+    return introspect.STATUS_OK, 'OK. Response time: {:.2f}'.format(elapsed)
+
+
+def get_ifmap_memory_usage():
+    proc = subprocess.Popen('systemctl status ifmap.service | grep -F Memory',
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
+    stdout, stderr = proc.communicate()
+    proc.wait()
+    # outputs: '   Memory: 98.3M'
+    # outputs on fail: '' and return code is non zero
+    if proc.returncode != 0:
+        return 'Memory: ifmap.service unit is not running or does not exist'
+
+    return stdout.strip()
+
+
+def main():
+    try:
+        config = introspect.load_config('contrail-ifmap.conf')
+    except IOError:
+        introspect.print_for_monitoring('contrail-ifmap', introspect.STATUS_CRIT, 'Can\'t load config file for monitoring')
+        return 0
+
+    status, message = get_service_status(config)
+    memory_usage = get_ifmap_memory_usage()
+    full_message = ". ".join([message, memory_usage])
+    introspect.print_for_monitoring('contrail-ifmap', status, full_message)
+    return 0
+
+
+if __name__ == '__main__':
+    main()

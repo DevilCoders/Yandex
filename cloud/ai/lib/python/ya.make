@@ -1,0 +1,9 @@
+RECURSE(
+    datasource
+    datetime
+    iterators
+    log
+    nirvana
+    serialization
+    text
+)

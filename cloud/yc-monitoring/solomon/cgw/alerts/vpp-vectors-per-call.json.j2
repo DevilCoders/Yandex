@@ -1,0 +1,33 @@
+{% extends "../../base/alert.j2" %}
+
+{% set delaySecs = 10 %}
+
+{% macro prog() %}
+
+let vectors_per_call =
+	{cluster='cloud_{{ env }}_cloudgate', host='{{host}}', 'vpp-node'='dpdk-input', service='vsop', name='vpp-vectors'} /
+	{cluster='cloud_{{ env }}_cloudgate', host='{{host}}', 'vpp-node'='dpdk-input', service='vsop', name='vpp-calls'};
+
+let max_thread_vectors_per_call = group_lines('max', vectors_per_call);
+
+let treshold = max(max_thread_vectors_per_call);
+let is_red = treshold > {{crit}};
+let is_yellow = treshold > {{warn}};
+alarm_if(is_red);
+warn_if(is_yellow);
+{% endmacro %}
+
+
+{% block main %}
+	"name": "CGW VPP vectors per call {{host}} @ {{ env }}",
+	"description": "VPP load level metric",
+	"type": {{ type_expression() }},
+	"groupByLabels": ["host"],
+	"state": "ACTIVE",
+	"annotations": {
+		"host": "{{ svm_fqdn() }}",
+		"tags": "Solomon, yc-{{env}}, yc-cgw",
+		"service": "{{ serviceName }}",
+		"wiki": "https://docs.yandex-team.ru/yc-monitoring/cgw/{{ serviceName }}"
+	}
+{% endblock %}

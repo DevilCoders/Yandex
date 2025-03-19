@@ -1,0 +1,26 @@
+{% if salt['pillar.get']('data:network:l3_slb:virtual_ipv6') %}
+{% set dom0_hostname = salt.cmd.run('cat /etc/dom0hostname') %}
+{% set dom0_ip = salt.dnsutil.AAAA(dom0_hostname)[0] %}
+auto ip6tnl0
+iface ip6tnl0 inet manual
+    mtu 8950
+    up ifconfig ip6tnl0 up mtu 8950
+    post-up /sbin/ip -6 route add default via {{ dom0_ip }} dev eth0 mtu 8900 advmss 8840 table 200
+    pre-down /sbin/ip -6 route del default via {{ dom0_ip }} dev eth0 mtu 8900 advmss 8840 table 200
+    down ifconfig ip6tnl0 down
+
+auto lo:200
+iface lo:200 inet manual
+{% for slb_ip in salt['pillar.get']('data:network:l3_slb:virtual_ipv6') %}
+    up /sbin/ip address add {{ slb_ip }} dev lo label lo:200
+    post-up /sbin/ip -6 rule add from {{ slb_ip }} lookup 200
+    pre-down /sbin/ip -6 rule del from {{ slb_ip }} lookup 200
+    down /sbin/ip address del {{ slb_ip }} dev lo label lo:200
+{% endfor %}
+{% endif %}
+
+{% if salt['pillar.get']('data:network:eth0-mtu') %}
+auto eth0
+iface eth0 inet manual
+    mtu {{ salt['pillar.get']('data:network:eth0-mtu') }}
+{% endif %}

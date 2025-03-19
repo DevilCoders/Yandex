@@ -1,0 +1,10 @@
+RECURSE(
+    yandex_connect
+    backoffice
+    cloud_analytics
+    crm
+    iam
+    solomon
+    staff
+    startrek
+)

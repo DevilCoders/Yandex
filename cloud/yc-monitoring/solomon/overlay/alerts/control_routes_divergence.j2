@@ -1,0 +1,51 @@
+{% extends "../../base/alert.j2" %}
+
+{% set checkExpression = "" %}
+{% set windowSecs = 300 %}
+
+{% set description = "Difference in paths count, received by contrail-controls from CGWs of specific type. " +
+                     "If too big (CRIT), probably https://st.yandex-team.ru/CLOUDINC-1643. Call: /duty cgw" %}
+
+{% macro prog() %}
+let crit_level_percent = 10;
+let warn_level_percent = 2;
+
+let data = {
+    project='{{ project_id }}',
+    cluster='cloud_{{ env }}_oct',
+    service='oct_control',
+    name='neigh.by-type.paths',
+    host='oct-{{ az }}*',
+    type='cgw*|loadbalancer-node'
+};
+
+let max_ts = group_lines('max', data);
+let min_ts = group_lines('min', data);
+
+alarm_if(max(max_ts) == 0); // alarm if no announces at all from all CGWs
+
+let divergence_percent_ts = 100 * (max_ts - min_ts) / max_ts;
+let divergence_percent = avg(divergence_percent_ts);
+let divergence_percent_human = to_fixed(divergence_percent, 1);
+
+alarm_if(divergence_percent > crit_level_percent);
+warn_if(divergence_percent > warn_level_percent);
+{% endmacro %}
+
+{% block main %}
+    "name": "contrail-control routes divergence @ {{ env | upper }} {{ az | upper }}",
+    "groupByLabels": ["type"],
+    "annotations": {
+        "host": "cloud_{{ env }}_overlay_solomon_{{ az }}_[[labels.type]]",
+        "tags": "routes-divergence",
+        "divergence_percent": "[[expression.divergence_percent_human]]",
+        "crit_level_percent": "[[expression.crit_level_percent]]",
+        "warn_level_percent": "[[expression.warn_level_percent]]",
+        "service": "contrail-control-routes-divergence",
+        "description": "{{ description }}",
+        "time_window_seconds": "{{ windowSecs }}",
+        "cgw_type": "[[labels.type]]"
+    },
+    "description": "{{ description }}",
+    "type": {{ type_expression() }}
+{% endblock %}

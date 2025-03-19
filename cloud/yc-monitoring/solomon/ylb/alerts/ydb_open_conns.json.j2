@@ -1,0 +1,46 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro svm_fqdn() -%}
+	[[labels.host]].{{ svm_domains[env] }}
+{%- endmacro %}
+
+{% macro prog() %}
+let in_use_connections = avg({
+	cluster='cloud_{{ env }}_ylb',
+	service='{{service}}',
+	host!='cluster',
+	name='stats_ydb_in_use_conns',
+	env='{{ env }}'
+	} + constant_line(0, 5m));
+let max_open_conns = avg({
+	cluster='cloud_{{ env }}_ylb',
+	service='{{service}}',
+	host!='cluster',
+	name='stats_ydb_max_open_conns',
+	env='{{ env }}'
+	} + constant_line(0, 5m));
+let rate = max_open_conns > 0 ? in_use_connections / max_open_conns : 0;
+let description = 'Too many in use connections';
+
+let is_red = rate >= 0.9;
+alarm_if(is_red);
+
+let is_yellow = rate >= 0.5;
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+	"id": "{{ id }}",
+	"name": "{{ name }}",
+	"description": "",
+	"groupByLabels": ["host"],
+	"annotations": {
+		"details": "[[expression.description]]",
+		"host": "{{ svm_fqdn() }}",
+		"in_use connections": "[[expression.in_use_connections]]",
+		"max_open connections": "[[expression.max_open_connections]]",
+		"service": "{{ serviceName }}{{ service_suffix }}",
+		"wiki": "https://docs.yandex-team.ru/yc-monitoring/cgw/{{ serviceName }}"
+	},
+	"type": {{ type_expression() }}
+{% endblock %}

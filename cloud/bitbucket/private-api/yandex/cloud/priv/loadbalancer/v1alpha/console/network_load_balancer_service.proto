@@ -1,0 +1,112 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.loadbalancer.v1alpha.console;
+
+import "google/api/annotations.proto";
+import "google/protobuf/field_mask.proto";
+import "yandex/cloud/api/operation.proto";
+import "yandex/cloud/priv/validation.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+import "yandex/cloud/priv/loadbalancer/v1alpha/console/health_check.proto";
+import "yandex/cloud/priv/loadbalancer/v1alpha/console/network_load_balancer.proto";
+import "yandex/cloud/priv/loadbalancer/v1alpha/console/target_group.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/loadbalancer/v1alpha/console;loadbalancer_console";
+option java_outer_classname = "PNLBSO";
+
+service NetworkLoadBalancerService {
+  rpc Create (CreateNetworkLoadBalancerRequest) returns (operation.Operation) {
+    option (google.api.http) = { post: "/compute/v1alpha/console/networkLoadBalancers" body: "*" };
+    option (yandex.cloud.api.operation) = {
+      metadata: "CreateNetworkLoadBalancerMetadata"
+      response: "NetworkLoadBalancer"
+    };
+  }
+
+  rpc Update (UpdateNetworkLoadBalancerRequest) returns (operation.Operation) {
+    option (google.api.http) = { patch: "/compute/v1alpha/console/networkLoadBalancers/{network_load_balancer_id}" body: "*" };
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateNetworkLoadBalancerMetadata"
+      response: "NetworkLoadBalancer"
+    };
+  }
+}
+
+message CreateNetworkLoadBalancerRequest {
+  string folder_id = 1 [(required) = true, (length) = "<=50"];
+  string name = 2 [(pattern) = "|[a-z][-a-z0-9]{1,61}[a-z0-9]"];
+  string description = 3 [(length) = "<=256"];
+  map<string, string> labels = 4 [(priv.size) = "<=64", (length) = "<=63", (pattern) = "[-_0-9a-z]*", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_0-9a-z]*"];
+
+  string region_id = 5 [(required) = true, (length) = "<=50"];
+  NetworkLoadBalancer.Type type = 6 [(required) = true];
+
+  repeated ListenerSpec listener_specs = 7 [(size) = "<=10"];
+
+  // for now we accept only one target_group per NetworkLoadBalancer
+  repeated AttachedTargetGroupSpec attached_target_group_specs = 8 [(size) = "<=1"];
+}
+
+message CreateNetworkLoadBalancerMetadata {
+  string network_load_balancer_id = 1;
+}
+
+message UpdateNetworkLoadBalancerRequest {
+  string network_load_balancer_id = 1 [(required) = true, (length) = "<=50"];
+  google.protobuf.FieldMask update_mask = 2;
+
+  string name = 3 [(pattern) = "|[a-z][-a-z0-9]{1,61}[a-z0-9]"];
+  string description = 4 [(length) = "<=256"];
+  map<string, string> labels = 5 [(priv.size) = "<=64", (length) = "<=63", (pattern) = "[-_0-9a-z]*", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_0-9a-z]*"];
+
+  repeated ListenerSpec listener_specs = 6 [(size) = "<=10"];
+
+  // for now we accept only one target_group per NetworkLoadBalancer
+  repeated AttachedTargetGroupSpec attached_target_group_specs = 7 [(size) = "<=1"];
+}
+
+message UpdateNetworkLoadBalancerMetadata {
+  string network_load_balancer_id = 1;
+}
+
+message ExternalAddressSpec {
+  string address = 1;
+  IpVersion ip_version = 2;
+}
+
+message InternalAddressSpec {
+  string address = 1;
+  string subnet_id = 2;
+  IpVersion ip_version = 3;
+}
+
+message ListenerSpec {
+  int64 port = 1 [(value) = "1-65535"];
+  Listener.Protocol protocol = 2 [(required) = true];
+
+  oneof address {
+    ExternalAddressSpec external_address_spec = 3;
+    InternalAddressSpec internal_address_spec = 4;
+  }
+  int64 target_port = 5 [(value) = "0-65535"];
+}
+
+message TargetGroupSpec {
+  string name = 1 [(pattern) = "|[a-z][-a-z0-9]{1,61}[a-z0-9]"];
+  string description = 2 [(length) = "<=256"];
+  map<string, string> labels = 3 [(priv.size) = "<=64", (length) = "<=63", (pattern) = "[-_0-9a-z]*", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_0-9a-z]*"];
+
+  string region_id = 4 [(required) = true, (length) = "<=50"];
+  // string zone_id = 5; // for INTERNAL
+
+  repeated Target targets = 6;
+}
+
+message AttachedTargetGroupSpec {
+  oneof target_group {
+    option (exactly_one) = true;
+    string target_group_id = 1 [(length) = "<=50"];
+    TargetGroupSpec target_group_spec = 2;
+  }
+  repeated HealthCheck health_checks = 3 [(size) = "1"];
+}

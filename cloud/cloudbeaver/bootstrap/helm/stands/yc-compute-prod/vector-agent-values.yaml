@@ -1,0 +1,102 @@
+role: Agent
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+env:
+ - name: VECTOR_ELASTIC_PASSWORD
+   valueFrom:
+    secretKeyRef:
+      name: "vector-elastic-password"
+      key: password
+ - name: VECTOR_SELF_NODE_NAME
+   valueFrom:
+     fieldRef:
+       fieldPath: spec.nodeName
+# - name: VECTOR_LOG
+#   value: debug
+
+extraVolumes:
+ - name: yandex-ca
+   secret:
+    secretName: yandex-ca
+
+extraVolumeMounts:
+ - name: yandex-ca
+   mountPath: /etc/yandex/CA.pem
+   subPath: CA.pem
+   readOnly: true
+
+customConfig:
+  data_dir: "/vector-data-dir"
+  api:
+    enabled: true
+    address: "127.0.0.1:8686"
+    playground: true
+  log_schema:
+    host_key: "host"
+    message_key: "message"
+    source_type_key: "source_type"
+    timestamp_key: "timestamp"
+  sinks:
+#    stdout:
+#       type: console
+#       inputs:
+#        - global_presink_remap
+#       target: "stdout"
+#       encoding: "json"
+    elastic:
+      type: elasticsearch
+      inputs:
+        - global_presink_remap
+      compression: gzip
+      endpoint: "https://rc1a-h8hhem22j1bcsm21.mdb.yandexcloud.net:9200"
+      tls:
+        ca_file: /etc/yandex/CA.pem
+      healthcheck:
+        enabled: true
+      batch:
+        max_bytes: 10490000  # 10 MiB
+        timeout_secs: 1
+      buffer:
+        type: memory
+        max_events: 500
+        when_full: drop_newest
+      bulk:
+        action: index
+        index: "log-cloudbeaver-%Y-%m-%d"
+      auth:
+        password: "${VECTOR_ELASTIC_PASSWORD}"
+        user: "admin"
+        strategy: basic
+      request:
+        concurrency: adaptive
+        retry_initial_backoff_secs: 1
+        timeout_secs: 60
+  sources:
+    k8s_logs:
+      type: kubernetes_logs
+      self_node_name: "${VECTOR_SELF_NODE_NAME}"
+  transforms:
+    whitelist_containers_filter:
+      inputs:
+        - k8s_logs
+      type: filter
+      condition: |
+        .kubernetes.container_name == "cloudbeaver-app" || .kubernetes.container_name == "envoy" || .kubernetes.container_name == "unified-agent"
+    global_presink_remap:
+      inputs:
+        - whitelist_containers_filter
+      type: remap
+      source: |
+        if is_string(.kubernetes.pod_labels.app) {
+          if !exists(.kubernetes.pod_labels."app.kubernetes.io/name") {
+            .kubernetes.pod_labels."app.kubernetes.io/name" = .kubernetes.pod_labels.app
+          }
+          del(.kubernetes.pod_labels.app)
+        }

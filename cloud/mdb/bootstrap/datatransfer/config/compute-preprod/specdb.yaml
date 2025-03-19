@@ -1,0 +1,184 @@
+---
+{% set ch_tm_writer_password = yav('ver-01e61vbfqkm5c10ncgms3xjxgn', 'mdb-logsdb-consumer-compute-preprod-user-password') %}
+# Token can be obtained here:
+# yc --profile=compute-preprod iam create-token
+token: {{ env.get('TOKEN') }}
+endpoint: https://tm-rest.private-api.ycp.cloud-preprod.yandex.net
+logbroker: yc-logbroker-prestable
+# Folder ID of MDB sink Clickhouse cluster
+folder_id: aoeme1ci0qvbsjia4ks7
+transfers:
+  # Clickhouse
+  - service: clickhouse
+    src:
+      consumer: aoe9shbqc2v314v7fp3d/dataplane/logsdb-consumer
+      topic: aoe9shbqc2v314v7fp3d/dataplane/clickhouse-logs
+      fields:
+        - name: datetime
+          type: DATETIME
+        - name: log_format
+          type: STRING
+        - name: timestamp
+          type: DATETIME
+        - name: origin
+          type: STRING
+        - name: message
+          type: STRING
+        - name: cluster
+          type: STRING
+        - name: hostname
+          type: STRING
+        - name: component
+          type: STRING
+        - name: thread
+          type: UINT32
+        - name: severity
+          type: STRING
+        - name: query_id
+          type: STRING
+        - name: ms
+          type: UINT16
+    dst: &dst-compute-preprod
+      database: mdb
+      mdb_cluster_id: e4uh169bluasvlmd6eds
+      user: tm_writer
+      password:
+        raw: {{ ch_tm_writer_password }}
+
+  # Mongodb
+  - service: mongodb
+    src:
+      consumer: aoe9shbqc2v314v7fp3d/dataplane/logsdb-consumer
+      topic: aoe9shbqc2v314v7fp3d/dataplane/mongodb-logs
+      fields:
+        - name: datetime
+          type: DATETIME
+        - name: log_format
+          type: STRING
+        - name: timestamp
+          type: DATETIME
+        - name: message
+          type: STRING
+        - name: origin
+          type: STRING
+        - name: severity
+          type: STRING
+        - name: cluster
+          type: STRING
+        - name: hostname
+          type: STRING
+        - name: component
+          type: STRING
+        - name: context
+          type: STRING
+        - name: ms
+          type: UINT16
+    dst: *dst-compute-preprod
+
+  - service: mongodb_audit
+    src:
+      consumer: aoe9shbqc2v314v7fp3d/dataplane/logsdb-consumer
+      topic: aoe9shbqc2v314v7fp3d/dataplane/mongodb-audit-logs
+      format: json
+      fields:
+        - name: datetime
+          type: DATETIME
+        - name: log_format
+          type: STRING
+        - name: timestamp
+          type: DATETIME
+        - name: message
+          type: STRING
+        - name: origin
+          type: STRING
+        - name: cluster
+          type: STRING
+        - name: hostname
+          type: STRING
+        - name: ms
+          type: UINT16
+    dst: *dst-compute-preprod
+
+  # Redis
+  - service: redis
+    src:
+      consumer: aoe9shbqc2v314v7fp3d/dataplane/logsdb-consumer
+      topic: aoe9shbqc2v314v7fp3d/dataplane/redis-logs
+      fields:
+        - name: datetime
+          type: DATETIME
+        - name: log_format
+          type: STRING
+        - name: timestamp
+          type: DATETIME
+        - name: origin
+          type: STRING
+        - name: message
+          type: STRING
+        - name: cluster
+          type: STRING
+        - name: hostname
+          type: STRING
+        - name: role
+          type: STRING
+        - name: pid
+          type: UINT32
+        - name: ms
+          type: UINT16
+    dst: *dst-compute-preprod
+
+  # Elasticsearch
+  - service: elasticsearch
+    src:
+      consumer: aoe9shbqc2v314v7fp3d/dataplane/logsdb-consumer
+      topic: aoe9shbqc2v314v7fp3d/dataplane/elasticsearch-logs
+      fields:
+        - name: datetime
+          type: DATETIME
+        - name: log_format
+          type: STRING
+        - name: origin
+          type: STRING
+        - name: timestamp
+          type: DATETIME
+        - name: ms
+          type: UINT16
+        - name: cluster
+          type: STRING
+        - name: hostname
+          type: STRING
+        - name: level
+          type: STRING
+        - name: component
+          type: STRING
+        - name: message
+          type: STRING
+        - name: stacktrace
+          type: STRING
+    dst: *dst-compute-preprod
+
+  # Kibana
+  - service: kibana
+    src:
+      consumer: aoe9shbqc2v314v7fp3d/dataplane/logsdb-consumer
+      topic: aoe9shbqc2v314v7fp3d/dataplane/kibana-logs
+      fields:
+        - name: datetime
+          type: DATETIME
+        - name: log_format
+          type: STRING
+        - name: origin
+          type: STRING
+        - name: timestamp
+          type: DATETIME
+        - name: ms
+          type: UINT16
+        - name: cluster
+          type: STRING
+        - name: hostname
+          type: STRING
+        - name: type
+          type: STRING
+        - name: message
+          type: STRING
+    dst: *dst-compute-preprod

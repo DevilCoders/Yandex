@@ -1,0 +1,260 @@
+definitions:
+  - &alert_id "{{.ID}}_svm_nbs_requests_max_time"
+  - &alert_name "{{.Name}}[SVM] NBS Requests Max Time"
+  - &alert_window_secs 300
+  - &alert_annotations_tag "yc-{{.Cluster}}-nbs-solomon"
+  - &alert_juggler_host "{{`{{labels.host}}`}}.svc.{{.SvmDomain}}"
+  - &alert_annotations_service "solomon_alert_nbs_requests_max_time"
+  - &alert_juggler_description "(doc: https://nda.ya.ru/t/f7QkUaL_5Fnjvb)"
+alerts:
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_juggler_description
+    window_secs: *alert_window_secs
+    group_by_labels:
+      - host
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_juggler_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - preprod
+    expression:
+      program: |-
+        let ssd_r = {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        request='ReadBlocks',
+        type='ssd', sensor='MaxTime',
+        host='nbs-control-*1|nbs-control-*2|nbs-control-*3'
+        };
+        let ssd_w = {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        request='WriteBlocks',
+        type='ssd',
+        sensor='MaxTime',
+        host='nbs-control-*1|nbs-control-*2|nbs-control-*3'
+        };
+        let ssd_z = {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        request='ZeroBlocks',
+        type='ssd',
+        sensor='MaxTime',
+        host='nbs-control-*1|nbs-control-*2|nbs-control-*3'
+        };
+
+        let m = {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        request='MountVolume',
+        type='-',
+        sensor='MaxTime',
+        host='nbs-control-*1|nbs-control-*2|nbs-control-*3'
+        };
+
+        let hdd_r = {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        request='ReadBlocks',
+        type='hdd',
+        sensor='MaxTime',
+        host='nbs-control-*1|nbs-control-*2|nbs-control-*3'
+        };
+        let hdd_w = {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        request='WriteBlocks',
+        type='hdd',
+        sensor='MaxTime',
+        host='nbs-control-*1|nbs-control-*2|nbs-control-*3'
+        };
+        let hdd_z = {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        request='ZeroBlocks',
+        type='hdd',
+        sensor='MaxTime',
+        host='nbs-control-*1|nbs-control-*2|nbs-control-*3'
+        };
+
+        no_data_if(
+        count(ssd_r) == 0 ||
+        count(ssd_w) == 0 ||
+        count(ssd_z) == 0 ||
+
+        count(m) == 0 ||
+
+        count(hdd_r) == 0 ||
+        count(hdd_w) == 0 ||
+        count(hdd_z) == 0
+        );
+
+        let last_ssd_r = last(ssd_r);
+        let last_ssd_w = last(ssd_w);
+        let last_ssd_z = last(ssd_z);
+        let last_hdd_r = last(hdd_r);
+        let last_hdd_w = last(hdd_w);
+        let last_hdd_z = last(hdd_z);
+        let last_m = last(m);
+
+        let ssd_threshold = 5000000;
+        let hdd_threshold = 15000000;
+        let mount_threshold = 15000000;
+
+        alarm_if(
+        (avg(ssd_r) >= ssd_threshold && last_ssd_r >= ssd_threshold) ||
+        (avg(ssd_w) >= ssd_threshold && last_ssd_w >= ssd_threshold) ||
+        (avg(ssd_z) >= ssd_threshold && last_ssd_z >= ssd_threshold) ||
+        (avg(m) >= mount_threshold && last_m >= mount_threshold) ||
+        (avg(hdd_r) >= hdd_threshold && last_hdd_r >= hdd_threshold) ||
+        (avg(hdd_w) >=hdd_threshold && last_hdd_w >= hdd_threshold) ||
+        (avg(hdd_z) >= hdd_threshold &&  last_hdd_z >= hdd_threshold));
+
+        warn_if(
+        (avg(ssd_r) >= ssd_threshold && last_ssd_r < ssd_threshold) ||
+        (avg(ssd_w) >= ssd_threshold && last_ssd_w < ssd_threshold) ||
+        (avg(ssd_z) >= ssd_threshold && last_ssd_z < ssd_threshold) ||
+        (avg(m) >= mount_threshold && last_m < mount_threshold) ||
+        (avg(hdd_r) >= hdd_threshold && last_hdd_r < hdd_threshold) ||
+        (avg(hdd_w) >=hdd_threshold && last_hdd_w < hdd_threshold) ||
+        (avg(hdd_z) >= hdd_threshold &&  last_hdd_z < hdd_threshold));
+
+
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_juggler_description
+    window_secs: *alert_window_secs
+    group_by_labels:
+      - host
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_juggler_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - prod_vla
+      - prod_sas
+      - prod_myt
+      - israel
+    expression:
+      program: |-
+        let ssd_r = {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        request='ReadBlocks',
+        type='ssd', sensor='MaxTime',
+        host='nbs-control-*'
+        };
+        let ssd_w = {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        request='WriteBlocks',
+        type='ssd',
+        sensor='MaxTime',
+        host='nbs-control-*'
+        };
+        let ssd_z = {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        request='ZeroBlocks',
+        type='ssd',
+        sensor='MaxTime',
+        host='nbs-control-*'
+        };
+
+        let m = {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        request='MountVolume',
+        type='-',
+        sensor='MaxTime',
+        host='nbs-control-*'
+        };
+
+        let hdd_r = {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        request='ReadBlocks',
+        type='hdd',
+        sensor='MaxTime',
+        host='nbs-control-*'
+        };
+        let hdd_w = {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        request='WriteBlocks',
+        type='hdd',
+        sensor='MaxTime',
+        host='nbs-control-*'
+        };
+        let hdd_z = {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        request='ZeroBlocks',
+        type='hdd',
+        sensor='MaxTime',
+        host='nbs-control-*'
+        };
+
+        no_data_if(
+        count(ssd_r) == 0 ||
+        count(ssd_w) == 0 ||
+        count(ssd_z) == 0 ||
+
+        count(m) == 0 ||
+
+        count(hdd_r) == 0 ||
+        count(hdd_w) == 0 ||
+        count(hdd_z) == 0
+        );
+
+        let last_ssd_r = last(ssd_r);
+        let last_ssd_w = last(ssd_w);
+        let last_ssd_z = last(ssd_z);
+        let last_hdd_r = last(hdd_r);
+        let last_hdd_w = last(hdd_w);
+        let last_hdd_z = last(hdd_z);
+        let last_m = last(m);
+
+        let ssd_threshold = 5000000;
+        let hdd_threshold = 15000000;
+        let mount_threshold = 15000000;
+
+        alarm_if(
+        (avg(ssd_r) >= ssd_threshold && last_ssd_r >= ssd_threshold) ||
+        (avg(ssd_w) >= ssd_threshold && last_ssd_w >= ssd_threshold) ||
+        (avg(ssd_z) >= ssd_threshold && last_ssd_z >= ssd_threshold) ||
+        (avg(m) >= mount_threshold && last_m >= mount_threshold) ||
+        (avg(hdd_r) >= hdd_threshold && last_hdd_r >= hdd_threshold) ||
+        (avg(hdd_w) >=hdd_threshold && last_hdd_w >= hdd_threshold) ||
+        (avg(hdd_z) >= hdd_threshold &&  last_hdd_z >= hdd_threshold));
+
+        warn_if(
+        (avg(ssd_r) >= ssd_threshold && last_ssd_r < ssd_threshold) ||
+        (avg(ssd_w) >= ssd_threshold && last_ssd_w < ssd_threshold) ||
+        (avg(ssd_z) >= ssd_threshold && last_ssd_z < ssd_threshold) ||
+        (avg(m) >= mount_threshold && last_m < mount_threshold) ||
+        (avg(hdd_r) >= hdd_threshold && last_hdd_r < hdd_threshold) ||
+        (avg(hdd_w) >=hdd_threshold && last_hdd_w < hdd_threshold) ||
+        (avg(hdd_z) >= hdd_threshold &&  last_hdd_z < hdd_threshold));

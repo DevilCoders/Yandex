@@ -1,0 +1,81 @@
+api_path: /services/
+entities:
+
+  compute_node:
+    template: ../../base/service.j2
+    context:
+      grid_sec: 15
+      interval: 15
+      ttl_days: 15
+      aggrRules:
+        - {cond: "host=*",      target: "sensor=_aggregate_[[sensor]],host=cluster"}
+
+  # Устаревший сервис. Уйдет вместе с python compute-node.
+  compute:
+    template: ../../base/service.j2
+    context:
+      grid_sec: 30
+      interval: 30
+      ttl_days: 15
+      aggrRules:
+        - cond: "metric=cpu-util,cpu_name=main,cloud_id=*,folder_id=*,instance_id=*"
+          target: "metric=cpu-util,cpu_name=main,cloud_id=total,folder_id=total,instance_id=total"
+
+  # Действующий сервис ресурсов. Данные берутся из scheduler.
+  resources:
+    template: ../../base/service.j2
+    context:
+      grid_sec: 900
+      ttl_days: 365
+      aggrRules:
+        - {cond: "zone_id=*",             target: "zone_id=all_zones"}
+        - {cond: "node_name=*",           target: "node_name=all_nodes"}
+        - {cond: "zone_id=*,node_name=*", target: "zone_id=all_zones,node_name=all_nodes"}
+
+  # Экспериментальный сервис ресурсов. Планируется переход на него, https://st.yandex-team.ru/CLOUD-73394
+  compute_resources:
+    template: ../../base/service.j2
+    context:
+      grid_sec: 300
+      ttl_days: 365
+      aggrRules:
+        - {cond: "zone_id=*",               target: "zone_id=ALL"}
+        - {cond: "node_name=*",             target: "node_name=ALL"}
+        - {cond: "zone_id=*,node_name=*",   target: "zone_id=ALL,node_name=ALL"}
+
+  # Экспериментальный сервис здоровья
+  compute_health:
+    template: ../../base/service.j2
+    context:
+      grid_sec: 15
+      ttl_days: 15
+      path: "/read?project=yandexcloud&service=compute_health"  # Unified agent path
+      port: 22132
+      aggrRules:
+        - {cond: "host=*",                  target: "host=cluster"}
+
+  # системные метрики на хостах шедулера (и сервиса здоровья)
+  sys_scheduler:
+    template: ../../base/service.j2
+    context:
+      grid_sec: 15
+      ttl_days: 15
+      path: "/read?project=yandexcloud&service=sys_scheduler"  # Unified agent path
+      port: 22132
+      aggrRules:
+        - {cond: "host=*",                  target: "host=cluster"}
+
+  gpu_servicevm:
+    template: ../../base/service.j2
+    context:
+      grid_sec: 15
+      interval: 15
+      ttl_days: 15
+
+  # CLOUD-100318 мониторинг GPUd сервиса на хостах
+  gpu_gpud:
+    template: ../../base/service.j2
+    context:
+      grid_sec: 15
+      interval: 15
+      ttl_days: 15

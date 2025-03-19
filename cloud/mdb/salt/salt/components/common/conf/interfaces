@@ -1,0 +1,23 @@
+{% set iface_names = [] %}
+{% for iface in salt['grains.get']('ip6_interfaces', {}) %}
+{% if 'eth' in iface and salt['grains.get']('ip6_interfaces:' + iface, [])|length > 0 %}
+{% do iface_names.append(iface) %}
+{% endif %}
+{% endfor -%}
+
+{%- if iface_names|length == 1 %}
+{% set iface = iface_names[0] %}
+{% else %}
+{% set iface = salt['grains.get']('data:iface_name', 'eth0') %}
+{% endif -%}
+auto lo {{ iface }}
+iface lo inet loopback
+
+iface {{ iface }} inet6 auto
+  privext 0
+  mtu 8950
+{% if not salt['pillar.get']('data:use_vlan688', False) %}
+  ya-netconfig-bb-disable 1
+{% endif %}
+  ya-netconfig-fb-disable 1
+  post-up ifconfig {{ iface }} mtu 8950

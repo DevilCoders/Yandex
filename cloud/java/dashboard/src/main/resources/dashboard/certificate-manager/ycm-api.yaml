@@ -1,0 +1,174 @@
+uid: ycm-api
+refresh: 1m
+title: YC Certificate Manager API
+
+tags: [ 'yc-cert-manager', 'yc-cert-manager-api' ]
+
+variables:
+  ui:
+    !include include/_datasources.yaml
+    !include include/_projects.yaml
+    !include include/_clusters.yaml
+  replacement:
+    !include ../include/errors.yaml
+  repeat:
+    data_method:
+      values:
+        - 'CertificateContentService/Get'
+        - 'CertificateContentService/GetEncrypted'
+        - 'IntegrationService/BatchGetContent'
+        - 'IntegrationService/BatchGetChangedMetadata'
+        - 'IntegrationService/GetDomainMeta'
+
+    control_method:
+      values:
+        - 'CertificateService/Get'
+        - 'CertificateService/List'
+        - 'CertificateService/Create'
+
+        - 'CertificateService/Update'
+        - 'CertificateService/Delete'
+        - 'CertificateService/ValidateContent'
+
+        - 'CertificateService/RequestNew'
+        - 'CertificateService/Renew'
+        - 'CertificateService/ListReferences'
+
+        - 'CertificateService/AddReferences'
+        - 'CertificateService/RemoveReferences'
+        - 'CertificateService/ListOperations'
+
+        - 'CertificateService/ListAccessBindings'
+        - 'CertificateService/SetAccessBindings'
+        - 'CertificateService/UpdateAccessBindings'
+
+        - 'console.CertificateConsoleService/GetFolderStats'
+        - 'console.CertificateConsoleService/ListActive'
+        - 'console.CertificateConsoleService/ValidateContent'
+
+        - 'OperationService/Get'
+
+        - 'QuotaService/Get'
+        - 'QuotaService/UpdateMetric'
+        - 'QuotaService/BatchUpdateMetric'
+        - 'QuotaService/GetDefault'
+
+        - 'DomainService/Get'
+        - 'DomainService/List'
+        - 'DomainService/Create'
+
+        - 'DomainService/Update'
+        - 'DomainService/SetPrimaryCertificate'
+        - 'DomainService/Delete'
+
+        - 'DomainService/AddReferences'
+        - 'DomainService/RemoveReferences'
+        - 'DomainService/ListOperations'
+
+        - 'DomainService/ListAccessBindings'
+        - 'DomainService/SetAccessBindings'
+        - 'DomainService/UpdateAccessBindings'
+
+
+links:
+  - { title: 'Dashboards', tags: ['cert-manager'] }
+
+graphDefaults: { datasource: '${datasource}', width: 8, height: 6 }
+
+rows:
+  - title: Data Plane API @data_method
+    repeat: data_method
+    drilldowns:
+      - uid: yc-cert-manager-api-host-data
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values:
+              - 'dpl-myt-1'
+              - 'dpl-sas-1'
+              - 'dpl-vla-1'
+        uiRepeat: host
+        labels: 'host=$host'
+
+    queryDefaults: { labels: 'project=${project}, cluster=${cluster}, service=core, host=dpl-*, app=certificate-manager-data-plane_server' }
+    panels:
+      - type: graph
+        templates: { name: rps, rate: rps }
+        title: '@data_method rps ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_requests, meter_type=count, method=certificatemanager.v1.@data_method' }
+
+      - type: graph
+        title: 'Errors (by type)'
+        templates: { name: errors, sumLines: true}
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, status=OK, method=certificatemanager.v1.@data_method' }
+          - params: { labels: 'name=grpc_statuses, status=CANCELLED|INVALID_ARGUMENT|NOT_FOUND|ALREADY_EXISTS|PERMISSION_DENIED|RESOURCE_EXHAUSTED|FAILED_PRECONDITION|ABORTED|OUT_OF_RANGE|UNAUTHENTICATED, method=certificatemanager.v1.@data_method' }
+          - params: { labels: 'name=grpc_statuses, status=@5xx, method=certificatemanager.v1.@data_method' }
+          - params: { labels: 'name=grpc_statuses, status=@503, method=certificatemanager.v1.@data_method' }
+        draw:
+          - { alias: 'OK', color: '#131', at: right }
+          - { alias: '4xx', color: '#147', at: right }
+          - { alias: '5xx', color: '#b20', at: left }
+          - { alias: '503', color: '#da7', at: left }
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        templates: { name: percentile, format: solomon, groupLines: true }
+        title: '@data_method response duration ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_durations, method=certificatemanager.v1.@data_method' }
+        yAxes: [{ min: 0 }]
+
+  - title: Control Plane API @control_method
+    repeat: control_method
+    drilldowns:
+      - uid: yc-cert-manager-api-host-control
+        tags:
+          - 'yc-cert-manager'
+          - 'yc-cert-manager-host'
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values:
+              - 'cpl-myt-1'
+              - 'cpl-sas-1'
+              - 'cpl-vla-1'
+        uiRepeat: host
+        labels: 'host=$host'
+
+    queryDefaults: { labels: 'project=${project}, cluster=${cluster}, service=core, host=cpl-*, app=certificate-manager-control-plane_server' }
+    panels:
+
+      - type: graph
+        templates: { name: rps, rate: rps }
+        title: '@control_method rps ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_requests, meter_type=count, method=certificatemanager.v1.@control_method' }
+
+      - type: graph
+        title: 'Errors (by type)'
+        templates: { name: errors}
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, status=OK, method=certificatemanager.v1.@control_method' }
+          - params: { labels: 'name=grpc_statuses, status=@4xx, method=certificatemanager.v1.@control_method' }
+          - params: { labels: 'name=grpc_statuses, status=@5xx, method=certificatemanager.v1.@control_method' }
+          - params: { labels: 'name=grpc_statuses, status=@503, method=certificatemanager.v1.@control_method' }
+        draw:
+          - { alias: 'OK', color: '#131', at: right }
+          - { alias: '4xx', color: '#147', at: right }
+          - { alias: '5xx', color: '#b20', at: left }
+          - { alias: '503', color: '#da7', at: left }
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        templates: { name: percentile, format: solomon, groupLines: true }
+        title: '@control_method response duration ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_durations, method=certificatemanager.v1.@control_method' }
+        yAxes: [{ min: 0 }]

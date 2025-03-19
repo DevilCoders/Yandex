@@ -1,0 +1,75 @@
+storages:
+  - name: main
+    plugin: fs
+    config:
+      directory: ./data/storage
+      max_partition_size: 10gb
+
+routes:
+  - input:
+      plugin: grpc
+      config:
+        uri: localhost:16400
+    channel:
+      pipe:
+        - storage_ref:
+            name: main
+
+      output:
+        plugin: logbroker
+        config:
+          endpoint: lb.cc8035oc71oh9um52mv3.ydb.mdb.cloud-preprod.yandex.net
+          port: 2135
+          topic: /yc.logs.cloud/yc-logging
+          database: /pre-prod_global/aoeb66ftj1tbt1b2eimn/cc8035oc71oh9um52mv3
+          iam:
+            cloud_meta: {}
+          use_ssl: {}
+          use_ydb_discovery: true
+          codec: zstd
+
+  - input:
+      plugin: metrics_pull
+      config:
+        url: http://localhost:9090/prometheus_metrics # default prometheus port
+        format:
+          prometheus: {}
+    channel:
+      output:
+        plugin: metrics_multishard_pull
+        config:
+          port: 8004 # port that used by solomong-agent
+          reshard_metrics:
+            cluster: "{{folder_id}}"
+            project: "{{cloud_id}}"
+            service: "datasphere" # "{{service_label}}"
+            preserve_original: false
+          registration:
+            service_provider: "datasphere"
+            endpoints:
+              - installation: "cloud_preprod"
+                iam:
+                  cloud_meta: {}
+
+  - input:
+      plugin: metrics_pull
+      config:
+        url: http://localhost:9090/solomon_json_metrics # default prometheus port
+        format:
+          solomon_json: {}
+    channel:
+      output:
+        plugin: metrics_multishard_pull
+        config:
+          port: 8005 # port that used by solomong-agent
+          reshard_metrics:
+            cluster: "{{folder_id}}"
+            project: "{{cloud_id}}"
+            service: "datasphere" # "{{service_label}}"
+            preserve_original: false
+          registration:
+            service_provider: "datasphere"
+            endpoints:
+              - installation: "cloud_preprod"
+                iam:
+                  cloud_meta: {}

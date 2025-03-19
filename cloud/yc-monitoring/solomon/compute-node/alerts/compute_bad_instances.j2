@@ -1,0 +1,45 @@
+{% extends "../../base/alert.j2" %}
+
+{% set notificationChannels = ["compute_node_duty_telegram"] if env in ["prod", "preprod", "testing"] else [] %}
+{% set windowSecs = 600 %}
+{% set checkExpression = "" %}
+
+{# FIXME: remove PROD sas09-2ct18r1-15 after CLOUD-64249 is done. It's a kind of Downtime. #}
+
+{% macro prog() %}
+let graph = {
+    project='{{ project_id }}',
+    cluster='cloud_{{ env }}_compute_*',
+    service='internals',
+    metric='crashed_instances',
+    host!='cluster|sas09-2ct18r1-15',
+    instance_id!='all',
+    status='{{ status }}'
+};
+// CLOUD-67526 Lower points interval from 30s to 120s to ignore
+// short drops to 'no data' caused by solomon-agent restarts.
+let data = constant_line(0, 120s) + group_by_time(120s, 'last', graph);
+
+let crashes_delta = group_lines('sum', drop_below(diff(data), 0));
+let data = '';  // hide from plot
+let graph = ''; // same reason
+
+let errs = sum(crashes_delta);
+alarm_if(errs >= 1);
+{% endmacro %}
+
+{% set description = "https://docs.yandex-team.ru/yc-monitoring/compute-node/instance-crashed" %}
+
+{% block main %}
+    "name": "Alert on {{ status }} instances @{{ env | upper }}",
+    "groupByLabels": ["instance_id", "host", "reason"],
+    "annotations": {
+        "crashes": "[[expression.errs]]",
+        "instance": "[[labels.instance_id]]",
+        "host": "[[labels.host]]",
+        "reason": "[[labels.reason]]",
+        "description": "{{ description }}"
+    },
+    "description": "{{ description }}",
+    "type": {{ type_expression() }}
+{% endblock %}

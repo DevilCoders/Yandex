@@ -1,0 +1,302 @@
+name: blockstore
+description: NBS
+definitions:
+  - &prod-telegram-chat-id "-1001286817181"
+  - &prod-qmssngr-chat-id "1/0/c1066948-3a77-4e1a-b9d6-a270dc110f3b"
+  - &testing-telegram-chat-id "-1001335463048"
+  - &testing-qmssngr-chat-id "1/0/85b6e495-1d27-4ac2-9dc2-7fc5b4325ee6"
+  - &nbs-juggler-namespace "ycloud"
+  - &nbs-alerts
+    - solomon_alert_nbs_server_restarts
+    - solomon_alert_nbs_server_errors
+    - solomon_alert_nbs_server_nrd_errors
+    - solomon_alert_nbs_server_version
+    - solomon_alert_nbs_client_errors
+    - solomon_alert_nbs_server_endpoint_errors
+  - &nbs-binary-packages
+    - yandex-cloud-blockstore-client
+    - yandex-cloud-blockstore-http-proxy
+    - yandex-cloud-blockstore-server
+    - yandex-cloud-blockstore-plugin
+    - yandex-cloud-blockstore-nbd
+  - &nbs-control-binary-packages
+    - yandex-cloud-blockstore-client
+    - yandex-cloud-blockstore-http-proxy
+    - yandex-cloud-blockstore-server
+  - &nbs-services
+    - name: nbs
+      restart_delay: 5s
+      restarts_file: /var/log/nbs-server/systemd-nbs.restart
+    - name: blockstore-http-proxy
+      restart_delay: 5s
+  - &nbs-control-services
+    - name: nbs
+      restart_delay: 1m
+      restarts_file: /var/log/nbs-server/systemd-nbs.restart
+    - name: blockstore-http-proxy
+      restart_delay: 5s
+  - &nbs-infra-service-id 322
+clusters:
+  hw-nbs-stable-lab:
+    global:
+      telegram:
+        chat_id: *testing-telegram-chat-id
+      qmssngr:
+        chat_id: *testing-qmssngr-chat-id
+      infra:
+        service_id: *nbs-infra-service-id
+        environment_id: 498
+      juggler:
+      targets:
+        - name: nbs
+          tags:
+            - check-backward-compatibility
+          binary_packages: *nbs-binary-packages
+          config_package: yandex-search-kikimr-nbs-conf-hw-nbs-stable-lab-global
+          services: *nbs-services
+          z2:
+            meta_group: YCLOUD_HW_NBS_STABLE_LAB_NBS
+            group: YCLOUD_HW_NBS_STABLE_LAB_NBS_GLOBAL
+            config_meta_group: YCLOUD_HW_NBS_STABLE_LAB_NBS_GLOBAL_CONF
+        - name: nbs-control
+          tags:
+            - svm
+            - check-backward-compatibility
+          max_parallelism: 1
+          binary_packages: *nbs-control-binary-packages
+          config_package: yandex-search-kikimr-nbs-control-conf-hw-nbs-stable-lab-global
+          services: *nbs-control-services
+          z2:
+            meta_group: YCLOUDVM_HW_NBS_STABLE_LAB_NBS_CONTROL
+            group: YCLOUDVM_HW_NBS_STABLE_LAB_NBS_CONTROL_GLOBAL
+            config_meta_group: YCLOUDVM_HW_NBS_STABLE_LAB_NBS_CONTROL_GLOBAL_CONF
+  testing:
+    {{- range (seq "sas" "vla" "myt")}}
+    {{.}}:
+      telegram:
+        chat_id: *testing-telegram-chat-id
+      qmssngr:
+        chat_id: *testing-qmssngr-chat-id
+      infra:
+        service_id: *nbs-infra-service-id
+        environment_id: 521
+      juggler:
+        host: solomon-alert-cloud_testing_nbs*_{{.}}
+        alerts: *nbs-alerts
+        namespace: *nbs-juggler-namespace
+      targets:
+        - name: nbs
+          tags:
+            - check-backward-compatibility
+          binary_packages: *nbs-binary-packages
+          config_package: yandex-search-kikimr-nbs-conf-testing-{{.}}
+          services: *nbs-services
+          z2:
+            meta_group: YCLOUD_TESTING_NBS
+            group: YCLOUD_TESTING_NBS_{{.|ToUpper}}
+            config_meta_group: YCLOUD_TESTING_NBS_{{.|ToUpper}}_CONF
+        - name: nbs-control
+          tags:
+            - svm
+            - check-backward-compatibility
+          max_parallelism: 1
+          binary_packages: *nbs-control-binary-packages
+          config_package: yandex-search-kikimr-nbs-control-conf-testing-{{.}}
+          services: *nbs-control-services
+          z2:
+            meta_group: YCLOUDVM_TESTING_NBS_CONTROL
+            group: YCLOUDVM_TESTING_NBS_CONTROL_{{.|ToUpper}}
+            config_meta_group: YCLOUDVM_TESTING_NBS_CONTROL_{{.|ToUpper}}_CONF
+    {{end}}
+  preprod:
+    {{- range (seq "sas" "vla")}}
+    {{.}}:
+      telegram:
+        chat_id: *testing-telegram-chat-id
+      qmssngr:
+        chat_id: *testing-qmssngr-chat-id
+      infra:
+        service_id: *nbs-infra-service-id
+        environment_id: 497
+      juggler:
+        host: solomon-alert-cloud_preprod_nbs*_{{.}}
+        alerts: *nbs-alerts
+        namespace: *nbs-juggler-namespace
+      targets:
+        - name: nbs
+          tags:
+            - check-backward-compatibility
+          binary_packages: *nbs-binary-packages
+          config_package: yandex-search-kikimr-nbs-conf-pre-prod-{{.}}
+          services: *nbs-services
+          z2:
+            meta_group: YCLOUD_PREPROD_NBS
+            group: YCLOUD_PREPROD_NBS_{{.|ToUpper}}
+            config_meta_group: YCLOUD_PREPROD_NBS_{{.|ToUpper}}_CONF
+        - name: nbs-control
+          tags:
+            - svm
+            - check-backward-compatibility
+          max_parallelism: 1
+          binary_packages: *nbs-control-binary-packages
+          config_package: yandex-search-kikimr-nbs-control-conf-pre-prod-{{.}}
+          services: *nbs-control-services
+          z2:
+            group: YCLOUDVM_PREPROD_NBS_CONTROL_{{.|ToUpper}}
+            meta_group: YCLOUDVM_PREPROD_NBS_CONTROL
+            config_meta_group: YCLOUDVM_PREPROD_NBS_CONTROL_{{.|ToUpper}}_CONF
+    {{end}}
+    myt:
+      telegram:
+        chat_id: *testing-telegram-chat-id
+      qmssngr:
+        chat_id: *testing-qmssngr-chat-id
+      infra:
+        service_id: *nbs-infra-service-id
+        environment_id: 497
+      juggler:
+        host: solomon-alert-cloud_preprod_nbs*_myt
+        alerts: *nbs-alerts
+        namespace: *nbs-juggler-namespace
+      targets:
+        - name: nbs
+          tags:
+            - check-backward-compatibility
+          binary_packages: *nbs-binary-packages
+          config_package: yandex-search-kikimr-nbs-conf-pre-prod-myt
+          services: *nbs-services
+          z2:
+            meta_group: YCLOUD_PROD_NBS
+            group: YCLOUD_PREPROD_NBS_MYT
+            config_meta_group: YCLOUD_PREPROD_NBS_MYT_CONF
+        - name: nbs-control
+          tags:
+            - svm
+            - check-backward-compatibility
+          max_parallelism: 1
+          binary_packages: *nbs-control-binary-packages
+          config_package: yandex-search-kikimr-nbs-control-conf-pre-prod-myt
+          services: *nbs-control-services
+          z2:
+            group: YCLOUDVM_PREPROD_NBS_CONTROL_MYT
+            meta_group: YCLOUDVM_PROD_NBS_CONTROL
+            config_meta_group: YCLOUDVM_PREPROD_NBS_CONTROL_MYT_CONF
+  prod:
+    vla: &common-prod-params
+      telegram:
+        chat_id: *prod-telegram-chat-id
+      qmssngr:
+        chat_id: *prod-qmssngr-chat-id
+      infra:
+        service_id: *nbs-infra-service-id
+        environment_id: 496
+      juggler:
+        host: solomon-alert-cloud_prod_nbs*_vla
+        alerts: *nbs-alerts
+        namespace: *nbs-juggler-namespace
+      targets:
+        - name: nbs
+          binary_packages: *nbs-binary-packages
+          config_package: yandex-search-kikimr-nbs-conf-prod-vla
+          services: *nbs-services
+          z2:
+            meta_group: YCLOUD_PROD_NBS
+            canary_group: YCLOUD_PROD_NBS_VLA_CANARY
+            group: YCLOUD_PROD_NBS_VLA
+            config_meta_group: YCLOUD_PROD_NBS_VLA_CONF
+        - name: nbs-control
+          tags:
+            - svm
+          max_parallelism: 1
+          binary_packages: *nbs-control-binary-packages
+          config_package: yandex-search-kikimr-nbs-control-conf-prod-vla
+          services: *nbs-control-services
+          z2:
+            meta_group: YCLOUDVM_PROD_NBS_CONTROL
+            group: YCLOUDVM_PROD_NBS_CONTROL_VLA
+            config_meta_group: YCLOUDVM_PROD_NBS_CONTROL_VLA_CONF
+    sas:
+      <<: *common-prod-params
+      juggler:
+        host: solomon-alert-cloud_prod_nbs*_sas
+        alerts: *nbs-alerts
+        namespace: *nbs-juggler-namespace
+      targets:
+        - name: nbs
+          binary_packages: *nbs-binary-packages
+          config_package: yandex-search-kikimr-nbs-conf-prod-sas
+          services: *nbs-services
+          z2:
+            meta_group: YCLOUD_PROD_NBS
+            group: YCLOUD_PROD_NBS_SAS
+            config_meta_group: YCLOUD_PROD_NBS_SAS_CONF
+        - name: nbs-control
+          tags:
+            - svm
+          max_parallelism: 1
+          binary_packages: *nbs-control-binary-packages
+          config_package: yandex-search-kikimr-nbs-control-conf-prod-sas
+          services: *nbs-control-services
+          z2:
+            meta_group: YCLOUDVM_PROD_NBS_CONTROL
+            group: YCLOUDVM_PROD_NBS_CONTROL_SAS
+            config_meta_group: YCLOUDVM_PROD_NBS_CONTROL_SAS_CONF
+    myt:
+      <<: *common-prod-params
+      juggler:
+        host: solomon-alert-cloud_prod_nbs*_myt
+        alerts: *nbs-alerts
+        namespace: *nbs-juggler-namespace
+      targets:
+        - name: nbs
+          binary_packages: *nbs-binary-packages
+          config_package: yandex-search-kikimr-nbs-conf-prod-myt
+          services: *nbs-services
+          z2:
+            meta_group: YCLOUD_PROD_NBS
+            group: YCLOUD_PROD_NBS_MYT
+            config_meta_group: YCLOUD_PROD_NBS_MYT_CONF
+        - name: nbs-control
+          tags:
+            - svm
+          max_parallelism: 1
+          binary_packages: *nbs-control-binary-packages
+          config_package: yandex-search-kikimr-nbs-control-conf-prod-myt
+          services: *nbs-control-services
+          z2:
+            meta_group: YCLOUDVM_PROD_NBS_CONTROL
+            group: YCLOUDVM_PROD_NBS_CONTROL_MYT
+            config_meta_group: YCLOUDVM_PROD_NBS_CONTROL_MYT_CONF
+  israel:
+    m1a:
+      telegram:
+        chat_id: *prod-telegram-chat-id
+      qmssngr:
+        chat_id: *prod-qmssngr-chat-id
+      infra:
+        service_id: *nbs-infra-service-id
+        environment_id: 6612
+      juggler:
+        host: solomon-alert-cloud_israel_nbs*il1-a
+        alerts: *nbs-alerts
+        namespace: *nbs-juggler-namespace
+      targets:
+        - name: nbs
+          binary_packages: *nbs-binary-packages
+          config_package: yandex-search-kikimr-nbs-conf-israel-m1a
+          services: *nbs-services
+          z2:
+            meta_group: YCLOUD_ISRAEL_NBS
+            group: YCLOUD_ISRAEL_NBS_AZ1
+            config_meta_group: YCLOUD_ISRAEL_NBS_AZ1_CONF
+        - name: nbs-control
+          tags:
+            - svm
+          max_parallelism: 1
+          binary_packages: *nbs-control-binary-packages
+          config_package: yandex-search-kikimr-nbs-control-conf-israel-m1a
+          services: *nbs-control-services
+          z2:
+            meta_group: YCLOUDVM_ISRAEL_NBS_CONTROL
+            group: YCLOUDVM_ISRAEL_NBS_CONTROL_AZ1
+            config_meta_group: YCLOUDVM_ISRAEL_NBS_CONTROL_AZ1_CONF

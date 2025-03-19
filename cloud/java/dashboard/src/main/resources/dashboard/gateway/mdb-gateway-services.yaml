@@ -1,0 +1,83 @@
+uid: _MBqrN1Wz
+refresh: 30s
+title: MDB-Gateway Services
+
+tags: [ 'ycp', 'ycp-gateway', 'ycp-duty', 'ycp-drilldown', 'ycp-mdb-gateway-services' ]
+
+variables:
+  replacement:
+    !include ../include/errors.yaml
+  ui:
+    cluster: { values: [prod, preprod] }
+    mdbGwServicesUI:
+      multi: true
+      hidden: false
+      values:
+      - yandex.cloud.endpoint.*
+      - yandex.cloud.iam.*
+      - yandex.cloud.mdb.clickhouse.*
+      - yandex.cloud.mdb.mongodb.*
+      - yandex.cloud.mdb.mysql.*
+      - yandex.cloud.mdb.postgresql.*
+      - yandex.cloud.mdb.redis.*
+      - yandex.cloud.operation.*
+      - yandex.cloud.resourcemanager.*
+      titles:
+        - iam
+        - endpoint
+        - clickhouse
+        - mongodb
+        - mysql
+        - postgresql
+        - redis
+        - operation
+        - resourcemanager
+
+graphDefaults: { width: 6, height: 5, datasource: 'Solomon Cloud' }
+queryDefaults: { labels: 'project=platform, cluster=cloud_${cluster}_mdb-gateway, service=api_gateway_ma, host!=cluster' }
+
+rows:
+  - title: MDB-Gateway Services Rate
+    panels:
+
+      - type: graph
+        templates:
+          - { name: rps, rate: ui }
+          - { name: patchSelect, before: last, add: { asap: [] } }
+        uiRepeat: mdbGwServicesUI
+        queryDefaults: { dropNan: true, labels: 'name=grpc_server_request_total, system=*, grpc_type=*, grpc_method!=all, grpc_service=${mdbGwServicesUI}' }
+        title: '${mdbGwServicesUI} $rateUnit ($cluster)'
+        display: { legend: false, fill: 0 }
+        yAxes: [ { min: 0, decimals: 1 } ]
+        queries: [ {} ]
+
+  - title: MDB-Gateway Services Errors
+    panels:
+
+      - type: graph
+        title: '${mdbGwServicesUI} errors ($cluster)'
+        display: { fill: 0 }
+        uiRepeat: mdbGwServicesUI
+        queryDefaults: { dropNan: true, labels: 'name=grpc_server_response_total, grpc_code=@c5xx503, system=*, grpc_type=*, grpc_method!=all, grpc_service=${mdbGwServicesUI}' }
+        yAxes: [ { min: 0, decimals: 1 } ]
+        queries:
+          - params: { labels: 'upstream_error=true' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: "0", group_lines: [sum], alias: upstream errors }
+          - params: { labels: 'upstream_error=false' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: "0", group_lines: [sum], alias: gw errors }
+
+  - title: MDB-Gateway Services Duration
+    panels:
+
+      - type: graph
+        title: '${mdbGwServicesUI} duration ($cluster)'
+        templates:
+          - { groupLines: true, name: percentile, format: solomon }
+          - { name: patchSelect, before: last, add: { asap: [] } }
+        display: { fill: 0 }
+        uiRepeat: mdbGwServicesUI
+        queryDefaults: { dropNan: true, labels: 'name=grpc_server_response_duration_seconds, bin=*, grpc_service=${mdbGwServicesUI}' }
+        yAxes: [ { min: 0, decimals: 1 } ]
+        queries: [ {} ]

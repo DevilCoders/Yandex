@@ -1,0 +1,91 @@
+uid: cplDemoDashboard
+title: CPL PROD services demo dashboard
+refresh: 3m
+tags: [ 'cpl' ]
+
+variables:
+  ui:
+    backend_group:
+      values:
+        - "ds703jbrs65kh0502nue"
+        - "ds713ictlhvplmu0comi"
+        - "ds725f0pt5k0u52a91js"
+        - "ds725v7hv5oitj4mh0lt"
+        - "ds72mvrnk7b55ki34dne"
+        - "ds766cn9u17e602ea404"
+        - "ds76akdcsa2ehcgre8nu"
+        - "ds77k0vvaq4lsi3bdhjh"
+        - "ds78b34e8bknecgd15r6"
+        - "ds78u3tfan6alihqg0cv"
+        - "ds79dkmvgosrll1mahhh"
+        - "ds79l3al6v3jlrqe3v2m"
+        - "ds7d2kftpfjt49nghga1"
+        - "ds7e5g374gns97ufusnr"
+        - "ds7fb0dla7oa9t381av9"
+        - "ds7jlk8m6ha4pg8hodg2"
+        - "ds7k2bfbgul7smlsujiu"
+        - "ds7ld556l4mci61mfiru"
+        - "ds7ofv5q6vncmc75m64o"
+        - "ds7rtl5d0hec2h8meff8"
+        - "ds7stike52r9iv7dto6p"
+        - "ds7u6j396hc7s4g4jbhv"
+      titles:
+        - container-registry-private-api-backend-group-prod
+        - ycf-cpl-http
+        - stt-service-alb-staging
+        - ycf-triggers
+        - api-adapter-backend-prod
+        - ycf-scheduler
+        - beeeye-tabix
+        - iot-devices-private-api-backend-group-prod
+        - backend-l7-ui
+        - ycf-cpl
+        - mk8s-private-api-backend-group-prod
+        - api-gateway-backend-group-prod
+        - stt-service-phone-alb
+        - stt-service-alb
+        - translation-service-alb
+        - api-canary-backend-group-prod
+        - mdb-gateway-private-api-backend-group-prod
+        - ycf-packer
+        - instance-group-prod-backend
+        - grafana
+        - mdb-api-adapter-private-api-backend-group-prod
+        - kms-controlplane
+
+graphDefaults: { width: 8, height: 8, datasource: 'Solomon Cloud' }
+queryDefaults: { dropNan: true, labels: 'project=platform, service=albapi_ma, host!=cluster' }
+
+rows:
+  - title: StatsD Exporter metrics
+    queryDefaults: { dropNan: true, labels: 'service=api_envoy_ma, cluster=cloud_prod_cpl' }
+
+    panels:
+      - type: graph
+        templates: { name: rps, rate: ui, sumLines: [name] }
+        title: 'Cluster upstream $rateUnit ($backend_group)'
+        display: { legend: false, fill: 0 }
+        yAxes: [ { min: 0, decimals: 1 } ]
+        queries:
+          - params: { labels: 'name=envoy_cluster_$backend_group*_upstream_rq_total' }
+
+      - type: graph
+        title: 'Cluster upstream errors ($backend_group)'
+        templates: { name: errors }
+        queries:
+          - params: { labels: 'name=envoy_cluster_$backend_group*_external_upstream_rq_5xx' }
+          - params: { labels: 'name=envoy_cluster_$backend_group*_external_upstream_rq_503' }
+        draw:
+            - { alias: '5xx', color: '#147', at: right }
+            - { alias: '503', color: '#da7', at: left }
+
+      - type: graph
+        title: 'Cluster upstream rq duration ($backend_group)'
+        display: { legend: false, fill: 0 }
+        yAxes: [ { format: ms, min: 0, decimals: 1 } ]
+        queries:
+          - params: { labels: 'name=envoy_cluster_$backend_group*external_upstream_rq_time, quantile=0.99' }
+
+  # Provide to the dashboard template following variables:
+  # row_title, backend_group_id, solomon_cluster, additional_labels
+  !include ./include/l7-dashboard-row-template.yaml 'Prometheus metrics' '$backend_group' 'cloud_prod_cpl' 'ui' '$rateUnit'

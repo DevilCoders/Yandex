@@ -1,0 +1,173 @@
+PRAGMA Library("datetime.sql");
+PRAGMA Library("helpers.sql");
+
+IMPORT `datetime` SYMBOLS $get_datetime, $get_timestamp_from_days;
+IMPORT `helpers` SYMBOLS $get_md5;
+
+$src_table = {{ param["source_table_path"]->quote() }};
+$dst_table = {{ input1->table_quote() }};
+$pii_dst_table = {{ param["pii_destination_path"] -> quote() }};
+
+$toString = ($data) -> (CAST($data AS String));
+$decode_utf8 = ($data) -> (nvl(cast(String::Base64StrictDecode($data) as Utf8),$data));
+
+$get_timestamp = ($ts) -> (CAST($ts AS TimeStamp));
+$from_utc_ts_to_msk_dt = ($ts) -> (DateTime::MakeDatetime(DateTime::Update(AddTimeZone($ts, "Europe/Moscow"), "GMT"  as Timezone)));
+
+$result = (
+    SELECT
+        $toString(`acl_team_set_id`     )                                                       AS acl_crm_team_set_id,
+        $toString(`assigned_user_id`    )                                                       AS assigned_user_id,
+        $toString(`cj_actual_sort_order`)                                                       AS cj_actual_sort_order,
+        $get_timestamp(`cj_momentum_end_date`)                                                  AS cj_momentum_end_date_ts,
+        $from_utc_ts_to_msk_dt($get_timestamp(`cj_momentum_end_date`))                          AS cj_momentum_end_date_dttm_local,
+        `cj_momentum_points`                                                                    AS cj_momentum_points,
+        `cj_momentum_ratio`                                                                     AS cj_momentum_ratio,
+        `cj_momentum_score`                                                                     AS cj_momentum_score,
+        $get_timestamp(`cj_momentum_start_date`)                                                AS cj_momentum_start_date_ts,
+        $from_utc_ts_to_msk_dt($get_timestamp(`cj_momentum_start_date`))                        AS cj_momentum_start_date_dttm_local,
+        $toString(`cj_parent_activity_id`)                                                      AS cj_parent_activity_id,
+        $toString(`cj_parent_activity_type`)                                                    AS cj_parent_activity_type,
+        $toString(`cj_url`)                                                                     AS cj_url,
+        $toString(`created_by`)                                                                 AS created_by,
+        $toString(`customer_journey_blocked_by`)                                                AS customer_journey_blocked_by,
+        `customer_journey_points`                                                               AS customer_journey_points,
+        `customer_journey_progress`                                                             AS customer_journey_progress,
+        `customer_journey_score`                                                                AS customer_journey_score,
+        $get_timestamp(`date_click_to_call`)                                                    AS date_click_to_call_ts,
+        $from_utc_ts_to_msk_dt($get_timestamp(`date_click_to_call`))                            AS date_click_to_call_dttm_local,
+        $get_timestamp(`date_end`)                                                              AS date_end_ts,
+        $from_utc_ts_to_msk_dt($get_timestamp(`date_end`))                                      AS date_end_dttm_local,
+        $get_timestamp(`date_entered`)                                                          AS date_entered_ts,
+        $from_utc_ts_to_msk_dt($get_timestamp(`date_entered`))                                  AS date_entered_dttm_local,
+        $get_timestamp(`date_modified`)                                                         AS date_modified_ts,
+        $from_utc_ts_to_msk_dt($get_timestamp(`date_modified`))                                 AS date_modified_dttm_local,
+        $get_timestamp(`date_start`)                                                            AS date_start_ts,
+        $from_utc_ts_to_msk_dt($get_timestamp(`date_start`))                                    AS date_start_dttm_local,
+        CAST(`deleted` AS bool)                                                                 AS deleted,
+        $toString($decode_utf8(`description`))                                                  AS crm_call_description,
+        $toString(`direction`)                                                                  AS direction,
+        $toString(`dri_subworkflow_id`)                                                         AS dri_subworkflow_id,
+        $toString(`dri_subworkflow_template_id`)                                                AS dri_subworkflow_template_id,
+        $toString(`dri_workflow_sort_order`)                                                    AS dri_workflow_sort_order,
+        $toString(`dri_workflow_task_template_id`)                                              AS dri_workflow_task_template_id,
+        $toString(`dri_workflow_template_id`)                                                   AS dri_workflow_template_id,
+        `duration_hours`                                                                        AS duration_hours,
+        `duration_minutes`                                                                      AS duration_minutes,
+        CAST(`email_reminder_sent` AS bool)                                                     AS email_reminder_sent,
+        `email_reminder_time`                                                                   AS email_reminder_time,
+        $toString(`from_phone`)                                                                 AS from_phone,
+        `history_duration`                                                                      AS history_duration,
+        CAST(`history_taked` AS bool)                                                           AS history_taked,
+        $toString(`id`)                                                                         AS crm_call_id,
+        CAST(`is_cj_parent_activity` AS bool)                                                   AS is_cj_parent_activity,
+        CAST(`is_customer_journey_activity` AS bool)                                            AS is_customer_journey_activity,
+        $toString(`modified_user_id`)                                                           AS modified_user_id,
+        $toString(`name`)                                                                       AS crm_call_name,
+        $toString(`outlook_id`)                                                                 AS outlook_id,
+        $toString(`parent_id`)                                                                  AS parent_id,
+        $toString(`parent_type`)                                                                AS parent_type,
+        $get_timestamp(`recurrence_id`)                                                         AS recurrence_id_ts,
+        $from_utc_ts_to_msk_dt($get_timestamp(`recurrence_id`))                                 AS recurrence_id_dttm_local,
+        $toString(`recurring_source`)                                                           AS recurring_source,
+        `reminder_time`                                                                         AS reminder_time,
+        `repeat_count`                                                                          AS repeat_count,
+        $toString(`repeat_days`)                                                                AS repeat_days,
+        $toString(`repeat_dow`)                                                                 AS repeat_dow,
+        `repeat_interval`                                                                       AS repeat_interval,
+        $toString(`repeat_ordinal`)                                                             AS repeat_ordinal,
+        $toString(`repeat_parent_id`)                                                           AS repeat_parent_id,
+        $toString(`repeat_selector`)                                                            AS repeat_selector,
+        $toString(`repeat_type`)                                                                AS repeat_type,
+        $toString(`repeat_unit`)                                                                AS repeat_unit,
+        `repeat_until`                                                                          AS repeat_until,
+        CAST(`saved_manually` AS bool)                                                          AS saved_manually,
+        $toString(`status`)                                                                     AS crm_call_status,
+        $toString(`team_id`)                                                                    AS crm_team_id,
+        $toString(`team_set_id`)                                                                AS crm_team_set_id,
+        $toString(`to_phone`)                                                                   AS to_phone
+    FROM $src_table
+);
+
+/* Save result in ODS */
+INSERT INTO $dst_table WITH TRUNCATE
+SELECT
+    acl_crm_team_set_id                     AS acl_crm_team_set_id,
+    assigned_user_id                        AS assigned_user_id,
+    cj_actual_sort_order                    AS cj_actual_sort_order,
+    cj_momentum_end_date_ts                 AS cj_momentum_end_date_ts,
+    cj_momentum_end_date_dttm_local         AS cj_momentum_end_date_dttm_local,
+    cj_momentum_points                      AS cj_momentum_points,
+    cj_momentum_ratio                       AS cj_momentum_ratio,
+    cj_momentum_score                       AS cj_momentum_score,
+    cj_momentum_start_date_ts               AS cj_momentum_start_date_ts,
+    cj_momentum_start_date_dttm_local       AS cj_momentum_start_date_dttm_local,
+    cj_parent_activity_id                   AS cj_parent_activity_id,
+    cj_parent_activity_type                 AS cj_parent_activity_type,
+    cj_url                                  AS cj_url,
+    created_by                              AS created_by,
+    customer_journey_blocked_by             AS customer_journey_blocked_by,
+    customer_journey_points                 AS customer_journey_points,
+    customer_journey_progress               AS customer_journey_progress,
+    customer_journey_score                  AS customer_journey_score,
+    date_click_to_call_ts                   AS date_click_to_call_ts,
+    date_click_to_call_dttm_local           AS date_click_to_call_dttm_local,
+    date_end_ts                             AS date_end_ts,
+    date_end_dttm_local                     AS date_end_dttm_local,
+    date_entered_ts                         AS date_entered_ts,
+    date_entered_dttm_local                 AS date_entered_dttm_local,
+    date_modified_ts                        AS date_modified_ts,
+    date_modified_dttm_local                AS date_modified_dttm_local,
+    date_start_ts                           AS date_start_ts,
+    date_start_dttm_local                   AS date_start_dttm_local,
+    deleted                                 AS deleted,
+    crm_call_description                    AS crm_call_description,
+    direction                               AS direction,
+    dri_subworkflow_id                      AS dri_subworkflow_id,
+    dri_subworkflow_template_id             AS dri_subworkflow_template_id,
+    dri_workflow_sort_order                 AS dri_workflow_sort_order,
+    dri_workflow_task_template_id           AS dri_workflow_task_template_id,
+    dri_workflow_template_id                AS dri_workflow_template_id,
+    duration_hours                          AS duration_hours,
+    duration_minutes                        AS duration_minutes,
+    email_reminder_sent                     AS email_reminder_sent,
+    email_reminder_time                     AS email_reminder_time,
+    $get_md5(from_phone)                    AS from_phone_hash,
+    history_duration                        AS history_duration,
+    history_taked                           AS history_taked,
+    crm_call_id                             AS crm_call_id,
+    is_cj_parent_activity                   AS is_cj_parent_activity,
+    is_customer_journey_activity            AS is_customer_journey_activity,
+    modified_user_id                        AS modified_user_id,
+    crm_call_name                           AS crm_call_name,
+    outlook_id                              AS outlook_id,
+    parent_id                               AS parent_id,
+    parent_type                             AS parent_type,
+    recurrence_id_ts                        AS recurrence_id_ts,
+    recurrence_id_dttm_local                as recurrence_id_dttm_local,
+    recurring_source                        AS recurring_source,
+    reminder_time                           AS reminder_time,
+    repeat_count                            AS repeat_count,
+    repeat_days                             AS repeat_days,
+    repeat_dow                              AS repeat_dow,
+    repeat_interval                         AS repeat_interval,
+    repeat_ordinal                          AS repeat_ordinal,
+    repeat_parent_id                        AS repeat_parent_id,
+    repeat_selector                         AS repeat_selector,
+    repeat_type                             AS repeat_type,
+    repeat_unit                             AS repeat_unit,
+    repeat_until                            AS repeat_until,
+    saved_manually                          AS saved_manually,
+    crm_call_status                         AS crm_call_status,
+    crm_team_id                             AS crm_team_id,
+    crm_team_set_id                         AS crm_team_set_id,
+    $get_md5(to_phone)                      AS to_phone_hash
+FROM $result;
+
+/* Save result in ODS PII*/
+INSERT INTO $pii_dst_table WITH TRUNCATE
+SELECT 
+    crm_call_id                             AS crm_call_id,
+    from_phone                              AS from_phone,
+    to_phone                                AS to_phone
+FROM $result;

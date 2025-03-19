@@ -1,0 +1,132 @@
+use hahn;
+PRAGMA yt.InferSchema = '1';
+
+
+
+
+
+
+
+
+$cons = (
+SELECT
+    COALESCE(a.billing_account_id, b.billing_account_id) as billing_account_id,
+    COALESCE(a.cloud_id, 'dummy') as cloud_id,
+    COALESCE(a.sku, 'dummy') as sku_name,
+    COALESCE(a.`date`, b.`date`) as `date`,
+    COALESCE(a.cost, 0) as cost,
+    COALESCE(a.credit,0) as credit,
+    COALESCE(a.paid_consumption,0) as paid_consumption,
+    sales_name,
+    last_sales_name,
+    last_state,
+    last_block_reason,
+    b.segment as segment,
+    COALESCE(b.size, 'unknown') as size,
+    state,
+    block_reason,
+    master_account_id,
+    b.person_type as person_type,
+    created_at,
+    b.channel as channel,
+    b.usage_status as usage_status,
+    b.client_name as client_name,
+    
+    COALESCE(service_name, 'compute') as service_name,
+    subservice_name,
+    core_fraction,
+    preemptible,
+    platform,
+    database,
+    
+
+    cons_dyn_status,
+    paid_cons_dyn_status,
+    
+    'total' as `total`
+FROM
+    `//home/cloud_analytics/export/billing/billing_records_daily` as a
+FULL JOIN
+    `//home/cloud_analytics/tmp/artkaz/ba_v2` as b
+ON a.billing_account_id = b.billing_account_id AND a.`date` = b.`date`
+LEFT JOIN 
+    `//home/cloud_analytics/tmp/artkaz/sku_tags` as c
+ON a.sku = c.sku_name
+);
+
+INSERT INTO `//home/cloud_analytics/tmp/artkaz/consumption_daily_v2` WITH TRUNCATE 
+SELECT
+    billing_account_id,
+    cloud_id,
+    sku_name,
+    `date`,
+    -credit as cons_sum,
+    'trial' as cons_type,
+    sales_name,
+    last_sales_name,
+    last_state,
+    last_block_reason,
+    segment,
+    size,
+    state,
+    block_reason,
+    master_account_id,
+    person_type,
+    created_at,
+    channel,
+    usage_status,
+    client_name,
+    
+    service_name,
+    subservice_name,
+    core_fraction,
+    preemptible,
+    platform,
+    database,
+    
+
+    cons_dyn_status,
+    paid_cons_dyn_status,
+    
+    'total' as `total`
+FROM $cons 
+WHERE (-credit > 0) OR ((credit = 0) AND (paid_consumption =0))
+
+UNION ALL
+
+SELECT
+    billing_account_id,
+    cloud_id,
+    sku_name,
+    `date`,
+    paid_consumption as cons_sum,
+    'paid' as cons_type,
+    sales_name,
+    last_sales_name,
+    last_state,
+    last_block_reason,
+    segment,
+    size,
+    state,
+    block_reason,
+    master_account_id,
+    person_type,
+    created_at,
+    channel,
+    usage_status,
+    client_name,
+    
+    service_name,
+    subservice_name,
+    core_fraction,
+    preemptible,
+    platform,
+    database,
+    
+
+    cons_dyn_status,
+    paid_cons_dyn_status,
+    
+    'total' as `total`
+FROM $cons 
+WHERE paid_consumption > 0

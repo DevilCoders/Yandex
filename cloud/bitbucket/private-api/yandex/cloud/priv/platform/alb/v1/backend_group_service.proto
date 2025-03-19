@@ -1,0 +1,176 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.platform.alb.v1;
+
+import "google/protobuf/field_mask.proto";
+
+import "yandex/cloud/api/operation.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+import "yandex/cloud/priv/platform/alb/v1/backend_group.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/platform/alb/v1;alb";
+option java_outer_classname = "PALBGS";
+
+service BackendGroupService {
+  rpc Get(GetBackendGroupRequest) returns (BackendGroup);
+  rpc List(ListBackendGroupsRequest) returns (ListBackendGroupsResponse);
+
+  rpc Create(CreateBackendGroupRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "CreateBackendGroupMetadata"
+      response: "BackendGroup"
+    };
+  }
+  rpc Update(UpdateBackendGroupRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateBackendGroupMetadata"
+      response: "BackendGroup"
+    };
+  }
+  rpc Delete(DeleteBackendGroupRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeleteBackendGroupMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+
+  // AddBackend/RemoveBackend technically do the same, but hav different semantics.
+  rpc AddBackend(AddBackendRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "AddBackendMetadata"
+      response: "BackendGroup"
+    };
+  }
+  rpc RemoveBackend(RemoveBackendRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "RemoveBackendMetadata"
+      response: "BackendGroup"
+    };
+  }
+  rpc UpdateBackend(UpdateBackendRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateBackendMetadata"
+      response: "BackendGroup"
+    };
+  }
+
+  // Lists operations for the specified backend group.
+  rpc ListOperations (ListBackendGroupOperationsRequest) returns (ListBackendGroupOperationsResponse);
+}
+
+message GetBackendGroupRequest {
+  string backend_group_id = 1 [(required) = true];
+}
+
+message ListBackendGroupsRequest {
+  string folder_id = 1 [(required) = true];
+
+  int64 page_size = 2 [(value) = "0-1000"];
+  string page_token = 3 [(length) = "<=100"];
+  string filter = 4 [(length) = "<=1000"];
+}
+
+message ListBackendGroupsResponse {
+  repeated BackendGroup backend_groups = 1;
+  string next_page_token = 2;
+}
+
+message DeleteBackendGroupRequest {
+  string backend_group_id = 1 [(required) = true];
+}
+
+message DeleteBackendGroupMetadata {
+  string backend_group_id = 1;
+}
+
+message UpdateBackendGroupRequest {
+  string backend_group_id = 1 [(required) = true];
+  google.protobuf.FieldMask update_mask = 2;
+
+  string name = 3 [(pattern) = "|[a-z][-a-z0-9]{1,61}[a-z0-9]"];
+  string description = 4 [(length) = "<=256"];
+  map<string, string> labels = 5 [(priv.size) = "<=64", (length) = "<=63", (pattern) = "[-_0-9a-z]*", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_0-9a-z]*"];
+
+  oneof backend {
+    option (exactly_one) = true;
+    StreamBackendGroup stream = 6;
+    HttpBackendGroup http = 7;
+    GrpcBackendGroup grpc = 8;
+  }
+}
+
+message UpdateBackendGroupMetadata {
+  string backend_group_id = 1;
+}
+
+message CreateBackendGroupRequest {
+  string folder_id = 1 [(required) = true];
+  string name = 2 [(pattern) = "|[a-z][-a-z0-9]{1,61}[a-z0-9]"];
+  string description = 3 [(length) = "<=256"];
+  map<string, string> labels = 4 [(priv.size) = "<=64", (length) = "<=63", (pattern) = "[-_0-9a-z]*", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_0-9a-z]*"];
+
+  oneof backend {
+    StreamBackendGroup stream = 5;
+    HttpBackendGroup http = 6;
+    GrpcBackendGroup grpc = 7;
+  }
+}
+
+message CreateBackendGroupMetadata {
+  string backend_group_id = 1;
+}
+
+message AddBackendRequest {
+  string backend_group_id = 1 [(required) = true];
+
+  oneof backend {
+    option (exactly_one) = true;
+    StreamBackend stream = 2;
+    HttpBackend http = 3;
+    GrpcBackend grpc = 4;
+  }
+}
+
+message AddBackendMetadata {
+  string backend_group_id = 1;
+  string backend_name = 2;
+}
+
+message UpdateBackendRequest {
+  string backend_group_id = 1 [(required) = true];
+  google.protobuf.FieldMask update_mask = 2;
+
+  oneof backend {
+    option (exactly_one) = true;
+    StreamBackend stream = 3;
+    HttpBackend http = 4;
+    GrpcBackend grpc = 5;
+  }
+}
+
+message UpdateBackendMetadata {
+  string backend_group_id = 1;
+  string backend_name = 2;
+}
+
+message RemoveBackendRequest {
+  string backend_group_id = 1 [(required) = true];
+  string backend_name = 2 [(required) = true];
+}
+
+message RemoveBackendMetadata {
+  string backend_group_id = 1;
+  string backend_name = 2;
+}
+
+message ListBackendGroupOperationsRequest {
+  string backend_group_id = 1 [(required) = true, (length) = "<=50"];
+  int64 page_size = 2 [(value) = "<=1000"];
+  string page_token = 3 [(length) = "<=100"];
+}
+
+message ListBackendGroupOperationsResponse {
+  repeated operation.Operation operations = 1;
+  string next_page_token = 2;
+}

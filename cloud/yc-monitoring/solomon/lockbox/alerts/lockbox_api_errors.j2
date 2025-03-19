@@ -1,0 +1,33 @@
+{% extends "./base_alert.j2" %}
+
+{% set checkExpression = "value > 0" %}
+{% set description = "Lockbox " + env | upper + " API Errors" %}
+{% set windowSecs = 180 %}
+
+{% macro prog() %}
+let data = group_lines(
+  'sum',
+  {
+    project='{{ project_id }}',
+    service='service',
+    cluster='cloud_{{ env }}_lockbox_cluster',
+    host='lockbox-control-*|cpl-*|lockbox-data-*|dpl-*',
+    sensor='grpc_statuses',
+    app='*server',
+    status='UNAVAILABLE|UNKNOWN|DEADLINE_EXCEEDED|UNIMPLEMENTED|INTERNAL|DATA_LOSS'
+  }
+);
+let value = max(data);
+{% endmacro %}
+
+{% block main %}
+  "name": "Lockbox {{ env | upper }} API errors",
+  "groupByLabels": ["cluster", "host"],
+  "annotations": {
+    "jugglerService": "[[labels.cluster]]--[[labels.host]]--apiErrors",
+    "description": "[[expression.value]] GRPC errors on [[labels.host]]",
+    "wikiUrl": "#",
+    "jugglerTags" : "{{ jugglerTags }}"
+  },
+  "type": {{ type_expression() }}
+{% endblock %}

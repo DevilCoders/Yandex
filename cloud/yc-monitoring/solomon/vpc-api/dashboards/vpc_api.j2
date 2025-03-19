@@ -1,0 +1,484 @@
+{% extends "../../base/dashboard.j2" %}
+{% import "../common/vpc-api.j2" as common %}
+
+{% set cluster = "cloud_" + env + "_vpc-api" %}
+{% set ydb_cluster = "yandexcloud_" + env + "_global" %}
+
+{% if env == "prod" %}
+    {% set ydb_database = "/global/ycloud" %}
+{% elif env == "preprod"  %}
+    {% set ydb_database = "/pre-prod_global/ycloud" %}
+{% else %}
+    {% set ydb_database = "/" + env + "_global/ycloud" %}
+{% endif %}
+
+{% block parameters %}
+{
+    "name": "cluster",
+    "value": "cloud_{{ env }}_vpc-api"
+},
+{
+    "name": "service",
+    "value": "vpc-config-plane"
+},
+{
+    "name": "host",
+    "value": "cluster"
+}
+{% endblock %}
+
+{% block rows %}
+[
+    { "panels": [
+        {{ render_panel(
+            "rps",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_requests&" +
+                "l.host=[[host]]&" +
+                "l.zone=*&" +
+                "app=vpc-config-plane_server&" +
+                "method=*",
+            colspan=6,
+        ) }},
+        {{ render_panel(
+            "rps by dc",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_requests_by_dc&" +
+                "app=vpc-config-plane_server&" +
+                "method=*",
+            colspan=6,
+        ) }}
+    ]},
+    { "panels": [
+        {% for az in zones_by_env[env] %}
+        {{ render_panel(
+            "Latency " + az.zone,
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_latency&" +
+                "zone=" + az.zone + "&" +
+                "app=vpc-config-plane_server&" +
+                "l.method=!{}&".format("|".join(common.heavy_requests.values())) +
+                "l.host=[[host]]",
+            colspan=2,
+        ) }},
+        {% endfor %}
+        {{ render_panel(
+            "Task failed (cluster)",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_db_statistics_by_sensor&" +
+                "l.sensor=tasks_task_failed",
+            colspan=2,
+        ) }},
+        {{ render_panel(
+            "Task ready (cluster)",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_db_statistics_by_sensor&" +
+                "l.sensor=tasks_task_ready",
+            colspan=2,
+        ) }},
+        {{ render_panel(
+            "Task with many retries (cluster)",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_db_statistics_by_sensor&" +
+                "l.sensor=tasks_task_many_retries",
+            colspan=2,
+        ) }}
+    ]},
+    { "panels": [
+        {{ render_panel(
+            "api long requests",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_grpc_long_request&" +
+                "app=vpc-config-plane_server&" +
+                "l.method=!{}&".format("|".join(common.heavy_requests.values())) +
+                "l.host=[[host]]&" +
+                "zone=*",
+            colspan=2,
+        ) }},
+        {{ render_panel(
+            "api heavy requests",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_grpc_heavy_request&" +
+                "l.host=[[host]]&" +
+                "zone=*",
+            colspan=2,
+        ) }},
+        {{ render_panel(
+            "api error by type",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_grpc_client_errors&" +
+                "app=vpc-config-plane_server&" +
+                "l.host=[[host]]&" +
+                "zone=*&" +
+                "method=!*GetTargetStates",
+            colspan=2,
+        ) }},
+        {{ render_panel( "api errors",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_grpc_errors&" +
+                "l.host=[[host]]&" +
+                "app=vpc-config-plane_server&" +
+                "method=!*GetTargetStates",
+            colspan=2,
+        ) }},
+        {{ render_panel( "api errors by method",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_grpc_errors_by_method&" +
+                "l.host=[[host]]&" +
+                "app=vpc-config-plane_server&" +
+                "method=!*GetTargetStates",
+            colspan=2,
+        ) }},
+        {{ render_panel(
+            "api-to-hc errors",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_grpc_errors&" +
+                "l.host=[[host]]&" +
+                "app=vpc-config-plane_server&" +
+                "method=*GetTargetStates",
+            colspan=2,
+        ) }}
+    ]},
+    { "panels": [
+        {{ render_panel(
+            "auth request errors",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_grpc_client_errors&" +
+                "app=auth_client&" +
+                "l.host=[[host]]&" +
+                "zone=*&" +
+                "method=*",
+            colspan=3,
+        ) }},
+        {{ render_panel(
+            "auth long requests",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_grpc_long_request&" +
+                "app=auth_client&" +
+                "l.host=[[host]]&" +
+                "zone=*&" +
+                "method=*",
+            colspan=3,
+        ) }},
+        {{ render_panel(
+            "RM request errors",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_grpc_client_errors&" +
+                "app=resource-manager_client&" +
+                "l.host=[[host]]&" +
+                "zone=*&" +
+                "method=*",
+            colspan=3,
+        ) }},
+        {{ render_panel(
+            "RM long requests",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_grpc_long_request&" +
+                "app=resource-manager_client&" +
+                "l.host=[[host]]&" +
+                "zone=*&" +
+                "method=*",
+            colspan=3,
+        ) }}
+    ]},
+    { "panels": [
+        {{ render_panel(
+            "contrail errors",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_contrail_errors&" +
+                "l.host=[[host]]&" +
+                "method=!GET/",
+            colspan=3,
+        ) }},
+        {{ render_panel(
+            "contrail long requests",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_contrail_long_durations&" +
+                "l.host=[[host]]&" +
+                "method=*",
+            colspan=3,
+        ) }},
+        {{ render_panel(
+            "Dead contrail enpoints",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_contrail_pinger&" +
+                "zone=*&" +
+                "l.host=[[host]]&" +
+                "zone=*&" +
+                "type=dead",
+            colspan=3,
+        ) }},
+        {{ render_panel(
+            "contrail job pools start delay",
+            "[[cluster]]", "vpc-config-plane",
+            "zone=*&" +
+                "host=[[host]]&" +
+                "pool=contrail-*&" +
+                "graph=[[cluster]]_task_delay",
+            colspan=3,
+        ) }}
+    ]},
+    { "panels": [
+        {{ render_panel(
+            "kikimr request errors",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_grpc_client_errors&" +
+                "app=ycloud_client&" +
+                "l.host=[[host]]&" +
+                "zone=*&" +
+                "method=*",
+            colspan=2,
+        ) }},
+        {{ render_panel(
+            "kikimr long execute",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_grpc_long_request&" +
+                "app=ycloud_client&" +
+                "l.method=*ExecuteDataQuery&" +
+                "l.host=[[host]]&" +
+                "zone=*",
+            colspan=2,
+        ) }},
+        {{ render_panel(
+            "kikimr long prepare",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_grpc_long_request&" +
+                "app=ycloud_client&" +
+                "l.method=*PrepareDataQuery&" +
+                "l.host=[[host]]&" +
+                "zone=*",
+            colspan=2,
+        ) }},
+        {{ render_panel(
+            "kikimr long commit",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_grpc_long_request&" +
+                "app=ycloud_client&" +
+                "l.method=*CommitTransaction&" +
+                "l.host=[[host]]&" +
+                "zone=*",
+            colspan=2,
+        ) }},
+        {{ render_panel_raw(
+            "YDB errors (" + env + ")",
+                "/?project=kikimr&" +
+                "cluster=" + ydb_cluster + "&" +
+                "service=kqp&" +
+                "host=cluster&" +
+                "slot=cluster&" +
+                "database=" + ydb_database + "&" +
+                "graph=kikimr-kqp-response-count-perdatabase&" +
+                "checks=-Success",
+            colspan=4,
+        ) }}
+    ]},
+    { "panels": [
+        {{ render_panel(
+            "TLI errors",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_tx_retries&" +
+                "l.host=[[host]]&" +
+                "zone=*&" +
+                "tx_name=*&" +
+                "reason=OptimisticLock",
+            colspan=3,
+        ) }},
+        {{ render_panel(
+            "Other tx retries",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_tx_retries&" +
+                "l.host=[[host]]&" +
+                "zone=*&" +
+                "tx_name=*&" +
+                "reason=!OptimisticLock",
+            colspan=3,
+        ) }},
+        {{ render_panel(
+            "TLI by tx",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_tx_retries_by_tx_name&" +
+                "l.host=[[host]]&" +
+                "zone=*&" +
+                "tx_name=*&" +
+                "reason=OptimisticLock",
+            colspan=3,
+        ) }},
+        {{ render_panel(
+            "Other tx retries by tx",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_tx_retries_by_tx_name&" +
+                "l.host=[[host]]&" +
+                "zone=*&" +
+                "tx_name=*&" +
+                "reason=!OptimisticLock",
+            colspan=3,
+        ) }}
+    ]},
+    { "panels": [
+        {{ render_panel(
+            "JVM heap memory",
+            "[[cluster]]", "vpc-config-plane",
+                "host=[[host]]&" +
+                "area=heap&" +
+                "graph=[[cluster]]_jvm_memory",
+            colspan=4,
+        ) }},
+        {{ render_panel(
+            "JVM threads",
+            "[[cluster]]", "vpc-config-plane",
+                "host=[[host]]&" +
+                "graph=[[cluster]]_jvm_threads",
+            colspan=4,
+        ) }},
+        {{ render_panel(
+            "JVM GC collection seconds",
+            "[[cluster]]", "vpc-config-plane",
+                "host=[[host]]&" +
+                "sensor=jvm_gc_collection_seconds&" +
+                "summary_type=count&" +
+                "transform=differentiate&" +
+                "graph=auto",
+            colspan=4,
+        ) }}
+    ]},
+    { "panels": [
+        {{ render_panel(
+            "error in logs",
+            "[[cluster]]", "vpc-config-plane",
+                "l.host=[[host]]&" +
+                "l.sensor=log4j2_appender_total&" +
+                "l.level=error&"
+                "graph=auto&"
+                "transform=differentiate",
+            colspan=3,
+        ) }},
+        {{ render_panel(
+            "warn in logs",
+            "[[cluster]]", "vpc-config-plane",
+                "l.host=[[host]]&" +
+                "l.sensor=log4j2_appender_total&" +
+                "l.level=warn&"
+                "graph=auto&"
+                "transform=differentiate",
+            colspan=3,
+        ) }},
+        {{ render_panel(
+            "DNS request errors",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_grpc_client_errors&" +
+                "app=dns-control-plane_client&" +
+                "l.host=[[host]]&" +
+                "zone=*&" +
+                "method=*",
+            colspan=3,
+        ) }},
+        {{ render_panel(
+            "DNS long requests",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_grpc_long_request&" +
+                "app=dns-control-plane_client&" +
+                "l.method=*&" +
+                "l.host=[[host]]&" +
+                "zone=*",
+            colspan=3,
+        ) }}
+    ]},
+    { "panels": [
+        {{ render_panel(
+            "Operations slow",
+            "[[cluster]]", "vpc-config-plane",
+                "host=[[host]]&" +
+                "zone=*&" +
+                "service_type=vpc|loadbalancer&" +
+                "type=!all&" +
+                "graph=[[cluster]]_ops_slow",
+            colspan=3,
+        ) }},
+        {{ render_panel(
+            "Operations duration",
+            "[[cluster]]", "vpc-config-plane",
+                "host=[[host]]&" +
+                "zone=*&" +
+                "service_type=vpc|loadbalancer&" +
+                "type=!all&" +
+                "graph=[[cluster]]_ops_duration",
+            colspan=3,
+        ) }},
+        {{ render_panel(
+            "Operations done",
+            "[[cluster]]", "vpc-config-plane",
+                "sensor=vpc_operation_done&" +
+                "host=[[host]]&" +
+                "zone=*&" +
+                "service_type=vpc|loadbalancer&" +
+                "type=!all&" +
+                "graph=[[cluster]]_ops_done",
+            colspan=3,
+        ) }},
+        {{ render_panel(
+            "Operations failed",
+            "[[cluster]]", "vpc-config-plane",
+                "sensor=vpc_operation_failed&" +
+                "host=[[host]]&" +
+                "zone=*&" +
+                "service_type=vpc|loadbalancer&" +
+                "errorcode=*" +
+                "type=!all&" +
+                "graph=[[cluster]]_ops_failed",
+            colspan=3,
+        ) }}
+    ]},
+    { "panels": [
+        {{ render_panel(
+            "jobs done",
+            "[[cluster]]", "vpc-config-plane",
+            "phase=done&" +
+                "zone=*&" +
+                "sensor=vpctask_task_processed&" +
+                "host=[[host]]&" +
+                "graph=[[cluster]]_jobs_rate",
+            colspan=3,
+        ) }},
+        {{ render_panel(
+            "jobs retried",
+            "[[cluster]]", "vpc-config-plane",
+            "phase=*&" +
+                "zone=*&" +
+                "sensor=vpctask_task_retried|vpc_task_tx_retried&" +
+                "host=[[host]]&" +
+                "graph=[[cluster]]_jobs_rate",
+            colspan=3,
+        ) }},
+        {{ render_panel(
+            "jobs failed",
+            "[[cluster]]", "vpc-config-plane",
+            "phase=*&" +
+                "zone=*&" +
+                "sensor=vpctask_task_failed&" +
+                "host=[[host]]&" +
+                "graph=[[cluster]]_jobs_rate",
+            colspan=2,
+        ) }},
+        {{ render_panel(
+            "jobs interrupted",
+            "[[cluster]]", "vpc-config-plane",
+            "zone=*&" +
+                "pool=*&" +
+                "meter_type=m1_rate&" +
+                "sensor=taskprocessor_task_long_interrupted&" +
+                "host=cluster&" +
+                "graph=auto",
+            colspan=2,
+        ) }},
+        {{ render_panel(
+            "jobs duration",
+            "[[cluster]]", "vpc-config-plane",
+            "phase=total_from_submit&" +
+                "zone=*&" +
+                "host=[[host]]&" +
+                "graph=[[cluster]]_jobs_duration",
+            colspan=2,
+        ) }}
+    ]}
+]
+{% endblock %}

@@ -1,0 +1,37 @@
+{% extends "vpc_api_base_alert.j2" %}
+
+{% set service = "vpc-api-grpc-latency-" + type %}
+
+{% macro prog() %}
+let latency_perc99 = histogram_percentile(99, 'le', non_negative_derivative({
+        cluster='cloud_{{env}}_vpc-api'
+        ,service='vpc-config-plane'
+        ,sensor='grpc_durations'
+        ,hist_type='bin'
+        ,host='vpc-api-*'
+        ,app='vpc-config-plane_server'
+        ,method='all-{{type}}'
+    })
+);
+
+
+let max_latency_perc99 = max(moving_avg(latency_perc99, 5m));
+
+alarm_if(max_latency_perc99 > {{ alarm_limit }});
+warn_if(max_latency_perc99 > {{ warn_limit }});
+{% endmacro %}
+
+{% block main %}
+    "name": "VPC API gRPC latency {{type}} methods {{env}}",
+    "annotations": {
+        "latency_perc99": "[[ expression.latency_perc99 ]]",
+        "max_latency_perc99": "[[ expression.max_latency_perc99 ]]",
+        "description": "VPC API gRPC latency {{type}} methods max 99 percentile latency: [[ expression.max_latency_perc99 ]]",
+        "host": "{{ solomon_host() }}",
+        "service": "{{ service }}",
+        "dashboard": "{{ vpc_api_dashboard() }}",
+        "wiki": "{{ wiki_url(service) }}"
+    },
+    "groupByLabels": ["host"],
+    "type": {{ type_expression() }}
+{% endblock %}

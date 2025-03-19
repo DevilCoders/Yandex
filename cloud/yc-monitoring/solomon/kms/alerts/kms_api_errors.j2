@@ -1,0 +1,33 @@
+{% extends "./base_alert.j2" %}
+
+{% set checkExpression = "value > 0" %}
+{% set description = "KMS " + env | upper + " API Errors" %}
+{% set windowSecs = 600 %}
+
+{% macro prog() %}
+let data = group_lines(
+  'sum',
+  {
+    project='{{ project_id }}',
+    service='service',
+    cluster='cloud_{{ env }}_kms_cluster',
+    host='kms-control-*|cpl-*|kms-data-*|dpl-*|root-kms-*',
+    sensor='grpc_statuses',
+    app='*server',
+    status='UNAVAILABLE|UNKNOWN|DEADLINE_EXCEEDED|UNIMPLEMENTED|INTERNAL|DATA_LOSS'
+  }
+);
+let value = max(data);
+{% endmacro %}
+
+{% block main %}
+  "name": "KMS {{ env | upper }} API errors",
+  "groupByLabels": ["cluster", "host"],
+  "annotations": {
+    "jugglerService": "[[labels.cluster]]--[[labels.host]]--apiErrors",
+    "description": "[[expression.value]] GRPC errors on [[labels.host]]",
+    "wikiUrl": "https://nda.ya.ru/t/pqqLRJ5f3Vyz5P",
+    "jugglerTags" : "{{ jugglerTags }}"
+  },
+  "type": {{ type_expression() }}
+{% endblock %}

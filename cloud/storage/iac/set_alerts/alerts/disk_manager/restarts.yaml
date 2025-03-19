@@ -1,0 +1,44 @@
+definitions:
+  - &alert_id "yc-disk-manager-restarts-{{.ID}}"
+  - &alert_name "{{.Name}} Disk Manager Restarts"
+  - &alert_annotations_tag "yc-{{.Cluster}}-disk-manager-solomon"
+  - &alert_annotations_host "{{`{{labels.host}}`}}.svc.{{.SvmDomain}}"
+  - &alert_annotations_service "solomon_alert_disk-manager_server_restarts"
+alerts:
+  - id: *alert_id
+    name: *alert_name
+    group_by_labels:
+      - host
+    channels:
+      - id: juggler
+        notify_about_statuses:
+          - OK
+          - ERROR
+          - ALARM
+          - NO_DATA
+          - WARN
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+    clusters:
+      - testing
+      - preprod
+      - prod
+      - israel
+    expression:
+      program: |-
+        let restarts = {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.Cluster}}|dataplane_{{.Cluster}}',
+        service='meta',
+        host='disk-manager-*|snapshot-*',
+        sensor='restartsCount'
+        };
+
+        no_data_if(count(restarts) == 0);
+
+        let restarts_diff = max(restarts) - min(restarts);
+
+        alarm_if(restarts_diff > 3);
+        warn_if(restarts_diff > 0);

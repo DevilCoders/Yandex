@@ -1,0 +1,40 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro svm_fqdn() -%}
+	[[labels.host]].{{ svm_domains[env] }}
+{%- endmacro %}
+
+{% macro prog() %}
+let current_operations_rate = non_negative_derivative({
+	cluster='cloud_{{ env }}_ylb',
+	service='loadbalancer_node',
+	host!='cluster',
+	name='client_grpc__gobgpapi_GobgpApi__*Path_success|client_grpc__balancerapi_BalancerApi__*Announce_success',
+	env='{{ env }}'
+	} + constant_line(0, 5m));
+
+let avg_rate = avg(group_lines('sum', current_operations_rate));
+let description = 'Too much announces operations: '+ avg_rate;
+
+let is_red = avg_rate > 5;
+alarm_if(is_red);
+
+let is_yellow = avg_rate > 2;
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+	"id": "{{ id }}",
+	"name": "{{ name }}",
+	"description": "",
+	"groupByLabels": ["host"],
+	"state": "ACTIVE",
+	"annotations": {
+		"details": "[[expression.description]]",
+		"host": "{{ svm_fqdn() }}",
+		"avg_rate": "[[expression.avg_rate]]",
+		"service": "{{ serviceName }}",
+		"wiki": "https://docs.yandex-team.ru/yc-monitoring/cgw/{{ serviceName }}"
+	},
+	"type": {{ type_expression() }}
+{% endblock %}

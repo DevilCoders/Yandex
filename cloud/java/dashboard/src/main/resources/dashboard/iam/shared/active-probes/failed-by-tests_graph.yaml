@@ -1,0 +1,12 @@
+- type: graph
+  title: 'Fails by tests'
+  queries:
+      - params: { labels: 'sensor=fail_counter' }
+        select: { diff: [], drop_below: '0', group_by_labels: [ sum, service_name, test_name ], alias: '{{test_name}}' }
+  dataLinks:
+      - title: 'Error logs'
+        targetBlank: true
+          # Use a `query` url parameter as workaround until https://st.yandex-team.ru/YQLFRONT-983 is done
+        url: 'https://yql.yandex-team.ru/?query=USE%20hahn%3B%0A%24ts%20%3D%20CAST%28%28${__value.time}%2F1000%29%20AS%20Uint32%29%3B%0A%24service%3D%22${service_name:pipe}%22%3B%0A%24serie%3D%22${__series.name}%22%3B%0A%24to5m%20%3D%20%28%24t%29-%3E%7BRETURN%20DateTime%3A%3AFormat%28%22%25Y-%25m-%25dT%25H%3A%25M%3A%25S%22%29%28AddTimezone%28DateTime%3A%3AMakeDatetime%28DateTime%3A%3AStartOf%28DateTime%3A%3AFromSeconds%28CAST%28%24t%20AS%20Uint32%29%29%2C%20Interval%28%22PT5M%22%29%29%29%2C%20%22Europe%2FMoscow%22%29%29%7D%3B%0A%24toDay%20%3D%20%28%24t%29-%3E%7BRETURN%20DateTime%3A%3AFormat%28%22%25Y-%25m-%25d%22%29%28AddTimezone%28DateTime%3A%3AFromSeconds%28CAST%28%24t%20AS%20Uint32%29%29%2C%20%22Europe%2FMoscow%22%29%29%7D%3B%0A%24isOld%3D%24ts%3CDateTime%3A%3AToSeconds%28CurrentUtcTimestamp%28%29%29-158400%3B%0ASELECT%20%2A%0AFROM%20RANGE%28%22logs%2Fyc-iam-e2e-log%2F%22%20%7C%7C%20IF%28%24isOld%2C%221d%22%2C%22stream%2F5min%22%29%2CIF%28%24isOld%2C%24toDay%28%24ts-86400%29%2C%24to5m%28%24ts%29%29%2C%20IF%28%24isOld%2C%24toDay%28%24ts%2B86400%29%2C%24to5m%28%24ts%2B600%29%29%29%0AWHERE%20%60level%60%3D%22ERROR%22%0AAND%20%28String%3A%3AStartsWith%28%24service%2C%22%24%22%29%20OR%20%60service_name%60%20IN%20String%3A%3ASplitToList%28%24service%2C%20%22%7C%22%29%29%0AAND%20%60test_name%60%20LIKE%20%24serie%0AAND%20%60_logfeller_timestamp%60%20BETWEEN%20%24ts-59%20AND%20%24ts%2B59'
+  display: { legend: @1, sort: decreasing }
+  params: { width: @2 }

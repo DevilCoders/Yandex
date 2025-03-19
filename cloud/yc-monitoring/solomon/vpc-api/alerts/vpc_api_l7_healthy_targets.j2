@@ -1,0 +1,57 @@
+{% extends "vpc_api_base_alert.j2" %}
+
+{% set cluster = "cloud_{}_cpl".format(env) %}
+{% set service = "vpc-api-l7-healthy-targets" %}
+
+{% set windowSecs = 300 %}
+
+{% macro prog() %}
+{# FIXME(wronglink): remove alb_cluster_name filtration as there is no alb_cluster_name metrics anymore #}
+{# See: https://t.me/c/1426447463/10793 #}
+let targets_healthy = avg({
+    project=platform
+    ,cluster='{{ cluster }}'
+    ,service=api_envoy_tags_ma
+    ,name=alb_healthy
+    ,host='*'
+    ,backend=vpc_api_backend
+    ,alb_cluster_name=-
+});
+
+let targets_total = avg({
+    project=platform
+    ,cluster='{{ cluster }}'
+    ,service=api_envoy_tags_ma
+    ,name=alb_membership_total
+    ,host='*'
+    ,backend=vpc_api_backend
+    ,alb_cluster_name=-
+});
+
+let percentage = targets_healthy / targets_total * 100;
+let percentage_str = to_fixed(percentage, 1);
+
+// Alarm if there is less than 50% healthy targets
+alarm_if(percentage < 50);
+
+// Alarm if there is less than 95% healthy targets, as HC sometimes flap and don't give 100% of liveness
+warn_if(percentage < 95);
+{% endmacro %}
+
+{% block main %}
+    "name": "VPC API L7 healthy targets {{env}}",
+    "annotations": {
+        "percentage": "[[ expression.percentage ]]",
+        "description": "VPC API [[ expression.percentage_str ]]% L7 targets are healthy",
+        "windowSecs": "{{ windowSecs }}",
+        "host": "[[ labels.host ]]",
+        "tags": "vpc-api-l7-status, {{ env }}",
+        "service": "{{ service }}",
+        "graph": "https://solomon.cloud.yandex-team.ru/?project=platform&cluster={{ cluster }}&service=api_envoy_tags_ma&l.backend=vpc_api_backend&l.name=alb_healthy&l.alb_cluster_name=-&l.host=*&graph=auto",
+        "wiki": "{{ wiki_url(service) }}" 
+    },
+    "type": {{ type_expression() }},
+    "groupByLabels": [
+        "host"
+    ]
+{% endblock %}

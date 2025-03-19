@@ -1,0 +1,231 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.dataproc.manager.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/dataproc/manager/v1;dataproc_manager";
+
+// Dataproc manager service defifnition
+service DataprocManagerService {
+    // Sends a status report from a host
+    rpc Report (ReportRequest) returns (ReportReply) {}
+
+    // Gets a cluster health info by cid
+    rpc ClusterHealth (ClusterHealthRequest) returns (ClusterHealthReply) {}
+
+    // Gets a hosts health info by fqdn
+    rpc HostsHealth (HostsHealthRequest) returns (HostsHealthReply) {}
+
+    // Start decommission process for the specified hosts of the cluster
+    rpc Decommission (DecommissionRequest) returns (DecommissionReply) {}
+
+    // Get decommission status of the cluster
+    rpc DecommissionStatus (DecommissionStatusRequest) returns (DecommissionStatusReply) {}
+}
+
+message HbaseNodeInfo {
+    string name = 1;
+    int64 requests = 2;
+    int64 heap_size_mb = 3;
+    int64 max_heap_size_mb = 4;
+}
+
+message HbaseInfo {
+    bool available = 1;
+    int64 regions = 2;
+    int64 requests = 3;
+    double average_load = 4;
+    repeated HbaseNodeInfo live_nodes = 5;
+    repeated HbaseNodeInfo dead_nodes = 6;
+}
+
+message HDFSNodeInfo {
+    string name = 1;
+    int64 used = 2;
+    int64 remaining = 3;
+    int64 capacity = 4;
+    int64 num_blocks = 5;
+    string state = 6;
+}
+
+message HDFSInfo {
+    bool available = 1;
+    double percent_remaining = 2;
+    int64 used = 3;
+    int64 free = 4;
+    int64 total_blocks = 5;
+    int64 missing_blocks = 6;
+    int64 missing_blocks_replica_one = 7;
+    repeated HDFSNodeInfo live_nodes = 8;
+    repeated HDFSNodeInfo dead_nodes = 9;
+    reserved 10;
+    string safemode = 11;
+    repeated HDFSNodeInfo decommissioning_nodes = 12;
+    repeated HDFSNodeInfo decommissioned_nodes = 13;
+    repeated string requested_decommission_hosts = 14; // Actual list of decommission hosts in HDFS namenode memory
+}
+
+message HiveInfo {
+    bool available = 1;
+    int64 queries_succeeded = 2;
+    int64 queries_failed = 3;
+    int64 queries_executing = 4;
+    int64 sessions_open = 5;
+    int64 sessions_active = 6;
+}
+
+message YarnNodeInfo {
+    string name = 1;
+    string state = 2;
+    int64 num_containers = 3;
+    int64 used_memory_mb = 4;
+    int64 available_memory_mb = 5;
+    int64 update_time = 6;
+}
+
+message YarnInfo {
+    bool available = 1;
+    repeated YarnNodeInfo live_nodes = 2;
+    repeated string requested_decommission_hosts = 3; // Actual list of decommission hosts in Yarn resource manager memory
+}
+
+message ZookeeperInfo {
+    bool alive = 1;
+}
+
+message OozieInfo {
+    bool alive = 1;
+}
+
+message LivyInfo {
+    bool alive = 1;
+}
+
+enum InitActsState {
+    INIT_ACTS_STATE_UNSPECIFIED = 0; // No init acts on cluster
+    FAILED = 1; // At least one failed init act
+    SUCCESSFUL = 2; // All init acts succeeded
+    IN_PROGRESS = 3; // Some init acts not finished
+}
+
+message InitActs {
+    InitActsState state = 1;
+    // fqdns of nodes for error message
+    repeated string fqdns = 2;
+}
+
+message Info {
+    HDFSInfo hdfs = 1;
+    YarnInfo yarn = 2;
+    HiveInfo hive = 3;
+    ZookeeperInfo zookeeper = 4;
+    HbaseInfo hbase = 5;
+    OozieInfo oozie = 6;
+    // Report count is incremented every time report is sent by Dataproc Agent.
+    // So Worker can use this property to make sure that Dataproc Agent got data sent by Worker through Dataproc Manager
+    // for synchronization purposes
+    int64 report_count = 7;
+    LivyInfo livy = 8;
+    InitActs init_acts = 9;
+}
+
+// The request message containing the host status report.
+message ReportRequest {
+    string cid = 1;
+    int64 topology_revision = 2;
+    Info info = 3;
+    google.protobuf.Timestamp collected_at = 4;
+}
+
+// The response message containing the agent commands to apply on host.
+message ReportReply {
+    int64 decommission_timeout = 1;
+    repeated string yarn_hosts_to_decommission = 2;
+    repeated string hdfs_hosts_to_decommission = 3;
+}
+
+enum Health {
+    HEALTH_UNSPECIFIED = 0; // Object is in unknown state (we have no data)
+    ALIVE = 1; // Object is alive and well (all hosts are alive)
+    DEAD = 2; // Object is inoperable (it cannot perform any of its essential functions)
+    DEGRADED = 3; // Object is partially alive (it can perform some of its essential functions)
+    DECOMMISSIONING = 4; // Object is in the process of decommission (making it safe to stop or remove)
+    DECOMMISSIONED = 5; // Object is decommissioned (safe to stop or remove)
+}
+
+enum Service {
+    SERVICE_UNSPECIFIED = 0;
+    HDFS = 1;
+    YARN = 2;
+    MAPREDUCE = 3;
+    HIVE = 4;
+    TEZ = 5;
+    ZOOKEEPER = 6;
+    HBASE = 7;
+    SQOOP = 8;
+    FLUME = 9;
+    SPARK = 10;
+    ZEPPELIN = 11;
+    OOZIE = 12;
+    LIVY = 13;
+}
+
+message ClusterHealthRequest {
+    string cid = 1;
+}
+
+message ServiceHealth {
+    Service service = 1;
+    Health health = 2;
+    string explanation = 3;
+    int64 update_time = 4;
+}
+
+message ClusterHealthReply {
+    string cid = 1;
+    Health health = 2;
+    repeated ServiceHealth service_health = 3;
+    string explanation = 4;
+    bool hdfs_in_safemode = 5;
+    // Report count is incremented every time report is sent by Dataproc Agent.
+    // So Worker can use this property to make sure that Dataproc Agent got data sent by Worker through Dataproc Manager
+    // for synchronization purposes
+    int64 report_count = 6;
+    int64 update_time = 7;
+    InitActs init_acts = 8;
+}
+
+message HostsHealthRequest {
+    string cid = 1;
+    repeated string fqdns = 2;
+}
+
+message HostHealth {
+    string fqdn = 1;
+    Health health = 2;
+    repeated ServiceHealth service_health = 3;
+}
+
+message HostsHealthReply {
+    repeated HostHealth hosts_health = 1;
+}
+
+message DecommissionRequest {
+    string cid = 1;
+    int64 timeout = 2;
+    repeated string yarn_hosts = 3;
+    repeated string hdfs_hosts = 4;
+}
+
+message DecommissionReply {
+}
+
+message DecommissionStatusRequest {
+    string cid = 1;
+}
+
+message DecommissionStatusReply {
+    repeated string yarn_requested_decommission_hosts = 1;
+    repeated string hdfs_requested_decommission_hosts = 2;
+}

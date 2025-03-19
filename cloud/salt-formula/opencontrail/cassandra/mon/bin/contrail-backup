@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+# -*-coding: utf-8 -*-
+# vim: sw=4 ts=4 expandtab ai
+import datetime
+import re
+import subprocess
+import sys
+import yaml
+
+STATUS_OK = 0
+STATUS_WARN = 1
+STATUS_CRIT = 2
+
+CHECK_NAME = "contrail-backup"
+
+CONFIG_FILE = "/home/monitor/agents/etc/contrail-backup.conf"
+BACKUP_JOB_LOG = "/var/log/cassandra/contrail-backup.log"
+
+
+def load_config():
+    with open(CONFIG_FILE) as f:
+        return yaml.load(f)
+
+
+def report_status(status, desc=""):
+    print("PASSIVE-CHECK:{};{};{}".format(CHECK_NAME, status, desc))
+    sys.exit(0)
+
+
+def get_backup_info():
+    run_result = subprocess.run(["/usr/bin/yc-contrail-backup", "ls-s3"],
+                                check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    output = run_result.stderr.decode("utf-8")
+
+    backups_count = 0
+    last_backup = None
+
+    for match in re.finditer(r"(\d{4}\d{2}\d{2}-\d{2}\d{2}\d{2})\.tgz\.gpg", output):
+        backup_time = datetime.datetime.strptime(match.group(1), "%Y%m%d-%H%M%S")
+        backups_count += 1
+        if last_backup is None or backup_time > last_backup:
+            last_backup = backup_time
+
+    return backups_count, last_backup
+
+
+def main():
+    try:
+        max_backup_age_hours = load_config()["max_backup_age_hours"]
+    except OSError as e:
+        report_status(STATUS_WARN, "Cannot load config: {}".format(e))
+        return
+
+    try:
+        backups_count, last_backup = get_backup_info()
+    except subprocess.CalledProcessError as e:
+        report_status(STATUS_WARN, "S3 backup listing has failed: {}".format(e))
+        return
+
+    if backups_count == 0:
+        report_status(STATUS_CRIT, "No backups in S3. Check {}".format(BACKUP_JOB_LOG))
+
+    last_backup_age_hours = (datetime.datetime.now() - last_backup).total_seconds() / 3600
+    last_backup_str = last_backup.strftime("%d.%m.%Y at %H:%M:%S")
+
+    if last_backup_age_hours > max_backup_age_hours:
+        report_status(STATUS_CRIT, "Latest S3 backup is too old: {} ({} hours ago > {}). Check {}".format(
+            last_backup_str, int(last_backup_age_hours), max_backup_age_hours, BACKUP_JOB_LOG))
+    else:
+        report_status(STATUS_OK, "Latest S3 backup: {} ({} hours ago <= {}), total backups count: {}".format(
+            last_backup_str, int(last_backup_age_hours), max_backup_age_hours, backups_count))
+
+
+if __name__ == "__main__":
+    main()

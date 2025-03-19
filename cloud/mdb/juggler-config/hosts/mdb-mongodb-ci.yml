@@ -1,0 +1,30 @@
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    namespace: dbaas.mongodb
+    host: mdb-mongodb-ci
+
+  tasks:
+    - juggler_facts: jserver_api=http://juggler-api.search.yandex.net:8998/api
+    - include_vars: ../configs/nonrelational_dbs_resps.yml
+    - include_vars: ../configs/notifications_nocalls.yml
+    - include_vars: ../configs/nosql_tags.yml
+
+    - juggler_check:
+        host: "{{ host }}"
+        service: mongodb-master-ci
+        namespace: "{{ namespace }}"
+        aggregator: logic_or
+        aggregator_kwargs:
+          mode: 'WARN'
+        notifications: "{{ notifications }}"
+        refresh_time: 600
+        ttl: 3600
+        children:
+            host: ci01k.db.yandex.net
+            service: mongodb_master_ci
+        __force__: True
+
+  post_tasks:
+    - juggler_cleanup: jcheck_mark={{ host }}

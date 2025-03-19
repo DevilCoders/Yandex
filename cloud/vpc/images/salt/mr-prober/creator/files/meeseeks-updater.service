@@ -1,0 +1,43 @@
+[Unit]
+Description=Meeseeks Compute Node List Updater
+After=docker.service
+Requires=docker.service
+After=skm.service
+Requires=skm.service
+ConditionPathExists=/etc/secrets/mr_prober_sa_key.prod.json
+ConditionPathExists=/etc/secrets/mr_prober_sa_key.json
+ConditionPathExists=/etc/secrets/mr_prober_api_key
+
+[Service]
+EnvironmentFile=/etc/default/mr_prober
+TimeoutStartSec=0
+
+# Authorize in cr.yandex
+ExecStartPre=/bin/bash -c "cat /etc/secrets/mr_prober_sa_key.prod.json | docker login --username json_key --password-stdin cr.yandex"
+
+# Pull the docker image
+ExecStartPre=/usr/bin/docker pull cr.yandex/crpni6s1s1aujltb5vv7/creator:{{ version }}
+
+# Start the container!
+ExecStart=/bin/bash -c '/usr/bin/docker run --rm \
+                        -v /etc/secrets:/etc/secrets \
+                        --name %n \
+                        --log-opt max-size=1000m \
+                        --env-file /etc/default/mr_prober \
+                        -e "API_KEY=$(cat /etc/secrets/mr_prober_api_key)" \
+                        --network host \
+                        cr.yandex/crpni6s1s1aujltb5vv7/creator:{{ version }} \
+                        python /mr_prober/tools/meeseeks/main.py -vv \
+                        update-compute-nodes-list \
+                        --grpc-iam-api-endpoint $GRPC_IAM_API_ENDPOINT \
+                        --grpc-compute-api-endpoint $GRPC_COMPUTE_API_ENDPOINT \
+                        --api-endpoint $MR_PROBER_API_ENDPOINT \
+                        --authorized-key-file /etc/secrets/mr_prober_sa_key.json \
+                        $MEESEEKS_COMPUTE_NODE_PREFIXES_CLI_PARAM \
+                        --apply \
+                       '
+
+ExecStop=/bin/bash -c 'docker ps -q --filter "name=%n" | grep -q . && /usr/bin/docker stop --time 3 %n || true'
+
+[Install]
+WantedBy=multi-user.target

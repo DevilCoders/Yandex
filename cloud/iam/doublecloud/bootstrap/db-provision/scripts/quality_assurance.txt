@@ -1,0 +1,112 @@
+#resource "resource_ycp_organization_manager_organization" "dc_quality_assurance" {
+#  name        = "dc-quality-assurance"
+#  title       = "dc-quality-assurance"
+#  description = "Used for DoubleCloud Quality Assurance tests"
+#}
+
+######### YC ######
+ORG_ID=fatds38f6gcn3s03une9
+FEDERATION_ID=fatao77mamoghtva1e50
+CLOUD_ID=aovmltlu9rid87nnbplb
+USER_ID_QA_BOT_DL=___
+USER_ID_QA_BOT_IAM=___
+
+######### PREPROD ######
+ORG_ID=fsfs98s31kvdfehbmu6v
+FEDERATION_ID=fsfkij0s4urc9s76bs0p
+CLOUD_ID=ecvm1k32sarj3981t8fu
+CLOUD_ID_IAM=ecvri7v9urrldlj9vdei
+USER_ID_QA_BOT_DL=esof9ummijsot0u6rfgd
+USER_ID_QA_BOT_IAM=eso2q4am5e5nudvhnp41
+
+######### PROD ######
+ORG_ID=comdrq1djkdcc5lbvgpn
+FEDERATION_ID=comrakkj0rr0tv42028b
+CLOUD_ID=abc0rd9cqjspl17th0p3
+CLOUD_ID_IAM=abck4vkjv4n0lu4vbbhv
+USER_ID_QA_BOT_DL=accktq42e29o1kf4kvku
+USER_ID_QA_BOT_IAM=accpur1l8g2geb6cri93
+
+
+
+
+ycp --profile datacloud-aws-preprod-sync organization-manager organization create -r - <<R
+name: "dc-quality-assurance"
+title: "dc-quality-assurance"
+description: "Used for DoubleCloud Quality Assurance tests"
+R
+
+
+ycp --profile datacloud-aws-preprod-sync organization-manager organization get ${ORG_ID?}
+
+
+ycp --profile datacloud-aws-preprod-sync organization-manager oauth federation list -r - <<< "organization_id: ${ORG_ID?}"
+
+
+ycp --profile datacloud-aws-preprod-sync organization-manager oauth federation create -r - <<R
+organization_id: "${ORG_ID?}"
+client_id: "466773600949-rt8rh1d7q231s4tvptbtk53k2m7jo8eo.apps.googleusercontent.com"
+client_secret: "XXX"
+authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth"
+auto_create_account_on_login: true
+client_authentication: "client_secret_post"
+cookie_max_age: "43200s"
+default_claims_mapping:
+  email: email
+  ext_id: sub
+  name: name
+  picture: picture
+  preferred_username: email
+description: "Used for DoubleCloud Quality Assurance tests"
+is_global: false
+name: "dc-quality-assurance"
+scopes:
+- openid
+- profile
+- email
+token_endpoint: "https://oauth2.googleapis.com/token"
+userinfo_endpoint: "https://openidconnect.googleapis.com/v1/userinfo"
+R
+
+
+
+ycp --profile datacloud-aws-preprod-sync resource-manager console cloud create -r - <<R
+organization_id: "${ORG_ID?}"
+name: "dc-quality-assurance"
+description: "Used for DoubleCloud Quality Assurance tests"
+R
+
+ycp --profile datacloud-aws-preprod-sync resource-manager console cloud create -r - <<R
+organization_id: "${ORG_ID?}"
+name: "iam-dc-quality-assurance"
+description: "Used for DoubleCloud Quality Assurance IAM tests"
+R
+
+ycp --profile datacloud-aws-preprod-sync resource-manager cloud update-access-bindings -r - <<R
+resource_id: ${CLOUD_ID?}
+access_binding_deltas:
+- action: ADD
+  access_binding:
+    role_id: admin
+    subject:
+      type: federatedUser
+      id: ${USER_ID_QA_BOT_DL?}
+private_call: true
+R
+
+ycp --profile datacloud-aws-preprod-sync resource-manager cloud list-access-bindings -r - <<< "resource_id: ${CLOUD_ID?}"
+
+
+ycp --profile datacloud-aws-preprod-sync resource-manager cloud update-access-bindings -r - <<R
+resource_id: ${CLOUD_ID_IAM?}
+access_binding_deltas:
+- action: ADD
+  access_binding:
+    role_id: admin
+    subject:
+      type: federatedUser
+      id: ${USER_ID_QA_BOT_IAM?}
+private_call: true
+R
+
+ycp --profile datacloud-aws-preprod-sync resource-manager cloud list-access-bindings -r - <<< "resource_id: ${CLOUD_ID_IAM?}"

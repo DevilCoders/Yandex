@@ -1,0 +1,540 @@
+syntax = "proto3";
+
+package snapshot_rpc;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+
+service SnapshotService {
+    // Get snapshot chunk map.
+    rpc GetMap(MapRequest) returns (stream MapResponse) {}
+    // Create snapshot.
+    rpc Create(CreateRequest) returns (CreateResponse) {}
+    // Read snapshot chunk data.
+    rpc Read(ReadRequest) returns (ReadResponse) {}
+    // Write snapshot chunk data.
+    rpc Write(WriteRequest) returns (Status) {}
+    // Finalize snapshot creation.
+    rpc Commit(CommitRequest) returns (Status) {}
+    // Move data from one place to another.
+    rpc Move(MoveRequest) returns (Status) {}
+    // Shallow-copy snapshot (copy references without copying data).
+    rpc Copy(CopyRequest) returns (CopyResponse) {}
+    // Get task status.
+    rpc GetTaskStatus(GetTaskStatusRequest) returns (TaskStatus) {}
+    // Cancel running task.
+    rpc CancelTask(CancelTaskRequest) returns (Status) {}
+    // Delete task to free resources.
+    rpc DeleteTask(DeleteTaskRequest) returns (Status) {}
+    // List children changed due to snapshot removal.
+    rpc ListChangedChildren(ChangedChildrenListRequest) returns (ChangedChildrenList) {}
+    // Healthcheck for balancer
+    rpc Ping(Status) returns (Status) {
+    }
+
+    // Delete snapshot.
+    rpc Delete(DeleteRequest) returns (Status) {
+    }
+    // Get snapshot list by parameters.
+    //
+    // There are two modes of operation:
+    // 1. (CURSOR) Neither "limit" nor "sort" is passed.
+    //    You get a predefined number of snapshots.
+    //    You also get "next_cursor", which can be passed to subsequent calls to get next part of data and a new cursor.
+    //
+    //    NOTE: all query parameters must be passed as before, along with cursor
+    //
+    //    Example:
+    //        Request: GET /v1/projects/P1/snapshots?search_prefix=yyy
+    //        Response: {"next_cursor":"ccc", "result": [...]}
+    //        Request: GET /v1/projects/P1/snapshots?search_prefix=yyy&cursor=ccc
+    //
+    // 2. (LIMIT) "limit" is specified. NOTE: "sort" requires "limit".
+    //    You get up to "limit" snapshots sorted by "sort".
+    //    If there are more snapshots matching the criteria then "has_more" is set to true.
+    //    You can increase the limit for subsequent calls.
+    rpc List(ListRequest) returns (SnapshotList) {
+    }
+    // Get the list of base snapshots.
+    //
+    // Get the list of base and differential snapshots
+    // starting from direct predecessor.
+    rpc ListBases(BaseListRequest) returns (SnapshotList) {
+    }
+    // Import snapshot from S3.
+    //
+    // You can import a snapshot in different formats.
+    // Snapshot will be converted to our format.
+    //
+    // NOTE: This request only starts conversion process.
+    //       You must check freshly created snapshot until its "state"."code"
+    //       changes from "creating" to "ready" or "failed".
+    rpc Convert(ConvertRequest) returns (ConvertResponse) {
+    }
+    // Get snapshot properties.
+    //
+    // Get snapshot properties by id.
+    rpc Info(InfoRequest) returns (SnapshotInfo) {
+    }
+    // Update specified fields in snapshot
+    rpc Update(UpdateRequest) returns (Status) {
+    }
+    // Verify checksum for snapshot and chunks
+    rpc Verify(VerifyRequest) returns (VerifyReport) {
+    }
+}
+
+
+message Coord {
+    int64 offset = 1;
+    int64 chunksize = 2;
+}
+
+message MapRequest {
+    string id = 1;
+}
+
+message MapResponse {
+    message Chunk {
+        string hashsum = 1;
+        int64 offset = 2;
+        int64 chunksize = 3;
+        bool zero = 4;
+    }
+    repeated Chunk chunks = 1 ;
+}
+
+message CreateRequest {
+    // Generate new if empty
+    string id = 13;
+    string metadata = 1;
+    string base = 2;
+    string base_project_id = 9;
+    int64 size = 3;
+    string organization = 4;
+    string project_id = 5;
+    string disk = 6;
+    string name = 11;
+    string description = 7;
+    string product_id = 8;
+    string image_id = 12;
+    bool public = 10;
+}
+
+message CreateResponse {
+    string id = 1;
+}
+
+// ReadRequest is to read a chunk with id
+message ReadRequest {
+    // snapshot ID
+    string id = 1;
+
+    Coord coord = 2;
+}
+
+message ReadResponse {
+    // chunk body
+    bytes data = 1;
+}
+
+message WriteRequest {
+    string id = 1;
+
+    Coord coord = 2;
+    bytes data = 3;
+    float progress = 4;
+}
+
+message CommitRequest {
+    string id = 1;
+}
+
+
+message Status {
+}
+
+// Delete params
+message DeleteParams {
+    // ID of task to track progress
+    string task_id = 1;
+    // Allow auto-stop on heartbeat timeout.
+    bool heartbeat_enabled = 2;
+    // Timeout for auto-stop.
+    int32 heartbeat_timeout_ms = 3;
+}
+
+// Snapshot deletion request.
+message DeleteRequest {
+    // ID of snapshot to delete.
+    string id = 1;
+    // Allows to clear snapshots in 'deleting' status.
+    bool skip_status_check = 3;
+    // Task params
+    DeleteParams params = 4;
+}
+
+// Filters, limit and sorting order for snapshot listing.
+message ListRequest {
+    // Maximum number of entries to return.
+    int64 limit = 1;
+    // Cursor for next part of data. Incompatible with "limit" and "sort".
+    string cursor = 2;
+    // Snapshot "disk" to filter by.
+    string disk = 3;
+    // Snapshot "project_id" to filter by.
+    string project_id = 4;
+
+    google.protobuf.Timestamp billing_start = 5;
+    google.protobuf.Timestamp billing_end = 6;
+
+    // Prefix of snapshot "name" and "description" to filter by.
+    string search_prefix = 7;
+    // Substring of snapshot "name" and "description" to filter by.
+    string search_full = 8;
+    // Minimum snapshot "created" to filter by.
+    google.protobuf.Timestamp created_after = 9;
+    // Maximum snapshot "created" to filter by.
+    google.protobuf.Timestamp created_before = 10;
+    // Sorting order.
+    //
+    // Format: [-]<field>(,[-]<field>)*
+    //
+    //<field> is on of "created","real_size","name","description".
+    string sort = 11;
+}
+
+// Change in snapshot "real_size".
+message Change {
+    // New "real_size".
+    int64 real_size = 1;
+    // Timestamp when a change occured.
+    google.protobuf.Timestamp timestamp = 2;
+}
+
+// Snapshot state and description.
+message State {
+    // State code
+    //
+    // One of
+    // "creating"
+    // "ready"
+    // "failed"
+    // "deleting" (system state)
+    // "deleted" (system state)
+    string code = 1;
+    // Human-readable state description.
+    //
+    // Contains:
+    // - error description for failed snapshots.
+    // - progress description for snapshot being created.
+    string description = 2;
+    // For snapshots being created, creation progress (0..100) is here.
+    float progress = 3;
+}
+
+// Snapshot properties.
+message SnapshotInfo {
+    // Snapshot ID.
+    string id = 1;
+    // Snapshot metadata.
+    string metadata = 2;
+    // Direct predecessor for incremental snapshots.
+    string base = 3;
+    // Project of direct predecessor.
+    string base_project_id = 16;
+    // Snapshot virtual size, i.e. the minimum amount of disk space needed to restore.
+    int64 size = 4;
+    // Organization owning snapshot.
+    string organization = 5;
+    // Project owning snapshot.
+    string project_id = 6;
+    // ID of disk from which the snapshot was created.
+    string disk = 7;
+    // Creation timestamp.
+    google.protobuf.Timestamp created = 8;
+    // Snapshot real size, i.e. the amount of disk space occupied on storage.
+    int64 real_size = 9;
+    // Whether or not snapshot is publicly visible.
+    bool public = 10;
+    // List of projects the snapshot is shared with.
+    repeated string shared_with = 11;
+    // Changes in snapshot real size.
+    repeated Change changes = 12;
+    // User-defined snapshot name.
+    string name = 17;
+    // User-defined snapshot description.
+    string description = 13;
+    // Snapshot product ID.
+    string product_id = 14;
+    // Back reference to image ID.
+    string image_id = 18;
+    State state = 15;
+}
+
+// List of snapshots mathing criteria.
+message SnapshotList {
+    // Actual data
+    repeated SnapshotInfo result = 1;
+    // For LIMIT requests, this field shows whether there is more data mathing the criteria.
+    bool has_more = 2;
+    // For CURSOR requests, this is the "cursor" to get next part of data.
+    string next_cursor = 3;
+}
+
+// Source image and destination snapshot metadata.
+message ConvertRequest {
+    // Destination snapshot ID (generate new if empty).
+    string id = 13;
+    // Source image S3 bucket (incompatible with url).
+    string bucket = 1;
+    // Source image S3 key (incompatible with url).
+    string key = 2;
+    // Source image url (incompatible with S3 bucket/key).
+    string url = 9;
+    // Source image format. Leave empty for auto-detection.
+    string format = 3;
+    // Destination snapshot metadata.
+    string metadata = 4;
+    // Destination snapshot organization.
+    string organization = 5;
+    // Destination snapshot project_id.
+    string project_id = 6;
+    // Snapshot name.
+    string name = 11;
+    // Destination snapshot description.
+    string description = 7;
+    // Destination snapshot product ID.
+    string product_id = 8;
+    // Destination snapshot image ID.
+    string image_id = 12;
+    // Destination snapshot public.
+    bool public = 10;
+}
+
+// Result of import request processing.
+message ConvertResponse {
+    // ID of newly created snapshot.
+    string id = 1;
+}
+
+// Request for specific snapshot parameters.
+message InfoRequest {
+    // ID of requested snapshot.
+    string id = 1;
+    // show deleting/deleted snapshots.
+    bool skip_status_check = 3;
+}
+
+// Request for list of snapshot predecessors.
+message BaseListRequest {
+    // Snapshot ID whose predessors to return.
+    string id = 2;
+    // Maximum number of entries to return.
+    int64 limit = 1;
+}
+
+// Request for update of specific snapshot.
+message UpdateRequest {
+    // ID of requested snapshot.
+    string id = 1;
+
+    // New snapshot metadata.
+    google.protobuf.StringValue metadata = 2;
+    // New snapshot description.
+    google.protobuf.StringValue description = 3;
+    // New snapshot visibility.
+    google.protobuf.BoolValue public = 5;
+}
+
+// Snapshot verification request.
+message VerifyRequest {
+    // ID of snapshot to verify.
+    string id = 1;
+    // Enable chunks verification.
+    bool full = 3;
+}
+
+// Corrupted chunk information.
+message ChunkMismatch {
+    // Offset of chunk in snapshot.
+    int64 offset = 1;
+    // ID of chunk in database.
+    string chunk_id = 2;
+    // Error details.
+    string details = 3;
+}
+
+// Snapshot verification report.
+message VerifyReport {
+    // Snapshot ID.
+    string id = 1;
+    // Short result description.
+    string status = 2;
+    // Detailed result description.
+    string details = 3;
+    // Snapshot checksum matched.
+    bool checksum_matched = 4;
+    // Snapshot chunk size.
+    int64 chunk_size = 5;
+    // Number of chunks.
+    int64 total_chunks = 6;
+    // Number of empty (non-filled, read as zero) chunks.
+    int64 empty_chunks = 7;
+    // Number of zero (filled) chunks.
+    int64 zero_chunks = 8;
+    // Number of data chunks.
+    int64 data_chunks = 9;
+    // Chunk corruption messages.
+    repeated ChunkMismatch mismatches = 10;
+}
+
+// Shallow copy params
+message CopyParams {
+    // ID of task to track progress
+    string task_id = 1;
+    // Allow auto-stop on heartbeat timeout.
+    bool heartbeat_enabled = 2;
+    // Timeout for auto-stop.
+    int32 heartbeat_timeout_ms = 3;
+}
+
+// Snapshot shallow-copy request.
+message CopyRequest {
+    // Source snapshot ID.
+    string id = 1;
+    // Destination snapshot ID (generate new if empty).
+    string target_id = 7;
+    // Destination project ID.
+    string target_project_id = 3;
+    // Name of new snapshot.
+    string name = 5;
+    // Image ID of new snapshot.
+    string image_id = 6;
+    // Task params.
+    CopyParams params = 8;
+}
+
+// Snapshot shallow-copy response.
+message CopyResponse {
+    // Result snapshot ID.
+    string id = 1;
+}
+
+message SnapshotMoveSrc {
+    string snapshot_id = 1;
+}
+
+message SnapshotMoveDst {
+    string snapshot_id = 1;
+    string project_id = 2;
+    bool create = 3;
+    bool commit = 4;
+    bool fail = 5;
+    string name = 6;
+    string image_id = 7;
+}
+
+message NbsMoveSrc {
+    string cluster_id = 1;
+    string disk_id = 2;
+    string first_checkpoint_id = 3;
+    string last_checkpoint_id = 4;
+}
+
+message NbsMoveDst {
+    string cluster_id = 1;
+    string disk_id = 2;
+    bool mount = 3;
+    string mount_token = 4;
+}
+
+message NullMoveSrc {
+    int64 size = 1;
+    int64 block_size = 2;
+    bool random = 3;
+}
+
+message NullMoveDst {
+    int64 size = 1;
+    int64 block_size = 2;
+}
+
+// Move-fashioned replacement for convert
+message UrlMoveSrc {
+    // Source image S3 bucket (incompatible with url).
+    string bucket = 1;
+    // Source image S3 key (incompatible with url).
+    string key = 2;
+    // Source image url (incompatible with S3 bucket/key).
+    string url = 3;
+    // Source image format. Leave empty for auto-detection.
+    string format = 4;
+}
+
+message MoveParams {
+    int64 offset = 1;
+    bool skip_zeroes = 2;
+    bool skip_nonexistent = 7;
+    int64 block_size = 3;
+    string task_id = 4;
+    bool heartbeat_enabled = 5;
+    int32 heartbeat_timeout_ms = 6;
+}
+
+message MoveRequest {
+    oneof src {
+        SnapshotMoveSrc snapshot_src = 1;
+        NbsMoveSrc nbs_src = 2;
+        NullMoveSrc null_src = 6;
+        UrlMoveSrc url_src = 8;
+    }
+    oneof dst {
+        SnapshotMoveDst snapshot_dst = 3;
+        NbsMoveDst nbs_dst = 4;
+        NullMoveDst null_dst = 7;
+    }
+    MoveParams params = 5;
+}
+
+message GetTaskStatusRequest{
+    string task_id = 1;
+}
+
+message GrpcStatus {
+    int32 code = 1;
+    string message = 2;
+}
+
+message TaskStatus {
+    bool finished = 1;
+    bool success = 2;
+    float progress = 3;
+    int64 offset = 4;
+    GrpcStatus error = 5;
+}
+
+message CancelTaskRequest {
+    string task_id = 1;
+}
+
+message DeleteTaskRequest {
+    string task_id = 1;
+}
+
+message ChangedChildrenListRequest {
+    string id = 1;
+}
+
+message ChangedChildrenList {
+    message ChangedChild {
+        // Changed snapshot ID.
+        string id = 1;
+        // Timestamp when a change occured.
+        google.protobuf.Timestamp timestamp = 2;
+        // New real size.
+        int64 real_size = 3;
+    }
+    repeated ChangedChild changed_children = 1;
+}

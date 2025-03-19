@@ -1,0 +1,239 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.serverless.containers.v1;
+
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/wrappers.proto";
+
+import "yandex/cloud/api/operation.proto";
+import "yandex/cloud/priv/access/access.proto";
+import "yandex/cloud/priv/serverless/containers/v1/container.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+import "yandex/cloud/priv/validation.proto";
+import "yandex/cloud/priv/sensitive.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/serverless/containers/v1;containers";
+option java_outer_classname = "PSCS";
+
+service ContainerService {
+  rpc Get (GetContainerRequest) returns (Container);
+
+  rpc List (ListContainersRequest) returns (ListContainersResponse);
+
+  rpc Create (CreateContainerRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "CreateContainerMetadata"
+      response: "Container"
+    };
+  };
+
+  rpc Update (UpdateContainerRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateContainerMetadata"
+      response: "Container"
+    };
+  };
+
+  rpc Delete (DeleteContainerRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeleteContainerMetadata"
+      response: "google.protobuf.Empty"
+    };
+  };
+
+  rpc DeployRevision (DeployContainerRevisionRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeployContainerRevisionMetadata"
+      response: "Revision"
+    };
+  }
+
+  rpc Rollback (RollbackContainerRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "RollbackContainerMetadata"
+      response: "Container"
+    };
+  }
+
+  rpc GetRevision (GetContainerRevisionRequest) returns (Revision);
+
+  rpc ListRevisions (ListContainersRevisionsRequest) returns (ListContainersRevisionsResponse);
+
+  rpc ListOperations (ListContainerOperationsRequest) returns (ListContainerOperationsResponse);
+
+  rpc ListAccessBindings (access.ListAccessBindingsRequest) returns (access.ListAccessBindingsResponse);
+
+  rpc SetAccessBindings (access.SetAccessBindingsRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "access.SetAccessBindingsMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+
+  rpc UpdateAccessBindings (access.UpdateAccessBindingsRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "access.UpdateAccessBindingsMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+}
+
+message GetContainerRequest {
+  string container_id = 1 [(required) = true];
+}
+
+message ListContainersRequest {
+  string folder_id = 1 [(required) = true];
+  int64 page_size = 2;
+  string page_token = 3;
+  // supported fields for filter:
+  // name
+  // created_at
+  string filter = 4;
+}
+
+message ListContainersResponse {
+  repeated Container containers = 1;
+  string next_page_token = 2;
+}
+
+message CreateContainerRequest {
+  string folder_id = 1 [(required) = true];
+  string name = 2 [(pattern) = "|[a-z][-a-z0-9]{1,61}[a-z0-9]"];
+  string description = 3 [(length) = "<=256"];
+  map<string, string> labels = 4 [(size) = "<=64", (length) = "<=63", (pattern) = "[-_0-9a-z]*", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_0-9a-z]*"];
+  string region_id = 5;
+}
+
+message CreateContainerMetadata {
+  string container_id = 1;
+}
+
+message UpdateContainerRequest {
+  string container_id = 1 [(required) = true];
+  google.protobuf.FieldMask update_mask = 2;
+
+  string name = 3 [(pattern) = "|[a-z][-a-z0-9]{1,61}[a-z0-9]"];
+  string description = 4 [(length) = "<=256"];
+  map<string, string> labels = 5 [(size) = "<=64", (length) = "<=63", (pattern) = "[-_0-9a-z]*", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_0-9a-z]*"];
+}
+
+message UpdateContainerMetadata {
+  string container_id = 1;
+}
+
+message DeleteContainerRequest {
+  string container_id = 1 [(required) = true];
+}
+
+message DeleteContainerMetadata {
+  string container_id = 1;
+}
+
+message GetContainerRevisionRequest {
+  string container_revision_id = 1 [(required) = true];
+}
+
+message ListContainersRevisionsRequest {
+  oneof id {
+    option (exactly_one) = true;
+    string folder_id = 1;
+    string container_id = 2;
+  };
+  int64 page_size = 3 [(value) = "0-1000"];
+  string page_token = 4 [(length) = "<=100"];
+  // supported fields for filter
+  // status
+  // created_at
+  // service_account_id
+  string filter = 5 [(length) = "<=1000"];
+}
+
+message ListContainersRevisionsResponse {
+  repeated Revision revisions = 1;
+  string next_page_token = 2;
+}
+
+
+message DeployContainerRevisionRequest {
+  string container_id = 1 [(required) = true];
+  string description = 3;
+  Resources resources = 5 [(required) = true];
+  google.protobuf.Duration execution_timeout = 6 [(value) = "<=600s"];
+  string service_account_id = 7;
+  ImageSpec image_spec = 8 [(required) = true];
+  int64 concurrency = 9;
+  Connectivity connectivity = 10;
+  ProvisionPolicy provision_policy = 11;
+
+  // If set, deployment_policy will specify rules for gradual rollout of the
+  // traffic to new revision.
+  // If not set, traffic will switch to the new revision right away.
+  DeploymentPolicy deployment_policy = 12;
+  repeated Secret secrets = 13;
+}
+
+message ImageSpec {
+  string image_url = 1 [(required) = true];
+  Command command = 2;
+  Args args = 3;
+  map<string, string> environment = 4 [(length) = "<=4096", (map_key).pattern = "[a-zA-Z][a-zA-Z0-9_]*", (sensitive) = true];
+  string working_dir = 5;
+  int64 port = 6 [(value) = "0-65535"];
+}
+
+// TODO: This is a draft and is highly likely subject to change.
+message DeploymentPolicy {
+  // Timeout of a deployment. If timeout occurs -- all traffic shifts to the new revision.
+  google.protobuf.Duration deployment_timeout = 1 [(value) = "<=18000s"];
+
+  // If set to true, the deployment process waits until all `min_instances` of
+  // the new revision are provisioned.
+  bool instances_provisioned = 2;
+
+  // If set, the deployment process will monitor the error rate of the new revision.
+  // If error rate exceeds max_error_rate, the deployment is aborted.
+  google.protobuf.Int64Value max_error_rate = 3 [(value) = "0-100"];
+
+  // Specifies how many requests should be made to the new revision in order for it
+  // to be fully rolled out.
+  int64 min_requests = 4;
+}
+
+message DeployContainerRevisionMetadata {
+  string container_revision_id = 1;
+}
+
+message RollbackContainerRequest {
+  string container_id = 1 [(required) = true];
+  string revision_id = 2 [(required) = true];
+
+  // If set, deployment_policy will specify rules for gradual rollout of the
+  // traffic to new revision.
+  // If not set, traffic will switch to the new revision right away.
+  DeploymentPolicy deployment_policy = 3;
+}
+
+message RollbackContainerMetadata {
+  string container_id = 1;
+  string revision_id = 2;
+}
+
+message ListContainerOperationsRequest {
+  string container_id = 1 [(required) = true];
+  int64 page_size = 2 [(value) = "0-1000"];
+  string page_token = 3 [(length) = "<=100"];
+  // supported attributes:
+  // description
+  // created_at
+  // modified_at
+  // created_by
+  // done
+  string filter = 4 [(length) = "<=1000"];
+}
+
+message ListContainerOperationsResponse {
+  repeated operation.Operation operations = 1;
+  string next_page_token = 2;
+}

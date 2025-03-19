@@ -1,0 +1,92 @@
+- name: 'http-ping{{ dc_suffix }}'
+  juggler_check: ''
+  args: "{{ default_check_delay_10_tag | hash_merge(item, default_timed_limits_unreach_skip_with_deployment) }}"
+  with_items:
+    - service: http-ping
+
+- name: 'hc-node-limits-check{{ dc_suffix }}'
+  juggler_check: ''
+  args: "{{ default_check_delay_10_tag | hash_merge(item, default_timed_limits_unreach_skip_with_deployment) }}"
+  with_items:
+    - service: hc-node-limits-check
+
+- name: 'alive-targets-perc{{ dc_suffix }}'
+  juggler_check: ''
+  args: "{{ default_check_delay_10_tag | hash_merge(item, default_timed_limits_unreach_skip_with_deployment) }}"
+  with_items:
+    - service: alive-targets-perc
+      refresh_time: 300
+      ttl: 900
+
+- name: 'hedged-checks-perc{{ dc_suffix }}'
+  juggler_check: ''
+  args: "{{ default_check_delay_10_tag | hash_merge(item, default_timed_limits_unreach_skip_nodata_force_ok_with_deployment) }}"
+  with_items:
+    - service: hedged-checks-perc
+      pronounce: "Высокий процент ошибок хэдж-чеков {{ pronounce_suffix }}"
+      refresh_time: 300
+      ttl: 900
+
+- name: 'hc-node-update-target-status{{ dc_suffix }}'
+  juggler_check: ''
+  args: "{{ default_check_delay_10_tag | hash_merge(item, default_timed_limits_unreach_skip_nodata_force_ok_with_deployment) }}"
+  with_items:
+    - service: hc-node-update-target-status
+      refresh_time: 300
+      ttl: 900
+
+- name: 'hc-node-checks{{ dc_suffix }}'
+  juggler_check: ''
+  args: "{{ default_check_delay_10_tag | hash_merge(item, default_timed_limits_unreach_skip_with_deployment) }}"
+  with_items:
+    - service: hc-node-checks
+
+# TODO(svartapetov) CLOUD-94757: remove deployment downtime
+- name: 'hc-node-log-errors{{ dc_suffix }}'
+  juggler_check: ''
+  when: env not in ["hw-cgw-dev-lab", "hw-cgw-ci-lab"]
+  args: "{{ default_check_delay_10_tag | hash_merge(item, default_timed_limits_unreach_skip_nodata_force_ok_with_deployment) }}"
+  with_items:
+    - service: hc-node-log-errors
+      pronounce: "Высокий уровень ошибок в л+огах хелс-ч+ек-ноды {{ pronounce_suffix }}"
+
+- name: 'hc-node-tick-drops{{ dc_suffix }}'
+  when: env in ["prod", "preprod"]
+  juggler_check: ''
+  args: "{{ silent_check_delay_10_tag | hash_merge(item, default_timed_limits_unreach_skip_nodata_force_ok) }}"
+  with_items:
+    - service: hc-node-tick-drops
+
+- name: 'hc-node-target-tick-drops{{ dc_suffix }}'
+  when: env in ["prod", "preprod"]
+  juggler_check: ''
+  args: "{{ silent_check_delay_10_tag | hash_merge(item, default_timed_limits_unreach_skip_nodata_force_ok) }}"
+  with_items:
+    - service: hc-node-target-tick-drops
+
+- name: 'hc-node-grpc-client-error-rate{{ dc_suffix }}'
+  juggler_check: ''
+  args: "{{ default_check_delay_10_tag | hash_merge(item, default_timed_limits_unreach_skip_nodata_force_ok_with_deployment) }}"
+  with_items:
+    - service: grpc-client-error-rate
+      pronounce: "Высокий уровень ошибок ГРПЦ-клиента хелс-ч+ек-ноды {{ pronounce_suffix }}"
+
+- name: 'hc-node-checks-per-node{{ dc_suffix }}'
+  juggler_check: ''
+  args: "{{ silent_check_delay_10_tag | hash_merge(item, default_timed_limits_unreach_skip_nodata_force_ok) }}"
+  with_items:
+    - service: hc-node-checks-per-node
+
+- name: 'salt-versions-diff{{ dc_suffix }}'
+  when: env not in ["hw-cgw-dev-lab", "hw-cgw-ci-lab"]
+  juggler_check: ''
+  args: "{{ silent_check | hash_merge(item, default_timed_limits_nodata_ok) }}"
+  with_items:
+    - service: salt-versions-diff
+      host: "yc_loadbalancer_hc-node{{ host_suffix }}"
+      refresh_time: 60
+      ttl: 180
+      children:
+        - host: "ylb_healthcheck-node{{ host_suffix }}"
+          service: salt-versions-diff
+          type: HOST

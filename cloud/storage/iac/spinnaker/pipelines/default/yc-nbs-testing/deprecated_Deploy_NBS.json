@@ -1,0 +1,562 @@
+{
+ "appConfig": {},
+ "application": "yc-nbs-testing",
+ "id": "ad62f548-004b-4bd3-9b6b-4dcabf29d00f",
+ "index": 4,
+ "keepWaitingPipelines": false,
+ "lastModifiedBy": "librarian@yandex-team.ru",
+ "limitConcurrent": false,
+ "name": "deprecated_Deploy_NBS",
+ "parameterConfig": [
+  {
+   "default": "releases/ydb/stable-22-2",
+   "description": "Full path release branch (eg releases/ydb/stable-22-2)",
+   "hasOptions": false,
+   "label": "Release branch",
+   "name": "releaseBranch",
+   "options": [
+    {
+     "value": ""
+    }
+   ],
+   "pinned": false,
+   "required": true
+  },
+  {
+   "default": "nbs",
+   "description": "Choose project to release",
+   "hasOptions": true,
+   "label": "Release Project",
+   "name": "releaseProject",
+   "options": [
+    {
+     "value": "nbs"
+    },
+    {
+     "value": "nfs"
+    },
+    {
+     "value": "cloud/disk_manager"
+    },
+    {
+     "value": "cloud/snapshot_service"
+    },
+    {
+     "value": "ydb"
+    }
+   ],
+   "pinned": false,
+   "required": true
+  },
+  {
+   "default": " XXX.tags.releases.XXX.stable-22-2-XXX",
+   "description": "Previous version to test on HW-NBS-STABLE-LAB and TESTING",
+   "hasOptions": false,
+   "label": "Previous Version",
+   "name": "previousVersion",
+   "options": [
+    {
+     "value": ""
+    }
+   ],
+   "pinned": false,
+   "required": true
+  },
+  {
+   "default": "stable-22-2-XX",
+   "description": "Previous Tag",
+   "hasOptions": false,
+   "label": "Previous Tag",
+   "name": "previousTag",
+   "options": [
+    {
+     "value": ""
+    }
+   ],
+   "pinned": false,
+   "required": false
+  }
+ ],
+ "spelEvaluator": "v4",
+ "stages": [
+  {
+   "failOnFailedExpressions": true,
+   "name": "Evaluate variables",
+   "refId": "1",
+   "requisiteStageRefIds": [],
+   "type": "evaluateVariables",
+   "variables": [
+    {
+     "key": "release_branch_name",
+     "value": "${parameters.releaseBranch}"
+    },
+    {
+     "key": "release_project",
+     "value": "${parameters.releaseProject}"
+    },
+    {
+     "key": "trigger_user",
+     "value": "${trigger.user.replace(\"@yandex-team.ru\", \"\")}"
+    },
+    {
+     "key": "previous_version",
+     "value": "${parameters.previousVersion}"
+    },
+    {
+     "key": "previous_tag",
+     "value": "${parameters.previousTag}"
+    }
+   ]
+  },
+  {
+   "attempts": 1,
+   "buildConfigurationId": "NBS_CreateNewRelease",
+   "buildParameters": [
+    {
+     "key": "env.BRANCH",
+     "value": "${parameters.releaseBranch}"
+    },
+    {
+     "key": "env.PROJECT",
+     "value": "${parameters.releaseProject}"
+    }
+   ],
+   "logicalBranchName": "",
+   "name": "Launch kikimr release tool",
+   "parseArtifacts": [
+    {
+     "artifactPath": "artifact.json",
+     "outputVariable": "kikimr"
+    }
+   ],
+   "refId": "10",
+   "requisiteStageRefIds": [
+    "1"
+   ],
+   "tcProfile": "aw",
+   "type": "teamcityBuild"
+  },
+  {
+   "components": "blockstore",
+   "description": "Release ticket: ${release_ticket}\n\nSpinnaker execution: https://spinnaker.cloud.yandex.net/#/applications/${execution.application}/executions/${ execution.id }\n\n\n%%\n./release --package-version ${packages_version}          \\\n    --service-config configs/blockstore.yaml -T ${release_ticket}              \\\n    -d '${kikimr.release_tag}'  -v --cluster-name hw-nbs-stable-lab --zone-name global   \\\n    --prev-package-version ${previous_version}          \\\n    --no-auth --force -U\n%%",
+   "followers": "${trigger_user}",
+   "name": "Create HW-NBS-STABLE-LAB ticket",
+   "outputVariable": "stable_lab_release_ticket",
+   "queue": "NBSOPS",
+   "refId": "11",
+   "requisiteStageRefIds": [
+    "30"
+   ],
+   "summary": "[HW-STABLE-LAB] Deploy ${parameters.releaseProject}  ${kikimr.release_tag}",
+   "ticketType": "release",
+   "type": "createStartrekTicket"
+  },
+  {
+   "components": "blockstore",
+   "description": "Release ticket: ${release_ticket}\n\nSpinnaker execution: https://spinnaker.cloud.yandex.net/#/applications/${execution.application}/executions/${ execution.id }\n\n\nSet up package version in z2:https://z2-cloud.yandex-team.ru/control_panel?configId=YCLOUDVM_FOR_NBS_CI\nLaunch (will be automatic after manual confirmation): https://teamcity.yandex-team.ru/buildConfiguration/Cloud_PullRequestsCheck_Z2nbsCheck?mode=builds#all-projects",
+   "followers": "${trigger_user}",
+   "name": "Create YDB-CI ticket",
+   "outputVariable": "ydb_ci_release_ticket",
+   "queue": "NBSOPS",
+   "refId": "12",
+   "requisiteStageRefIds": [
+    "30"
+   ],
+   "summary": "[YDB-CI] Deploy ${parameters.releaseProject} ${kikimr.release_tag}",
+   "ticketType": "release",
+   "type": "createStartrekTicket"
+  },
+  {
+   "components": "blockstore",
+   "description": "Release ticket: ${release_ticket}\n\nSpinnaker execution: https://spinnaker.cloud.yandex.net/#/applications/${execution.application}/executions/${ execution.id }\n\n\n%%\n./release --package-version ${packages_version}   \\\n    --service-config configs/blockstore.yaml -T  ${release_ticket}          \\\n    -d '${kikimr.release_tag}'  -v --cluster-name testing --zone-name vla         \\\n    --prev-package-version ${previous_version}\n%%\n%%\n./release --package-version ${packages_version}   \\\n    --service-config configs/blockstore.yaml -T  ${release_ticket}         \\\n    -d '${kikimr.release_tag}' -v --cluster-name testing --zone-name sas         \\\n%%\n%%\n./release --package-version ${packages_version}   \\\n    --service-config configs/blockstore.yaml -T  ${release_ticket}          \\\n    -d '${kikimr.release_tag}' -v --cluster-name testing --zone-name myt         \\\n    -U\n%%",
+   "followers": "${trigger_user}",
+   "name": "Create TESTING ticket",
+   "outputVariable": "testing_release_ticket",
+   "queue": "NBSOPS",
+   "refId": "13",
+   "requisiteStageRefIds": [
+    "34"
+   ],
+   "summary": "[TESTING] Deploy ${parameters.releaseProject}  ${kikimr.release_tag}",
+   "ticketType": "release",
+   "type": "createStartrekTicket"
+  },
+  {
+   "components": "blockstore",
+   "description": "Release ticket: ${release_ticket}\n\nSpinnaker execution: https://spinnaker.cloud.yandex.net/#/applications/${execution.application}/executions/${ execution.id }\n\n\n%%\n./release --package-version ${packages_version}   \\\n    --service-config configs/blockstore.yaml -T  ${release_ticket}          \\\n    -d '${kikimr.release_tag}'  -v --cluster-name preprod --zone-name vla         \\\n    --prev-package-version ${previous_version} \n%%\n%%\n./release --package-version ${packages_version}  \\\n    --service-config configs/blockstore.yaml -T  ${release_ticket}         \\\n    -d '${kikimr.release_tag}' -v --cluster-name preprod --zone-name sas         \\\n%%\n",
+   "followers": "${trigger_user}",
+   "name": "Create PREPROD ticket",
+   "outputVariable": "preprod_release_ticket",
+   "queue": "NBSOPS",
+   "refId": "14",
+   "requisiteStageRefIds": [
+    "35"
+   ],
+   "summary": "[PREPROD] Deploy ${parameters.releaseProject}  ${kikimr.release_tag}",
+   "ticketType": "release",
+   "type": "createStartrekTicket"
+  },
+  {
+   "components": "blockstore",
+   "description": "Release ticket: ${release_ticket}\n\nSpinnaker execution: https://spinnaker.cloud.yandex.net/#/applications/${execution.application}/executions/${ execution.id }\n\n\n%%\n./release --package-version ${packages_version}   \\\n    --service-config configs/blockstore.yaml -T  ${release_ticket}         \\\n    -d '${kikimr.release_tag}'  -v --cluster-name prod --zone-name vla  \n%%\n%%\n./release --package-version ${packages_version}   \\\n    --service-config configs/blockstore.yaml -T  ${release_ticket}         \\\n    -d '${kikimr.release_tag}' -v --cluster-name prod --zone-name sas         \\\n%%\n%%\n./release --package-version ${packages_version}   \\\n    --service-config configs/blockstore.yaml -T  ${release_ticket}          \\\n    -d '${kikimr.release_tag}' -v --cluster-name prod --zone-name myt         \\\n    -U\n%%\n%%\n./release --package-version ${packages_version}   \\\n    --service-config configs/blockstore.yaml -T  ${release_ticket}          \\\n    -d '${kikimr.release_tag}' -v --cluster-name preprod --zone-name myt         \\\n    -U\n%%",
+   "followers": "${trigger_user}",
+   "name": "Create PROD ticket",
+   "outputVariable": "prod_release_ticket",
+   "queue": "NBSOPS",
+   "refId": "15",
+   "requisiteStageRefIds": [
+    "36"
+   ],
+   "summary": "[PROD] Deploy ${parameters.releaseProject}  ${kikimr.release_tag}",
+   "ticketType": "release",
+   "type": "createStartrekTicket"
+  },
+  {
+   "failPipeline": true,
+   "instructions": "After you launched commands/followed instructions from created ticket, and everything deployed, press confirm here",
+   "judgmentInputs": [],
+   "name": "Confirm when deployed on HW-NBS-STABLE-LAB",
+   "notifications": [],
+   "refId": "16",
+   "requisiteStageRefIds": [
+    "11"
+   ],
+   "selectedStageRoles": [
+    "ycnbs:administration"
+   ],
+   "type": "manualJudgment"
+  },
+  {
+   "failPipeline": true,
+   "instructions": "After you launched commands/followed instructions from created ticket, and everything deployed, press confirm here",
+   "judgmentInputs": [],
+   "name": "Confirm when deployed to Z2  YCLOUDVM_FOR_NBS_CI",
+   "notifications": [],
+   "refId": "17",
+   "requisiteStageRefIds": [
+    "12"
+   ],
+   "selectedStageRoles": [
+    "ycnbs:administration"
+   ],
+   "type": "manualJudgment"
+  },
+  {
+   "failPipeline": true,
+   "instructions": "After you launched commands/followed instructions from created ticket, and everything deployed, press confirm here",
+   "judgmentInputs": [],
+   "name": "Confirm when deployed on PROD",
+   "notifications": [],
+   "refId": "18",
+   "requisiteStageRefIds": [
+    "15"
+   ],
+   "selectedStageRoles": [
+    "ycnbs:administration"
+   ],
+   "type": "manualJudgment"
+  },
+  {
+   "failPipeline": true,
+   "instructions": "After you launched commands/followed instructions from created ticket, and everything deployed, press confirm here",
+   "judgmentInputs": [],
+   "name": "Confirm when deployed on PREPROD",
+   "notifications": [],
+   "refId": "19",
+   "requisiteStageRefIds": [
+    "14"
+   ],
+   "selectedStageRoles": [
+    "ycnbs:administration"
+   ],
+   "type": "manualJudgment"
+  },
+  {
+   "failPipeline": true,
+   "instructions": "After you launched commands/followed instructions from created ticket, and everything deployed, press confirm here",
+   "judgmentInputs": [],
+   "name": "Confirm when deployed on TESTING",
+   "notifications": [],
+   "refId": "20",
+   "requisiteStageRefIds": [
+    "13"
+   ],
+   "selectedStageRoles": [
+    "ycnbs:administration"
+   ],
+   "type": "manualJudgment"
+  },
+  {
+   "attempts": 1,
+   "buildConfigurationId": "Cloud_PullRequestsCheck_Z2nbsCheck",
+   "name": "Launch YDB-CI check",
+   "refId": "21",
+   "requisiteStageRefIds": [
+    "17"
+   ],
+   "tcProfile": "yandex",
+   "type": "teamcityBuild"
+  },
+  {
+   "name": "Close HW-NBS-STABLE-LAB ticket",
+   "refId": "23",
+   "requisiteStageRefIds": [
+    "16"
+   ],
+   "resolution": "fixed",
+   "ticketId": "${stable_lab_release_ticket}",
+   "transition": "closed1",
+   "type": "executeTransition"
+  },
+  {
+   "name": "Close YDB-CI ticket",
+   "refId": "24",
+   "requisiteStageRefIds": [
+    "21"
+   ],
+   "resolution": "fixed",
+   "ticketId": "${ydb_ci_release_ticket} ",
+   "transition": "closed1",
+   "type": "executeTransition"
+  },
+  {
+   "name": "Close TESTING ticket",
+   "refId": "25",
+   "requisiteStageRefIds": [
+    "20"
+   ],
+   "resolution": "fixed",
+   "ticketId": "${testing_release_ticket}",
+   "transition": "closed1",
+   "type": "executeTransition"
+  },
+  {
+   "name": "Close PREPROD ticket",
+   "refId": "26",
+   "requisiteStageRefIds": [
+    "19"
+   ],
+   "resolution": "fixed",
+   "ticketId": "${preprod_release_ticket}",
+   "transition": "closed1",
+   "type": "executeTransition"
+  },
+  {
+   "name": "Close PROD ticket",
+   "refId": "27",
+   "requisiteStageRefIds": [
+    "18"
+   ],
+   "resolution": "fixed",
+   "ticketId": "${prod_release_ticket} ",
+   "transition": "closed1",
+   "type": "executeTransition"
+  },
+  {
+   "attempts": 1,
+   "buildConfigurationId": "NBS_ReleaseDocker",
+   "buildParameters": [
+    {
+     "key": "arc-commit",
+     "value": "arcadia-arc:/#tags/releases/nbs/${kikimr.release_tag}"
+    },
+    {
+     "key": "docker-tag",
+     "value": "${kikimr.docker_version}"
+    }
+   ],
+   "name": "Build Docker Image",
+   "parseArtifacts": [
+    {
+     "artifactPath": "packages.json",
+     "outputVariable": "docker_packages"
+    }
+   ],
+   "refId": "28",
+   "requisiteStageRefIds": [
+    "10"
+   ],
+   "tcProfile": "aw",
+   "type": "teamcityBuild"
+  },
+  {
+   "attempts": 1,
+   "buildConfigurationId": "NBS_Release",
+   "buildParameters": [
+    {
+     "key": "arc-commit",
+     "value": "arcadia-arc:/#tags/releases/nbs/${kikimr.release_tag}"
+    }
+   ],
+   "name": "Build packages",
+   "parseArtifacts": [
+    {
+     "artifactPath": "packages.json",
+     "outputVariable": "packages"
+    }
+   ],
+   "refId": "29",
+   "requisiteStageRefIds": [
+    "10"
+   ],
+   "tcProfile": "aw",
+   "type": "teamcityBuild"
+  },
+  {
+   "components": "blockstore",
+   "description": "Network Block Store release:${kikimr.release_tag}\n\nSpinnaker execution: https://spinnaker.cloud.yandex.net/#/applications/${execution.application}/executions/${ execution.id }\n\n**Packages:**\nNBS docker images: ${docker_image_build_url}\nNetwork Block Store packages: ${packages_build_url}\n\n${changelog.changelog}",
+   "followers": "${trigger_user}",
+   "name": "Create Release Ticket",
+   "outputVariable": "release_ticket",
+   "queue": "NBSOPS",
+   "refId": "30",
+   "requisiteStageRefIds": [
+    "33"
+   ],
+   "summary": "Network Block Store release:${kikimr.release_tag}",
+   "ticketType": "release",
+   "type": "createStartrekTicket"
+  },
+  {
+   "failOnFailedExpressions": true,
+   "name": "Set build urls",
+   "refId": "31",
+   "requisiteStageRefIds": [
+    "28",
+    "29",
+    "32"
+   ],
+   "type": "evaluateVariables",
+   "variables": [
+    {
+     "key": "docker_image_build_url",
+     "value": "${#stage(\"Build Docker Image\").context.builds[0].webUiUrl}"
+    },
+    {
+     "key": "packages_build_url",
+     "value": "${#stage(\"Build packages\").context.builds[0].webUiUrl}"
+    },
+    {
+     "key": "packages_version",
+     "value": "${packages[0][\"version\"]}"
+    },
+    {
+     "key": "blockstore_server_docker_image_version",
+     "value": "cr.yandex/crpmrci5rfvf3uu8np78/yandex-cloud-blockstore-server:${kikimr.docker_version}"
+    },
+    {
+     "key": "blockstore_proxy_docker_image_version",
+     "value": "cr.yandex/crpmrci5rfvf3uu8np78/yandex-cloud-blockstore-server:${kikimr.docker_version}"
+    }
+   ]
+  },
+  {
+   "attempts": 1,
+   "buildConfigurationId": "NBS_CreateChangelog",
+   "buildParameters": [
+    {
+     "key": "env.TAG",
+     "value": "${kikimr.release_tag}"
+    },
+    {
+     "key": "env.PROJECT",
+     "value": "${parameters.releaseProject}"
+    },
+    {
+     "key": "env.PREVIOUS_TAG",
+     "value": "${parameters.previousTag}"
+    }
+   ],
+   "name": "Create Changelog",
+   "parseArtifacts": [
+    {
+     "artifactPath": "artifact.json",
+     "outputVariable": "changelog"
+    },
+    {
+     "artifactPath": "changelog.txt",
+     "outputVariable": "changelog_txt"
+    }
+   ],
+   "refId": "32",
+   "requisiteStageRefIds": [
+    "10"
+   ],
+   "stageEnabled": {
+    "expression": "!kikimr.release_tag.endsWith(\"-1\")",
+    "type": "expression"
+   },
+   "tcProfile": "aw",
+   "type": "teamcityBuild"
+  },
+  {
+   "failPipeline": true,
+   "judgmentInputs": [],
+   "name": "Continue release?",
+   "notifications": [],
+   "refId": "33",
+   "requisiteStageRefIds": [
+    "31"
+   ],
+   "selectedStageRoles": [
+    "ycnbs:administration"
+   ],
+   "type": "manualJudgment"
+  },
+  {
+   "failPipeline": true,
+   "judgmentInputs": [],
+   "name": "Continue release to TESTING?",
+   "notifications": [],
+   "refId": "34",
+   "requisiteStageRefIds": [
+    "23",
+    "24"
+   ],
+   "selectedStageRoles": [
+    "ycnbs:administration"
+   ],
+   "type": "manualJudgment"
+  },
+  {
+   "failPipeline": true,
+   "judgmentInputs": [],
+   "name": "Continue release to PREPROD?",
+   "notifications": [],
+   "refId": "35",
+   "requisiteStageRefIds": [
+    "25"
+   ],
+   "selectedStageRoles": [
+    "ycnbs:administration"
+   ],
+   "type": "manualJudgment"
+  },
+  {
+   "failPipeline": true,
+   "judgmentInputs": [],
+   "name": "Continue release to PROD?",
+   "notifications": [],
+   "refId": "36",
+   "requisiteStageRefIds": [
+    "26"
+   ],
+   "selectedStageRoles": [
+    "ycnbs:administration"
+   ],
+   "type": "manualJudgment"
+  },
+  {
+   "name": "Close Release ticket",
+   "refId": "37",
+   "requisiteStageRefIds": [
+    "27"
+   ],
+   "resolution": "fixed",
+   "ticketId": "${release_ticket}",
+   "transition": "closed1",
+   "type": "executeTransition"
+  }
+ ],
+ "triggers": []
+}

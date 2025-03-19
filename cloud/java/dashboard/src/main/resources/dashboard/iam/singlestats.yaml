@@ -1,0 +1,52 @@
+id: 575952
+uid: iam-singlestats
+title: IAM Singlestats Dashboard
+folderId: 412692
+refresh: 1m
+
+tags: [ 'iam', 'iam-singlestats' ]
+links:
+  !include shared/links.yaml singlestats
+
+graphDefaults: { datasource: '$ds', width: 2, height: 4 }
+queryDefaults:
+  labels: 'project=yc.iam.service-cloud'
+  dropNan: true
+
+variables:
+  replacement:
+    !include shared/replacements.yaml
+    !include shared/errors.yaml
+  repeat:
+    !include shared/repeat_services.yaml
+    !include shared/repeat_clusters.yaml
+    # TODO
+        activeProbesFailCounter: [ 'fail_counter', 'todo', 'fail_counter', 'fail_counter', 'fail_counter' ]
+
+rows:
+  - repeat: iamCluster
+    title: '@iamCluster:title'
+    graphDefaults: { datasource: '@iamCluster:datasource' }
+    panels:
+      - repeat: iamService
+        title: '@iamService:title'
+        description: '@iamService:description'
+        !include shared/errors_singlestat.yaml '120%'
+          params: { labels: 'service=@iamService, cluster=@iamService-@iamCluster, sensor=grpc_statuses|servlet_statuses|http_status, status=@5xx, host=@all_hosts' }
+
+      - title: 'Identity'
+        description: 'Identity'
+        !include shared/errors_singlestat.yaml '120%'
+          params: { labels: 'service=identity, cluster=identity-@iamCluster, host=@all_hosts, metric=api_request_count, status_code=500|501|502|504' }
+
+      - type: singlestat
+        title: 'ActiveProbes'
+        value: { valueFontSize: 120%, valueFunction: delta, decimals: 0 }
+        coloring:
+          colorBackground: true
+          thresholds: [ 1 ]
+          colorsList: [ 'green', 'maroon' ]
+        sparkline: { show: true }
+        query:
+          select: { diff: [], drop_below: '0', group_lines: [ 'sum' ] }
+          params: { labels: 'cluster=yc.iam.active-probes-folder, service=active-probes, name=@iamCluster:activeProbesFailCounter' }

@@ -1,0 +1,141 @@
+apiVersion: v1
+kind: PodList
+items:
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: api-infrastructure
+    namespace: kube-system
+    annotations:
+      config_digest: ${infra_config_digest}
+      scheduler.alpha.kubernetes.io/critical-pod: ""
+    labels:
+      role: api
+  spec:
+    priority: 2000000001
+    hostNetwork: true
+    hostPID: true
+    priorityClassName: system-cluster-critical
+    initContainers:
+      - name: deploy-infra-configs
+        image: cr.yandex/crp7nvlkttssi7kapoho/infra/metadata:${metadata_version}
+        command:
+          - /usr/bin/metadata
+          - --attribute-name
+          - infra-configs
+        imagePullPolicy: Always
+        volumeMounts:
+          - name: all-configs
+            mountPath: /etc
+            terminationGracePeriodSeconds: 30
+          - name: run
+            mountPath: /run
+            terminationGracePeriodSeconds: 30
+    containers:
+      - name: solomon-agent
+        image: cr.yandex/crpr3khkepsccf25vvt6/solomon-agent:${solomon_version}
+        resources:
+          requests:
+            memory: "512Mi"
+          limits:
+            memory: "512Mi"
+        volumeMounts:
+          - name: solomon-agent-config
+            mountPath: /etc/solomon-agent/
+            readOnly: true
+    volumes:
+      - name: all-configs
+        hostPath:
+          path: /etc
+          type: DirectoryOrCreate
+      - name: run
+        hostPath:
+          path: /run
+          type: DirectoryOrCreate
+      - name: var-log
+        hostPath:
+          path: /var/log
+      - name: solomon-agent-config
+        hostPath:
+          path: /etc/solomon-agent
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: api-static
+    namespace: kube-system
+    labels:
+      role: api
+    annotations:
+      config_digest: ${config_digest}
+      scheduler.alpha.kubernetes.io/critical-pod: ""
+  spec:
+    priority: 2000000001
+    priorityClassName: system-cluster-critical
+    hostNetwork: true
+    initContainers:
+    - name: deploy-configs
+      image: cr.yandex/crp7nvlkttssi7kapoho/infra/metadata:${metadata_version}
+      volumeMounts:
+      - name: all-configs
+        mountPath: /etc
+        terminationGracePeriodSeconds: 30
+      - name: usr-local
+        mountPath: /usr/local
+        terminationGracePeriodSeconds: 30
+    containers:
+    - name: lockbox-data-plane
+      image: cr.yandex/crp42udbmne4hv742g3l/lockbox-data-plane:${application_version}
+      resources:
+        requests:
+          memory: ${java_pod_memory}
+        limits:
+          memory: ${java_pod_memory}
+      env:
+      - name: APPLICATION_YAML
+        value: /etc/lockbox/application.yaml
+      - name: APPLICATION_LOG_DIR
+        value: /var/log/lockbox
+      - name: APPLICATION_LOG_FILE_MAX_FILES
+        value: "3"
+      - name: APPLICATION_ACCESS_LOG_FILE_MAX_FILES
+        value: "3"
+      - name: JAVA_TOOL_OPTIONS
+        value: "-Xmx${java_heap_memory} -XX:-UseContainerSupport -Djava.net.preferIPv6Addresses=true -Dfile.encoding=UTF-8 -Dlog4j2.contextSelector=org.apache.logging.log4j.core.async.AsyncLoggerContextSelector -Dlog4j2.asyncQueueFullPolicy=Discard -Dlog4j2.discardThreshold=OFF -Xlog:gc*:file=/var/log/lockbox/gc.log:time,uptime:filecount=10,filesize=100M"
+      volumeMounts:
+      - name: lockbox-configs
+        mountPath: /etc/lockbox
+        readOnly: true
+      - name: run-lockbox
+        mountPath: /run/lockbox
+        readOnly: true
+      - name: var-lockbox
+        mountPath: /var/lockbox
+        terminationGracePeriodSeconds: 30
+      - name: var-log-lockbox
+        mountPath: /var/log/lockbox
+    volumes:
+    - name: all-configs
+      hostPath:
+        path: /etc
+        type: DirectoryOrCreate
+    - name: lockbox-configs
+      hostPath:
+        path: /etc/lockbox
+        type: DirectoryOrCreate
+    - name: run-lockbox
+      hostPath:
+        path: /run/lockbox
+        type: DirectoryOrCreate
+    - name: usr-local
+      hostPath:
+       path: /usr/local
+       type: DirectoryOrCreate
+    - name: var-lockbox
+      hostPath:
+        path: /var/lockbox
+        type: DirectoryOrCreate
+    - name: var-log-lockbox
+      hostPath:
+        path: /var/log/lockbox
+        type: DirectoryOrCreate
+${api_podmanifest}

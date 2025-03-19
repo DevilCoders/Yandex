@@ -1,0 +1,26 @@
+#!/bin/sh
+
+# NOT written for bash.
+# Pretends to be a `ip{,6}tables-save'.
+# This script must be stored at /opt/yc-iptables/sbin.
+# Filters out HBF-created iptables rules from the original `ip{,6}tables-save' utility output.
+
+_filter_path() {
+    local i new_path=
+    local IFS=:
+    for i in $PATH; do
+        [ "$i" = '/opt/yc-iptables/sbin' ] || new_path="$new_path:$i"
+    done
+    PATH="${new_path#:}"
+}
+
+_filter_path
+export PATH
+
+("${0##*/}" "$@" && echo Ok) | grep -Ev '^(:|-A )Y|-j Y[^[:space:]]*$' | (
+    while read -r rule_line; do
+        [ "$rule_line" = 'Ok' ] && exit 0 ||:
+        printf '%s\n' "$rule_line"
+    done
+    exit 1
+)

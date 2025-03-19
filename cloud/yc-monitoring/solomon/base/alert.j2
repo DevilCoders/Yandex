@@ -1,0 +1,78 @@
+{% set serviceName = self._TemplateReference__context.name | replace(".json.j2", "") %}
+
+{% set notificationChannels = notification_channels or notificationChannels %}
+{% if alarm_limit is mapping %}
+  {% set alarm_limit = alarm_limit[env] if env in alarm_limit else alarm_limit['default'] %}
+{% endif %}
+{% if warn_limit is mapping %}
+  {% set warn_limit = warn_limit[env]if env in warn_limit else warn_limit['default'] %}
+{% endif %}
+
+{# FIXME: CLOUD-27191: Use FQDN in 'host' Solomon label #}
+{% macro svm_fqdn() -%}
+    [[labels.host]].{{ svm_domains[env] }}
+{%- endmacro %}
+
+{%- macro sanitize_id(id) -%}
+{{ id | replace('|', '_') }}
+{%- endmacro -%}
+
+{%- set hw_domain = hw_domains.get(env, hw_domains["default"]) %}
+
+{% macro compute_node_fqdn() -%}
+    [[labels.host]].{{ hw_domain }}
+{%- endmacro %}
+
+{% macro compute_node_network_metrics_url() -%}
+    {{ solomon_endpoint }}/?project={{ project_id }}&cluster=cloud_{{ env }}&service=sys&dashboard=compute_node_network_metrics_{{ env }}&l.host=[[labels.host]]&b=4h
+{%- endmacro %}
+
+{% macro type_expression() %}
+{
+    "expression": {
+      "program": "{{ prog()|to_prog }}",
+      "checkExpression": "{{ checkExpression | default("is_red") }}"
+    }
+}
+{% endmacro %}
+{
+  "id": "{{ idc or sanitize_id(config_name + "_" + env) }}",
+  "projectId": "{{ project_id }}",
+  "notificationChannels": [
+    {%- for channel in notificationChannels|default(["juggler"]) -%}
+    "{{ channel }}"
+    {% if not loop.last %},{% endif %}
+    {% endfor %}
+  ],
+  "channels": [
+    {%- for channel in notificationChannels|default(["juggler"]) -%}
+    {
+      "id": "{{ channel }}",
+      "config": {
+        {%- if repeatNotifySecs and channel != "juggler" %} {# repeatDelaySecs has no sense for juggler #}
+          "repeatDelaySecs": {{ repeatNotifySecs }}
+          {%- if channel in notifyAboutStatuses|default({}, true) %},{% endif %}
+        {%- endif %}
+        {%- if channel in notifyAboutStatuses|default({}, true) %}
+          "notifyAboutStatuses": {{ notifyAboutStatuses[channel] }}
+        {%- endif %}
+      }
+    }
+    {% if not loop.last %},{% endif %}
+    {% endfor %}
+  ],
+  {% block main %}{% endblock %},
+  "state": "{{ state | default("ACTIVE") }}",
+  "severity": "{{ severity | default("SEVERITY_UNSPECIFIED") }}",
+  {% if description %}
+  "description": "{{ description }}",
+  {% endif %}
+  "resolvedEmptyPolicy": "{{ resolvedEmptyPolicy | default("RESOLVED_EMPTY_DEFAULT") }}",
+  "noPointsPolicy": "{{ noPointsPolicy | default("NO_POINTS_DEFAULT") }}",
+  "windowSecs": {{ windowSecs | default(300) }},
+  "delaySecs": {{ delaySecs | default(0) }},
+  "periodMillis": {{ (windowSecs | default(300)) * 1000 }},
+  "delaySeconds": {{ delaySecs | default(0) }},
+  "labels": {{ labels | default({}) }},
+  "serviceProviderAnnotations": {{ serviceProviderAnnotations | default({}) }}
+}

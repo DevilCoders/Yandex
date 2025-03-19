@@ -1,0 +1,406 @@
+metrics:
+  pullPort: $${METRICS_PORT} # will be resolved by application at runtime
+
+environment:
+  apiEndpoint: "api.cloud.yandex.net"
+  sandboxFolderId: "b1gmrsuf68rdjcngjfai"
+  commonFolderId: "b1gnv4ho2qqit6j1ilnc"
+  isProd: true
+
+testRunner:
+  threadCount: 8
+  sandboxFolderCleaningFrequency: "PT48H"
+  redisson: # https://github.com/redisson/redisson/wiki/2.-Configuration
+    sentinelServersConfig:
+      masterName: "redis"
+      password: $${REDIS_PASSWORD} # will be resolved by application at runtime
+      #scheckSentinelsList: false
+      sentinelAddresses:
+        - "redis://rc1a-uswxqw9674p6st6s.mdb.yandexcloud.net:26379"
+        - "redis://rc1b-sv2zqu1eyudwrxls.mdb.yandexcloud.net:26379"
+        - "redis://rc1c-sncrgr1suiolq2v6.mdb.yandexcloud.net:26379"
+
+grpcServer:
+  port: $${GRPC_PORT} # will be resolved by application at runtime
+  reflectionEnabled: true
+  certificatePemFile: /etc/e2e-monitoring/certificate.pem
+
+auth:
+  fake: false
+  authClient:
+    host: as.private-api.cloud.yandex.net
+    port: 4286
+    maxRetries: 3
+    timeout: 5
+    tls: true
+
+repository:
+  inMemory: true
+
+logStorage:
+  logOptions:
+    workingDir: "$${APPLICATION_LOG_DIR:/tmp}"
+    zipFiles: true
+  s3:
+    endpoint: "https://storage.yandexcloud.net"
+    region: "ru-central1"
+    bucket: "crypto-e2e-monitoring-logs"
+    accessKeyEnv: "LOGS_AWS_ACCESS_KEY_ID"
+    secretKeyEnv: "LOGS_AWS_SECRET_ACCESS_KEY"
+
+testing:
+
+  testSuites:
+    - name: "kms"
+      includedTestsRegex: "kms--.+"
+    - name: "lockbox"
+      includedTestsRegex: "lockbox--.+"
+    - name: "ycm"
+      includedTestsRegex: "ycm--.+"
+    - name: "all"
+      includedTestsRegex: ".+"
+
+  scheduleTestsAtStartup: true
+
+  tests:
+    - name: "lockbox--rest--availability-of-a-secret-with-default-kms-key"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.lockbox.RestAvailabilityTest"
+        secretId: "e6qon4o42aq67e5deceu"
+
+    - name: "lockbox--grpc--availability-of-a-secret-with-default-kms-key"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.lockbox.GrpcAvailabilityTest"
+        secretId: "e6qon4o42aq67e5deceu"
+
+    - name: "lockbox--grpc--availability-of-a-secret-with-user-kms-key"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.lockbox.GrpcAvailabilityTest"
+        secretId: "e6qbk802p15lgcjn2250"
+
+    - name: "lockbox--grpc--authorization"
+      frequency: "PT3H"
+      test:
+        class: "yandex.cloud.lockbox.GrpcAuthorizationTest"
+
+    - name: "kms--rest--data-plane-availability"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.RestDataPlaneAvailabilityTest"
+        keyId: "abjel72661r15je81jji"
+
+    - name: "kms--rest--data-plane-availability-hsm"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.RestDataPlaneAvailabilityTest"
+        keyId: "abj22jlpbg76n6iobn47"
+
+    - name: "kms--rest--control-plane-availability"
+      frequency: "PT3H"
+      test:
+        class: "yandex.cloud.kms.RestControlPlaneAvailabilityTest"
+        algorithm: "AES_256"
+
+    - name: "kms--rest--control-plane-availability-hsm"
+      frequency: "PT3H"
+      test:
+        class: "yandex.cloud.kms.RestControlPlaneAvailabilityTest"
+        algorithm: "AES_256_HSM"
+
+    - name: "kms--grpc--data-plane-availability"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlaneAvailabilityTest"
+        keyId: "abjel72661r15je81jji"
+
+    - name: "kms--grpc--data-plane-availability-hsm"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlaneAvailabilityTest"
+        keyId: "abj22jlpbg76n6iobn47"
+
+    - name: "kms--grpc--control-plane-availability"
+      frequency: "PT3H"
+      test:
+        class: "yandex.cloud.kms.GrpcControlPlaneAvailabilityTest"
+        algorithm: "AES_256"
+
+  #  - name: "kms--grpc--control-plane-availability-hsm"
+  #    frequency: "PT3H"
+  #    test:
+  #      class: "yandex.cloud.kms.GrpcControlPlaneAvailabilityTest"
+  #      algorithm: "AES_256_HSM"
+
+    - name: "kms--grpc--authorization"
+      frequency: "PT3H"
+      test:
+        class: "yandex.cloud.kms.GrpcAuthorizationTest"
+        authCacheTimeout: "PT15S"
+
+    - name: "kms--tink--availability-of-a-key"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcTinkAvailabilityTest"
+        keyId: "abjel72661r15je81jji"
+
+    - name: "kms--aws-crypto--availability-of-a-key"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcAwsCryptoAvailabilityTest"
+        keyId: "abjel72661r15je81jji"
+
+    - name: "kms--grpc--private-dpl-kms.yandex:8443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abjel72661r15je81jji"
+        cryptoClientHost: "kms.yandex"
+        cryptoClientPort: 8443
+
+    - name: "kms--grpc--private-dpl-kms-data-vla-1.kms.cloud.yandex.net:8443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abjel72661r15je81jji"
+        cryptoClientHost: "kms-data-vla-1.kms.cloud.yandex.net"
+        cryptoClientPort: 8443
+
+    - name: "kms--grpc--private-dpl-kms-data-vla-1.kms.cloud.yandex.net:9443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abjel72661r15je81jji"
+        cryptoClientHost: "kms-data-vla-1.kms.cloud.yandex.net"
+        cryptoClientPort: 9443
+
+    - name: "kms--grpc--private-dpl-kms-data-vla-2.kms.cloud.yandex.net:8443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abjel72661r15je81jji"
+        cryptoClientHost: "kms-data-vla-2.kms.cloud.yandex.net"
+        cryptoClientPort: 8443
+
+    - name: "kms--grpc--private-dpl-kms-data-vla-2.kms.cloud.yandex.net:9443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abjel72661r15je81jji"
+        cryptoClientHost: "kms-data-vla-2.kms.cloud.yandex.net"
+        cryptoClientPort: 9443
+
+    - name: "kms--grpc--private-dpl-kms-data-myt-1.kms.cloud.yandex.net:8443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abjel72661r15je81jji"
+        cryptoClientHost: "kms-data-myt-1.kms.cloud.yandex.net"
+        cryptoClientPort: 8443
+
+    - name: "kms--grpc--private-dpl-kms-data-myt-1.kms.cloud.yandex.net:9443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abjel72661r15je81jji"
+        cryptoClientHost: "kms-data-myt-1.kms.cloud.yandex.net"
+        cryptoClientPort: 9443
+
+    - name: "kms--grpc--private-dpl-kms-data-myt-2.kms.cloud.yandex.net:8443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abjel72661r15je81jji"
+        cryptoClientHost: "kms-data-myt-2.kms.cloud.yandex.net"
+        cryptoClientPort: 8443
+
+    - name: "kms--grpc--private-dpl-kms-data-myt-2.kms.cloud.yandex.net:9443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abjel72661r15je81jji"
+        cryptoClientHost: "kms-data-myt-2.kms.cloud.yandex.net"
+        cryptoClientPort: 9443
+
+    - name: "kms--grpc--private-dpl-kms-data-sas-1.kms.cloud.yandex.net:8443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abjel72661r15je81jji"
+        cryptoClientHost: "kms-data-sas-1.kms.cloud.yandex.net"
+        cryptoClientPort: 8443
+
+    - name: "kms--grpc--private-dpl-kms-data-sas-1.kms.cloud.yandex.net:9443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abjel72661r15je81jji"
+        cryptoClientHost: "kms-data-sas-1.kms.cloud.yandex.net"
+        cryptoClientPort: 9443
+
+    - name: "kms--grpc--private-dpl-kms-data-sas-2.kms.cloud.yandex.net:8443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abjel72661r15je81jji"
+        cryptoClientHost: "kms-data-sas-2.kms.cloud.yandex.net"
+        cryptoClientPort: 8443
+
+    - name: "kms--grpc--private-dpl-kms-data-sas-2.kms.cloud.yandex.net:9443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abjel72661r15je81jji"
+        cryptoClientHost: "kms-data-sas-2.kms.cloud.yandex.net"
+        cryptoClientPort: 9443
+
+    - name: "kms--grpc--hsm--private-dpl-kms.yandex:8443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abj22jlpbg76n6iobn47"
+        cryptoClientHost: "kms.yandex"
+        cryptoClientPort: 8443
+
+    - name: "kms--grpc--hsm--private-dpl-kms-data-vla-1.kms.cloud.yandex.net:8443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abj22jlpbg76n6iobn47"
+        cryptoClientHost: "kms-data-vla-1.kms.cloud.yandex.net"
+        cryptoClientPort: 8443
+
+    - name: "kms--grpc--hsm--private-dpl-kms-data-vla-1.kms.cloud.yandex.net:9443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abj22jlpbg76n6iobn47"
+        cryptoClientHost: "kms-data-vla-1.kms.cloud.yandex.net"
+        cryptoClientPort: 9443
+
+    - name: "kms--grpc--hsm--private-dpl-kms-data-vla-2.kms.cloud.yandex.net:8443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abj22jlpbg76n6iobn47"
+        cryptoClientHost: "kms-data-vla-2.kms.cloud.yandex.net"
+        cryptoClientPort: 8443
+
+    - name: "kms--grpc--hsm--private-dpl-kms-data-vla-2.kms.cloud.yandex.net:9443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abj22jlpbg76n6iobn47"
+        cryptoClientHost: "kms-data-vla-2.kms.cloud.yandex.net"
+        cryptoClientPort: 9443
+
+    - name: "kms--grpc--hsm--private-dpl-kms-data-myt-1.kms.cloud.yandex.net:8443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abj22jlpbg76n6iobn47"
+        cryptoClientHost: "kms-data-myt-1.kms.cloud.yandex.net"
+        cryptoClientPort: 8443
+
+    - name: "kms--grpc--hsm--private-dpl-kms-data-myt-1.kms.cloud.yandex.net:9443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abj22jlpbg76n6iobn47"
+        cryptoClientHost: "kms-data-myt-1.kms.cloud.yandex.net"
+        cryptoClientPort: 9443
+
+    - name: "kms--grpc--hsm--private-dpl-kms-data-myt-2.kms.cloud.yandex.net:8443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abj22jlpbg76n6iobn47"
+        cryptoClientHost: "kms-data-myt-2.kms.cloud.yandex.net"
+        cryptoClientPort: 8443
+
+    - name: "kms--rpc--hsm--private-dpl-kms-data-myt-2.kms.cloud.yandex.net:9443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abj22jlpbg76n6iobn47"
+        cryptoClientHost: "kms-data-myt-2.kms.cloud.yandex.net"
+        cryptoClientPort: 9443
+
+    - name: "kms--grpc--hsm--private-dpl-kms-data-sas-1.kms.cloud.yandex.net:8443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abj22jlpbg76n6iobn47"
+        cryptoClientHost: "kms-data-sas-1.kms.cloud.yandex.net"
+        cryptoClientPort: 8443
+
+    - name: "kms--grpc--hsm--private-dpl-kms-data-sas-1.kms.cloud.yandex.net:9443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abj22jlpbg76n6iobn47"
+        cryptoClientHost: "kms-data-sas-1.kms.cloud.yandex.net"
+        cryptoClientPort: 9443
+
+    - name: "kms--grpc--hsm--private-dpl-kms-data-sas-2.kms.cloud.yandex.net:8443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abj22jlpbg76n6iobn47"
+        cryptoClientHost: "kms-data-sas-2.kms.cloud.yandex.net"
+        cryptoClientPort: 8443
+
+    - name: "kms--grpc--hsm--private-dpl-kms-data-sas-2.kms.cloud.yandex.net:9443"
+      frequency: "PT1M"
+      test:
+        class: "yandex.cloud.kms.GrpcDataPlanePrivateTest"
+        keyId: "abj22jlpbg76n6iobn47"
+        cryptoClientHost: "kms-data-sas-2.kms.cloud.yandex.net"
+        cryptoClientPort: 9443
+
+    - name: "ycm--grpc--authorization"
+      frequency: "PT6H"
+      test:
+        class: "yandex.cloud.certificatemanager.GrpcAuthorizationTest"
+
+    - name: "ycm--request-internal-ca"
+      frequency: "PT6H"
+      test:
+        class: "yandex.cloud.certificatemanager.RequestInternalCATest"
+
+    - name: "ycm--request-dns-without-caa"
+      frequency: "P7D"
+      test:
+        class: "yandex.cloud.certificatemanager.RequestDnsWithoutCaaTest"
+
+    - name: "ycm--request-dns-with-caa"
+      frequency: "P7D"
+      test:
+        class: "yandex.cloud.certificatemanager.RequestDnsWithCaaTest"
+
+    - name: "ycm--request-dns-cname"
+      frequency: "P7D"
+      test:
+        class: "yandex.cloud.certificatemanager.RequestDnsCnameTest"
+
+    - name: "ycm--request-http"
+      frequency: "P7D"
+      test:
+        class: "yandex.cloud.certificatemanager.RequestHttpTest"
+
+    - name: "ycm--domains-common"
+      frequency: "PT6H"
+      test:
+        class: "yandex.cloud.certificatemanager.DomainsCommonTest"
+
+    - name: "ycm--import"
+      frequency: "PT6H"
+      test:
+        class: "yandex.cloud.certificatemanager.ImportTest"
+
+    - name: "ycm--access"
+      frequency: "PT6H"
+      test:
+        class: "yandex.cloud.certificatemanager.AccessTest"

@@ -1,0 +1,29 @@
+{% extends "base_alert.j2" %}
+{% set checkExpression = "value < " + memory_limit %}
+{% set description = "KMS " + env | upper + " Low Disk Space" %}
+{% set windowSecs = 180 %}
+
+{% macro prog() %}
+let data = {
+  project='{{ project_id }}',
+  service='sys',
+  cluster='cloud_{{ env }}_kms_cluster',
+  host='{{ host_regex }}',
+  path='/Filesystem/FreeB',
+  mountpoint='{{ mount_point }}'
+};
+let value = min(data);
+let prettyValueInGb = to_fixed(value / 1e9, 1);
+{% endmacro %}
+
+{% block main %}
+  "name": "KMS {{ env | upper }} Low Disk Space",
+  "groupByLabels": ["cluster", "host"],
+  "annotations": {
+    "jugglerService": "[[labels.cluster]]--[[labels.host]]--lowDiskSpace",
+    "description": "[[expression.prettyValueInGb]]  GB available on [[labels.host]]",
+    "wikiUrl": "https://nda.ya.ru/t/-lmFplf53VyzBV",
+    "jugglerTags" : "{{ jugglerTags }}"
+  },
+  "type": {{ type_expression() }}
+{% endblock %}

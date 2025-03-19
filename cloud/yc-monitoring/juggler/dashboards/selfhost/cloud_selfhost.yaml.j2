@@ -1,0 +1,105 @@
+{% from "dashboards/selfhost/common.j2" import
+    environments,
+    seflhost_owners,
+    aggregate_checks_options_filter,
+    aggregate_checks_options_filter_hosts,
+    aggregate_checks_options_filter_hosts_tags,
+    aggregate_checks_options_filter_tags,
+    escalations_options_filter_selfhost,
+    downtimes_options_filter_selfhost,
+    downtimes_options_filter_by_host,
+    notifications_options_filter_selfhost,
+    widget,
+    escalations_options,
+    aggregate_checks_options,
+    downtimes_options,
+    notifications_options
+with context %}
+
+{{ selfhost_owners }}
+address: cloud_selfhost
+dashboard_id: 62daa272b23f2487b9f2fedb
+description: 'Selfhost dashboard Known issues:
+
+  Warn по месту на билд-агентах может гореть из-за https://st.yandex-team.ru/CLOUD-36975'
+links:
+- title: hw4-lab teamcity builds
+  url: https://teamcity.yandex-team.ru/project.html?projectId=Cloud_Stands_Hw_HwLab_BootstrapTesting
+name: Selfhost
+project: 'ycloud'
+
+{% macro aggregates(name, col, row, limit=5, links=[]) -%}
+{{ widget(name=name, component_type="AGGREGATE_CHECKS", col=col, row=row, links=links) }}
+{{ aggregate_checks_options(limit=limit) -}}
+{%- endmacro -%}
+
+components:
+- {{ widget(name="Escalations (currently running)", component_type="ESCALATIONS", col=1, row=0, colspan=5, view_type="DETAILED") }}
+  {{ escalations_options() }}
+  {{ escalations_options_filter_selfhost() }}
+
+- {{ aggregates(name="Cluster-map rebuild, build-agents", col=2, row=1, limit=4) }}
+  {{ aggregate_checks_options_filter([
+    {"host": "yandex_cloud_build_agent", "service": "rebuild-cluster-maps"},
+    {"host": "yc_build_agent"},
+    {"host": "yandex_cloud_build_agent", "service": "bootstrap_templates_validate"},
+    {"host": "yandex_cloud_build_agent", "service": "selfhost_repositories_validation"}
+  ])}}
+
+- {{ aggregates(name="add-hosts-cluster-map", col=3, row=1, limit=4) }}
+  {{ aggregate_checks_options_filter_tags(['add-hosts-cluster-map']) }}
+
+- {{ aggregates(
+        name="Logshatter", col=4, row=1, limit=4,
+        links=[{"title": "monitorings description", "url": "https://wiki.yandex-team.ru/cloud/devel/loadbalancing/monitorings/#logshatterlogshatter-hostlogshatter-cluster"}]
+    )}}
+  {{ aggregate_checks_options_filter_hosts(['yc_vpc_logshatter_prod'])}}
+
+{% set bootstrap_hosts = dict() %}
+{% do bootstrap_hosts.update(prod=[
+        'cloud_bootstrap',
+        'vla04-s9-1.cloud.yandex.net',
+        'yc_bootstrap_prod',
+        'yc_bootstrap-hw_prod',
+        'yc_selfhost_local_proxy_prod',
+        'yc_selfhost_xds_provider_prod'
+        ]) %}
+{%  do bootstrap_hosts.update(israel=['yc_bootstrap_israel', 'yc_selfhost_local_proxy_israel', 'yc_selfhost_xds_provider_israel'])%}
+{%  do bootstrap_hosts.update(preprod=[
+        'cloud_bootstrap_preprod',
+        'yc_bootstrap_preprod',
+        'yc_bootstrap-hw_preprod',
+        'yc_selfhost_local_proxy_preprod',
+        'yc_selfhost_xds_provider_preprod'])%}
+{%  do bootstrap_hosts.update(testing=[
+        'cloud_bootstrap_testing',
+        'yc_bootstrap_testing',
+        'yc_bootstrap-hw_testing',
+        'yc_selfhost_local_proxy_testing',
+        'yc_selfhost_xds_provider_testing'
+        ])%}
+{%  do bootstrap_hosts.update(dev=['yc_bootstrap_dev'])%}
+{% for env in environments.values() %}
+{% set env_name = env["name"] %}
+- {{ aggregates(name="{} bootstrap hosts".format(env_name | capitalize), col=loop.index, row=3 )}}
+  {{ aggregate_checks_options_filter_hosts(bootstrap_hosts.get(env_name))}}
+
+- {{ aggregates(name="{} kubelet hw nodes".format(env_name | capitalize), col=loop.index, row=4) }}
+  {{ aggregate_checks_options_filter_hosts_tags(['cloud_{}_compute'.format(env_name)], ['yc_kubelet']) }}
+
+- {{ aggregates(name="{} eds-operator".format(env_name | capitalize), col=loop.index, row=5) }}
+  {{ aggregate_checks_options_filter_tags(['yc-eds-operator', 'yc-{}'.format(env_name)]) }}
+{% endfor %}
+
+- {{ widget(name="Downtimes (by hosts) TODO: need to  actuallize selector", component_type="DOWNTIMES", col=1, row=6, view_type="DETAILED", colspan=2) }}
+  {{ downtimes_options()  }}
+  {{ downtimes_options_filter_by_host(['yandex_cloud_build_agent', 'yc_vpc_logshatter_prod']) }}
+
+- {{ widget(name="Downtimes (by user)", component_type="DOWNTIMES", col=3, row=6, view_type="DETAILED", colspan=3) }}
+  {{ downtimes_options()  }}
+  {{ downtimes_options_filter_selfhost() }}
+
+- {{ widget(name="Notifications history", component_type="NOTIFICATIONS", col=1, row=7, view_type="DETAILED", colspan=5) }}
+  {{ notifications_options() }}
+  {{ notifications_options_filter_selfhost() }}
+

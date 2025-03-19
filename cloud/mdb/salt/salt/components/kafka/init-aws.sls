@@ -1,0 +1,4 @@
+include:
+    - .telegraf
+    - .firewall
+    - .vector

@@ -1,0 +1,101 @@
+{% set cores = salt.pillar.get('data:dbaas:flavor:cpu_guarantee') | float %}
+{% set mbyte = 1024**2 %}
+{% set gbyte = mbyte*1024 %}
+{% set hour = 60 %} {# in minutes #}
+{% set minute = 60 %} {# in sec #}
+{% set walg = salt.grains.filter_by({
+    'Debian': {
+        'dbms': 'redis',
+        'version': '1074-7315a8b',
+        'user': 'mdb-backup',
+        'group': 'mdb-backup',
+        'confdir': '/etc/wal-g',
+        'restore_confdir': '/etc/wal-g-restore',
+        'homedir': '/home/mdb-backup',
+        'enabled': False,
+        'backup_timeout_mins': 20 * hour,
+        'restore_timeout_mins': 80 * hour,
+        'purge_timeout_mins': 30,
+        'logdir': '/var/log/wal-g',
+        'sleep_secs':  salt.pillar.get('data:backup:sleep', 30 * minute),
+        'retain_period_days': salt.pillar.get('data:backup:retain_period', 7),
+        'backup_service_enabled': salt.pillar.get('data:backup:use_backup_service', False),
+        'backup_id': salt.pillar.get('backup_id', 'none'),
+        'backup_name': salt.pillar.get('backup_name', 'none'),
+        's3_range_batch_enabled':  True,
+        's3_range_max_retries': 0,
+    }
+}, merge=salt.pillar.get('data:walg', {})) %}
+
+{% set zk_hosts = salt.pillar.get('data:' + walg.dbms + ':zk_hosts', []) %}
+{% do walg.update({'zk_hosts': zk_hosts}) %}
+
+{% set cluster_name = salt.grains.get('id').split('.')[0][:-1]  %}
+{% set cluster_id = salt.pillar.get('data:dbaas:cluster_id', cluster_name) %}
+{% set shard_id =  salt.pillar.get('data:dbaas:shard_id') %}
+{% set subcluster_id = salt.pillar.get('data:dbaas:subcluster_id') %}
+{% set shard_name = salt.pillar.get('data:dbaas:shard_name') %}
+{% set subcluster_name = salt.pillar.get('data:dbaas:subcluster_name') %}
+
+{% do walg.update({'shard_name': shard_name}) %}
+
+{% set walg_root = "walg-redis" %}
+{% set walg_cluster_dir = '{}/{}/{}'.format(walg_root, cluster_id, shard_id) %}
+{% set zk_root = {
+    'backup':           '{}/backup'.format(walg_cluster_dir),
+    'regular_backup':   '{}/regular_backup'.format(walg_cluster_dir),
+    'purge':            '{}/purge'.format(walg_cluster_dir),
+    'restore':          '{}/restore'.format(walg_cluster_dir),
+}
+%}
+{% do walg.update({'zk_root': zk_root}) %}
+
+{% set memory_guarantee_gb = (salt.pillar.get('data:dbaas:flavor:memory_guarantee', 0)|int) / gbyte %}
+{% set space_limit_bytes = salt.pillar.get('data:dbaas:space_limit', 0)|int %}
+{% set space_limit_gb = space_limit_bytes / gbyte %}
+
+{% set multipart_chunk_size = 20 * mbyte %}
+{% if memory_guarantee_gb <= 4 %}
+{%   set multipart_chunk_size = 5 * mbyte %}
+{% endif %}
+
+{% set s3_max_parts_count = 10000 %}
+{% set multipart_chunk_size_crit = (space_limit_bytes / s3_max_parts_count)| int %}
+{% set multipart_chunk_size = [multipart_chunk_size, multipart_chunk_size_crit]| max %}
+
+{% if space_limit_gb > 500 %}
+{%   do walg.update({'backup_timeout_mins': 48 * hour}) %}
+{% endif %}
+
+
+{% set timezone = salt.timezone.get_offset() %}
+{% set hours_delta = timezone[:3]|int * 60 %}
+{% set delta = (timezone[0] + timezone[3:])|int + hours_delta %}
+{% set utc_minutes = salt.pillar.get('data:backup:start:hours', 22) * 60 + salt.pillar.get('data:backup:start:minutes', 0) %}
+{% set local_minutes = utc_minutes + delta %}
+{% do walg.update({
+    'backup_local_minutes': local_minutes,
+    'backup_cron_hours':    (24 + local_minutes // 60) % 24,
+    'backup_cron_minutes':  local_minutes % 60,
+    'purge_cron_hours':     (24 + (local_minutes - 60) // 60) % 24,
+}) %}
+
+{% set s3_bucket = salt.pillar.get('data:s3_bucket') %}
+{% set s3_backup_root = salt.pillar.get('data:backup_root', '{0}-backup/{1}/{2}'.format(walg.dbms, cluster_id, shard_id if shard_id else subcluster_id)) %}
+{% set s3_backup_path = 's3://{0}/{1}'.format(s3_bucket, s3_backup_root) %}
+{% set s3_restore_bucket = salt.pillar.get('data:restore-from-pillar-data:s3_bucket', 'mdb') %}
+{% set s3_restore_path = 's3://{0}/{1}'.format(s3_restore_bucket, salt.pillar.get('restore-from:s3-path')) %}
+
+{% set s3 = {
+    'access_key_id':           salt.pillar.get('data:s3:access_key_id'),
+    'access_secret_key':       salt.pillar.get('data:s3:access_secret_key'),
+    'endpoint':                salt.pillar.get('data:s3:endpoint', 'https://s3.mds.yandex.net/').replace('https+path','https').replace('http+path','http'),
+    'region':                  salt.pillar.get('data:s3:region'),
+    'backup_path':             s3_backup_path,
+    'gpg_key_id':              salt.pillar.get('data:s3:gpg_key_id'),
+    'multipart_chunk_size':    multipart_chunk_size,
+
+    'restore_access_key_id':        salt.pillar.get('data:s3:access_key_id'),
+    'restore_access_secret_key':    salt.pillar.get('data:s3:access_secret_key'),
+    'restore_path':                 s3_restore_path
+} %}

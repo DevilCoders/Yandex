@@ -1,0 +1,74 @@
+{{- if eq .Values.lb.provisionedBy "helm" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: "datacloud-load-balancer"
+  namespace: "iam"
+  labels:
+    {{- include "datacloud-lib.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+
+spec:
+  type: LoadBalancer
+  selector:
+    {{- include "datacloud-lib.selectorEnvLabels" . | nindent 4 }}
+
+  ports:
+  {{- range .Values.servicePorts }}
+    - name: "{{ .name }}"
+      protocol: TCP
+      port: {{ .port }}
+      targetPort: "{{ .name }}"
+  {{- end }}
+
+{{- else if eq .Values.lb.provisionedBy "terraform" }}
+
+  {{- range $lbName, $v := .Values.loadBalancers }}
+    {{- range $v.targetGroups }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: "{{ $lbName }}-{{ .alias }}-{{.port}}"
+  namespace: "iam"
+  labels:
+    yc.iam.app: {{ .serviceName }}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "6060"
+spec:
+  type: "ClusterIP"
+  selector:
+    yc.iam.app: {{ .serviceName }}
+  ports:
+    - name: "{{ .portName }}"
+      protocol: TCP
+      port: {{.port}}
+      targetPort: "{{ .portName }}"
+    - name: metrics
+      protocol: TCP
+      port: 6060
+      targetPort: metrics
+
+---
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: "{{ $lbName }}-{{ .alias }}-{{.port}}"
+  namespace: "iam"
+  labels:
+    yc.iam.app: {{ .serviceName }}
+spec:
+  serviceRef:
+    name: "{{ $lbName }}-{{ .alias }}-{{.port}}"
+    port: {{.port}}
+  targetType: "{{ .targetType }}"
+  targetGroupARN: "{{ .arn }}"
+    {{- end }}
+
+  {{- end }}
+
+{{- end }}

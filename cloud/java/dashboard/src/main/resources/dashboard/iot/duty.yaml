@@ -1,0 +1,192 @@
+uid: ycpIoT
+refresh: 10m
+title: IoT duty
+tags: [ 'ycp', 'ycp-iot' ]
+
+variables:
+  ui:
+    cluster: { values: [prod, preprod] }
+  replacement:
+    !include ../include/errors.yaml
+
+graphDefaults: { datasource: 'Solomon Cloud', width: 8, height: 6 }
+queryDefaults: { labels: 'host=!cluster' }
+
+rows:
+  - title: 'L7 balancer (cpl)'
+    queryDefaults: { labels: 'cluster=cloud_${cluster}_cpl, service=api_envoy_ma, project=platform, host!=cluster'}
+    panels:
+      - type: graph
+        title: 'CPL RPS'
+        templates: { name: rps, rate: ui, sumLines: true }
+        queries:
+          - params: { labels: 'name=envoy_cluster_ds77k0vvaq4lsi3bdhjh_*_upstream_rq_total|envoy_cluster_a5dhatjrbuisomdbpslc_*_upstream_rq_total' }
+
+      - type: graph
+        title: 'CPL Errors'
+        templates: { name: errors, sumLines: true }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=envoy_cluster_ds77k0vvaq4lsi3bdhjh_*_upstream_rq_5xx|envoy_cluster_a5dhatjrbuisomdbpslc_*_upstream_rq_5xx' }
+            select: { group_by_labels: ['sum', 'name'], diff: [], drop_below: '0', alias: '5xx' }
+        draw: [{ alias: '5xx', color: '#b20', at: left }]
+
+      - type: graph
+        title: 'CPL Response Duration'
+        yAxes: [{ format: ms}]
+        queries:
+          - params: { labels: 'name=envoy_cluster_ds77k0vvaq4lsi3bdhjh_*_upstream_rq_time|envoy_cluster_a5dhatjrbuisomdbpslc_*_upstream_rq_time' }
+            select: { group_by_labels: ['avg', 'quantile']}
+
+  - title: Devices Public API
+    queryDefaults: { labels: 'project=cloud_iot, cluster=${cluster}, service=device-management-ma, app=iot_server, method!=*.inner.*' }
+    drilldowns:
+      - subUid: dd_iot_devices_host
+        tags: [ 'ycp', 'ycp-iot' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [ '*-*', '*-myt*', '*-sas*', '*-vla*' ]
+            titles: [ 'Cluster', 'DC myt', 'DC sas', 'DC vla' ]
+        uiRepeat: host
+        labels: 'host=$host'
+    panels:
+
+      - type: graph
+        templates: { name: rps, rate: ui }
+        title: 'Device management API $rateUnit ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_requests, meter_type=count' }
+
+      - type: graph
+        templates: { name: errors }
+        title: 'Device management API errors ($cluster)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, status=@4xx' }
+          - params: { labels: 'name=grpc_statuses, status=@503' }
+          - params: { labels: 'name=grpc_statuses, status=@5xx' }
+        draw: [{ alias: '4xx', color: '#147', at: right }, { alias: '503', color: '#da7', at: left }, { alias: '5xx', color: '#b20', at: left }]
+
+      - type: graph
+        templates: { name: percentile, groupLines: true, format: solomon }
+        title: 'Device management API response duration ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_durations' }
+
+  - title: Auth API
+    graphDefaults: { width: 8, height: 6 }
+    queryDefaults: { labels: 'project=cloud_iot, cluster=${cluster}, service=device-management-ma, app=iot_server, method=*.inner.*' }
+    drilldowns:
+      - subUid: dd_iot_auth_host
+        tags: [ 'ycp', 'ycp-iot' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [ '*-*', '*-myt*', '*-sas*', '*-vla*' ]
+            titles: [ 'Cluster', 'DC myt', 'DC sas', 'DC vla' ]
+        uiRepeat: host
+        labels: 'host=$host'
+    panels:
+
+      - type: graph
+        templates: { name: rps, rate: ui }
+        title: 'Auth API $rateUnit ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_requests, meter_type=count' }
+
+      - type: graph
+        templates: { name: errors }
+        title: 'Auth API errors ($cluster)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, status=@4xx' }
+          - params: { labels: 'name=grpc_statuses, status=@503' }
+          - params: { labels: 'name=grpc_statuses, status=@5xx' }
+        draw: [{ alias: '4xx', color: '#147', at: right }, { alias: '503', color: '#da7', at: left }, { alias: '5xx', color: '#b20', at: left }]
+
+      - type: graph
+        templates: { name: percentile, groupLines: true, format: solomon }
+        title: 'Auth API response duration ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_durations' }
+
+  - title: MQTT selfping
+    graphDefaults: { width: 8, height: 6 }
+    queryDefaults: { labels: 'project=cloud_iot, cluster=${cluster}, service=mqtt-broker-ma' }
+    drilldowns:
+      - subUid: dd_iot_mqtt_selfping_host
+        tags: [ 'ycp', 'ycp-iot' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [ '*-*', '*-myt*', '*-sas*', '*-vla*' ]
+            titles: [ 'Cluster', 'DC myt', 'DC sas', 'DC vla' ]
+        uiRepeat: host
+        labels: 'host=$host'
+    panels:
+
+      - type: graph
+        title: 'MQTT selfping errors ($cluster)'
+        display: { stack: true }
+        queryDefaults: { defaultTimeWindow: '1m' }
+        queries:
+          - params: { labels: 'name=self_ping_status_failure' }
+            groupByTime: { max: default }
+            select: { diff: [], drop_below: "0", group_lines: [sum], alias: 'FAIL' }
+          - params: { labels: 'name=self_ping_status_success' }
+            groupByTime: { max: default }
+            select: { diff: [], drop_below: "0", group_lines: [sum], alias: 'OK' }
+        draw: [{ alias: 'FAIL', color: '#db0000' }, { alias: 'OK', color: '#92db00' }]
+
+      - type: graph
+        templates: { name: percentile, groupLines: true, levels: [40, 70, 100], format: solomon }
+        title: 'MQTT selfping RTT ($cluster)'
+        queries:
+          - params: { labels: 'name=self_ping_rtt', defaultTimeWindow: '1m' }
+
+  - title: MQTT clients
+    graphDefaults: { width: 8, height: 6 }
+    queryDefaults: { labels: 'project=cloud_iot, cluster=${cluster}, service=mqtt-broker-ma' }
+    drilldowns:
+      - subUid: dd_iot_mqtt_clients_host
+        tags: [ 'ycp', 'ycp-iot' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [ '*-*', '*-myt*', '*-sas*', '*-vla*' ]
+            titles: [ 'Cluster', 'DC myt', 'DC sas', 'DC vla' ]
+        uiRepeat: host
+        labels: 'host=$host'
+    panels:
+
+      - type: graph
+        title: 'MQTT clients ($cluster)'
+        display: { stack: false }
+        queries:
+          - params: { labels: 'name=client_count' }
+            select: { group_lines: [sum], alias: 'active connections' }
+          - params: { labels: 'name=client_started' }
+            select: { diff: [], drop_below: "0", group_lines: [sum], alias: 'new connections' }
+          - params: { labels: 'name=client_finished' }
+            select: { diff: [], drop_below: "0", group_lines: [sum], alias: 'closed connections' }
+
+      - type: graph
+        title: 'MQTT clients messaging ($cluster)'
+        display: { stack: false }
+        yAxes: [{ format: decbytes, min: 0 }]
+        queries:
+          - params: { labels: 'name=client_publish_trafic_started' }
+            select: { diff: [], drop_below: "0", group_lines: [sum], alias: 'data from client' }
+          - params: { labels: 'name=client_subscribe_trafic_started' }
+            select: { diff: [], drop_below: "0", group_lines: [sum], alias: 'data to client' }
+
+      - type: graph
+        templates: { name: percentile, groupLines: true, format: solomon }
+        title: 'MQTT message delivery time ($cluster)'
+        queries:
+          - params: { labels: 'name=shard_topic_reader_full_msg_time' }

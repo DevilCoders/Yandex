@@ -1,0 +1,2 @@
+class FeatureFlag:
+    pass

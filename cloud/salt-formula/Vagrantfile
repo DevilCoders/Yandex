@@ -1,0 +1,103 @@
+# -*- mode: ruby -*-
+# vim: filetype=ruby tabstop=2 shiftwidth=2
+#
+# Configures development environment for the project
+#
+
+#load "provisioning/roles/vagrant/Vagrantfile"
+
+Vagrant.configure("2") do |config|
+  config.vm.provider "virtualbox" do |vm, override|
+    override.vm.box = "bento/ubuntu-16.04"
+    override.vm.box_version = "2.2.9"
+    override.vm.hostname = "compute"
+
+    vm.memory = 4096
+    vm.name = "yc-compute-bundle-" + Time.now.strftime("%Y%m%d%H%M")
+  end
+
+  if false
+    # Non-VirtualBox provisioners are broken: it needs to add LBS disk creation support
+    config.vm.provider "libvirt" do |vm, override|
+      override.vm.box = "wholebits/ubuntu-16.04-64"
+      override.vm.box_version = "2016.09.18"
+
+      vm.random_hostname = true
+      vm.memory = 2048
+      vm.cpus = 4
+      vm.nested = true
+
+      if ENV["NINEP_SHARED_PATH"]
+        override.vm.synced_folder ENV["NINEP_SHARED_PATH"] + '/compute', '/vagrant', type: '9p', disabled: false, accessmode: "mapped", mount: true
+        vm.volume_cache = 'unsafe'
+      end
+    end
+  end
+
+  disk_size_gb = 20
+  vm_path = File.realpath(".").to_s + "/.vagrant/machines/default/virtualbox"
+
+  (0..2).each do |disk_id|
+    disk_path = "#{vm_path}/lbs_disk_#{disk_id}.vdi"
+
+    if !File.exist?(disk_path)
+      config.vm.provider "virtualbox", &(lambda {|path| Proc.new {|vm|
+        vm.customize "pre-boot", ["createhd", "--filename", path, "--format", "VDI", "--size", disk_size_gb * 1024]
+      }}.call(disk_path))
+    end
+
+    config.vm.provider "virtualbox", &(lambda {|id, path| Proc.new {|vm|
+      vm.customize "pre-boot", [
+        "storageattach", :id, "--storagectl", "SATA Controller", "--port", id + 1, "--device", 0,
+        "--type", "hdd", "--medium", path
+      ]
+    }}.call(disk_id, disk_path))
+  end
+
+#  config.vm.provision "on-boot", type: "ansible", run: "always" do |ansible|
+#    ansible.playbook = "provisioning/on-boot.yaml"
+#  end
+
+  config.vm.synced_folder "./", "/srv/salt/"
+  config.vm.synced_folder "pillar/", "/srv/pillar/"
+
+
+  config.vm.provision :salt do |salt|
+    salt.masterless = true
+#    salt.minion_config = "salt/minion"
+    salt.run_highstate = true
+  end
+
+  # PostgreSQL
+  config.vm.network "forwarded_port", guest: 5432, host: 5432, host_ip: "127.0.0.1"
+
+  # Snapshot
+  config.vm.network "forwarded_port", guest: 7627, host: 7627, host_ip: "127.0.0.1"
+  config.vm.network "forwarded_port", guest: 7628, host: 7628, host_ip: "127.0.0.1"
+
+  # Template
+  config.vm.network "forwarded_port", guest: 7630, host: 7630, host_ip: "127.0.0.1"
+
+  # LBS
+  config.vm.network "forwarded_port", guest: 7807, host: 7807, host_ip: "127.0.0.1"
+
+  # Compute Node
+  config.vm.network "forwarded_port", guest: 8000, host: 8000, host_ip: "127.0.0.1"
+
+  # Compute
+  config.vm.network "forwarded_port", guest: 9000, host: 9000, host_ip: "127.0.0.1"
+
+  # Norse
+  config.vm.network "forwarded_port", guest: 9294, host: 9294, host_ip: "127.0.0.1"
+
+  # Billing
+  config.vm.network "forwarded_port", guest: 5000, host: 5000, host_ip: "127.0.0.1"
+
+  # Instance's VNC
+  (5900..5909).each do |port|
+    config.vm.network "forwarded_port", guest: port, host: port, host_ip: "127.0.0.1"
+  end
+
+  # Graphics
+  config.vm.network "forwarded_port", guest: 6080, host: 6080, host_ip: "127.0.0.1"
+end

@@ -1,0 +1,34 @@
+{% extends "../../base/alert.j2" %}
+
+{% set timeslot = 600 %}
+{% set windowSecs = timeslot %}
+
+{% macro prog() %}
+let ts = {
+        project='{{ project_id }}'
+        ,cluster='all'
+        ,service='bootstrap'
+        ,salt_role='compute-dp-vpc'
+        ,stand_name='{{ env }}'
+        ,host='all'
+};
+
+let diffs = map(ts, x -> ramp(diff(x)));
+let sums = map(diffs, x -> sum(x));
+
+let result_hosts = max(sums);
+let is_red = result_hosts < 1;
+ok_if(result_hosts >= 1);
+{% endmacro %}
+
+{% block main %}
+    "name": "Deploy compute-dp-vpc (vrouter) progress on {{ env }}",
+    "annotations": {
+        "last_timeslot_release_hosts_count": "[[ expression.result_hosts ]]",
+        "host": "vpc-releases-{{ env }}",
+        "service": "deploy_compute-dp-vpc",
+        "timeslot": "{{ timeslot }} seconds"
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

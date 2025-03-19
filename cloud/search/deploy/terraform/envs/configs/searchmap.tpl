@@ -1,0 +1,3 @@
+%{ for backend in backends ~}${queue_name} iNum:0,tag:${backend["tag"]},host:${backend["host"]},search_port:8080,search_port_ng:8081,json_indexer_port:8082,dump_port:8086,zk:${zk},shards:0-65533,prefix_type:string\n%{ endfor ~}
+%{ for backend in backends ~}yc_search_malformed_docs iNum:0,tag:${backend["tag"]},host:${backend["host"]},search_port:8080,search_port_ng:8081,json_indexer_port:8082,dump_port:8086,zk:${zk},shards:0-65533,prefix_type:string\n%{ endfor ~}
+%{ for backend in backends_marketplace ~}${queue_name_marketplace} iNum:0,tag:${backend["tag"]},host:${backend["host"]},search_port:8080,search_port_ng:8081,json_indexer_port:8082,dump_port:8086,zk:${zk},shards:0-65533,prefix_type:string\n%{ endfor ~}

@@ -1,0 +1,37 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro svm_fqdn() -%}
+	[[labels.host]].{{ svm_domains[env] }}
+{%- endmacro %}
+
+{% macro prog() %}
+let errors = diff({
+	cluster="cloud_{{ env }}_ylb",
+	service="healthcheck_ctrl",
+	host!="cluster",
+	name="gcCycles",
+	env="{{ env }}"
+});
+
+let description = 'Too much gc cycles';
+
+let is_red = max(errors) > 20;
+alarm_if(is_red);
+
+let is_yellow = max(errors) > 10;
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+	"id": "{{ id }}",
+	"name": "{{ name }}",
+	"description": "",
+	"groupByLabels": ["host"],
+	"annotations": {
+		"details": "[[expression.description]]",
+		"host": "{{ svm_fqdn() }}",
+		"service": "{{ serviceName }}",
+		"wiki": "https://docs.yandex-team.ru/yc-monitoring/cgw/{{ serviceName }}"
+	},
+	"type": {{ type_expression() }}
+{% endblock %}

@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.dns.v1;
+
+import "yandex/cloud/priv/validation.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/dns/v1;dns";
+option java_outer_classname = "PDZ";
+
+message DnsZone {
+  string id = 1;
+  string folder_id = 2;
+  google.protobuf.Timestamp created_at = 3;
+  string name = 4;
+  string description = 5;
+  map<string, string> labels = 6;
+
+  string zone = 10;
+  int64 rps_limit = 11;
+  ForwardingConfig forwarding_config = 12;
+  repeated string clusters = 13;
+  int64 priority = 14; // Records from zones with higher priority are preferred by the data plane
+
+  PrivateVisibility private_visibility = 21;
+  PublicVisibility public_visibility = 22;
+
+  // private output only
+  bool ui_protected = 23;
+  int64 record_set_count = 24;
+}
+
+message RecordSet {
+  string name = 1 [(length) = "1-254"];
+  string type = 2 [(length) = "1-20"];
+  int64 ttl = 3 [(value) = "0-2147483647"];
+  repeated string data = 4 [(size) = "1-100", (length) = "1-1024", (unique) = true];
+  bool ui_protected = 5;
+}
+
+message ForwardingConfig {
+  repeated ForwardingNameServer target_name_servers = 1;
+  BalancingPolicy balancing_policy = 2;
+
+  enum BalancingPolicy {
+    BALANCING_POLICY_UNSPECIFIED = 0;
+    FALLBACK = 1; // the request will be sent to the next server after a timeout
+    RANDOM = 2; // the request will be sent to a randomly selected server
+    FASTEST = 4; // the request will be sent to all servers, the fastest response will be chosen
+    BY_RPS_LIMIT = 5; // the next server does not reached rps limit will be selected to sending a request
+  }
+}
+
+message ForwardingNameServer {
+  string address = 1; // ipv4 or ipv6 address
+  string network_id = 2; // the presence for this field indicates that forwarding will send requests to that vpc
+  int64 rps_limit = 3;
+  int64 timeout = 4; // in seconds
+  int64 ttl = 5; // ttl for caching answers in seconds, max 60 seconds
+}
+
+message PrivateVisibility {
+  repeated string network_ids = 1 [(size) = "0-10", (length) = "20", (unique) = true];
+}
+
+message PublicVisibility {
+  //private only
+  bool yandex_only = 99;
+  bool enable_yandex_dns_sync = 100;
+}

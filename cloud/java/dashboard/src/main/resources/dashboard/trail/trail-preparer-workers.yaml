@@ -1,0 +1,114 @@
+uid: trail-preparer-workers
+refresh: 1m
+title: Audit Trails Preparer Dashboard — Workers
+
+tags:
+  - yc-trails
+  - yc-audit-trails
+links:
+  - { title: 'Preparer', url: 'https://grafana.yandex-team.ru/d/trail-preparer' }
+  - { title: 'System', url: 'https://grafana.yandex-team.ru/d/trail-preparer-system' }
+  - { title: 'Run', url: 'https://grafana.yandex-team.ru/d/trail-preparer-run-metrics' }
+  - { title: 'Dashboards', tags: [ yc-trails ] }
+
+variables:
+  ui:
+    !include include/_datasources.yaml
+    !include include/_projects.yaml
+    !include include/_clusters.yaml
+    host:
+      values:
+        - cluster-prp
+        - prp-vla-1
+        - prp-sas-1
+        - prp-myt-1
+  replacement:
+    !include ../include/errors.yaml
+  uiQuery:
+    installation:
+      inheritLabels: false
+      labels: 'project=${project}, cluster=trail, service=core, host=${host}, name=preparerIncomingBytes_sum'
+      label: 'installation'
+      hidden: true
+      multi: true
+      regex: '^.*$'
+    worker:
+      inheritLabels: false
+      labels: 'project=${project}, cluster=trail, service=core, host=${host}, name=preparerJobMsSinceLastStarted'
+      label: 'worker'
+      hidden: true
+      multi: true
+      regex: '^[^e].*_[0-8]$'
+
+
+
+graphDefaults:
+  datasource: ${datasource}
+  width: 8
+  height: 6
+
+queryDefaults:
+  dropNan: false
+  labels: 'project=${project}, cluster=trail, service=core, host=${host}'
+  defaultTimeWindow: $__interval
+
+rows:
+
+  - title: Reading $installation
+    graphDefaults: { width: 8 }
+    uiRepeat: installation
+    panels:
+      - type: graph
+        title: Partitions $installation
+        queries:
+          - params: { labels: 'name=preparerIncomingBytes_sum, installation=$installation' }
+            select: { group_by_labels: [ sum, topic, partition ], diff: [ ], drop_below: '0', alias: '{{topic}}#{{partition}}' }
+        yAxes: [ { min: 0, format: decbytes } ]
+        display: { empty: false, sort: decreasing }
+      - type: graph
+        title: Workers $installation
+        queries:
+          - params: { labels: 'name=preparerIncomingBytes_sum, installation=$installation' }
+            select: { group_by_labels: [ sum, worker ], diff: [ ], drop_below: '0', alias: '{{worker}}' }
+        yAxes: [ { min: 0, format: decbytes } ]
+        display: { empty: false, sort: decreasing }
+      - type: graph
+        title: Read $installation
+        templates: [ { name: percentile, groupLines: true, format: solomon } ]
+        queries:
+          - params: { labels: 'name=logbrokerReadTime, installation=$installation' }
+        yAxes: [ { min: 0, format: s } ]
+        display: { empty: false, sort: decreasing }
+      - type: graph
+        title: Commit $installation
+        templates: [ { name: percentile, groupLines: true, format: solomon } ]
+        queries:
+          - params: { labels: 'name=logbrokerCommitTime, installation=$installation' }
+        yAxes: [ { min: 0, format: s } ]
+        display: { empty: false, sort: decreasing }
+      - type: graph
+        title: Delay $installation
+        templates: [ { name: percentile, groupLines: true, format: solomon } ]
+        queries:
+          - params: { labels: 'name=preparerProcessingDelay, installation=$installation' }
+        yAxes: [ { min: 0, format: s } ]
+        display: { empty: false, sort: decreasing }
+      - type: graph
+        title: Since Read $installation
+        queries:
+          - params: { labels: 'name=logbrokerTopicReaderSinceLastRead, installation=$installation, host=prp-*' }
+            select: { group_by_labels: [ min, host, topic, consumer ], alias: '{{host}} {{topic}} {{consumer}}' }
+        yAxes: [ { min: 0, format: ms } ]
+        display: { empty: false, sort: decreasing }
+
+  - title: Reading workers
+    graphDefaults: { width: 8 }
+    panels:
+      - type: graph
+        uiRepeat: worker
+        title: Read $worker
+        queries:
+          - params: { labels: 'name=preparerIncomingBytes_sum, worker=$worker, host=prp-*' }
+            select: { group_by_labels: [ sum, host, installation, partition ], diff: [ ], drop_below: '0', alias: '{{installation}}#{{partition}} {{host}}' }
+        yAxes: [ { min: 0, format: decbytes } ]
+        display: { empty: false }

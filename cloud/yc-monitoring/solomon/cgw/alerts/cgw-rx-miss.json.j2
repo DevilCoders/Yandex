@@ -1,0 +1,37 @@
+{% extends "../../base/alert.j2" %}
+
+{% set windowSecs = 600 %}
+
+{% macro prog() %}
+let sensors_all_ifaces_rate = derivative({
+	cluster='cloud_{{ env }}_cloudgate',
+	service='interfaces',
+	host='*',
+	worker='-',
+	name='rx_miss'
+});
+let max_drop_rate_iface = group_lines('max', sensors_all_ifaces_rate);
+let last_drops = sum(max_drop_rate_iface);
+let avg_drops_rate = avg(moving_avg(max_drop_rate_iface, 5m));
+let max_drops_rate = max(max_drop_rate_iface);
+let is_red = avg_drops_rate > {{ red_threshold }};
+let is_yellow = avg_drops_rate > {{ yellow_threshold }} || last_drops > 0 ;
+alarm_if(is_red);
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+	"name": "CGW rx_miss @ {{ env }}",
+	"groupByLabels": ["host"],
+	"annotations": {
+		"host": "{{ svm_fqdn() }}",
+		"tags": "Solomon, yc-{{env}}, yc-cgw",
+		"avg_drops_rate": "[[expression.avg_drops_rate]]",
+		"max_drops_rate": "[[expression.max_drops_rate]]",
+		"service": "{{ serviceName }}",
+		"wiki": "https://docs.yandex-team.ru/yc-monitoring/cgw/{{ serviceName }}",
+		"total_drops": "[[expression.last_drops]]"
+	},
+	"description": "Check if it is time to increase cgw group",
+	"type": {{ type_expression() }}
+{% endblock %}

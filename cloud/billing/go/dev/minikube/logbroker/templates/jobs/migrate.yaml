@@ -1,0 +1,54 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "logbroker.migrationName" . }}
+  namespace: {{ include "logbroker.namespace" . }}
+  labels:
+    {{- include "logbroker.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install
+    "helm.sh/hook-weight": "-5"
+spec:
+  ttlSecondsAfterFinished: 60
+  template:
+    metadata:
+      name: {{ include "logbroker.migrationName" . }}
+      labels:
+        {{- include "logbroker.labels" . | nindent 8}}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "logbroker.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      restartPolicy: OnFailure
+      terminationGracePeriodSeconds: 0
+      initContainers:
+        - name: sql-source
+          command: ["cp", "-r"]
+          args:
+            - /source
+            - /scripts
+          volumeMounts:
+            - mountPath: /scripts
+              name: scripts
+          image: "{{ .Values.image.repository }}/{{ .Values.image.scriptsImage }}:{{ .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+      containers:
+        - name: migrate
+          command: ["run_scripts.sh"]
+          args:
+            - /scripts
+          env:
+            - name: YDB_PROFILE
+              value: service
+          volumeMounts:
+            - mountPath: /scripts
+              name: scripts
+          image: "{{ .Values.image.repository }}/{{ .Values.image.clientImage }}:{{ .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+      volumes:
+        - name: scripts
+          emptyDir: {}

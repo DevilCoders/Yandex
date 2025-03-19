@@ -1,0 +1,31 @@
+{% extends "./base_alert.j2" %}
+
+{% set checkExpression = "diff > " + diff_limit %}
+{% set description = "YCM " + env | upper + " ACME Report events" %}
+{% set windowSecs = 300 %}
+
+{% macro prog() %}
+let data = group_by_time(1m, 'max', {
+    project='{{ project_id }}',
+    service='{{ solomon_service }}',
+    cluster='cloud_{{ env }}_ycm_cluster',
+    host='cluster',
+    {{ sensor_label }}='acmeReporterEvents'
+});
+let derivative = derivative(data);
+let diff = sum(derivative);
+let total = max(data);
+let alertStr = diff > 0 ? to_fixed(diff, 0) + ' new report events ' : to_fixed(total, 0) + ' report events totally';
+{% endmacro %}
+
+{% block main %}
+  "name": "YCM {{ env | upper }} ACME Report events",
+  "groupByLabels": ["cluster"],
+  "annotations": {
+    "jugglerService": "[[labels.cluster]]--acme-report-events",
+    "description": "[[expression.alertStr]] on [[labels.cluster]]",
+    "wikiUrl": "https://nda.ya.ru/t/--RVmYVl4kMu6K",
+    "jugglerTags" : "{{ jugglerTags }}"
+  },
+  "type": {{ type_expression() }}
+{% endblock %}

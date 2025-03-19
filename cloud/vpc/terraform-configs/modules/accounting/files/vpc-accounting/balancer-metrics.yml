@@ -1,0 +1,52 @@
+channels:
+  - name: multishard_metrics_pull_channel
+    channel:
+      output:
+        plugin: metrics_multishard_pull
+        config:
+          port: 10002
+          read_limit_messages: 50
+          max_memory_usage: 10gb
+          check_period: 15s
+
+          reshard_metrics:
+            project: "{{cloud_id}}"
+            service: "network-load-balancer"
+            cluster: "{{folder_id}}"
+            preserve_original: false
+
+          registration:
+            service_provider: "network-load-balancer"
+            poll_period: 15s
+            endpoints:
+              - url: ${solomon_url}
+                iam:
+                  cloud_meta: {}
+
+storages:
+  - name: vpc-accounting-balancer-metrics-storage
+    plugin: fs
+    config:
+      directory: /var/lib/yandex/unified_agent/storage/vpc-accounting-balancer-metrics-storage
+      max_partition_size: 500mb
+
+routes:
+  # vpc-accounting-balancer-metrics
+  - input:
+      plugin: metrics_pull
+      flow_control:
+        inflight:
+          limit: 100mb
+      config: {project: yc.vpc.accounting, service: vpc-accounting, url: 'http://localhost:15001/balancer-metrics',
+  poll_period: 15s, timeout: 10s, retry_count: 1, format: {solomon_json: {}}}
+    channel:
+      pipe:
+        - storage_ref:
+            name: vpc-accounting-balancer-metrics-storage
+            flow_control:
+              inflight:
+                limit: 100mb
+
+      channel_ref:
+        # Expose metrics on http://[::]:8080/read
+        name: ${output_channel}

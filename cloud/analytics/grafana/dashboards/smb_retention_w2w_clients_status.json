@@ -1,0 +1,1006 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 0,
+  "id": 97222,
+  "iteration": 1564132595570,
+  "links": [
+    {
+      "icon": "external link",
+      "tags": [],
+      "title": "Clients By Churn Status",
+      "type": "link",
+      "url": "https://grafana.yandex-team.ru/d/5f4CCyXmk/clients-by-churn-status?orgId=1"
+    },
+    {
+      "icon": "external link",
+      "tags": [],
+      "title": "Clients By Churn Status By Products ",
+      "type": "link",
+      "url": "https://grafana.yandex-team.ru/d/q0m3d8Xmz/clients-by-churn-status-by-products?orgId=1"
+    }
+  ],
+  "panels": [
+    {
+      "content": "# Beta Version\nWaiting for automation",
+      "gridPos": {
+        "h": 3,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 9,
+      "links": [],
+      "mode": "markdown",
+      "title": "",
+      "type": "text"
+    },
+    {
+      "content": "## Если у Вас что-то не работает или Вам не хватает функциональности, пожалуйста, [дайте нам знать](https://forms.yandex-team.ru/surveys/21421/).",
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 20,
+      "links": [],
+      "mode": "markdown",
+      "title": "",
+      "type": "text"
+    },
+    {
+      "content": "# Data Updated At $data_updated",
+      "gridPos": {
+        "h": 2,
+        "w": 12,
+        "x": 0,
+        "y": 3
+      },
+      "id": 15,
+      "links": [],
+      "mode": "markdown",
+      "title": "",
+      "type": "text"
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "ch_cloud_analytics",
+      "fill": 1,
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "id": 18,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "dateTimeType": "DATETIME",
+          "format": "time_series",
+          "formattedQuery": "SELECT $timeSeries as t, count() FROM $table WHERE $timeFilter GROUP BY t ORDER BY t",
+          "intervalFactor": 1,
+          "query": "SELECT\n    toInt32(toDateTime(t0.date))*1000 as date,\n    SUM(paid_consumption_fact) as paid_consumption_fact,\n    sum(paid_consumption_plan) as paid_consumption_plan\nFROM(\n    SELECT\n        period,\n        dates as date,\n        segment,\n        paid_consumption_cums as paid_consumption_fact\n    FROM(\n        SELECT\n            period,\n            segment,\n            groupArray(date) as dates,\n            arrayCumSum(groupArray(paid_consumption)) as paid_consumption_cums\n        FROM(\n            SELECT\n                multiIf('$aggr_period' = 'weekly', toMonday(event_time), toStartOfMonth(event_time) ) as period,\n                toDate(event_time) as date,\n                multiIf(sales = 'glebmarkevich', 'csm',segment)  as segment,\n                SUM(real_consumption) as paid_consumption\n            FROM cloud_analytics_testing.acquisition_cube_test\n            WHERE \n              has([$Segment], multiIf(sales = 'glebmarkevich', 'csm',segment))=1\n              AND has([$fraud_status], multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud'))=1\n            GROUP BY\n                period,\n                date,\n                segment\n            ORDER BY\n                period,\n                date,\n                segment\n        )\n        GROUP BY\n            period,\n            segment\n    )\n    ARRAY JOIN dates, paid_consumption_cums\n) as t0\nANY LEFT JOIN (\n    SELECT\n        segment,\n        period,\n        dates as date,\n        avg_paid_consumption_plans as paid_consumption_plan\n    FROM(\n        SELECT\n            segment,\n            multiIf('$aggr_period' = 'weekly', toMonday(date), toStartOfMonth(date) ) as period,\n            groupArray(date) as dates,\n            arrayCumSum(groupArray(avg_paid_consumption_plan)) as avg_paid_consumption_plans\n        FROM(\n            SELECT\n                segment,\n                period,\n                avg_paid_consumption_plan ,\n                dr as date\n            FROM(\n                SELECT\n                    segment,\n                    toDate(date) as period,\n                    paid_consumption_plan / (addMonths(date, 1) - date) as avg_paid_consumption_plan,\n                    arrayMap(x -> addDays(date, x) ,range(toUInt32( toDate('2020-01-01') - toDate(date) )) ) as dr\n                FROM cloud_analytics.smb_plans\n            )\n            ARRAY JOIN dr\n            WHERE\n                toStartOfMonth(date) = period\n            ORDER BY\n                date\n        )\n        GROUP BY\n            segment,\n            period\n    )\n    ARRAY JOIN dates,avg_paid_consumption_plans\n) as t1\nON t0.period = t1.period AND t0.date = t1.date AND t0.segment = t1.segment\nWHERE \n  t0.date < toDate(NOW())\nGROUP BY\n  date\nORDER BY\n  date",
+          "rawQuery": "SELECT     toInt32(toDateTime(t0.date))*1000 as date,     SUM(paid_consumption_fact) as paid_consumption_fact,     sum(paid_consumption_plan) as paid_consumption_plan FROM(     SELECT         period,         dates as date,         segment,         paid_consumption_cums as paid_consumption_fact     FROM(         SELECT             period,             segment,             groupArray(date) as dates,             arrayCumSum(groupArray(paid_consumption)) as paid_consumption_cums         FROM(             SELECT                 multiIf('weekly' = 'weekly', toMonday(event_time), toStartOfMonth(event_time) ) as period,                 toDate(event_time) as date,                 multiIf(sales = 'glebmarkevich', 'csm',segment)  as segment,                 SUM(real_consumption) as paid_consumption             FROM cloud_analytics_testing.acquisition_cube_test             WHERE                has(['mass','csm'], multiIf(sales = 'glebmarkevich', 'csm',segment))=1               AND has(['Not Fraud'], multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud'))=1             GROUP BY                 period,                 date,                 segment             ORDER BY                 period,                 date,                 segment         )         GROUP BY             period,             segment     )     ARRAY JOIN dates, paid_consumption_cums ) as t0 ANY LEFT JOIN (     SELECT         segment,         period,         dates as date,         avg_paid_consumption_plans as paid_consumption_plan     FROM(         SELECT             segment,             multiIf('weekly' = 'weekly', toMonday(date), toStartOfMonth(date) ) as period,             groupArray(date) as dates,             arrayCumSum(groupArray(avg_paid_consumption_plan)) as avg_paid_consumption_plans         FROM(             SELECT                 segment,                 period,                 avg_paid_consumption_plan ,                 dr as date             FROM(                 SELECT                     segment,                     toDate(date) as period,                     paid_consumption_plan / (addMonths(date, 1) - date) as avg_paid_consumption_plan,                     arrayMap(x -> addDays(date, x) ,range(toUInt32( toDate('2020-01-01') - toDate(date) )) ) as dr                 FROM cloud_analytics.smb_plans             )             ARRAY JOIN dr             WHERE                 toStartOfMonth(date) = period             ORDER BY                 date         )         GROUP BY             segment,             period     )     ARRAY JOIN dates,avg_paid_consumption_plans ) as t1 ON t0.period = t1.period AND t0.date = t1.date AND t0.segment = t1.segment WHERE    t0.date < toDate(NOW()) GROUP BY   date ORDER BY   date",
+          "refId": "A",
+          "round": "0s"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Plan/Fact Paid Consumption",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "columns": [],
+      "datasource": "ch_cloud_analytics",
+      "fontSize": "100%",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
+      "id": 2,
+      "links": [],
+      "pageSize": null,
+      "scroll": true,
+      "showHeader": true,
+      "sort": {
+        "col": 1,
+        "desc": true
+      },
+      "styles": [
+        {
+          "alias": "Time",
+          "dateFormat": "YYYY-MM-DD HH:mm:ss",
+          "pattern": "Time",
+          "type": "date"
+        },
+        {
+          "alias": "",
+          "colorMode": null,
+          "colors": [
+            "rgba(245, 54, 54, 0.9)",
+            "rgba(237, 129, 40, 0.89)",
+            "rgba(50, 172, 45, 0.97)"
+          ],
+          "dateFormat": "YYYY-MM-DD HH:mm:ss",
+          "decimals": 0,
+          "mappingType": 1,
+          "pattern": "W2W Diff, RUR",
+          "thresholds": [
+            "-100000",
+            "100000"
+          ],
+          "type": "number",
+          "unit": "locale"
+        },
+        {
+          "alias": "",
+          "colorMode": null,
+          "colors": [
+            "rgba(245, 54, 54, 0.9)",
+            "rgba(237, 129, 40, 0.89)",
+            "rgba(50, 172, 45, 0.97)"
+          ],
+          "dateFormat": "YYYY-MM-DD HH:mm:ss",
+          "decimals": 0,
+          "mappingType": 1,
+          "pattern": "W2W Per Client, RUR",
+          "thresholds": [],
+          "type": "number",
+          "unit": "locale"
+        },
+        {
+          "alias": "",
+          "colorMode": null,
+          "colors": [
+            "rgba(245, 54, 54, 0.9)",
+            "rgba(237, 129, 40, 0.89)",
+            "rgba(50, 172, 45, 0.97)"
+          ],
+          "dateFormat": "YYYY-MM-DD HH:mm:ss",
+          "decimals": 0,
+          "mappingType": 1,
+          "pattern": "Paid Consumption, RUR",
+          "thresholds": [],
+          "type": "number",
+          "unit": "locale"
+        },
+        {
+          "alias": "",
+          "colorMode": null,
+          "colors": [
+            "rgba(245, 54, 54, 0.9)",
+            "rgba(237, 129, 40, 0.89)",
+            "rgba(50, 172, 45, 0.97)"
+          ],
+          "dateFormat": "YYYY-MM-DD HH:mm:ss",
+          "decimals": 0,
+          "mappingType": 1,
+          "pattern": "Clients",
+          "thresholds": [],
+          "type": "number",
+          "unit": "locale"
+        },
+        {
+          "alias": "",
+          "colorMode": null,
+          "colors": [
+            "rgba(245, 54, 54, 0.9)",
+            "rgba(237, 129, 40, 0.89)",
+            "rgba(50, 172, 45, 0.97)"
+          ],
+          "dateFormat": "YYYY-MM-DD HH:mm:ss",
+          "decimals": 0,
+          "mappingType": 1,
+          "pattern": "Total Paid Consumption, RUR",
+          "thresholds": [],
+          "type": "number",
+          "unit": "locale"
+        },
+        {
+          "alias": "",
+          "colorMode": null,
+          "colors": [
+            "rgba(245, 54, 54, 0.9)",
+            "rgba(237, 129, 40, 0.89)",
+            "rgba(50, 172, 45, 0.97)"
+          ],
+          "decimals": 2,
+          "pattern": "/.*/",
+          "thresholds": [],
+          "type": "number",
+          "unit": "short"
+        }
+      ],
+      "targets": [
+        {
+          "dateTimeType": "DATETIME",
+          "format": "table",
+          "formattedQuery": "SELECT $timeSeries as t, count() FROM $table WHERE $timeFilter GROUP BY t ORDER BY t",
+          "intervalFactor": 1,
+          "query": "SELECT\n  week_next  as \"Week\",\n  multiIf(\n      real_consumption_next_period < real_consumption and real_consumption_next_period > 0, 'Negative',\n      real_consumption_next_period > real_consumption and real_consumption <= 0, 'New',\n      real_consumption_next_period > real_consumption and real_consumption_next_period > 0, 'Positive',\n      real_consumption_next_period < real_consumption and real_consumption_next_period <= 0, 'Churn',\n      real_consumption_next_period = 0 AND real_consumption = 0, 'Non-consuming',\n      real_consumption_next_period = real_consumption AND real_consumption > 0, 'Same',\n      'other'\n  ) as \"Churn Type\",\n  SUM(real_consumption_next_period) - SUM(real_consumption) as \"W2W Diff, RUR\",\n  SUM(real_consumption_next_period) as \"Paid Consumption, RUR\",\n  uniqExact(billing_account_id) as \"Clients\",\n  (SUM(real_consumption_next_period) - SUM(real_consumption))/uniqExact(billing_account_id) as \"W2W Per Client, RUR\",\n  SUM(total_real_consumption) + SUM(real_consumption_next_period) as \"Total Paid Consumption, RUR\"\nFROM(\n  SELECT\n      week_next,\n      billing_account_id,\n      SUM( real_consumption) as real_consumption,\n      SUM( real_consumption_next_period) as real_consumption_next_period,\n      SUM(real_consumption_cum) as total_real_consumption\n  FROM\n  \tcloud_analytics_testing.retention_cube_$aggr_period\n  WHERE\n      week_delta = 1\n      AND week_next = multiIf('$aggr_period' = 'weekly', toMonday(addDays(toMonday(NOW()), -1)),toStartOfMonth(NOW()))\n      AND has([$Segment], multiIf(sales = 'glebmarkevich', 'csm',segment))=1\n      AND has([$fraud_status], multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud'))=1\n      AND has([$product], product)=1\n  GROUP BY\n      week_next,\n      billing_account_id\n    \n  UNION ALL\n  SELECT\n    week as week_next,\n    billing_account_id,\n    0 as real_consumption,\n    SUM( real_consumption_next_period) as real_consumption_next_period,\n    SUM(real_consumption_cum) as total_real_consumption\n  FROM\n    cloud_analytics_testing.retention_cube_$aggr_period\n  WHERE\n      week_delta = 0\n      AND week = multiIf('$aggr_period' = 'weekly', toMonday(addDays(toMonday(NOW()), -1)),toStartOfMonth(NOW()))\n      AND has([$Segment], multiIf(sales = 'glebmarkevich', 'csm',segment))=1\n      AND has([$fraud_status], multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud'))=1\n      AND has([$product], product)=1\n      AND multiIf('$aggr_period' = 'weekly', toMonday(toDate(first_first_trial_consumption_datetime)), toStartOfMonth(toDate(first_first_trial_consumption_datetime))) == toDate(week)\n      AND multiIf('$aggr_period' = 'weekly', toMonday(toDate(first_first_paid_consumption_datetime)), toStartOfMonth(toDate(first_first_paid_consumption_datetime))) == toDate(week)\n  GROUP BY\n      week_next,\n      real_consumption,\n      billing_account_id\n)\nWHERE\n  has([$churn_status], \"Churn Type\")=1\n  AND \"Churn Type\" NOT IN ('Non-consuming')\nGROUP BY\n    week_next,\n    \"Churn Type\"",
+          "rawQuery": "SELECT   week_next  as \"Week\",   multiIf(       real_consumption_next_period < real_consumption and real_consumption_next_period > 0, 'Negative',       real_consumption_next_period > real_consumption and real_consumption <= 0, 'New',       real_consumption_next_period > real_consumption and real_consumption_next_period > 0, 'Positive',       real_consumption_next_period < real_consumption and real_consumption_next_period <= 0, 'Churn',       real_consumption_next_period = 0 AND real_consumption = 0, 'Non-consuming',       real_consumption_next_period = real_consumption AND real_consumption > 0, 'Same',       'other'   ) as \"Churn Type\",   SUM(real_consumption_next_period) - SUM(real_consumption) as \"W2W Diff, RUR\",   SUM(real_consumption_next_period) as \"Paid Consumption, RUR\",   uniqExact(billing_account_id) as \"Clients\",   (SUM(real_consumption_next_period) - SUM(real_consumption))/uniqExact(billing_account_id) as \"W2W Per Client, RUR\",   SUM(total_real_consumption) + SUM(real_consumption_next_period) as \"Total Paid Consumption, RUR\" FROM(   SELECT       week_next,       billing_account_id,       SUM( real_consumption) as real_consumption,       SUM( real_consumption_next_period) as real_consumption_next_period,       SUM(real_consumption_cum) as total_real_consumption   FROM   \tcloud_analytics_testing.retention_cube_weekly   WHERE       week_delta = 1       AND week_next = multiIf('weekly' = 'weekly', toMonday(addDays(toMonday(NOW()), -1)),toStartOfMonth(NOW()))       AND has(['mass','csm'], multiIf(sales = 'glebmarkevich', 'csm',segment))=1       AND has(['Not Fraud'], multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud'))=1       AND has(['nbs','network','compute','marketplace','storage','cr','mdb','ai','nlb','ymq','monitoring'], product)=1   GROUP BY       week_next,       billing_account_id        UNION ALL   SELECT     week as week_next,     billing_account_id,     0 as real_consumption,     SUM( real_consumption_next_period) as real_consumption_next_period,     SUM(real_consumption_cum) as total_real_consumption   FROM     cloud_analytics_testing.retention_cube_weekly   WHERE       week_delta = 0       AND week = multiIf('weekly' = 'weekly', toMonday(addDays(toMonday(NOW()), -1)),toStartOfMonth(NOW()))       AND has(['mass','csm'], multiIf(sales = 'glebmarkevich', 'csm',segment))=1       AND has(['Not Fraud'], multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud'))=1       AND has(['nbs','network','compute','marketplace','storage','cr','mdb','ai','nlb','ymq','monitoring'], product)=1       AND multiIf('weekly' = 'weekly', toMonday(toDate(first_first_trial_consumption_datetime)), toStartOfMonth(toDate(first_first_trial_consumption_datetime))) == toDate(week)       AND multiIf('weekly' = 'weekly', toMonday(toDate(first_first_paid_consumption_datetime)), toStartOfMonth(toDate(first_first_paid_consumption_datetime))) == toDate(week)   GROUP BY       week_next,       real_consumption,       billing_account_id ) WHERE   has(['Same','Non-consuming','Positive','New','Negative','Churn'], \"Churn Type\")=1   AND \"Churn Type\" NOT IN ('Non-consuming') GROUP BY     week_next,     \"Churn Type\"",
+          "refId": "A",
+          "round": "0s"
+        }
+      ],
+      "title": "Churn Status W2W",
+      "transform": "table",
+      "type": "table"
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "ch_cloud_analytics",
+      "fill": 2,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
+      "hideTimeOverride": false,
+      "id": 4,
+      "legend": {
+        "alignAsTable": false,
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pointradius": 3,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "dateTimeType": "DATETIME",
+          "format": "time_series",
+          "formattedQuery": "SELECT $timeSeries as t, count() FROM $table WHERE $timeFilter GROUP BY t ORDER BY t",
+          "interval": "",
+          "intervalFactor": 1,
+          "query": "SELECT\n  toInt32(toDateTime(week))*1000 as date,\n  groupArray( (churn_type, real_consumption_delta))\nFROM(\nSELECT\n  week_next  as week,\n  multiIf(\n      real_consumption_next_period < real_consumption and real_consumption_next_period > 0, 'Negative',\n      real_consumption_next_period > real_consumption and real_consumption <= 0, 'New',\n      real_consumption_next_period > real_consumption and real_consumption_next_period > 0, 'Positive',\n      real_consumption_next_period < real_consumption and real_consumption_next_period <= 0, 'Churn',\n      real_consumption_next_period = 0 AND real_consumption = 0, 'Non-consuming',\n      real_consumption_next_period = real_consumption AND real_consumption > 0, 'Same',\n      'other'\n  ) as churn_type,\n  SUM(real_consumption_next_period - real_consumption) as real_consumption_delta\nFROM(\n  SELECT\n      week_next,\n      billing_account_id,\n      SUM( real_consumption) as real_consumption,\n      SUM( real_consumption_next_period) as real_consumption_next_period,\n      SUM(real_consumption_cum) as total_real_consumption\n  FROM\n  \tcloud_analytics_testing.retention_cube_$aggr_period\n  WHERE\n      week_delta = 1\n      AND week >= toDate('2018-11-01')\n      AND week_next <= multiIf('$aggr_period' = 'weekly', toMonday(addDays(toMonday(NOW()), -1)),toStartOfMonth(NOW()))\n      AND has([$Segment], multiIf(sales = 'glebmarkevich', 'csm',segment))=1\n      AND has([$product], product)=1\n      AND has([$fraud_status], multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud'))=1\n  GROUP BY\n      week_next,\n      billing_account_id\n      \n  UNION ALL\n  \n  SELECT\n    week as week_next,\n    billing_account_id,\n    0 as real_consumption,\n    SUM( real_consumption_next_period) as real_consumption_next_period,\n    SUM(real_consumption_cum) as total_real_consumption\n  FROM\n    cloud_analytics_testing.retention_cube_$aggr_period\n  WHERE\n      week_delta = 0\n      AND week >= toDate('2018-11-01')\n      AND week <= multiIf('$aggr_period' = 'weekly', toMonday(addDays(toMonday(NOW()), -1)),toStartOfMonth(NOW()))\n      AND has([$Segment], multiIf(sales = 'glebmarkevich', 'csm',segment))=1\n      AND has([$fraud_status], multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud'))=1\n      AND has([$product], product)=1\n      AND multiIf('$aggr_period' = 'weekly', toMonday(toDate(first_first_trial_consumption_datetime)), toStartOfMonth(toDate(first_first_trial_consumption_datetime))) == toDate(week)\n      AND multiIf('$aggr_period' = 'weekly', toMonday(toDate(first_first_paid_consumption_datetime)), toStartOfMonth(toDate(first_first_paid_consumption_datetime))) == toDate(week)\n  GROUP BY\n      week_next,\n      real_consumption,\n      billing_account_id\n)\nGROUP BY\n    week,\n    churn_type\n)\nWHERE\n    has([$churn_status], churn_type)=1\n    AND churn_type NOT IN ('Non-consuming', 'Same')\nGROUP BY\n  date\nORDER BY\n  date",
+          "rawQuery": "SELECT   toInt32(toDateTime(week))*1000 as date,   groupArray( (churn_type, real_consumption_delta)) FROM( SELECT   week_next  as week,   multiIf(       real_consumption_next_period < real_consumption and real_consumption_next_period > 0, 'Negative',       real_consumption_next_period > real_consumption and real_consumption <= 0, 'New',       real_consumption_next_period > real_consumption and real_consumption_next_period > 0, 'Positive',       real_consumption_next_period < real_consumption and real_consumption_next_period <= 0, 'Churn',       real_consumption_next_period = 0 AND real_consumption = 0, 'Non-consuming',       real_consumption_next_period = real_consumption AND real_consumption > 0, 'Same',       'other'   ) as churn_type,   SUM(real_consumption_next_period - real_consumption) as real_consumption_delta FROM(   SELECT       week_next,       billing_account_id,       SUM( real_consumption) as real_consumption,       SUM( real_consumption_next_period) as real_consumption_next_period,       SUM(real_consumption_cum) as total_real_consumption   FROM   \tcloud_analytics_testing.retention_cube_weekly   WHERE       week_delta = 1       AND week >= toDate('2018-11-01')       AND week_next <= multiIf('weekly' = 'weekly', toMonday(addDays(toMonday(NOW()), -1)),toStartOfMonth(NOW()))       AND has(['mass','csm'], multiIf(sales = 'glebmarkevich', 'csm',segment))=1       AND has(['nbs','network','compute','marketplace','storage','cr','mdb','ai','nlb','ymq','monitoring'], product)=1       AND has(['Not Fraud'], multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud'))=1   GROUP BY       week_next,       billing_account_id          UNION ALL      SELECT     week as week_next,     billing_account_id,     0 as real_consumption,     SUM( real_consumption_next_period) as real_consumption_next_period,     SUM(real_consumption_cum) as total_real_consumption   FROM     cloud_analytics_testing.retention_cube_weekly   WHERE       week_delta = 0       AND week >= toDate('2018-11-01')       AND week <= multiIf('weekly' = 'weekly', toMonday(addDays(toMonday(NOW()), -1)),toStartOfMonth(NOW()))       AND has(['mass','csm'], multiIf(sales = 'glebmarkevich', 'csm',segment))=1       AND has(['Not Fraud'], multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud'))=1       AND has(['nbs','network','compute','marketplace','storage','cr','mdb','ai','nlb','ymq','monitoring'], product)=1       AND multiIf('weekly' = 'weekly', toMonday(toDate(first_first_trial_consumption_datetime)), toStartOfMonth(toDate(first_first_trial_consumption_datetime))) == toDate(week)       AND multiIf('weekly' = 'weekly', toMonday(toDate(first_first_paid_consumption_datetime)), toStartOfMonth(toDate(first_first_paid_consumption_datetime))) == toDate(week)   GROUP BY       week_next,       real_consumption,       billing_account_id ) GROUP BY     week,     churn_type ) WHERE     has(['Same','Non-consuming','Positive','New','Negative','Churn'], churn_type)=1     AND churn_type NOT IN ('Non-consuming', 'Same') GROUP BY   date ORDER BY   date",
+          "refId": "A",
+          "round": "0s"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Paid Consumption W2W By Churn Status",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "ch_cloud_analytics",
+      "fill": 1,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 20
+      },
+      "id": 6,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "show": false,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pointradius": 3,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "dateTimeType": "DATETIME",
+          "format": "time_series",
+          "formattedQuery": "SELECT $timeSeries as t, count() FROM $table WHERE $timeFilter GROUP BY t ORDER BY t",
+          "intervalFactor": 1,
+          "query": "SELECT\n    toInt32(toDateTime(multiIf('$aggr_period' = 'weekly', toMonday(event_time), toStartOfMonth(event_time)))) * 1000 as date,\n    SUM( real_consumption) as \"Paid Consumption\"\nFROM\n\tcloud_analytics_testing.acquisition_cube_test\nWHERE\n    multiIf('$aggr_period' = 'weekly', toMonday(event_time), toStartOfMonth(event_time)) >= toDate('2018-12-01')\n    AND multiIf('$aggr_period' = 'weekly', toMonday(event_time), toStartOfMonth(event_time)) <= multiIf('$aggr_period' = 'weekly', toMonday(addDays(toMonday(NOW()), -1)),toStartOfMonth(NOW()))\n    AND has([$Segment], multiIf(sales = 'glebmarkevich', 'csm',segment))=1\n    AND has([$product], splitByChar('.', assumeNotNull(name))[1])=1\n    AND has([$fraud_status], multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud'))=1\nGROUP BY\n    date\nORDER BY\n  date",
+          "rawQuery": "SELECT     toInt32(toDateTime(multiIf('weekly' = 'weekly', toMonday(event_time), toStartOfMonth(event_time)))) * 1000 as date,     SUM( real_consumption) as \"Paid Consumption\" FROM \tcloud_analytics_testing.acquisition_cube_test WHERE     multiIf('weekly' = 'weekly', toMonday(event_time), toStartOfMonth(event_time)) >= toDate('2018-12-01')     AND multiIf('weekly' = 'weekly', toMonday(event_time), toStartOfMonth(event_time)) <= multiIf('weekly' = 'weekly', toMonday(addDays(toMonday(NOW()), -1)),toStartOfMonth(NOW()))     AND has(['mass','csm'], multiIf(sales = 'glebmarkevich', 'csm',segment))=1     AND has(['nbs','network','compute','marketplace','storage','cr','mdb','ai','nlb','ymq','monitoring'], splitByChar('.', assumeNotNull(name))[1])=1     AND has(['Not Fraud'], multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud'))=1 GROUP BY     date ORDER BY   date",
+          "refId": "A",
+          "round": "0s"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Paid Consumption",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "ch_cloud_analytics",
+      "fill": 1,
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 28
+      },
+      "id": 11,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "show": false,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pointradius": 3,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "dateTimeType": "DATETIME",
+          "format": "time_series",
+          "formattedQuery": "SELECT $timeSeries as t, count() FROM $table WHERE $timeFilter GROUP BY t ORDER BY t",
+          "intervalFactor": 1,
+          "query": "SELECT\n  toInt32(toDateTime(week))*1000 as date,\n  uniqExact(billing_account_id) as \"Active Clients\"\nFROM(\nSELECT\n  week  as week,\n  multiIf(\n      real_consumption_next_period < real_consumption and real_consumption_next_period > 0, 'Negative',\n      real_consumption_next_period > real_consumption and real_consumption <= 0, 'New',\n      real_consumption_next_period > real_consumption and real_consumption_next_period > 0, 'Positive',\n      real_consumption_next_period < real_consumption and real_consumption_next_period <= 0, 'Churn',\n      real_consumption_next_period = 0 AND real_consumption = 0, 'Non-consuming',\n      real_consumption_next_period = real_consumption AND real_consumption > 0, 'Same',\n      'other'\n  ) as churn_type,\n  billing_account_id\nFROM(\nSELECT\n    week,\n    billing_account_id,\n    balance_name,\n    SUM( real_consumption) as real_consumption,\n    SUM( real_consumption_next_period) as real_consumption_next_period,\n    SUM(real_consumption_cum) as total_real_consumption\nFROM\n\tcloud_analytics_testing.retention_cube_$aggr_period\nWHERE\n    week_delta = 0\n    AND product != 'Total'\n    AND week >= toDate('2018-12-01')\n    AND week <= multiIf('$aggr_period' = 'weekly', toMonday(addDays(toMonday(NOW()), -1)),toStartOfMonth(NOW()))\n    AND has([$Segment], multiIf(sales = 'glebmarkevich', 'csm',segment))=1\n    AND has([$product], product)=1\n    AND has([$fraud_status], multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud'))=1\nGROUP BY\n    week,\n    billing_account_id,\n    balance_name\n)\nWHERE \n  real_consumption > 0\n)\nWHERE\n    has([$churn_status], churn_type)=1\nGROUP BY\n  week",
+          "rawQuery": "SELECT   toInt32(toDateTime(week))*1000 as date,   uniqExact(billing_account_id) as \"Active Clients\" FROM( SELECT   week  as week,   multiIf(       real_consumption_next_period < real_consumption and real_consumption_next_period > 0, 'Negative',       real_consumption_next_period > real_consumption and real_consumption <= 0, 'New',       real_consumption_next_period > real_consumption and real_consumption_next_period > 0, 'Positive',       real_consumption_next_period < real_consumption and real_consumption_next_period <= 0, 'Churn',       real_consumption_next_period = 0 AND real_consumption = 0, 'Non-consuming',       real_consumption_next_period = real_consumption AND real_consumption > 0, 'Same',       'other'   ) as churn_type,   billing_account_id FROM( SELECT     week,     billing_account_id,     balance_name,     SUM( real_consumption) as real_consumption,     SUM( real_consumption_next_period) as real_consumption_next_period,     SUM(real_consumption_cum) as total_real_consumption FROM \tcloud_analytics_testing.retention_cube_weekly WHERE     week_delta = 0     AND product != 'Total'     AND week >= toDate('2018-12-01')     AND week <= multiIf('weekly' = 'weekly', toMonday(addDays(toMonday(NOW()), -1)),toStartOfMonth(NOW()))     AND has(['mass','csm'], multiIf(sales = 'glebmarkevich', 'csm',segment))=1     AND has(['nbs','network','compute','marketplace','storage','cr','mdb','ai','nlb','ymq','monitoring'], product)=1     AND has(['Not Fraud'], multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud'))=1 GROUP BY     week,     billing_account_id,     balance_name ) WHERE    real_consumption > 0 ) WHERE     has(['Same','Non-consuming','Positive','New','Negative','Churn'], churn_type)=1 GROUP BY   week",
+          "refId": "A",
+          "round": "0s"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Paid Consuming Clients",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": "ch_cloud_analytics",
+      "fill": 1,
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 28
+      },
+      "id": 13,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "show": false,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "links": [],
+      "nullPointMode": "null",
+      "percentage": false,
+      "pointradius": 3,
+      "points": true,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "dateTimeType": "DATETIME",
+          "format": "time_series",
+          "formattedQuery": "SELECT $timeSeries as t, count() FROM $table WHERE $timeFilter GROUP BY t ORDER BY t",
+          "intervalFactor": 1,
+          "query": "SELECT\n  toInt32(toDateTime(week))*1000 as date,\n  SUM(real_consumption) / uniqExact(billing_account_id) as \"Avg. Paid Consumption Per Active Client\"\nFROM(\nSELECT\n  week  as week,\n  multiIf(\n      real_consumption_next_period < real_consumption and real_consumption_next_period > 0, 'Negative',\n      real_consumption_next_period > real_consumption and real_consumption <= 0, 'New',\n      real_consumption_next_period > real_consumption and real_consumption_next_period > 0, 'Positive',\n      real_consumption_next_period < real_consumption and real_consumption_next_period <= 0, 'Churn',\n      real_consumption_next_period = 0 AND real_consumption = 0, 'Non-consuming',\n      real_consumption_next_period = real_consumption AND real_consumption > 0, 'Same',\n      'other'\n  ) as churn_type,\n  billing_account_id,\n  real_consumption\nFROM(\nSELECT\n    week,\n    billing_account_id,\n    balance_name,\n    SUM( real_consumption) as real_consumption,\n    SUM( real_consumption_next_period) as real_consumption_next_period,\n    SUM(real_consumption_cum) as total_real_consumption\nFROM\n\tcloud_analytics_testing.retention_cube_$aggr_period\nWHERE\n    week_delta = 0\n    AND product != 'Total'\n    AND week >= toDate('2018-12-01')\n    AND week <= multiIf('$aggr_period' = 'weekly', toMonday(addDays(toMonday(NOW()), -1)),toStartOfMonth(NOW()))\n    AND has([$Segment], multiIf(sales = 'glebmarkevich', 'csm',segment))=1\n    AND has([$product], product)=1\n    AND has([$fraud_status], multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud'))=1\nGROUP BY\n    week,\n    billing_account_id,\n    balance_name\n)\nWHERE \n  real_consumption > 0\n)\nWHERE\n    has([$churn_status], churn_type)=1\nGROUP BY\n  week",
+          "rawQuery": "SELECT   toInt32(toDateTime(week))*1000 as date,   SUM(real_consumption) / uniqExact(billing_account_id) as \"Avg. Paid Consumption Per Active Client\" FROM( SELECT   week  as week,   multiIf(       real_consumption_next_period < real_consumption and real_consumption_next_period > 0, 'Negative',       real_consumption_next_period > real_consumption and real_consumption <= 0, 'New',       real_consumption_next_period > real_consumption and real_consumption_next_period > 0, 'Positive',       real_consumption_next_period < real_consumption and real_consumption_next_period <= 0, 'Churn',       real_consumption_next_period = 0 AND real_consumption = 0, 'Non-consuming',       real_consumption_next_period = real_consumption AND real_consumption > 0, 'Same',       'other'   ) as churn_type,   billing_account_id,   real_consumption FROM( SELECT     week,     billing_account_id,     balance_name,     SUM( real_consumption) as real_consumption,     SUM( real_consumption_next_period) as real_consumption_next_period,     SUM(real_consumption_cum) as total_real_consumption FROM \tcloud_analytics_testing.retention_cube_weekly WHERE     week_delta = 0     AND product != 'Total'     AND week >= toDate('2018-12-01')     AND week <= multiIf('weekly' = 'weekly', toMonday(addDays(toMonday(NOW()), -1)),toStartOfMonth(NOW()))     AND has(['mass','csm'], multiIf(sales = 'glebmarkevich', 'csm',segment))=1     AND has(['nbs','network','compute','marketplace','storage','cr','mdb','ai','nlb','ymq','monitoring'], product)=1     AND has(['Not Fraud'], multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud'))=1 GROUP BY     week,     billing_account_id,     balance_name ) WHERE    real_consumption > 0 ) WHERE     has(['Same','Non-consuming','Positive','New','Negative','Churn'], churn_type)=1 GROUP BY   week",
+          "refId": "A",
+          "round": "0s"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Avg. Paid Consumption Per Active Client",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "columns": [],
+      "datasource": "ch_cloud_analytics",
+      "fontSize": "100%",
+      "gridPos": {
+        "h": 13,
+        "w": 24,
+        "x": 0,
+        "y": 37
+      },
+      "id": 7,
+      "links": [],
+      "pageSize": null,
+      "scroll": true,
+      "showHeader": true,
+      "sort": {
+        "col": 0,
+        "desc": true
+      },
+      "styles": [
+        {
+          "alias": "",
+          "colorMode": null,
+          "colors": [
+            "rgba(245, 54, 54, 0.9)",
+            "rgba(237, 129, 40, 0.89)",
+            "rgba(50, 172, 45, 0.97)"
+          ],
+          "dateFormat": "YYYY-MM-DD HH:mm:ss",
+          "decimals": 0,
+          "mappingType": 1,
+          "pattern": "Cliens",
+          "thresholds": [],
+          "type": "number",
+          "unit": "short"
+        },
+        {
+          "alias": "",
+          "colorMode": null,
+          "colors": [
+            "rgba(245, 54, 54, 0.9)",
+            "rgba(237, 129, 40, 0.89)",
+            "rgba(50, 172, 45, 0.97)"
+          ],
+          "dateFormat": "YYYY-MM-DD HH:mm:ss",
+          "decimals": 2,
+          "link": false,
+          "mappingType": 1,
+          "pattern": "/p\\d+/",
+          "thresholds": [],
+          "type": "number",
+          "unit": "short"
+        }
+      ],
+      "targets": [
+        {
+          "dateTimeType": "DATETIME",
+          "format": "table",
+          "formattedQuery": "SELECT $timeSeries as t, count() FROM $table WHERE $timeFilter GROUP BY t ORDER BY t",
+          "intervalFactor": 1,
+          "query": "SELECT\n    cohort_date as \"Period\",\n    uniqExact(billing_account_id) as \"New Paid Consuming Clients\",\n    avgIf(is_active, period_delta = 1) as \"p1\",\n    avgIf(is_active, period_delta = 2) as \"p2\",\n    avgIf(is_active, period_delta = 3) as \"p3\",\n    avgIf(is_active, period_delta = 4) as \"p4\",\n    avgIf(is_active, period_delta = 5) as \"p5\",\n    avgIf(is_active, period_delta = 6) as \"p6\",\n    avgIf(is_active, period_delta = 7) as \"p7\",\n    avgIf(is_active, period_delta = 8) as \"p8\",\n    avgIf(is_active, period_delta = 9) as \"p9\",\n    avgIf(is_active, period_delta = 10) as \"p10\"\nFROM(\n    SELECT\n        t0.*,\n        t1.paid_consumption,\n        multiIf(t1.paid_consumption > 0, 1, 0) as is_active,\n        multiIf(\n        '$aggr_period' = 'weekly', toRelativeWeekNum(date) - toRelativeWeekNum(cohort_date),\n        toRelativeMonthNum(date) - toRelativeMonthNum(cohort_date)\n        ) as period_delta\n    FROM(\n        SELECT\n            billing_account_id,\n            cohort_date,\n            days_ as date\n        FROM(\n            SELECT\n                billing_account_id,\n                cohort_date,\n                multiIf(\n                    '$aggr_period' = 'weekly', arrayMap(x -> addWeeks(cohort_date, x) ,range(toUInt32(  toRelativeWeekNum(toDate(NOW())) -  toRelativeWeekNum(cohort_date)    )) ),\n                    arrayMap(x -> addMonths(cohort_date, x) ,range(toUInt32(  toRelativeMonthNum(toDate(NOW())) -  toRelativeMonthNum(cohort_date)    )) )\n                ) as days_\n            FROM(\n                SELECT\n                    billing_account_id,\n                    multiIf(\n                        '$aggr_period' = 'weekly', toMonday(toDate(event_time)),\n                        toStartOfMonth(toDate(event_time))\n                    ) as cohort_date\n                FROM \n                    cloud_analytics_testing.acquisition_cube_test\n                WHERE \n                    event = 'day_use'\n                    AND real_consumption > 0\n                    AND has([$Segment], multiIf(sales = 'glebmarkevich', 'csm',segment))=1\n                    AND has([$fraud_status], multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud'))=1\n                    AND has([$product], splitByChar('.', assumeNotNull(name))[1])=1\n            )\n        )\n        ARRAY JOIN days_\n    ) as t0\n    ANY LEFT JOIN (\n        SELECT\n            billing_account_id,\n            multiIf(\n                '$aggr_period' = 'weekly', toMonday(toDate(event_time)),\n                toStartOfMonth(toDate(event_time))\n            ) as date,\n            SUM(real_consumption) as paid_consumption\n        FROM \n            cloud_analytics_testing.acquisition_cube_test\n        WHERE \n            event = 'day_use'\n            AND has([$Segment], multiIf(sales = 'glebmarkevich', 'csm',segment))=1\n            AND has([$fraud_status], multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud'))=1\n            AND has([$product], splitByChar('.', assumeNotNull(name))[1])=1\n        GROUP BY\n            billing_account_id,\n            date\n        HAVING\n            paid_consumption > 0\n    ) as t1\n    ON t0.billing_account_id = t1.billing_account_id AND t0.date=t1.date\n)\nGROUP BY\n    \"Period\"\nORDER BY\n    \"Period\" DESC",
+          "rawQuery": "SELECT     cohort_date as \"Period\",     uniqExact(billing_account_id) as \"New Paid Consuming Clients\",     avgIf(is_active, period_delta = 1) as \"p1\",     avgIf(is_active, period_delta = 2) as \"p2\",     avgIf(is_active, period_delta = 3) as \"p3\",     avgIf(is_active, period_delta = 4) as \"p4\",     avgIf(is_active, period_delta = 5) as \"p5\",     avgIf(is_active, period_delta = 6) as \"p6\",     avgIf(is_active, period_delta = 7) as \"p7\",     avgIf(is_active, period_delta = 8) as \"p8\",     avgIf(is_active, period_delta = 9) as \"p9\",     avgIf(is_active, period_delta = 10) as \"p10\" FROM(     SELECT         t0.*,         t1.paid_consumption,         multiIf(t1.paid_consumption > 0, 1, 0) as is_active,         multiIf(         'weekly' = 'weekly', toRelativeWeekNum(date) - toRelativeWeekNum(cohort_date),         toRelativeMonthNum(date) - toRelativeMonthNum(cohort_date)         ) as period_delta     FROM(         SELECT             billing_account_id,             cohort_date,             days_ as date         FROM(             SELECT                 billing_account_id,                 cohort_date,                 multiIf(                     'weekly' = 'weekly', arrayMap(x -> addWeeks(cohort_date, x) ,range(toUInt32(  toRelativeWeekNum(toDate(NOW())) -  toRelativeWeekNum(cohort_date)    )) ),                     arrayMap(x -> addMonths(cohort_date, x) ,range(toUInt32(  toRelativeMonthNum(toDate(NOW())) -  toRelativeMonthNum(cohort_date)    )) )                 ) as days_             FROM(                 SELECT                     billing_account_id,                     multiIf(                         'weekly' = 'weekly', toMonday(toDate(event_time)),                         toStartOfMonth(toDate(event_time))                     ) as cohort_date                 FROM                      cloud_analytics_testing.acquisition_cube_test                 WHERE                      event = 'day_use'                     AND real_consumption > 0                     AND has(['mass','csm'], multiIf(sales = 'glebmarkevich', 'csm',segment))=1                     AND has(['Not Fraud'], multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud'))=1                     AND has(['nbs','network','compute','marketplace','storage','cr','mdb','ai','nlb','ymq','monitoring'], splitByChar('.', assumeNotNull(name))[1])=1             )         )         ARRAY JOIN days_     ) as t0     ANY LEFT JOIN (         SELECT             billing_account_id,             multiIf(                 'weekly' = 'weekly', toMonday(toDate(event_time)),                 toStartOfMonth(toDate(event_time))             ) as date,             SUM(real_consumption) as paid_consumption         FROM              cloud_analytics_testing.acquisition_cube_test         WHERE              event = 'day_use'             AND has(['mass','csm'], multiIf(sales = 'glebmarkevich', 'csm',segment))=1             AND has(['Not Fraud'], multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud'))=1             AND has(['nbs','network','compute','marketplace','storage','cr','mdb','ai','nlb','ymq','monitoring'], splitByChar('.', assumeNotNull(name))[1])=1         GROUP BY             billing_account_id,             date         HAVING             paid_consumption > 0     ) as t1     ON t0.billing_account_id = t1.billing_account_id AND t0.date=t1.date ) GROUP BY     \"Period\" ORDER BY     \"Period\" DESC",
+          "refId": "A",
+          "round": "0s"
+        }
+      ],
+      "title": "Retention (Weekly On Paid Сonsuming Clients)",
+      "transform": "table",
+      "type": "table"
+    },
+    {
+      "columns": [],
+      "datasource": "ch_cloud_analytics",
+      "fontSize": "100%",
+      "gridPos": {
+        "h": 13,
+        "w": 24,
+        "x": 0,
+        "y": 50
+      },
+      "id": 19,
+      "links": [],
+      "pageSize": null,
+      "scroll": true,
+      "showHeader": true,
+      "sort": {
+        "col": 0,
+        "desc": true
+      },
+      "styles": [
+        {
+          "alias": "",
+          "colorMode": null,
+          "colors": [
+            "rgba(245, 54, 54, 0.9)",
+            "rgba(237, 129, 40, 0.89)",
+            "rgba(50, 172, 45, 0.97)"
+          ],
+          "dateFormat": "YYYY-MM-DD HH:mm:ss",
+          "decimals": 0,
+          "mappingType": 1,
+          "pattern": "Cliens",
+          "thresholds": [],
+          "type": "number",
+          "unit": "short"
+        },
+        {
+          "alias": "",
+          "colorMode": null,
+          "colors": [
+            "rgba(245, 54, 54, 0.9)",
+            "rgba(237, 129, 40, 0.89)",
+            "rgba(50, 172, 45, 0.97)"
+          ],
+          "dateFormat": "YYYY-MM-DD HH:mm:ss",
+          "decimals": 2,
+          "link": false,
+          "mappingType": 1,
+          "pattern": "/p\\d+/",
+          "thresholds": [],
+          "type": "number",
+          "unit": "short"
+        }
+      ],
+      "targets": [
+        {
+          "dateTimeType": "DATETIME",
+          "format": "table",
+          "formattedQuery": "SELECT $timeSeries as t, count() FROM $table WHERE $timeFilter GROUP BY t ORDER BY t",
+          "intervalFactor": 1,
+          "query": "SELECT\n    cohort_date as \"Period\",\n    uniqExact(billing_account_id) as \"New Paid Consuming Clients\",\n    avgIf(is_active, period_delta = 1) as \"p1\",\n    avgIf(is_active, period_delta = 2) as \"p2\",\n    avgIf(is_active, period_delta = 3) as \"p3\",\n    avgIf(is_active, period_delta = 4) as \"p4\",\n    avgIf(is_active, period_delta = 5) as \"p5\",\n    avgIf(is_active, period_delta = 6) as \"p6\",\n    avgIf(is_active, period_delta = 7) as \"p7\",\n    avgIf(is_active, period_delta = 8) as \"p8\",\n    avgIf(is_active, period_delta = 9) as \"p9\",\n    avgIf(is_active, period_delta = 10) as \"p10\"\nFROM(\n    SELECT\n        t0.*,\n        t1.paid_consumption,\n        multiIf(t1.paid_consumption > 0, 1, 0) as is_active,\n        multiIf(\n        '$aggr_period' = 'weekly', toRelativeWeekNum(date) - toRelativeWeekNum(cohort_date),\n        toRelativeMonthNum(date) - toRelativeMonthNum(cohort_date)\n        ) as period_delta\n    FROM(\n        SELECT\n            billing_account_id,\n            cohort_date,\n            days_ as date\n        FROM(\n            SELECT\n                billing_account_id,\n                cohort_date,\n                multiIf(\n                    '$aggr_period' = 'weekly', arrayMap(x -> addWeeks(cohort_date, x) ,range(toUInt32(  toRelativeWeekNum(toDate(NOW())) -  toRelativeWeekNum(cohort_date)    )) ),\n                    arrayMap(x -> addMonths(cohort_date, x) ,range(toUInt32(  toRelativeMonthNum(toDate(NOW())) -  toRelativeMonthNum(cohort_date)    )) )\n                ) as days_\n            FROM(\n                SELECT\n                    billing_account_id,\n                    multiIf(\n                        '$aggr_period' = 'weekly', toMonday(toDate(MIN(event_time))),\n                        toStartOfMonth(toDate(MIN(event_time)))\n                    ) as cohort_date\n                FROM \n                    cloud_analytics_testing.acquisition_cube_test\n                WHERE \n                    event = 'day_use'\n                    AND real_consumption > 0\n                    AND has([$Segment], multiIf(sales = 'glebmarkevich', 'csm',segment))=1\n                    AND has([$fraud_status], multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud'))=1\n                    AND has([$product], splitByChar('.', assumeNotNull(name))[1])=1\n                GROUP BY\n                    billing_account_id\n            )\n        )\n        ARRAY JOIN days_\n    ) as t0\n    ANY LEFT JOIN (\n        SELECT\n            billing_account_id,\n            multiIf(\n                '$aggr_period' = 'weekly', toMonday(toDate(event_time)),\n                toStartOfMonth(toDate(event_time))\n            ) as date,\n            SUM(real_consumption) as paid_consumption\n        FROM \n            cloud_analytics_testing.acquisition_cube_test\n        WHERE \n            event = 'day_use'\n            AND has([$Segment], multiIf(sales = 'glebmarkevich', 'csm',segment))=1\n            AND has([$fraud_status], multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud'))=1\n            AND has([$product], splitByChar('.', assumeNotNull(name))[1])=1\n        GROUP BY\n            billing_account_id,\n            date\n        HAVING\n            paid_consumption > 0\n    ) as t1\n    ON t0.billing_account_id = t1.billing_account_id AND t0.date=t1.date\n)\nGROUP BY\n    \"Period\"\nORDER BY\n    \"Period\" DESC",
+          "rawQuery": "SELECT     cohort_date as \"Period\",     uniqExact(billing_account_id) as \"New Paid Consuming Clients\",     avgIf(is_active, period_delta = 1) as \"p1\",     avgIf(is_active, period_delta = 2) as \"p2\",     avgIf(is_active, period_delta = 3) as \"p3\",     avgIf(is_active, period_delta = 4) as \"p4\",     avgIf(is_active, period_delta = 5) as \"p5\",     avgIf(is_active, period_delta = 6) as \"p6\",     avgIf(is_active, period_delta = 7) as \"p7\",     avgIf(is_active, period_delta = 8) as \"p8\",     avgIf(is_active, period_delta = 9) as \"p9\",     avgIf(is_active, period_delta = 10) as \"p10\" FROM(     SELECT         t0.*,         t1.paid_consumption,         multiIf(t1.paid_consumption > 0, 1, 0) as is_active,         multiIf(         'weekly' = 'weekly', toRelativeWeekNum(date) - toRelativeWeekNum(cohort_date),         toRelativeMonthNum(date) - toRelativeMonthNum(cohort_date)         ) as period_delta     FROM(         SELECT             billing_account_id,             cohort_date,             days_ as date         FROM(             SELECT                 billing_account_id,                 cohort_date,                 multiIf(                     'weekly' = 'weekly', arrayMap(x -> addWeeks(cohort_date, x) ,range(toUInt32(  toRelativeWeekNum(toDate(NOW())) -  toRelativeWeekNum(cohort_date)    )) ),                     arrayMap(x -> addMonths(cohort_date, x) ,range(toUInt32(  toRelativeMonthNum(toDate(NOW())) -  toRelativeMonthNum(cohort_date)    )) )                 ) as days_             FROM(                 SELECT                     billing_account_id,                     multiIf(                         'weekly' = 'weekly', toMonday(toDate(MIN(event_time))),                         toStartOfMonth(toDate(MIN(event_time)))                     ) as cohort_date                 FROM                      cloud_analytics_testing.acquisition_cube_test                 WHERE                      event = 'day_use'                     AND real_consumption > 0                     AND has(['mass','csm'], multiIf(sales = 'glebmarkevich', 'csm',segment))=1                     AND has(['Not Fraud'], multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud'))=1                     AND has(['nbs','network','compute','marketplace','storage','cr','mdb','ai','nlb','ymq','monitoring'], splitByChar('.', assumeNotNull(name))[1])=1                 GROUP BY                     billing_account_id             )         )         ARRAY JOIN days_     ) as t0     ANY LEFT JOIN (         SELECT             billing_account_id,             multiIf(                 'weekly' = 'weekly', toMonday(toDate(event_time)),                 toStartOfMonth(toDate(event_time))             ) as date,             SUM(real_consumption) as paid_consumption         FROM              cloud_analytics_testing.acquisition_cube_test         WHERE              event = 'day_use'             AND has(['mass','csm'], multiIf(sales = 'glebmarkevich', 'csm',segment))=1             AND has(['Not Fraud'], multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud'))=1             AND has(['nbs','network','compute','marketplace','storage','cr','mdb','ai','nlb','ymq','monitoring'], splitByChar('.', assumeNotNull(name))[1])=1         GROUP BY             billing_account_id,             date         HAVING             paid_consumption > 0     ) as t1     ON t0.billing_account_id = t1.billing_account_id AND t0.date=t1.date ) GROUP BY     \"Period\" ORDER BY     \"Period\" DESC",
+          "refId": "A",
+          "round": "0s"
+        }
+      ],
+      "title": "Retention (Weekly On NEW Paid Сonsuming Clients)",
+      "transform": "table",
+      "type": "table"
+    }
+  ],
+  "refresh": false,
+  "schemaVersion": 18,
+  "style": "dark",
+  "tags": [],
+  "templating": {
+    "list": [
+      {
+        "allValue": null,
+        "current": {
+          "selected": true,
+          "tags": [],
+          "text": "weekly",
+          "value": "weekly"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": null,
+        "multi": false,
+        "name": "aggr_period",
+        "options": [
+          {
+            "selected": false,
+            "text": "weekly",
+            "value": "weekly"
+          },
+          {
+            "selected": true,
+            "text": "monthly",
+            "value": "monthly"
+          }
+        ],
+        "query": "weekly,monthly",
+        "skipUrlSync": false,
+        "type": "custom"
+      },
+      {
+        "allValue": null,
+        "current": {
+          "text": "mass + csm",
+          "value": [
+            "mass",
+            "csm"
+          ]
+        },
+        "datasource": "ch_cloud_analytics",
+        "definition": "SELECT DISTINCT multiIf(sales = 'glebmarkevich', 'csm',segment) from cloud_analytics_testing.retention_cube_$aggr_period where multiIf(sales = 'glebmarkevich', 'csm',segment) IS NOT NULL",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Segment",
+        "multi": true,
+        "name": "Segment",
+        "options": [],
+        "query": "SELECT DISTINCT multiIf(sales = 'glebmarkevich', 'csm',segment) from cloud_analytics_testing.retention_cube_$aggr_period where multiIf(sales = 'glebmarkevich', 'csm',segment) IS NOT NULL",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "tagValuesQuery": "",
+        "tags": [],
+        "tagsQuery": "",
+        "type": "query",
+        "useTags": false
+      },
+      {
+        "allValue": null,
+        "current": {
+          "text": "Not Fraud",
+          "value": [
+            "Not Fraud"
+          ]
+        },
+        "datasource": "ch_cloud_analytics",
+        "definition": "SELECT distinct multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud') FROM cloud_analytics_testing.retention_cube_$aggr_period WHERE ba_state IS NOT NULL",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Fraud Status",
+        "multi": true,
+        "name": "fraud_status",
+        "options": [],
+        "query": "SELECT distinct multiIf(block_reason IN ('manual', 'mining'), 'Fraud','Not Fraud') FROM cloud_analytics_testing.retention_cube_$aggr_period WHERE ba_state IS NOT NULL",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "tagValuesQuery": "",
+        "tags": [],
+        "tagsQuery": "",
+        "type": "query",
+        "useTags": false
+      },
+      {
+        "allValue": null,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": "ch_cloud_analytics",
+        "definition": "SELECT DISTINCT real_consumption_client_type from cloud_analytics_testing.retention_cube_$aggr_period",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Churn Status",
+        "multi": true,
+        "name": "churn_status",
+        "options": [],
+        "query": "SELECT DISTINCT real_consumption_client_type from cloud_analytics_testing.retention_cube_$aggr_period",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "tagValuesQuery": "",
+        "tags": [],
+        "tagsQuery": "",
+        "type": "query",
+        "useTags": false
+      },
+      {
+        "allValue": null,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": "ch_cloud_analytics",
+        "definition": "SELECT DISTINCT splitByChar('.', assumeNotNull(name))[1] from cloud_analytics_testing. acquisition_cube_test WHERE name is not null",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Product",
+        "multi": true,
+        "name": "product",
+        "options": [],
+        "query": "SELECT DISTINCT splitByChar('.', assumeNotNull(name))[1] from cloud_analytics_testing. acquisition_cube_test WHERE name is not null",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "tagValuesQuery": "",
+        "tags": [],
+        "tagsQuery": "",
+        "type": "query",
+        "useTags": false
+      },
+      {
+        "allValue": null,
+        "current": {
+          "text": "2019-07-26 08:19:23",
+          "value": "2019-07-26 08:19:23"
+        },
+        "datasource": "ch_cloud_analytics",
+        "definition": "SELECT metadata_modification_time FROM system.tables  WHERE name = 'retention_cube_$aggr_period' AND database = 'cloud_analytics_testing'",
+        "hide": 2,
+        "includeAll": false,
+        "label": null,
+        "multi": false,
+        "name": "data_updated",
+        "options": [],
+        "query": "SELECT metadata_modification_time FROM system.tables  WHERE name = 'retention_cube_$aggr_period' AND database = 'cloud_analytics_testing'",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "tagValuesQuery": "",
+        "tags": [],
+        "tagsQuery": "",
+        "type": "query",
+        "useTags": false
+      }
+    ]
+  },
+  "time": {
+    "from": "now-90d",
+    "to": "now+7d"
+  },
+  "timepicker": {
+    "hidden": false,
+    "nowDelay": "1d",
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h",
+      "2h",
+      "1d"
+    ],
+    "time_options": [
+      "5m",
+      "15m",
+      "1h",
+      "6h",
+      "12h",
+      "24h",
+      "2d",
+      "7d",
+      "30d"
+    ]
+  },
+  "timezone": "",
+  "title": "SMB Retention W2W Clients Status",
+  "uid": "AOvuDEXik",
+  "version": 82
+}

@@ -1,0 +1,93 @@
+{% set fqdn = salt.grains.get('id') %}
+
+{% set dep = salt['grains.filter_by'] ( {
+  'Debian': {
+              'firewall':'ufw',
+              'grub_cfg':'/boot/grub/grub.cfg',
+              'rc_local':'/etc/rc.local',
+              'chrony_conf':'/etc/chrony/chrony.conf',
+              'libz':'/lib/x86_64-linux-gnu/libz.so.1',
+  },
+  'RedHat': {
+              'firewall':'firewalld',
+              'grub_cfg':'/boot/grub2/grub.cfg',
+              'rc_local':'/etc/rc.d/rc.local',
+              'chrony_conf':'/etc/chrony.conf',
+              'libz':'/lib64/libz.so.1'
+  },
+}) %}
+
+{% set sysvars = {
+  'ldconf': '/etc/ld.so.conf.d/gpdb.conf',
+  'nproc': salt.pillar.get('data:pam_limits:nproc', 131072),
+  'nofile': salt.pillar.get('data:pam_limits:nofile', 524288),
+  'core': salt.pillar.get('data:pam_limits:core', '10737418240'),
+  'fs': salt.pillar.get('data:fstype', 'xfs'),
+  'sysctlconf': '/etc/sysctl.d/99-zgpdb.conf',
+  'ioscheduler': salt.pillar.get('data:io_scheduler', 'mq-deadline'),
+  'iface_mtu': salt.pillar.get('data:mtu', 8910),
+  'iface_txql': salt.pillar.get('data:txqueuelen', 100000)
+  }
+%}
+
+{% set subpkg = salt['pillar.get']('data:versions:greenplum:package_version').split('-')    %}
+{% set version, patch_level = subpkg[0].replace('.','')|int, subpkg[1] if 'mdb' not in subpkg[1] else subpkg[2] %}
+
+{% set pxf_pkg_version = salt['pillar.get']('data:pxf:version', salt['pillar.get']('data:versions:pxf:package_version', '6.2.3-18-yandex.1295.08277182')) %}
+{% set pxf_subpkg = pxf_pkg_version.split('-') %}
+{% set pxf_version, pxf_patch_level = pxf_subpkg[0].replace('.','')|int, pxf_subpkg[1] %}
+{% set pxf_major_version = pxf_pkg_version.split('.')[0]|int %}
+{% set pxf_version_suffix = '' if pxf_major_version == 5 else pxf_major_version %}
+
+{% set datatransfer_project_id = salt['pillar.get']('data:data_transfer:ya_project_id', '653787136') %}
+
+{% set gpdbvars = {
+  'gpadmin': salt.pillar.get('data:gp_admin', 'gpadmin'),
+  'gpmajver': salt.pillar.get('data:gp_major_version', 6),
+  'gppkgname': salt.pillar.get('data:gp_pkg_name', 'greenplum-db'),
+  'gppkgver': salt.pillar.get('data:versions:greenplum:package_version'),
+  'gpbver': salt.pillar.get('data:gpbackup_version', '1.20.2'),
+  'gphome': salt.pillar.get('data:gp_home', '/opt/greenplum-db'),
+  'gplog': salt.pillar.get('data:gp_log', '/var/log/greenplum'),
+  'gpconfdir': 'gpconfigs',
+  'masterdir': salt.pillar.get('data:gp_master_directory', '/var/lib/greenplum/data1'),
+  'mirror_type': salt.pillar.get('data:gp_init:mirror_mode', 'group'),
+  'segprefix': salt.pillar.get('data:gp_init:seg_prefix', 'gpseg'),
+  'dbname': salt.pillar.get('data:gp_init:database_name', 'prod'),
+  'master_port': salt.pillar.get('data:gp_init:master_port', 5432),
+  'gpadmin_pwd': salt.pillar.get('data:gpadmin_password', salt.pillar.get('data:greenplum:users:gpadmin:password', 'gparray')),
+  'monitor_pwd': salt.pillar.get('data:greenplum:users:monitor:password', 'gparray'),
+  'gpadmin_pub_key': salt.pillar.get('data:greenplum:ssh_keys:public', 'data:gp_admin_pub_key'),
+  'gpadmin_prv_key': salt.pillar.get('data:greenplum:ssh_keys:private', 'data:gp_admin_prv_key'),
+  'gpbackup_utils': salt.pillar.get('data:backup_utils', 'gpbackup,gpbackup_helper, gprestore'),
+  'data_folders': salt.pillar.get('data:gp_data_folders', ['/var/lib/greenplum/data1']),
+  'version': version,
+  'patch_level': patch_level,
+  'datatransfer_project_id': datatransfer_project_id
+  }
+%}
+
+{% set default_xms_size = '3g' %}
+{% set default_xmx_size = '3g' %}
+{% if salt['pillar.get']('data:dbaas:flavor:memory_limit') %}
+{% if (salt['pillar.get']('data:dbaas:flavor:memory_limit') // 1024 // 1024 // 4)|int < 8192 %}
+{% set default_xms_size = '512m' %}
+{% set default_xmx_size = '1g' %}
+{% endif %}
+{% endif %}
+
+{% set pxfvars = {
+  'major_version': pxf_major_version,
+  'pxfhome': salt.pillar.get('data:pxf:home_dir', '/opt/greenplum-pxf'),
+  'pxfconf': salt.pillar.get('data:pxf:conf_dir', '/etc/greenplum-pxf' + pxf_version_suffix|string),
+  'logdir': salt.pillar.get('data:pxf:log_dir', '/var/log/greenplum'),
+  'xmx_size': salt.pillar.get('data:pxf:xmx_size', default_xmx_size),
+  'xms_size': salt.pillar.get('data:pxf:xms_size', default_xms_size),
+  'user_tz': salt.pillar.get('data:pxf:user_tz', 'Europe/Moscow'),
+  'pkgver': pxf_pkg_version,
+  'version': pxf_version,
+  'patch_level': pxf_patch_level,
+  'service_name': 'pxf' + pxf_version_suffix|string,
+  'java_io_tmpdir': salt.pillar.get('data:pxf:java_io_tmpdir', '/var/lib/greenplum/data1/java_tmp')
+  }
+%}

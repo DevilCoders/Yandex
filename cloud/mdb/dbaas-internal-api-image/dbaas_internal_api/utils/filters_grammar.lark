@@ -1,0 +1,58 @@
+//  https://wiki.yandex-team.ru/cloud/devel/api/filtersyntax/
+
+filters_list : [_WS] filter [_WS] ( logic_operator [_WS] filter )*
+
+logic_operator : "and"i -> and
+
+filter : attribute [ _WS ] operator_and_value
+
+attribute: ATTRIBUTE_NAME -> attribute_name
+
+ATTRIBUTE_NAME: /[A-Za-z]([A-Za-z0-9_.]*[A-Za-z0-9]+)?/
+
+operator_and_value : value_operator [ _WS ] value [_WS]
+                   | list_operator [ _WS ] values_list [_WS]
+
+value_operator : "="  -> equals
+               | "!=" -> not_equals
+               | ">"  -> greater
+               | ">=" -> greater_or_equals
+               | "<"  -> less
+               | "<=" -> less_or_equals
+
+list_operator : "in"i     -> in_
+              | "not in"i -> not_in
+
+values_list : "(" [ _WS ] value [ _WS ] ( "," [ _WS ] value [ _WS ] ) * ")"
+
+// '?' mean - inline rule
+// https://github.com/lark-parser/lark/wiki/Tree-Construction#shaping-the-tree
+?value : timestamp
+       | string
+       | NUMBER -> number
+       | BOOL   -> boolean
+
+// set higher priority for timestamps tokens
+// https://github.com/lark-parser/lark/wiki/Grammar-Reference#terminals-when-using-a-lexer
+
+timestamp : DATE [ TIME [ TZOFFSET ] ]
+
+DATE.1: /[0-9]{4}-[0-9]{2}-[0-9]{2}/
+
+TIME.1: /T[0-9]{2}:[0-9]{2}/
+
+TZOFFSET.1: /Z|[-+][0-9]{2}(:?[0-9]+)?/
+
+NUMBER.0 : /-?[0-9]+/
+
+string : STRING_DQ | STRING_Q
+
+STRING_DQ : /"(\\"|[^"])*"/
+
+STRING_Q : /'(\\'|[^'])*'/
+
+BOOL : "true"i | "false"i
+
+// tokens start with _ are ignored
+// usefull for white spaces
+_WS: /[\t ]+/

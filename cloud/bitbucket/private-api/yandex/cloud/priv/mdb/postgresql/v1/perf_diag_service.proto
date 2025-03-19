@@ -1,0 +1,592 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.mdb.postgresql.v1;
+
+import "google/protobuf/timestamp.proto";
+import "yandex/cloud/priv/validation.proto";
+import "yandex/cloud/priv/mdb/postgresql/v1/perf_diag.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/mdb/postgresql/v1;postgresql";
+option java_outer_classname = "PPDIAGS";
+
+// A set of methods for getting PostgreSQL performance diagnostics.
+service PerformanceDiagnosticsService {
+
+  rpc GetSessionsStats (GetSessionsStatsRequest) returns (GetSessionsStatsResponse);
+  rpc GetSessionsAtTime (GetSessionsAtTimeRequest) returns (GetSessionsAtTimeResponse);
+
+  rpc GetStatementsDiff (GetStatementsDiffRequest) returns (GetStatementsDiffResponse);
+  rpc GetStatementsAtTime (GetStatementsAtTimeRequest) returns (GetStatementsAtTimeResponse);
+  rpc GetStatementsInterval (GetStatementsIntervalRequest) returns (GetStatementsIntervalResponse);
+  rpc GetStatementsStats (GetStatementsStatsRequest) returns (GetStatementsStatsResponse);
+  rpc GetStatementStats (GetStatementStatsRequest) returns (GetStatementStatsResponse);
+}
+
+message GetSessionsStatsRequest {
+  enum GroupBy {
+    GROUP_BY_UNSPECIFIED = 0;
+    TIME = 1;
+    HOST = 2;
+    DATABASE = 3;
+    USER = 4;
+    WAIT_EVENT_TYPE = 5;
+    WAIT_EVENT = 6;
+    STATE = 7;
+    QUERY = 8;
+  }
+
+  enum SortOrder {
+    SORT_ORDER_UNSPECIFIED = 0;
+    ASC = 1;
+    DESC = 2;
+  }
+
+  message OrderBy {
+    GroupBy field = 1;
+    SortOrder order = 2;
+  }
+
+  // ID of the PostgreSQL cluster to request sessions history for.
+  // To get the PostgreSQL cluster ID use a [ClusterService.List] request.
+  string cluster_id = 1 [(required) = true, (length) = "<=50"];
+
+  // A filter expression that filters rows listed in the response.
+  // The expression must specify:
+  // 1. The column name.
+  // 2. An operator. Can be either `=` or `!=` for single values, `IN` or `NOT IN` for lists of values.
+  // 3. The value. Must be 1-63 characters long and match the regular expression `^[a-zA-Z0-9_-]+$`.
+  string filter = 2 [(length) = "<=1000"];
+
+  // Start timestamp for the request, in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+  google.protobuf.Timestamp from_time = 3;
+
+  // End timestamp for the request, in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+  google.protobuf.Timestamp to_time = 4;
+
+  repeated GroupBy group_by = 5 [(size) = ">0"];
+
+  // It is used only if grouping by time is enabled.
+  // In seconds. Valid values are 1, 15, 60, 300, 600, 1800, 3600, 21600, 86400.
+  int64 rollup_period = 6 [(value) = "<=86400"];
+
+  repeated OrderBy order_by = 7;
+
+  // The maximum number of results per page to return. If the number of available
+  // results is larger than [page_size], the service returns a [GetSessionsStatsResponse.next_page_token]
+  // that can be used to get the next page of results in subsequent list requests.
+  int64 page_size = 8 [(value) = "<=10000"];
+
+  // Page token. To get the next page of results, set [page_token] to the
+  // [GetSessionsStatsResponse.next_page_token] returned by a previous list request.
+  string page_token = 9 [(length) = "<=100"];
+}
+
+message GetSessionsStatsResponse {
+  message Stats {
+    google.protobuf.Timestamp time = 1;
+    map<string, string> dimensions = 2;
+    int64 sessions_count = 3;
+  }
+
+  repeated Stats stats = 1;
+
+  // This token allows you to get the next page of results for list requests. If the number of results
+  // is larger than [GetSessionsStatsRequest.page_size], use the [next_page_token] as the value
+  // for the [GetSessionsStatsRequest.page_token] parameter in the next list request. Each subsequent
+  // list request will have its own [next_page_token] to continue paging through the results.
+  string next_page_token = 2;
+}
+
+message GetSessionsAtTimeRequest {
+  enum Field {
+    FIELD_UNSPECIFIED = 0;
+    TIME = 1;
+    HOST = 2;
+    PID = 3;
+    DATABASE = 4;
+    USER = 5;
+    APPLICATION_NAME = 6;
+    BACKEND_START = 7;
+    XACT_START = 8;
+    QUERY_START = 9;
+    STATE_CHANGE = 10;
+    WAIT_EVENT_TYPE = 11;
+    WAIT_EVENT = 12;
+    STATE = 13;
+    QUERY = 14;
+    BACKEND_TYPE = 15;
+  }
+
+  enum SortOrder {
+    SORT_ORDER_UNSPECIFIED = 0;
+    ASC = 1;
+    DESC = 2;
+  }
+
+  message OrderBy {
+    Field field = 1;
+    SortOrder order = 2;
+  }
+
+  // ID of the PostgreSQL cluster to request sessions history for.
+  // To get the PostgreSQL cluster ID use a [ClusterService.List] request.
+  string cluster_id = 1 [(required) = true, (length) = "<=50"];
+
+  // Columns from pg_stat_activity to request.
+  // If no columns are specified, entire records are returned.
+  repeated Field column_filter = 2;
+
+  // A filter expression that filters rows listed in the response.
+  // The expression must specify:
+  // 1. The column name.
+  // 2. An operator. Can be either `=` or `!=` for single values, `IN` or `NOT IN` for lists of values.
+  // 3. The value. Must be 1-63 characters long and match the regular expression `^[a-zA-Z0-9_-]+$`.
+  string filter = 3 [(length) = "<=1000"];
+
+  // Timestamp at which to show sessions state, in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+  google.protobuf.Timestamp time = 4;
+
+  repeated OrderBy order_by = 5;
+
+  // The maximum number of results per page to return. If the number of available
+  // results is larger than [page_size], the service returns a [GetSessionsAtTimeResponse.next_page_token]
+  // that can be used to get the next page of results in subsequent list requests.
+  int64 page_size = 6 [(value) = "<=10000"];
+
+  // Page token. To get the next page of results, set [page_token] to the
+  // [GetSessionsAtTimeResponse.next_page_token] returned by a previous list request.
+  string page_token = 7 [(length) = "<=100"];
+}
+
+message GetSessionsAtTimeResponse {
+  repeated SessionState sessions = 1;
+
+  // Timestamp when previous sessions state was collected, in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+  google.protobuf.Timestamp previous_collect_time = 2;
+
+  // Timestamp when next sessions state was collected, in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+  google.protobuf.Timestamp next_collect_time = 3;
+
+  // This token allows you to get the next page of results for list requests. If the number of results
+  // is larger than [GetSessionsAtTimeRequest.page_size], use the [next_page_token] as the value
+  // for the [GetSessionsAtTimeRequest.page_token] parameter in the next list request. Each subsequent
+  // list request will have its own [next_page_token] to continue paging through the results.
+  string next_page_token = 4;
+}
+
+message GetStatementsDiffRequest {
+  enum Field {
+    FIELD_UNSPECIFIED = 0;
+    TIME = 1;
+    HOST = 2;
+    USER = 3;
+    DATABASE = 4;
+    QUERYID = 5;
+    QUERY = 6;
+    CALLS = 7;
+    TOTAL_TIME = 8;
+    MIN_TIME = 9;
+    MAX_TIME = 10;
+    MEAN_TIME = 11;
+    STDDEV_TIME = 12;
+    ROWS = 13;
+    SHARED_BLKS_HIT = 14;
+    SHARED_BLKS_READ = 15;
+    SHARED_BLKS_DIRTIED = 16;
+    SHARED_BLKS_WRITTEN = 17;
+    BLK_READ_TIME = 18;
+    BLK_WRITE_TIME = 19;
+    TEMP_BLKS_READ = 20;
+    TEMP_BLKS_WRITTEN = 21;
+    READS = 22;
+    WRITES = 23;
+    USER_TIME = 24;
+    SYSTEM_TIME = 25;
+  }
+
+  enum SortOrder {
+    SORT_ORDER_UNSPECIFIED = 0;
+    ASC = 1;
+    DESC = 2;
+  }
+
+  message OrderBy {
+    Field field = 1;
+    SortOrder order = 2;
+  }
+
+  // ID of the PostgreSQL cluster to request sessions history for.
+  // To get the PostgreSQL cluster ID use a [ClusterService.List] request.
+  string cluster_id = 1 [(required) = true, (length) = "<=50"];
+
+  // Columns from pg_stat_statements to request.
+  // If no columns are specified, entire records are returned.
+  repeated Field column_filter = 2;
+
+  // A filter expression that filters rows listed in the response.
+  // The expression must specify:
+  // 1. The column name.
+  // 2. An operator. Can be either `=` or `!=` for single values, `IN` or `NOT IN` for lists of values.
+  // 3. The value. Must be 1-63 characters long and match the regular expression `^[a-zA-Z0-9_-]+$`.
+  string filter = 3 [(length) = "<=1000"];
+
+  // Start timestamp of the first interval for diff, in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+  google.protobuf.Timestamp first_interval_start = 4;
+
+  // Start timestamp of the second interval for diff, in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+  google.protobuf.Timestamp second_interval_start = 5;
+
+  // In seconds. Valid values are 0, 60, 300, 600, 1800, 3600, 21600, 86400.
+  // 0 means that we want to get diff between two points in time, not two time intervals.
+  int64 intervals_duration = 6 [(value) = "<=86400"];
+
+  repeated OrderBy order_by = 7;
+
+  // The maximum number of results per page to return. If the number of available
+  // results is larger than [page_size], the service returns a [GetSessionsAtTimeResponse.next_page_token]
+  // that can be used to get the next page of results in subsequent list requests.
+  int64 page_size = 8 [(value) = "<=10000"];
+
+  // Page token. To get the next page of results, set [page_token] to the
+  // [GetSessionsAtTimeResponse.next_page_token] returned by a previous list request.
+  string page_token = 9 [(length) = "<=100"];
+}
+
+message GetStatementsDiffResponse {
+  repeated DiffStatement diff_statements = 1;
+
+  // This token allows you to get the next page of results for list requests. If the number of results
+  // is larger than [GetStatementsDiffRequest.page_size], use the [next_page_token] as the value
+  // for the [GetStatementsDiffRequest.page_token] parameter in the next list request. Each subsequent
+  // list request will have its own [next_page_token] to continue paging through the results.
+  string next_page_token = 2;
+}
+
+message GetStatementsAtTimeRequest {
+  enum Field {
+    FIELD_UNSPECIFIED = 0;
+    TIME = 1;
+    HOST = 2;
+    USER = 3;
+    DATABASE = 4;
+    QUERYID = 5;
+    QUERY = 6;
+    CALLS = 7;
+    TOTAL_TIME = 8;
+    MIN_TIME = 9;
+    MAX_TIME = 10;
+    MEAN_TIME = 11;
+    STDDEV_TIME = 12;
+    ROWS = 13;
+    SHARED_BLKS_HIT = 14;
+    SHARED_BLKS_READ = 15;
+    SHARED_BLKS_DIRTIED = 16;
+    SHARED_BLKS_WRITTEN = 17;
+    BLK_READ_TIME = 18;
+    BLK_WRITE_TIME = 19;
+    TEMP_BLKS_READ = 20;
+    TEMP_BLKS_WRITTEN = 21;
+    READS = 22;
+    WRITES = 23;
+    USER_TIME = 24;
+    SYSTEM_TIME = 25;
+  }
+
+  enum SortOrder {
+    SORT_ORDER_UNSPECIFIED = 0;
+    ASC = 1;
+    DESC = 2;
+  }
+
+  message OrderBy {
+    Field field = 1;
+    SortOrder order = 2;
+  }
+
+  // ID of the PostgreSQL cluster to request sessions history for.
+  // To get the PostgreSQL cluster ID use a [ClusterService.List] request.
+  string cluster_id = 1 [(required) = true, (length) = "<=50"];
+
+  // Columns from pg_stat_statements to request.
+  // If no columns are specified, entire records are returned.
+  repeated Field column_filter = 2;
+
+  // A filter expression that filters rows listed in the response.
+  // The expression must specify:
+  // 1. The column name.
+  // 2. An operator. Can be either `=` or `!=` for single values, `IN` or `NOT IN` for lists of values.
+  // 3. The value. Must be 1-63 characters long and match the regular expression `^[a-zA-Z0-9_-]+$`.
+  string filter = 3 [(length) = "<=1000"];
+
+  // Timestamp at which to show sessions state, in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+  google.protobuf.Timestamp time = 4;
+
+  repeated OrderBy order_by = 5;
+
+  // The maximum number of results per page to return. If the number of available
+  // results is larger than [page_size], the service returns a [GetSessionsAtTimeResponse.next_page_token]
+  // that can be used to get the next page of results in subsequent list requests.
+  int64 page_size = 6 [(value) = "<=10000"];
+
+  // Page token. To get the next page of results, set [page_token] to the
+  // [GetSessionsAtTimeResponse.next_page_token] returned by a previous list request.
+  string page_token = 7 [(length) = "<=100"];
+}
+
+message GetStatementsAtTimeResponse {
+  repeated Statement statements = 1;
+
+  // Timestamp when previous statements stats was collected, in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+  google.protobuf.Timestamp previous_collect_time = 2;
+
+  // Timestamp when next statements stats was collected, in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+  google.protobuf.Timestamp next_collect_time = 3;
+
+  // This token allows you to get the next page of results for list requests. If the number of results
+  // is larger than [GetStatementsAtTimeRequest.page_size], use the [next_page_token] as the value
+  // for the [GetStatementsAtTimeRequest.page_token] parameter in the next list request. Each subsequent
+  // list request will have its own [next_page_token] to continue paging through the results.
+  string next_page_token = 4;
+}
+
+message GetStatementsIntervalRequest {
+  enum Field {
+    FIELD_UNSPECIFIED = 0;
+    TIME = 1;
+    HOST = 2;
+    USER = 3;
+    DATABASE = 4;
+    QUERYID = 5;
+    QUERY = 6;
+    CALLS = 7;
+    TOTAL_TIME = 8;
+    MIN_TIME = 9;
+    MAX_TIME = 10;
+    MEAN_TIME = 11;
+    STDDEV_TIME = 12;
+    ROWS = 13;
+    SHARED_BLKS_HIT = 14;
+    SHARED_BLKS_READ = 15;
+    SHARED_BLKS_DIRTIED = 16;
+    SHARED_BLKS_WRITTEN = 17;
+    BLK_READ_TIME = 18;
+    BLK_WRITE_TIME = 19;
+    TEMP_BLKS_READ = 20;
+    TEMP_BLKS_WRITTEN = 21;
+    READS = 22;
+    WRITES = 23;
+    USER_TIME = 24;
+    SYSTEM_TIME = 25;
+  }
+
+  enum SortOrder {
+    SORT_ORDER_UNSPECIFIED = 0;
+    ASC = 1;
+    DESC = 2;
+  }
+
+  message OrderBy {
+    Field field = 1;
+    SortOrder order = 2;
+  }
+
+  // ID of the PostgreSQL cluster to request sessions history for.
+  // To get the PostgreSQL cluster ID use a [ClusterService.List] request.
+  string cluster_id = 1 [(required) = true, (length) = "<=50"];
+
+  // Columns from pg_stat_statements to request.
+  // If no columns are specified, entire records are returned.
+  repeated Field column_filter = 2;
+
+  // A filter expression that filters rows listed in the response.
+  // The expression must specify:
+  // 1. The column name.
+  // 2. An operator. Can be either `=` or `!=` for single values, `IN` or `NOT IN` for lists of values.
+  // 3. The value. Must be 1-63 characters long and match the regular expression `^[a-zA-Z0-9_-]+$`.
+  string filter = 3 [(length) = "<=1000"];
+
+  // Start timestamp for the request, in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+  google.protobuf.Timestamp from_time = 4;
+
+  // End timestamp for the request, in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+  google.protobuf.Timestamp to_time = 5;
+
+  repeated OrderBy order_by = 6;
+
+  // The maximum number of results per page to return. If the number of available
+  // results is larger than [page_size], the service returns a [GetSessionsAtTimeResponse.next_page_token]
+  // that can be used to get the next page of results in subsequent list requests.
+  int64 page_size = 7 [(value) = "<=10000"];
+
+  // Page token. To get the next page of results, set [page_token] to the
+  // [GetSessionsAtTimeResponse.next_page_token] returned by a previous list request.
+  string page_token = 8 [(length) = "<=100"];
+}
+
+message GetStatementsIntervalResponse {
+  repeated Statement statements = 1;
+
+  // This token allows you to get the next page of results for list requests. If the number of results
+  // is larger than [GetStatementsAtTimeRequest.page_size], use the [next_page_token] as the value
+  // for the [GetStatementsAtTimeRequest.page_token] parameter in the next list request. Each subsequent
+  // list request will have its own [next_page_token] to continue paging through the results.
+  string next_page_token = 2;
+}
+
+message GetStatementsStatsRequest {
+
+  enum GroupBy {
+    GROUP_BY_UNSPECIFIED = 0;
+    HOST = 1;
+    USER = 2;
+    DATABASE = 3;
+  }
+
+  enum Field {
+    FIELD_UNSPECIFIED = 0;
+    CALLS = 1;
+    TOTAL_TIME = 2;
+    MIN_TIME = 3;
+    MAX_TIME = 4;
+    MEAN_TIME = 5;
+    STDDEV_TIME = 6;
+    ROWS = 7;
+    SHARED_BLKS_HIT = 8;
+    SHARED_BLKS_READ = 9;
+    SHARED_BLKS_DIRTIED = 10;
+    SHARED_BLKS_WRITTEN = 11;
+    BLK_READ_TIME = 12;
+    BLK_WRITE_TIME = 13;
+    TEMP_BLKS_READ = 14;
+    TEMP_BLKS_WRITTEN = 15;
+    READS = 16;
+    WRITES = 17;
+    USER_TIME = 18;
+    SYSTEM_TIME = 19;
+  }
+
+  // ID of the PostgreSQL cluster to request sessions history for.
+  // To get the PostgreSQL cluster ID use a [ClusterService.List] request.
+  string cluster_id = 1 [(required) = true, (length) = "<=50"];
+
+  // Columns from pg_stat_statements to request.
+  // If no columns are specified, entire records are returned.
+  repeated Field column_filter = 2;
+
+  // A filter expression that filters rows listed in the response.
+  // The expression must specify:
+  // 1. The column name.
+  // 2. An operator. Can be either `=` or `!=` for single values, `IN` or `NOT IN` for lists of values.
+  // 3. The value. Must be 1-63 characters long and match the regular expression `^[a-zA-Z0-9_-]+$`.
+  string filter = 3 [(length) = "<=1000"];
+
+  // Start timestamp for the request, in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+  google.protobuf.Timestamp from_time = 4;
+
+  // End timestamp for the request, in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+  google.protobuf.Timestamp to_time = 5;
+
+  repeated GroupBy group_by = 6;
+
+  // The maximum number of results per page to return. If the number of available
+  // results is larger than [page_size], the service returns a [GetStatementsStatsResponse.next_page_token]
+  // that can be used to get the next page of results in subsequent list requests.
+  int64 page_size = 7 [(value) = "<=10000"];
+
+  // Page token. To get the next page of results, set [page_token] to the
+  // [GetSessionsStatsResponse.next_page_token] returned by a previous list request.
+  string page_token = 8 [(length) = "<=100"];
+}
+
+message GetStatementsStatsResponse {
+  repeated Statement statements = 1;
+
+  string query = 2;
+
+  // This token allows you to get the next page of results for list requests. If the number of results
+  // is larger than [GetStatementStats.page_size], use the [next_page_token] as the value
+  // for the [GetStatementStats.page_token] parameter in the next list request. Each subsequent
+  // list request will have its own [next_page_token] to continue paging through the results.
+  string next_page_token = 3;
+}
+
+message GetStatementStatsRequest {
+
+  enum GroupBy {
+    GROUP_BY_UNSPECIFIED = 0;
+    HOST = 1;
+    USER = 2;
+    DATABASE = 3;
+  }
+
+  enum Field {
+    FIELD_UNSPECIFIED = 0;
+    CALLS = 1;
+    TOTAL_TIME = 2;
+    MIN_TIME = 3;
+    MAX_TIME = 4;
+    MEAN_TIME = 5;
+    STDDEV_TIME = 6;
+    ROWS = 7;
+    SHARED_BLKS_HIT = 8;
+    SHARED_BLKS_READ = 9;
+    SHARED_BLKS_DIRTIED = 10;
+    SHARED_BLKS_WRITTEN = 11;
+    BLK_READ_TIME = 12;
+    BLK_WRITE_TIME = 13;
+    TEMP_BLKS_READ = 14;
+    TEMP_BLKS_WRITTEN = 15;
+    READS = 16;
+    WRITES = 17;
+    USER_TIME = 18;
+    SYSTEM_TIME = 19;
+  }
+
+  // ID of the PostgreSQL cluster to request sessions history for.
+  // To get the PostgreSQL cluster ID use a [ClusterService.List] request.
+  string cluster_id = 1 [(required) = true, (length) = "<=50"];
+
+  // ID of ther query to get stats for
+  string query_id = 2 [(required) = true, (length) = "<=50"];
+
+  // Columns from pg_stat_statements to request.
+  // If no columns are specified, entire records are returned.
+  repeated Field column_filter = 3;
+
+  // A filter expression that filters rows listed in the response.
+  // The expression must specify:
+  // 1. The column name.
+  // 2. An operator. Can be either `=` or `!=` for single values, `IN` or `NOT IN` for lists of values.
+  // 3. The value. Must be 1-63 characters long and match the regular expression `^[a-zA-Z0-9_-]+$`.
+  string filter = 4 [(length) = "<=1000"];
+
+  // Start timestamp for the request, in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+  google.protobuf.Timestamp from_time = 5;
+
+  // End timestamp for the request, in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+  google.protobuf.Timestamp to_time = 6;
+
+  repeated GroupBy group_by = 7;
+
+  // The maximum number of results per page to return. If the number of available
+  // results is larger than [page_size], the service returns a [GetStatementStatsResponse.next_page_token]
+  // that can be used to get the next page of results in subsequent list requests.
+  int64 page_size = 8 [(value) = "<=10000"];
+
+  // Page token. To get the next page of results, set [page_token] to the
+  // [GetSessionsStatsResponse.next_page_token] returned by a previous list request.
+  string page_token = 9 [(length) = "<=100"];
+}
+
+message GetStatementStatsResponse {
+  repeated Statement statements = 1;
+
+  // Normalized query string
+  string query = 2;
+
+  // This token allows you to get the next page of results for list requests. If the number of results
+  // is larger than [GetStatementStats.page_size], use the [next_page_token] as the value
+  // for the [GetStatementStats.page_token] parameter in the next list request. Each subsequent
+  // list request will have its own [next_page_token] to continue paging through the results.
+  string next_page_token = 3;
+}

@@ -1,0 +1,5 @@
+SHELL=/bin/sh
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
+MAILTO=''
+
+*/5 * * * * postgres sleep $((RANDOM \% 120)); flock -n -w 10 /tmp/auto_kill.lock psql "options='-c log_statement=none'" -c "SELECT now(), query, pg_terminate_backend(pid) FROM pg_stat_activity WHERE coalesce(xact_start, query_start) < current_timestamp - '{{ salt['pillar.get']('data:config:auto_kill_timeout', '15 minutes') }}'::interval AND usename NOT IN (SELECT rolname FROM pg_roles WHERE rolsuper) AND usename NOT IN ({{ salt['pillar.get']('data:config:auto_kill_users', "''") }}) AND state != 'idle' AND backend_type = 'client backend';"  >> /var/log/postgresql/pg_auto_kill.log 2>&1

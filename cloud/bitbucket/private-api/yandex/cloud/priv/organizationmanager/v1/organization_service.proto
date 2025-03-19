@@ -1,0 +1,150 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.organizationmanager.v1;
+
+import "google/protobuf/field_mask.proto";
+import "yandex/cloud/api/operation.proto";
+import "yandex/cloud/priv/organizationmanager/v1/organization.proto";
+import "yandex/cloud/priv/access/access.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/organizationmanager/v1;organizationmanager";
+option java_outer_classname = "PORGS";
+
+service OrganizationService {
+
+  rpc Get (GetOrganizationRequest) returns (Organization);
+
+  rpc BatchGet (BatchGetOrganizationsRequest) returns (BatchGetOrganizationsResponse);
+
+  rpc Resolve (ResolveOrganizationsRequest) returns (ResolveOrganizationsResponse);
+
+  // List user organizations.
+  rpc List (ListOrganizationsRequest) returns (ListOrganizationsResponse);
+
+  rpc Create (CreateOrganizationRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "CreateOrganizationMetadata"
+      response: "Organization"
+    };
+  }
+
+  rpc Update (UpdateOrganizationRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateOrganizationMetadata"
+      response: "Organization"
+    };
+  }
+
+  rpc Delete (DeleteOrganizationRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeleteOrganizationMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+
+  rpc ListOperations (ListOrganizationOperationsRequest) returns (ListOrganizationOperationsResponse);
+
+  //access
+
+  rpc ListAccessBindings (access.ListAccessBindingsRequest) returns (access.ListAccessBindingsResponse);
+
+  rpc SetAccessBindings (access.SetAccessBindingsRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "access.SetAccessBindingsMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+
+  rpc UpdateAccessBindings (access.UpdateAccessBindingsRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "access.UpdateAccessBindingsMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+
+}
+
+message GetOrganizationRequest {
+  string organization_id = 1 [(required) = true, (length) = "<=50"];
+}
+
+message ResolveOrganizationsRequest {
+  repeated string organization_ids = 1 [(size) = "1-1000", (length) = "<=50"];
+  bool resolve_existing_only = 2;
+}
+
+message ResolveOrganizationsResponse {
+  repeated ResolvedOrganization resolved_organizations = 1;
+}
+
+message ListOrganizationsRequest {
+  int64 page_size = 1 [(value) = "0-1000"];
+  string page_token = 2 [(length) = "<=100"];
+  string filter = 3 [(length) = "<=1000"];
+  // Optional - list specified subject organizations. By default equals to authenticated subject.
+  string subject_id = 4 [(length) = "<=50"];
+}
+
+message ListOrganizationsResponse {
+  repeated Organization organizations = 1;
+  string next_page_token = 2;
+}
+
+message CreateOrganizationRequest {
+  // entity name in Yandex.Cloud, can be used by YC CLI, terraform and other tools.
+  string name = 1 [(required) = true, (pattern) = "[a-z]([-a-z0-9]{0,61}[a-z0-9])?"];
+  string description = 2 [(length) = "<=256"];
+  string id = 3 [(length) = "<=50"];
+  // organization name, e.g. "Yandex", "OOO Roga & Kopyta".
+  string title = 4 [(required) = true, (length) = "<=256"];
+  map<string, string> labels = 5 [(priv.size) = "<=64", (length) = "<=63", (pattern) = "[-_0-9a-z]*", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_0-9a-z]*"];
+}
+
+message CreateOrganizationMetadata {
+  string organization_id = 1;
+}
+
+message UpdateOrganizationRequest {
+  string organization_id = 1 [(required) = true, (length) = "<=50"];
+  google.protobuf.FieldMask update_mask = 2;
+
+  // entity name in Yandex.Cloud, can be used by YC CLI, terraform and other tools.
+  string name = 3 [(pattern) = "|[a-z]([-a-z0-9]{0,61}[a-z0-9])?"];
+  string description = 4 [(length) = "<=256"];
+  // organization name, e.g. "Yandex", "OOO Roga & Kopyta"
+  string title = 5 [(length) = "<=256"];
+  map<string, string> labels = 6 [(priv.size) = "<=64", (length) = "<=63", (pattern) = "[-_0-9a-z]*", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_0-9a-z]*"];
+}
+
+message UpdateOrganizationMetadata {
+  string organization_id = 1;
+}
+
+message DeleteOrganizationRequest {
+  string organization_id = 1 [(required) = true, (length) = "<=50"];
+}
+
+message DeleteOrganizationMetadata {
+  string organization_id = 1;
+}
+
+message ListOrganizationOperationsRequest {
+  string organization_id = 1 [(required) = true, (length) = "<=50"];
+  int64 page_size = 2 [(value) = "0-1000"];
+  string page_token = 3 [(length) = "<=100"];
+}
+
+message ListOrganizationOperationsResponse {
+  repeated operation.Operation operations = 1;
+  string next_page_token = 2;
+}
+
+message BatchGetOrganizationsRequest {
+  repeated string organization_ids = 1 [(size) = "1-1000", (length) = "<=50"];
+}
+
+message BatchGetOrganizationsResponse {
+  repeated Organization organizations = 1;
+}

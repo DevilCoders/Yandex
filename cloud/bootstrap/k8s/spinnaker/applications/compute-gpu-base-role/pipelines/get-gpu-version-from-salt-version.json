@@ -1,0 +1,365 @@
+{
+    "appConfig": {},
+    "application": "compute-gpu-base-role",
+    "id": "c4ae88da-4e4a-4d2b-a699-7dfe8c184c17",
+    "index": 6,
+    "keepWaitingPipelines": false,
+    "limitConcurrent": true,
+    "name": "get-gpu-version-from-salt-version",
+    "parameterConfig": [
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "",
+            "name": "saltFormulaVersion",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": true,
+            "required": true
+        }
+    ],
+    "spelEvaluator": "v4",
+    "stages": [
+        {
+            "failOnFailedExpressions": true,
+            "name": "[get-data-from-salt-formula] Check parsed cluster-configs",
+            "refId": "3",
+            "requisiteStageRefIds": [
+                "17"
+            ],
+            "stageEnabled": {
+                "expression": "tmpSaltFormula.matches(\"^[0-9]\\.[0-9]-[0-9]+\\.[0-9]+$\")",
+                "type": "expression"
+            },
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "repoSaltFormulaVersion",
+                    "value": "${ tmpSaltFormula }"
+                }
+            ]
+        },
+        {
+            "actions": [
+                {
+                    "actionId": "f6a9d333-b511-4929-9cce-8fc1f795965c",
+                    "actionName": "Get data from cluster-configs",
+                    "actionType": "readFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "master",
+                    "filePath": "preprod/salt-role-releases/compute-gpu.yaml",
+                    "outputVariable": "fileComputeGpu",
+                    "project": "cloud",
+                    "repo": "cluster-configs"
+                }
+            ],
+            "name": "[get-gpu-version-from-salt-version] Get cluster-configs version",
+            "refId": "4",
+            "requisiteStageRefIds": [],
+            "type": "bitbucket"
+        },
+        {
+            "buildConfigurationId": "Compute_Packages_Gpu_GetPreviousSaltFormula",
+            "name": "[get-data-from-salt-formula] Get previous salt version",
+            "parseArtifacts": [
+                {
+                    "artifactPath": "version.json",
+                    "outputVariable": "saltFormulaVersionArtifactFromTC"
+                }
+            ],
+            "queueAtTop": true,
+            "refId": "7",
+            "requisiteStageRefIds": [
+                "3"
+            ],
+            "stageEnabled": {
+                "expression": "repoSaltFormulaVersion == parameters.saltFormulaVersion",
+                "type": "expression"
+            },
+            "tcProfile": "aw",
+            "type": "teamcityBuild"
+        },
+        {
+            "failOnFailedExpressions": true,
+            "name": "[get-data-from-salt-formula] Prepare branches",
+            "refId": "8",
+            "requisiteStageRefIds": [
+                "7"
+            ],
+            "stageEnabled": {
+                "expression": "repoSaltFormulaVersion == parameters.saltFormulaVersion \u0026\u0026 saltFormulaVersionArtifactFromTC['version'].matches(\"^[0-9]\\.[0-9]-[0-9]+\\.[0-9]+$\")",
+                "type": "expression"
+            },
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "currSaltFormulaBranch",
+                    "value": "build-${saltFormulaVersionArtifactFromTC['version']}"
+                },
+                {
+                    "key": "lastSaltFormulaBranch",
+                    "value": "build-${repoSaltFormulaVersion}"
+                }
+            ]
+        },
+        {
+            "actions": [
+                {
+                    "actionId": "435ddf4f-323b-43f9-a464-384b44159720",
+                    "actionName": "Get GPU packages",
+                    "actionType": "readFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${lastSaltFormulaBranch}",
+                    "filePath": "pillar/packages/16.04/compute_gpu.yaml",
+                    "outputVariable": "lastComputeGPUSalt",
+                    "project": "cloud",
+                    "repo": "salt-formula"
+                }
+            ],
+            "failOnFailedExpressions": true,
+            "name": "[get-data-from-salt-formula] Get current pillar file",
+            "refId": "9",
+            "requisiteStageRefIds": [
+                "12"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "failOnFailedExpressions": true,
+            "name": "[get-data-from-salt-formula] Parse current pillar file",
+            "refId": "10",
+            "requisiteStageRefIds": [
+                "9"
+            ],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "lastFileGpuVersion",
+                    "value": "${ #readYaml(lastComputeGPUSalt)['_aliases']['gpu_version']}"
+                }
+            ]
+        },
+        {
+            "failOnFailedExpressions": true,
+            "name": "[get-data-from-salt-formula] Check current parsed value",
+            "refId": "11",
+            "requisiteStageRefIds": [
+                "10"
+            ],
+            "stageEnabled": {
+                "expression": "lastFileGpuVersion.matches(\"^[0-9]\\.[0-9]\\.[0-9]-[0-9]+\\.[0-9]+$\")",
+                "type": "expression"
+            },
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "lastGpuVersion",
+                    "value": "${ lastFileGpuVersion }"
+                }
+            ]
+        },
+        {
+            "name": "[get-data-from-salt-formula] Check branches",
+            "preconditions": [
+                {
+                    "context": {
+                        "expression": "lastSaltFormulaBranch != \"\"",
+                        "failureMessage": "Last salt formula branch version is empty"
+                    },
+                    "failPipeline": true,
+                    "type": "expression"
+                },
+                {
+                    "context": {
+                        "expression": "currSaltFormulaBranch != \"\"",
+                        "failureMessage": "Current salt formula branch version is empty"
+                    },
+                    "failPipeline": true,
+                    "type": "expression"
+                }
+            ],
+            "refId": "12",
+            "requisiteStageRefIds": [
+                "8",
+                "20"
+            ],
+            "type": "checkPreconditions"
+        },
+        {
+            "actions": [
+                {
+                    "actionId": "435ddf4f-323b-43f9-a464-384b44159720",
+                    "actionName": "Get GPU packages",
+                    "actionType": "readFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${currSaltFormulaBranch}",
+                    "filePath": "pillar/packages/16.04/compute_gpu.yaml",
+                    "outputVariable": "currComputeGPUSalt",
+                    "project": "cloud",
+                    "repo": "salt-formula"
+                }
+            ],
+            "failOnFailedExpressions": true,
+            "name": "[get-data-from-salt-formula] Get previous pillar file",
+            "refId": "13",
+            "requisiteStageRefIds": [
+                "12"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "failOnFailedExpressions": true,
+            "name": "[get-data-from-salt-formula] Parse previous pillar file",
+            "refId": "14",
+            "requisiteStageRefIds": [
+                "13"
+            ],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "currFileGpuVersion",
+                    "value": "${ #readYaml(currComputeGPUSalt)['_aliases']['gpu_version']}"
+                }
+            ]
+        },
+        {
+            "failOnFailedExpressions": true,
+            "name": "[get-data-from-salt-formula] Check previous parsed value",
+            "refId": "15",
+            "requisiteStageRefIds": [
+                "14"
+            ],
+            "stageEnabled": {
+                "expression": "currFileGpuVersion.matches(\"^[0-9]\\.[0-9]\\.[0-9]-[0-9]+\\.[0-9]+$\")",
+                "type": "expression"
+            },
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "currGpuVersion",
+                    "value": "${ currFileGpuVersion }"
+                }
+            ]
+        },
+        {
+            "name": "[get-data-from-salt-formula] Check GPU versions",
+            "preconditions": [
+                {
+                    "context": {
+                        "expression": "lastGpuVersion != \"\"",
+                        "failureMessage": "Last GPU version is empty"
+                    },
+                    "failPipeline": true,
+                    "type": "expression"
+                },
+                {
+                    "context": {
+                        "expression": "currGpuVersion != \"\"",
+                        "failureMessage": "Previous GPU version is empty"
+                    },
+                    "failPipeline": true,
+                    "type": "expression"
+                },
+                {
+                    "context": {
+                        "expression": "lastGpuVersion != currGpuVersion",
+                        "failureMessage": "GPU versions are equal ${lastGpuVersion}"
+                    },
+                    "failPipeline": true,
+                    "type": "expression"
+                }
+            ],
+            "refId": "16",
+            "requisiteStageRefIds": [
+                "11",
+                "15"
+            ],
+            "type": "checkPreconditions"
+        },
+        {
+            "failOnFailedExpressions": true,
+            "name": "[get-gpu-version-from-salt-version] Parse cluster-configs version",
+            "refId": "17",
+            "requisiteStageRefIds": [
+                "4"
+            ],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "tmpSaltFormula",
+                    "value": "${ #readYaml(fileComputeGpu)['yc-release']['packages']['yc-salt-formula']}"
+                }
+            ]
+        },
+        {
+            "application": "compute-gpu-base-role",
+            "failPipeline": true,
+            "name": "[get-gpu-version-from-salt-version] Call salt version checker",
+            "pipeline": "b5d94e01-b838-472f-bfc9-5ac86155d408",
+            "pipelineParameters": {
+                "first": "${repoSaltFormulaVersion}",
+                "second": "${parameters.saltFormulaVersion}"
+            },
+            "refId": "18",
+            "requisiteStageRefIds": [
+                "3"
+            ],
+            "stageEnabled": {
+                "expression": "repoSaltFormulaVersion != parameters.saltFormulaVersion",
+                "type": "expression"
+            },
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "name": "[get-gpu-version-from-salt-version] Check parameters salt version is greater",
+            "preconditions": [
+                {
+                    "context": {
+                        "expression": "#toBoolean(returnState)",
+                        "failureMessage": "Version ${repoSaltFormulaVersion} is greater than ${parameters.saltFormulaVersion}"
+                    },
+                    "failPipeline": true,
+                    "type": "expression"
+                }
+            ],
+            "refId": "19",
+            "requisiteStageRefIds": [
+                "18"
+            ],
+            "stageEnabled": {
+                "expression": "repoSaltFormulaVersion != parameters.saltFormulaVersion",
+                "type": "expression"
+            },
+            "type": "checkPreconditions"
+        },
+        {
+            "failOnFailedExpressions": false,
+            "name": "[get-gpu-version-from-salt-version] Prepare branches from parameters",
+            "refId": "20",
+            "requisiteStageRefIds": [
+                "19"
+            ],
+            "stageEnabled": {
+                "expression": "repoSaltFormulaVersion != parameters.saltFormulaVersion",
+                "type": "expression"
+            },
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "currSaltFormulaBranch",
+                    "value": "build-${repoSaltFormulaVersion}"
+                },
+                {
+                    "key": "lastSaltFormulaBranch",
+                    "value": "build-${parameters.saltFormulaVersion}"
+                }
+            ]
+        }
+    ],
+    "triggers": []
+}

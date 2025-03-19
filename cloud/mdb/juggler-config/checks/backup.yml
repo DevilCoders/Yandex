@@ -1,0 +1,80 @@
+
+- juggler_check:
+    host: "{{ host }}"
+    service: scheduler_plan
+    namespace: "{{ namespace }}"
+    notifications: "{{ notifications_backup_create | default(notifications)  }}"
+    aggregator: logic_or
+    aggregator_kwargs:
+      mode: "{{ ( common_checks.aggregator_kwargs | default(dict(mode='CRIT')) ).mode  }}"
+    tags: "{{ default_tags | default([]) }}"
+    refresh_time: 60
+    ttl: 1800
+    children:
+      name: "(host={{ cgroup }} & service=total_cluster_scheduler_plan)"
+      type: "EVENTS"
+      service: all
+      instance: all
+    __force__: True
+    meta:
+      urls:
+        - {title: "How to handle?", url: "https://wiki.yandex-team.ru/mdb/internal/operations/duty-howto/backup-service/#schedulerplan", type: "mdb"}
+
+- juggler_check:
+    host: "{{ host }}"
+    service: scheduler_obsolete
+    namespace: "{{ namespace }}"
+    notifications: "{{ notifications_backup_delete | default(notifications)  }}"
+    aggregator: logic_or
+    aggregator_kwargs:
+      mode: "{{ ( common_checks.aggregator_kwargs | default(dict(mode='CRIT')) ).mode  }}"
+    tags: "{{ default_tags | default([]) }}"
+    refresh_time: 60
+    ttl: 1800
+    children:
+      name: "(host={{ cgroup }} & service=total_cluster_scheduler_obsolete)"
+      type: "EVENTS"
+      service: all
+      instance: all
+    __force__: True
+    meta:
+      urls:
+        - {title: "How to handle?", url: "https://wiki.yandex-team.ru/mdb/internal/operations/duty-howto/backup-service/#schedulerobsolete", type: "mdb"}
+
+
+- juggler_check:
+    host: "{{ host }}"
+    service: scheduler_purge
+    namespace: "{{ namespace }}"
+    notifications: "{{ notifications_backup_delete | default(notifications)  }}"
+    aggregator: logic_or
+    aggregator_kwargs:
+      mode: "{{ ( common_checks.aggregator_kwargs | default(dict(mode='CRIT')) ).mode  }}"
+    tags: "{{ default_tags | default([]) }}"
+    refresh_time: 60
+    ttl: 1800
+    children:
+      name: "(host={{ cgroup }} & service=total_cluster_scheduler_purge)"
+      type: "EVENTS"
+      service: all
+      instance: all
+    __force__: True
+    meta:
+      urls:
+        - {title: "How to handle?", url: "https://wiki.yandex-team.ru/mdb/internal/operations/duty-howto/backup-service/#schedulerpurge", type: "mdb"}
+
+
+- juggler_check:
+  args: "{{ dict() | hash_replace(common_checks, dict(aggregator='more_than_limit_is_problem', aggregator_kwargs=dict(mode='normal', crit_limit=2, warn_limit=1))) | hash_merge( unreach_pass, item ) }}"
+  with_items:
+    - service: backup_worker_alive
+      refresh_time: 300
+      ttl: 900
+      notifications: "{{ notifications_backup | default(notifications) }}"
+      children:
+        service: backup_worker_alive
+      meta:
+        urls:
+          - title: "How to handle?"
+            url: "https://wiki.yandex-team.ru/mdb/internal/operations/duty-howto/backup-service/#backupworkeralive"
+            type: "mdb"

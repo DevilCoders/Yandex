@@ -1,0 +1,73 @@
+OWNER(g:cloud-marketplace)
+
+PY3_LIBRARY(yc_marketplace)
+
+PY_SRCS(
+    __init__.py
+    app.py
+    config.py
+    private_api/__init__.py
+    private_api/avatar.py
+    private_api/blueprint.py
+    private_api/build.py
+    private_api/eula.py
+    private_api/category.py
+    private_api/form.py
+    private_api/health.py
+    private_api/i18n.py
+    private_api/isv.py
+    private_api/os_product.py
+    private_api/os_product_family.py
+    private_api/os_product_family_version.py
+    private_api/partner_requests.py
+    private_api/product_slug.py
+    private_api/publisher.py
+    private_api/sku_draft.py
+    private_api/saas_product.py
+    private_api/simple_product.py
+    private_api/task.py
+    private_api/telemetry.py
+    private_api/var.py
+    public_api/__init__.py
+    public_api/avatar.py
+    public_api/eula.py
+    public_api/category.py
+    public_api/form.py
+    public_api/isv.py
+    public_api/metrics.py
+    public_api/manage/__init__.py
+    public_api/manage/avatar.py
+    public_api/manage/eula.py
+    public_api/manage/isv.py
+    public_api/manage/os_product.py
+    public_api/manage/os_product_family.py
+    public_api/manage/os_product_family_version.py
+    public_api/manage/partner_requests.py
+    public_api/manage/publisher.py
+    public_api/manage/saas_product.py
+    public_api/manage/simple_product.py
+    public_api/manage/sku.py
+    public_api/manage/sku_draft.py
+    public_api/manage/task.py
+    public_api/manage/var.py
+    public_api/os_product.py
+    public_api/os_product_family.py
+    public_api/os_product_family_version.py
+    public_api/publisher.py
+    public_api/saas_product.py
+    public_api/simple_product.py
+    public_api/var.py
+    utils/__init__.py
+    utils/authorization.py
+    utils/checks.py
+    utils/i18n.py
+    utils/metrics.py
+)
+
+PEERDIR(
+    cloud/marketplace/common/yc_marketplace_common
+    cloud/bitbucket/python-common
+    cloud/iam/accessservice/client/python
+)
+
+END()

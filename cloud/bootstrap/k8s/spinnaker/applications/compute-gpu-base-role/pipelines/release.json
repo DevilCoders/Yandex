@@ -1,0 +1,461 @@
+{
+    "appConfig": {},
+    "application": "compute-gpu-base-role",
+    "id": "e3318a51-7ddf-47e7-94fb-3ca281a69925",
+    "index": 0,
+    "keepWaitingPipelines": false,
+    "limitConcurrent": true,
+    "name": "release",
+    "parameterConfig": [
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "Use existing release ticket",
+            "name": "releaseTicket",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": true,
+            "required": false
+        },
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "Use existing GPU version",
+            "name": "gpuVersion",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": true,
+            "required": false
+        },
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "Use existing Salt Version",
+            "name": "saltFormulaVersion",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": true,
+            "required": false
+        }
+    ],
+    "spelEvaluator": "v4",
+    "stages": [
+        {
+            "failOnFailedExpressions": true,
+            "name": "[release] Configure context",
+            "refId": "4",
+            "requisiteStageRefIds": [],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "now",
+                    "value": "${new java.text.SimpleDateFormat(\"dd.MM.yyyy-HH:mm:ss\").format(new java.util.Date())}"
+                },
+                {
+                    "key": "triggerUserLogin",
+                    "value": "${trigger.user.replace(\"@yandex-team.ru\", \"\")}"
+                },
+                {
+                    "key": "spinnakerExecutionURL",
+                    "value": "https://spinnaker.cloud.yandex.net/#/applications/compute-gpu-base-role/executions/${execution.Id}"
+                }
+            ]
+        },
+        {
+            "assignee": "${triggerUserLogin}",
+            "components": "GPU",
+            "description": "GPU version: ` ${lastGpuVersion}`",
+            "failOnFailedExpressions": false,
+            "followers": "${triggerUserLogin}",
+            "name": "[release] [wo saltFormulaVersion] Create Startrek ticket",
+            "outputVariable": "releaseTicket",
+            "queue": "CLOUD",
+            "refId": "5",
+            "requisiteStageRefIds": [
+                "13"
+            ],
+            "stageEnabled": {
+                "expression": "parameters.saltFormulaVersion == \"\" \u0026\u0026 parameters.releaseTicket == \"\"",
+                "type": "expression"
+            },
+            "summary": "[ ${now} ] [ Deploy ] release GPU  ${currGpuVersion} -\u003e ${lastGpuVersion}",
+            "ticketType": "release",
+            "type": "createStartrekTicket"
+        },
+        {
+            "failOnFailedExpressions": false,
+            "name": "[release] [wo saltFormulaVersion] Use existing ticket",
+            "refId": "6",
+            "requisiteStageRefIds": [
+                "13"
+            ],
+            "stageEnabled": {
+                "expression": "parameters.saltFormulaVersion == \"\" \u0026\u0026 parameters.releaseTicket != \"\"",
+                "type": "expression"
+            },
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "releaseTicket",
+                    "value": "${parameters.releaseTicket}"
+                }
+            ]
+        },
+        {
+            "application": "compute-gpu-base-role",
+            "failPipeline": true,
+            "name": "[release] [wo saltFormulaVersion] Update salt-formula",
+            "pipeline": "9d8aad38-17a8-495a-8790-a15820415313",
+            "pipelineParameters": {
+                "gpuVersion": "${lastGpuVersion}",
+                "releaseTicket": "${releaseTicket}"
+            },
+            "refId": "7",
+            "requisiteStageRefIds": [
+                "15"
+            ],
+            "stageEnabled": {
+                "expression": "parameters.saltFormulaVersion == \"\"",
+                "type": "expression"
+            },
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "compute-gpu-base-role",
+            "failPipeline": true,
+            "name": "[release] [TESTING] Update cluster-configs \u0026 k8s-deploy",
+            "pipeline": "5826754d-800d-4982-8548-b005d8a31309",
+            "pipelineParameters": {
+                "releaseTicket": "${releaseTicket}",
+                "saltFormulaVersion": "${saltFormulaVersion}",
+                "stand": "testing"
+            },
+            "refId": "10",
+            "requisiteStageRefIds": [
+                "19"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "compute-gpu-base-role",
+            "failPipeline": true,
+            "name": "[release] [wo saltFormulaVersion] Wait saltFormulaVersion",
+            "pipeline": "337bb120-3577-4b0d-81d3-a8fc2e731fb4",
+            "pipelineParameters": {
+                "saltBranchLastCommit": "${saltBranchLastCommit}"
+            },
+            "refId": "12",
+            "requisiteStageRefIds": [
+                "7"
+            ],
+            "stageEnabled": {
+                "expression": "parameters.saltFormulaVersion == \"\"",
+                "type": "expression"
+            },
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "name": "[release] [wo saltFormulaVersion] Check currGPUVersion is empty",
+            "preconditions": [
+                {
+                    "context": {
+                        "expression": "currGpuVersion != \"\"",
+                        "failureMessage": "Failed to get current GPU version"
+                    },
+                    "failPipeline": true,
+                    "type": "expression"
+                },
+                {
+                    "context": {
+                        "expression": "lastGpuVersion != \"\"",
+                        "failureMessage": "Failed to get last GPU version"
+                    },
+                    "failPipeline": true,
+                    "type": "expression"
+                }
+            ],
+            "refId": "13",
+            "requisiteStageRefIds": [
+                "23"
+            ],
+            "stageEnabled": {
+                "expression": "parameters.saltFormulaVersion == \"\"",
+                "type": "expression"
+            },
+            "type": "checkPreconditions"
+        },
+        {
+            "name": "[release] [wo saltFormulaVersion] Check releaseTicket is not empty",
+            "preconditions": [
+                {
+                    "context": {
+                        "expression": "releaseTicket != \"\"",
+                        "failureMessage": "Failed to get release ticket"
+                    },
+                    "failPipeline": true,
+                    "type": "expression"
+                }
+            ],
+            "refId": "15",
+            "requisiteStageRefIds": [
+                "5",
+                "6"
+            ],
+            "stageEnabled": {
+                "expression": "parameters.saltFormulaVersion == \"\"",
+                "type": "expression"
+            },
+            "type": "checkPreconditions"
+        },
+        {
+            "failOnFailedExpressions": false,
+            "name": "[release] [w saltFormulaVersion] Set saltFormulaVersion from parameters",
+            "refId": "16",
+            "requisiteStageRefIds": [
+                "4"
+            ],
+            "stageEnabled": {
+                "expression": "parameters.saltFormulaVersion != \"\"",
+                "type": "expression"
+            },
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "saltFormulaVersion",
+                    "value": "${parameters.saltFormulaVersion}"
+                }
+            ]
+        },
+        {
+            "failOnFailedExpressions": false,
+            "name": "[release] [w saltFormulaVersion] Use existing ticket",
+            "refId": "18",
+            "requisiteStageRefIds": [
+                "16"
+            ],
+            "stageEnabled": {
+                "expression": "parameters.saltFormulaVersion != \"\" \u0026\u0026 parameters.releaseTicket != \"\"",
+                "type": "expression"
+            },
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "releaseTicket",
+                    "value": "${parameters.releaseTicket}"
+                }
+            ]
+        },
+        {
+            "name": "[release] Check saltFormulaVersion",
+            "preconditions": [
+                {
+                    "context": {
+                        "expression": "saltFormulaVersion != \"\"",
+                        "failureMessage": "Salt Formula version is empty"
+                    },
+                    "failPipeline": true,
+                    "type": "expression"
+                }
+            ],
+            "refId": "19",
+            "requisiteStageRefIds": [
+                "18",
+                "12",
+                "22"
+            ],
+            "type": "checkPreconditions"
+        },
+        {
+            "application": "compute-gpu-base-role",
+            "failPipeline": true,
+            "name": "[release] [w saltFormulaVersion] Prepare GPU info for ticket",
+            "pipeline": "c4ae88da-4e4a-4d2b-a699-7dfe8c184c17",
+            "pipelineParameters": {
+                "saltFormulaVersion": "${parameters.saltFormulaVersion}"
+            },
+            "refId": "20",
+            "requisiteStageRefIds": [
+                "16"
+            ],
+            "stageEnabled": {
+                "expression": "parameters.saltFormulaVersion != \"\" \u0026\u0026 parameters.releaseTicket == \"\"",
+                "type": "expression"
+            },
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "assignee": "${triggerUserLogin}",
+            "components": "GPU",
+            "description": "GPU version: ` ${lastGpuVersion}`",
+            "failOnFailedExpressions": false,
+            "followers": "${triggerUserLogin}",
+            "name": "[release] [w saltFormulaVersion] Create Startrek ticket",
+            "outputVariable": "releaseTicket",
+            "queue": "CLOUD",
+            "refId": "21",
+            "requisiteStageRefIds": [
+                "20"
+            ],
+            "stageEnabled": {
+                "expression": "parameters.saltFormulaVersion != \"\" \u0026\u0026 parameters.releaseTicket == \"\"",
+                "type": "expression"
+            },
+            "summary": "[ ${now} ] [ Deploy ] release GPU  ${currGpuVersion} -\u003e ${lastGpuVersion}",
+            "ticketType": "release",
+            "type": "createStartrekTicket"
+        },
+        {
+            "name": "[release] [w saltFormulaVersion ] Check releaseTicket is not empty",
+            "preconditions": [
+                {
+                    "context": {
+                        "expression": "releaseTicket != \"\"",
+                        "failureMessage": "Failed to get release ticket"
+                    },
+                    "failPipeline": true,
+                    "type": "expression"
+                }
+            ],
+            "refId": "22",
+            "requisiteStageRefIds": [
+                "21"
+            ],
+            "stageEnabled": {
+                "expression": "parameters.saltFormulaVersion != \"\"",
+                "type": "expression"
+            },
+            "type": "checkPreconditions"
+        },
+        {
+            "application": "compute-gpu-base-role",
+            "failPipeline": true,
+            "name": "[release] [wo saltFormulaVersion] Get GPU versions",
+            "pipeline": "85549e52-4c32-4c0e-b6fc-3058ba9b10b1",
+            "pipelineParameters": {
+                "gpuVersion": "${parameters.gpuVersion}"
+            },
+            "refId": "23",
+            "requisiteStageRefIds": [
+                "4"
+            ],
+            "stageEnabled": {
+                "expression": "parameters.saltFormulaVersion == \"\"",
+                "type": "expression"
+            },
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "compute-gpu-base-role",
+            "failPipeline": true,
+            "name": "[release] [PREPROD] Update cluster-configs \u0026 k8s-deploy",
+            "pipeline": "5826754d-800d-4982-8548-b005d8a31309",
+            "pipelineParameters": {
+                "releaseTicket": "${releaseTicket}",
+                "saltFormulaVersion": "${saltFormulaVersion}",
+                "stand": "preprod"
+            },
+            "refId": "24",
+            "requisiteStageRefIds": [
+                "19"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "failPipeline": true,
+            "instructions": "Please confirm deployment to PREPROD.",
+            "judgmentInputs": [],
+            "name": "[release] Confirm Deployment PREPROD",
+            "notifications": [],
+            "refId": "25",
+            "requisiteStageRefIds": [
+                "10",
+                "24"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "application": "compute-gpu-base-role",
+            "failPipeline": true,
+            "name": "[release] [PREPROD] Apply A(VLA)",
+            "pipeline": "fca3f926-ae0f-48b4-9ecc-e3c009ebe576",
+            "pipelineParameters": {
+                "az": "a",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "preprod"
+            },
+            "refId": "26",
+            "requisiteStageRefIds": [
+                "25"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "compute-gpu-base-role",
+            "failPipeline": true,
+            "name": "[release] [PREPROD] Apply B(SAS)",
+            "pipeline": "fca3f926-ae0f-48b4-9ecc-e3c009ebe576",
+            "pipelineParameters": {
+                "az": "b",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "preprod"
+            },
+            "refId": "27",
+            "requisiteStageRefIds": [
+                "25"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "compute-gpu-base-role",
+            "failPipeline": true,
+            "name": "[release] [PREPROD] Apply C(MYT)",
+            "pipeline": "fca3f926-ae0f-48b4-9ecc-e3c009ebe576",
+            "pipelineParameters": {
+                "az": "c",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "preprod"
+            },
+            "refId": "28",
+            "requisiteStageRefIds": [
+                "25"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "failPipeline": true,
+            "instructions": "Please confirm deployment to PROD.",
+            "judgmentInputs": [],
+            "name": "[release] Confirm Deployment PROD",
+            "notifications": [],
+            "refId": "29",
+            "requisiteStageRefIds": [
+                "26",
+                "27",
+                "28"
+            ],
+            "type": "manualJudgment"
+        }
+    ],
+    "triggers": []
+}

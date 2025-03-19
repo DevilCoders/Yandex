@@ -1,0 +1,28 @@
+info: Updating tls certificates
+repeatable: true
+supports_offline: true
+env_order_disabled: true
+clusters_selection:
+  db: >-
+    SELECT c.cid FROM dbaas.clusters c
+             JOIN dbaas.subclusters USING (cid)
+             JOIN dbaas.hosts h USING (subcid)
+             JOIN dbaas.pillar p ON (h.fqdn = p.fqdn)
+             JOIN dbaas.pillar p_c ON (c.cid = p_c.cid)
+    WHERE dbaas.string_to_iso_timestamptz(p.value ->> 'cert.expiration') < now() + '60 days'::::interval
+      AND p_c.value->'data'->'disable_mw'->>'tls' IS NULL
+      AND p.fqdn is not null
+      AND dbaas.visible_cluster_status(status)
+      AND type = 'greenplum_cluster'
+    GROUP BY c.cid
+pillar_change: 'SELECT 1
+
+  '
+worker:
+  operation_type: greenplum_cluster_modify
+  task_type: greenplum_cluster_maintenance
+  task_args:
+    update_tls: true
+    force_tls_certs: true
+    restart: true
+  timeout: 24h

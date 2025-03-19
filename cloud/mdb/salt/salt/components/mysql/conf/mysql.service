@@ -1,0 +1,32 @@
+[Unit]
+Description=PerconaServer for MySQL
+After=network.target
+
+[Install]
+WantedBy=multi-user.target
+
+[Service]
+{% if salt.pillar.get('data:database_slice:enable', False) and salt.dbaas.is_dataplane() %}
+Slice=database.slice
+{% endif %}
+Type=forking
+User=mysql
+Group=mysql
+PIDFile=/var/run/mysqld/mysqld.pid
+RuntimeDirectory=mysqld
+RuntimeDirectoryMode=0775
+PermissionsStartOnly=true
+ExecStartPre=/bin/mkdir -p /var/lib/mysql
+ExecStartPre=/bin/chown -R mysql:mysql /var/lib/mysql
+{% if salt.pillar.get('data:mysql:use_jemalloc', True) %}
+Environment="LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.1"
+{% endif %}
+ExecStart=/usr/sbin/mysqld --daemonize --basedir=/usr --datadir=/var/lib/mysql --plugin-dir=/usr/lib/mysql/plugin --log-error=/var/log/mysql/error.log --pid-file=/var/run/mysqld/mysqld.pid
+ExecStop=/usr/bin/mysqladmin shutdown
+TimeoutSec=480
+TimeoutStopSec=1200
+Restart=always
+LimitNOFILE=262144
+LimitCORE=10737418240
+TasksMax=50000
+OOMScoreAdjust=-600

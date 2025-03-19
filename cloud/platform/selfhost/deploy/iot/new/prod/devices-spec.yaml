@@ -1,0 +1,103 @@
+service_account_id: ajecqbab27og73umh5r9 # iot-deployer
+name: iot-devices
+description: IG-managed IoT devices backend
+scale_policy:
+  fixed_scale:
+    size: 3
+deploy_policy:
+  max_unavailable: 1
+  max_expansion: 0
+allocation_policy:
+  zones:
+    - zone_id: ru-central1-a
+    - zone_id: ru-central1-b
+    - zone_id: ru-central1-c
+platform_l7_load_balancer_spec:
+  preferred_ip_version: IPV6
+  target_group_spec:
+    name: iot-devices-ig
+    description: IG-managed IoT devices backend target group
+instance_template:
+  name: iot-devices-{instance.index}-{instance.internal_dc}
+  hostname: iot-devices-{instance.index}-{instance.internal_dc}
+  platform_id: standard-v2
+  service_account_id: ajep0bbterr17gdrvrk4 # device-management
+  labels:
+    yandex-dns: ig
+    conductor-group: iot-devices
+    layer: iaas
+    abc_svc: ycmqtt
+    env: prod
+    environment: prod
+  resources_spec:
+    memory: 2G
+    cores: 2
+    core_fraction: 100
+  boot_disk_spec:
+    mode: READ_WRITE
+    disk_spec:
+      image_id: ${IMAGE_ID}
+      type_id: network-ssd
+      size: 15g
+  secondary_disk_specs:
+    - mode: READ_WRITE
+      device_name: data
+      disk_spec:
+        type_id: network-hdd
+        size: 20g
+  network_interface_specs:
+    - subnet_ids: ['e9b9e47n23i7a9a6iha7', 'e2lt4ehf8hf49v67ubot', 'b0c7crr1buiddqjmuhn7']
+      primary_v4_address_spec: {}
+      primary_v6_address_spec: {}
+  metadata:
+    osquery_tag: "ycloud-svc-iot"
+    shortname: "iot-devices-{instance.index}-{instance.internal_dc}"
+    nsdomain: "{instance.internal_dc}.ycp.cloud.yandex.net"
+    skm: "${SKM_MD}"
+    k8s-runtime-bootstrap-yaml: " "
+    jaeger_endpoint: "jaeger-collector.private-api.ycp.cloud.yandex.net:443"
+    push_client_ident: "yc-serverless-logs@prod"
+    events_push_client_topic: "b1gm277magvimb2gv0ld/yc-events"
+    events_push_client_database: "/global/b1gvcqr959dbmi1jltep/etn03iai600jur7pipla"
+    events_push_client_master_addr: "lb.etn03iai600jur7pipla.ydb.mdb.yandexcloud.net"
+    events_push_client_iam_endpoint: "iam.api.cloud.yandex.net"
+    solomon_cluster: "prod"
+    iot_id_prefix: "are"
+    iot_kikimr_endpoint: "ydb-iotdevices.cloud.yandex.net:2136"
+    iot_kikimr_tablespace: "/global/iotdevices"
+    iot_kikimr_database: "/global/iotdevices"
+    iot_folder_id: "b1gq57e4mu8e8nhimac0"
+    iot_auth_endpoint: "as.private-api.cloud.yandex.net:4286"
+    iot_resource_manager_endpoint: "api-adapter.private-api.ycp.cloud.yandex.net:443"
+    iot_log_group_endpoint: "log-groups.private-api.ycp.cloud.yandex.net:443"
+    iot_data_endpoint: "iot-data.private-api.ycp.cloud.yandex.net:443"
+    iot_ff_permanent_topic: "\"true\""
+    iot_ff_ydb_sdk: "\"true\""
+    iot_ff_ydb_auth: "\"true\""
+    iot_ff_ydb_use_ssl: "\"true\""
+    user-data: |
+      #cloud-config
+      fs_setup:
+        - device: /dev/disk/by-id/virtio-logs
+          filesystem: ext4
+          overwrite: false
+          partition: auto
+      mounts:
+        - [ /dev/disk/by-id/virtio-logs, /data, auto, "defaults,errors=remount-ro", "0", "2" ]
+        - [ /data/fluent, /var/log/fluent, none, "defaults,bind", "0", "0" ]
+        - [ /data/yc-iot, /var/log/yc-iot, none, "defaults,bind", "0", "0" ]
+      runcmd:
+        - chmod 777 /data
+        - mkdir -p /data/fluent /data/yc-iot
+        - chown -R td-agent:td-agent /data/fluent
+        - chown -R td-agent:td-agent /data/yc-iot
+        - chmod 0755 /data/fluent
+        - chmod 0755 /data/yc-iot
+        - mount --make-rprivate /data
+        - mount -o bind /data/fluent /var/log/fluent
+        - mount -o bind /data/yc-iot /var/log/yc-iot
+      bootcmd:
+        - echo "[Journal]" > /etc/systemd/journald.conf
+        - echo "SystemMaxUse=500M" >> /etc/systemd/journald.conf
+
+

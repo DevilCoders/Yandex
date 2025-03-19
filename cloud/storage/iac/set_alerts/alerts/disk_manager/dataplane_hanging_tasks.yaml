@@ -1,0 +1,42 @@
+definitions:
+  - &alert_id "yc-disk-manager-dataplane-hanging-tasks-{{.ID}}"
+  - &alert_name "{{.Name}} Disk Manager Dataplane Hanging Tasks"
+  - &alert_annotations_tag "yc-{{.Cluster}}-disk-manager-solomon"
+  - &alert_annotations_host "{{`{{labels.host}}`}}.svc.{{.SvmDomain}}"
+  - &alert_annotations_service "solomon_alert_disk-manager_dataplane_hanging_tasks"
+alerts:
+  - id: *alert_id
+    name: *alert_name
+    group_by_labels:
+      - host
+    channels:
+      - id: juggler
+        notify_about_statuses:
+          - OK
+          - ERROR
+          - ALARM
+          - NO_DATA
+          - WARN
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+    clusters:
+      - testing
+      - preprod
+      - prod
+      - israel
+    expression:
+      program: |-
+        let overall_hanging_tasks = group_lines('sum', {project="{{.SolomonProjectID}}", cluster="dataplane_{{.Cluster}}", service="runners", host="snapshot-*", sensor="hangingTasks", type="*", runnerID="-"});
+        let overall_hanging_task_count = sum(overall_hanging_tasks);
+        ok_if(overall_hanging_task_count == 0);
+
+        let long_running_task_types='dataplane.CreateSnapshotFromDisk|dataplane.TransferFromDiskToDisk|dataplane.TransferFromSnapshotToDisk|dataplane.TransferFromLegacySnapshotToDisk|dataplane.CreateSnapshotFromLegacySnapshot|dataplane.DeleteSnapshotData';
+
+        let long_running_tasks = group_lines('sum', {project="{{.SolomonProjectID}}", cluster="dataplane_{{.Cluster}}", service="runners", host="snapshot-*", sensor="hangingTasks", type="{{`{{long_running_task_types}}`}}", runnerID="-"});
+        let long_running_task_count = sum(long_running_tasks);
+
+        let hanging_task_count = overall_hanging_task_count - long_running_task_count;
+
+        alarm_if(hanging_task_count > 0);

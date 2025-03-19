@@ -1,0 +1,84 @@
+#Dedicated SA to manage namespaces & SAs
+#This file is a part of namespaces chart, but be aware, that this SA can't be initially created by itself
+#Wwhen a cluster is initialized, namespaces chart must be applyed with 
+#an empty list of namespaces(teams) on behalf of someone with clusteradmin privilegies in order to create admin-ns SA
+#all the rest operations with namespaces must be run on behalf of admin-ns SA  
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: admin-ns
+---
+
+# We try to limit privilegies hold by admin-ns SA
+# It must NOT be able to delete any global resource
+# It must be ablt to create namespaces and hold all previlegies it is going to grant to SA it creates
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: admin-ns
+rules:
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"] #all but delete
+- apiGroups: [""]
+  resources: ["serviceaccounts"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"] #all but delete
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["clusterroles"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"] #all but delete
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["clusterrolebindings"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"] #all but delete
+#An SA can only grant permissions it holds
+- apiGroups: ["datadoghq.com"]
+  resources: ["extendeddaemonsetreplicasets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["datadoghq.com"]
+  resources: ["extendeddaemonsets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: admin-ns
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: admin-ns
+subjects:
+- kind: ServiceAccount
+  name: admin-ns
+  namespace: default
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: admin-ns-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: admin
+subjects:
+- kind: ServiceAccount
+  name: admin-ns
+  namespace: default
+---
+
+#An SA can only grant permissions it holds
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: use-salt-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: salt-operator-saltformula-editor-role
+subjects:
+- kind: ServiceAccount
+  name: admin-ns
+  namespace: default
+---

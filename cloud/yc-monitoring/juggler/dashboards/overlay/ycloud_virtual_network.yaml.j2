@@ -1,0 +1,71 @@
+{% from "dashboards/overlay/common.j2" import render_virtual_network_owners, environments,
+    all_environments_cols, all_environments_rows, all_environments_rowspans %}
+
+description: 'Исходники дашбордов храним [в гите](https://bb.yandex-team.ru/projects/CLOUD/repos/yc-monitoring/browse/juggler/dashboards/virtual-network).
+  Подробности — на [странице дежурного](https://wiki.yandex-team.ru/cloud/devel/sdn/duty/).
+
+  Для прода, препрода и тестинга за тремя точками ⋮ есть ссылки на подробные дашборды
+  стендов'
+links:
+- title: Эскалации
+  url: https://juggler.yandex-team.ru/escalations/?query=tag%3Dyc-overlay&only_running=true
+- title: даунтаймы
+  url: https://juggler.yandex-team.ru/dashboards/ycloud_virtual_network_downtimes/
+- title: «релизный» дашборд
+  url: https://juggler.yandex-team.ru/dashboards/ycloud_network_release/
+- title: Solomon
+  url: https://solomon.yandex-team.ru/?project=yandexcloud
+name: Yandex.Cloud Virtual Network
+{{ render_virtual_network_owners() }}
+components:
+  {% for env in environments.values() %}
+  {% set env_name = env["name"] %}
+  - component_type: AGGREGATE_CHECKS
+    view_type: DETAILED
+    name: {{ env_name | upper }}
+    col: {{ all_environments_cols[loop.index0] }}
+    row: {{ all_environments_rows[loop.index0] }}
+    colspan: 10
+    rowspan: {{ all_environments_rowspans[loop.index0] }}
+    elements_in_row: 2
+    links:
+      - title: Подробный дашборд стенда
+        url: https://juggler.yandex-team.ru/dashboards/ycloud_virtual_network_{{ env_name }}/
+    aggregate_checks_options:
+      filters:
+        # Compute, oct-head, world connectivity
+        {% for dc in env["datacenters"] %}
+        - {host: yc_network_compute_{{ env_name }}_{{ dc }}, tags: ["yc-overlay", "yc-network"]}
+        - {host: yc_network_oct_head_{{ env_name }}_{{ dc }}, tags: ["yc-overlay", "yc-network"]}
+        - {host: yc_network_oct_control_{{ env_name }}_{{ dc }}, tags: ["yc-overlay", "yc-network"]}
+        - {host: yc_network_mr_prober_world_*_{{ env_name }}_{{ dc }}, tags: ["yc-overlay", "yc-network"]}
+        # Meeseeks
+        {% if dc in env["datacenters_with_meeseeks"] %}
+        - {host: yc_network_mr_prober_meeseeks_{{ env_name }}_{{ dc }}, tags: ["yc-overlay", "yc-network"]}
+        {% endif %}
+        {% endfor %}
+
+        # Solomon Alerts
+        - {host: solomon-alert-cloud_{{ env_name }}_head, tags: ["yc-overlay", "yc-network"]}
+        {% for az in env["azs"] %}
+        - {host: solomon-alert-cloud_{{ env_name }}_head_ru-{{ az }}, tags: ["yc-overlay", "yc-network"]}
+        {% endfor %}
+
+        # VPC Accounting
+        {% if env_name in ["preprod", "prod"] %}
+        - {host: yc_vpc_accounting_{{ env_name }} }
+        {% endif %}
+
+        # VPC Control
+        {% if env_name in ["testing"] %}
+        {% for dc in env["datacenters"] %}
+        - {host: yc_network_vpc_control_{{ env_name }}_{{ dc }}, tags: ["yc-overlay", "yc-network"]}
+        {% endfor %}
+        {% endif %}
+      include_mutes: false
+      sort:
+        field: DEFAULT
+        order: DESC
+      limit: {% if all_environments_rowspans[loop.index0] == 1 %} 7 {% else %} 30 {% endif %}
+      statuses: []
+  {% endfor %}

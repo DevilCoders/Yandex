@@ -1,0 +1,107 @@
+id: 267242
+uid: mQOI88FWk
+refresh: 1m
+title: Instance Groups Zombie
+
+tags: [ 'ycp', 'ycp-ig', 'ycp-duty', 'ycp-zombie' ]
+
+variables:
+  ui:
+    cluster: { values: [prod, preprod] }
+graphDefaults:
+  datasource: 'Solomon Cloud'
+  width: 8
+  height: 8
+queryDefaults: { labels: 'project=instance-group, cluster=${cluster}, host!=cluster, service=backend' }
+
+rows:
+
+  - title: Счётчики
+    graphDefaults:
+      width: 3
+      height: 4
+    panels:
+
+      - type: singlestat
+        title: 'Total Failed Tasks (from DB)'
+        value: { valueFontSize: 200%, valueFunction: current }
+        coloring:
+          colorValue: true
+          thresholds: [ 1, 10 ]
+          colorsList: [ green, red, maroon ]
+        query:
+          params: { labels: 'name=tasks_task_failed' }
+          select: { group_lines: ['max'], alias: 'failed task count' }
+      - type: singlestat
+        title: 'Total Stuck Tasks (from DB)'
+        value: { valueFontSize: 200%, valueFunction: current }
+        coloring:
+          colorValue: true
+          thresholds: [ 10, 30 ]
+          colorsList: [ green, red, maroon ]
+        query:
+          params: { labels: 'name=tasks_task_stuck' }
+          select: { group_lines: ['max'], alias: 'stuck task count' }
+      - type: singlestat
+        title: 'IG RPS'
+        value: { valueFontSize: 200%, valueFunction: current }
+        coloring:
+          colorValue: true
+          thresholds: [ 150, 250 ]
+          colorsList: [ red, green, red ]
+        query:
+          params: { labels: 'name=grpc_requests, app=instance-groups_server, method=*, meter_type=count', defaultTimeWindow: '1s' }
+          groupByTime: { max: default }
+          select: { non_negative_derivative: [], group_lines: ['sum'], shift: ['1m'] }
+
+
+  - title: Графики
+    panels:
+
+      - type: graph
+        title: 'IG RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=grpc_requests, app=instance-groups_server, method=*, meter_type=count' }
+
+      - type: graph
+        title: 'IG Errors (by type)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, app=instance-groups_server, method=*, status!=OK' }
+            groupByTime: { max: default }
+            select: { diff: [], drop_below: '0', group_by_labels: ['sum', 'status'], alias: '{{status}}' }
+        display: { decimals: 0, empty: false }
+
+      - type: graph
+        title: 'IG Durations'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'host=cluster, name=grpc_durations, app=instance-groups_server, method=all' }
+
+      - type: graph
+        title: 'Threads'
+        queries:
+          - params: { labels: 'name=jvm_threads_state, state=*' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: ['avg', 'state'] }
+
+      - type: graph
+        title: '% Cores'
+        queries:
+          - params: { labels: 'name=process_cpu_seconds_total' }
+            groupByTime: { max: default }
+            select: { non_negative_derivative: [] }
+        display:
+          empty: false
+        yAxes: [{ format: percentunit, decimals: 0 }]
+
+      - type: graph
+        title: IG Live Managed Instances Count
+        display: { decimals: 0, stack: true, empty: false, nulls: connected }
+        yAxes: [{ decimals: 0, min: 0 }]
+        queries:
+          - params: { labels: 'host=cluster, name="ig_total_instances_count", user_type=*, status=*, service=core' }
+            select: { group_by_labels: ['sum', 'status'], alias: '{{status}}' }
+      #          - params: { labels: 'name="ig_total_instances_count", user_type=$user_type' }
+      #            select: { alias: 'old' }

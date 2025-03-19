@@ -1,0 +1,112 @@
+OWNER(g:mdb)
+
+PY3TEST()
+
+STYLE_PYTHON()
+
+SIZE(MEDIUM)
+
+PEERDIR(
+    library/python/testing/yatest_common
+    contrib/python/PyHamcrest
+    contrib/python/jsonpath-rw
+    contrib/python/pytest-mock
+    contrib/python/pytest-freezegun
+    cloud/mdb/dbaas-internal-api-image/dbaas_internal_api
+)
+
+INCLUDE(${ARCADIA_ROOT}/cloud/mdb/dbaas_metadb/recipes/bare/recipe.inc)
+
+TEST_SRCS(
+    __init__.py
+    apis/__init__.py
+    apis/schemas/__init__.py
+    apis/schemas/test_fields.py
+    apis/test_backups.py
+    apis/test_filters.py
+    apis/test_info.py
+    apis/test_marshal.py
+    apis/test_operations.py
+    apis/test_parse_kwargs.py
+    core/test_types.py
+    dbs/__init__.py
+    dbs/postgresql/__init__.py
+    dbs/postgresql/test_node_pool.py
+    dbs/postgresql/test_pool.py
+    fixtures.py
+    health/test_health.py
+    matchers.py
+    mocks.py
+    modules/__init__.py
+    modules/clickhouse/__init__.py
+    modules/clickhouse/test_hosts.py
+    modules/clickhouse/test_pillar.py
+    modules/clickhouse/test_restore.py
+    modules/clickhouse/test_schemas.py
+    modules/clickhouse/test_zookeeper.py
+    modules/hadoop/__init__.py
+    modules/hadoop/test_instance_labels.py
+    modules/hadoop/test_jobs.py
+    modules/hadoop/test_job_filters.py
+    modules/hadoop/test_job_log.py
+    modules/hadoop/test_labels_validation.py
+    modules/hadoop/test_pillar_properties.py
+    modules/hadoop/test_properties_by_service_validation.py
+    modules/hadoop/test_validate_dataproc_security_groups.py
+    modules/hadoop/test_services.py
+    modules/hadoop/test_traits.py
+    modules/hadoop/test_utils.py
+    modules/hadoop/test_version.py
+    modules/mongodb/__init__.py
+    modules/mongodb/test_hosts.py
+    modules/mongodb/test_pillar.py
+    modules/mongodb/test_utils.py
+    modules/mysql/test_validation.py
+    modules/mysql/test_restore_time_computing.py
+    modules/postgres/__init__.py
+    modules/postgres/api/__init__.py
+    modules/postgres/api/test_convertors.py
+    modules/postgres/test_backups.py
+    modules/postgres/test_cluster_pillar.py
+    modules/postgres/test_defaults.py
+    modules/postgres/test_fields.py
+    modules/postgres/test_grants.py
+    modules/postgres/test_hosts.py
+    modules/postgres/test_restore.py
+    modules/postgres/test_validation.py
+    modules/redis/__init__.py
+    modules/redis/test_hosts.py
+    providers/__init__.py
+    test_matchers.py
+    utils/__init__.py
+    utils/test_backups.py
+    utils/test_cluster.py
+    utils/test_helpers.py
+    utils/test_events.py
+    utils/test_filters_parser.py
+    utils/test_infra.py
+    utils/test_maintenance.py
+    utils/test_metadb.py
+    utils/test_network.py
+    utils/test_operations.py
+    utils/test_pagination.py
+    utils/test_register.py
+    utils/test_time.py
+    utils/test_traits.py
+    utils/test_types.py
+    utils/test_validation.py
+    utils/test_version.py
+    utils/test_worker.py
+    utils/test_dataproc_joblog.py
+)
+
+DATA(arcadia/cloud/mdb/dbaas-internal-api-image)
+
+REQUIREMENTS(ram:32)
+
+END()
+
+RECURSE(
+    providers
+    mypy
+)

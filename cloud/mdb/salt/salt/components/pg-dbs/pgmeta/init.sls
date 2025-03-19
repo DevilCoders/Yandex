@@ -1,0 +1,4 @@
+include:
+    - .pgmeta
+    - .dbs
+    - .ugly

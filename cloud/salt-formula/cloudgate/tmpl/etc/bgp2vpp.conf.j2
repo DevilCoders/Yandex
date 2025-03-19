@@ -1,0 +1,114 @@
+{%- set hostname = grains['nodename'] %}
+{%- set host_roles = grains['cluster_map']['hosts'][hostname]['roles'] -%}
+
+bgp:
+  address: ":50051"
+  config_path: "/etc/gobgp/gobgpd.conf"
+  config_format: "yaml"
+vpp: ""
+log-level: {{ log }}
+http_address: 0.0.0.0:50099
+self_check: "/ping"
+as-number: 64512 # Autonomous System Number (ASN). For now it is private ASN, the same behavior as go2vpp.
+
+solomon:
+  cache_time: 15s
+  url: /metrics/solomon
+
+announce-groups:
+  v6:
+    groups:
+      - upstream6:ipv6-unicast
+      - downstream:l3vpn-ipv6-unicast
+    announces:
+{%- for announce in upstream_v6_announces %}
+      - l3vpn-ipv6-unicast {{ announce }}
+{%- endfor %}
+{%- for announce in downstream_v6_announces %}
+      - ipv6-unicast {{ announce }}
+{%- endfor %}
+
+  v4:
+    groups:
+      - upstream4:ipv4-labelled-unicast
+    announces:
+{%- for announce in upstream_v4_announces %}
+      - ipv4-labelled-unicast {{ announce }}
+{%- endfor %}
+
+  rr:
+    groups:
+      - reflector:ipv4-unicast
+      - downstream:l3vpn-ipv4-unicast
+    announces:
+{%- for announce in reflector_announces %}
+      - l3vpn-ipv4-unicast {{ announce }}
+{%- endfor %}
+{%- for announce in downstream_v4_announces %}
+      - ipv4-unicast {{ announce }}
+{%- endfor %}
+
+peer-groups:
+{%- if upstream6 is defined and not upstream6['disabled'] %}
+  upstream6:
+    ipv6:
+      bgp:
+        session:
+          - ipv6-unicast
+      vpp:
+        route-type: ipv6
+        tid: 0 #underlay
+        address: {{ host['interfaces']['UPSTREAM_V6']['addr'] }}
+        name: {{ phyifaces[host['interfaces']['UPSTREAM_V6']['os_name']]['vpp_name'] }}
+{%- endif %}
+
+{%- if upstream4 is defined and not upstream4['disabled'] %}
+  upstream4:
+    ipv4:
+      bgp:
+        session:
+          - ipv4-labelled-unicast
+      vpp:
+        route-type: ipv4
+        tid: 0 #underlay
+        address: {{ host['interfaces']['UPSTREAM_V4']['addr'] }}
+        name: {{ phyifaces[host['interfaces']['UPSTREAM_V4']['os_name']]['vpp_name'] }}
+      encap_type: mpls
+{%- endif %}
+
+{%- if downstream is defined and not downstream['disabled'] %}
+  downstream:
+    ipv4:
+      bgp:
+        session:
+          - l3vpn-ipv4-unicast
+      vpp:
+        route_type: ipv4
+        tid: 774
+        address: {{ host['interfaces']['DOWNSTREAM']['addr'] }}
+        name: {{ phyifaces[host['interfaces']['DOWNSTREAM']['os_name']]['vpp_name'] }}
+      encap_type: gre
+    ipv6:
+      bgp:
+        session:
+          - l3vpn-ipv6-unicast
+      vpp:
+        route_type: ipv6
+        tid: 0 #dummy_vrf_fip
+        address: {{ host['interfaces']['DOWNSTREAM']['addr'] }}
+        name: {{ phyifaces[host['interfaces']['DOWNSTREAM']['os_name']]['vpp_name'] }}
+      encap_type: gre
+{%- endif %}
+
+{%- if reflector is defined and not reflector['disabled'] %}
+  reflector:
+    ipv4:
+      bgp:
+        session:
+          - ipv4-unicast
+      vpp:
+        route_type: ipv4
+        tid: 1 #full_view
+        address: {{ host['loopback'] }}
+        name: loop0
+{%- endif %}

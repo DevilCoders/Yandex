@@ -1,0 +1,28 @@
+USE hahn;
+
+
+DEFINE ACTION $ab_test_history() AS
+    $result_table = '//home/cloud_analytics/scoring_v2/ab_test';
+
+    $last_leads = (
+        SELECT control_leads.*, 'control' AS `group`
+        FROM RANGE('//home/cloud_analytics/scoring_v2/AB_control_leads') AS control_leads
+        UNION ALL
+        SELECT test_leads.*, 'test' AS `group`
+        FROM RANGE('//home/cloud_analytics/scoring_v2/AB_test_leads') AS test_leads
+    );
+
+    $union = (
+        SELECT  *
+        FROM $result_table
+        UNION ALL
+        SELECT  *
+        FROM $last_leads
+    );
+
+    INSERT INTO $result_table WITH TRUNCATE 
+    SELECT DISTINCT *
+    FROM $union
+END DEFINE;
+
+EXPORT $ab_test_history;

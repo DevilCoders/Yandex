@@ -1,0 +1,37 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro prog() %}
+
+let max_response_size_mb = max({
+  project='{{ project_id }}',
+  cluster='cloud_{{ env }}_oct',
+  service='contrail_api',
+  host='oct*',             // to avoid aggregates, such as 'Vla', 'Sas', 'Myt'
+  type='percentile',
+  metric='response_size',
+  source='nginx',
+  percentile='100',
+  log_name='contrail-api-ssl_access.log' // must specify name, because we have old and new name
+}) / (1024*1024); // This is a maximum [by 300-second window] of the value 'maximum [per each 30-sec] response size'.
+
+let is_red = max_response_size_mb > 8;
+let is_yellow = max_response_size_mb > 6;  // TODO. Lower both values after CLOUD-61111 is deployed.
+
+alarm_if(is_red);
+warn_if(is_yellow);
+{% endmacro %}
+
+
+{% block main %}
+    "name": "contrail-api response size @ {{ env }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "host": "{{ svm_fqdn() }}",
+        "tags": "Solomon",
+        "max_response_size_mb": "[[expression.max_response_size_mb]]",
+        "service": "contrail-api-response-size",
+        "description": "Could lead to overload of contrail-api. Search for heavy queries in service logs."
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

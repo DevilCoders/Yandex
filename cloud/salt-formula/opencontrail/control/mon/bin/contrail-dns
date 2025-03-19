@@ -1,0 +1,207 @@
+#!/usr/bin/env python3
+# -*-coding: utf-8 -*-
+# vim: sw=4 ts=4 expandtab ai
+import argparse
+import re
+import os
+import socket
+import time
+from datetime import datetime, timedelta
+from typing import Tuple
+from urllib.error import URLError
+from urllib.request import urlopen
+
+# NOTE: package dnspython
+import dns.exception
+from dns.resolver import Resolver
+
+from yc_monitoring import Status, CheckResult, ComplexResult, get_journalctl_logs, get_file_logs
+
+INTROSPECT_URL = "http://127.0.0.1:8092/Snh_DiscoveryClientSubscriberStatsReq"
+INTROSPECT_TIMEOUT_SEC = 5
+
+HOST_TO_RESOLVE = "ya.ru"
+NAMED_IP = "127.0.0.2"
+# Note: if reconfig time exceeds this value, the check will fail (and show it).
+# Please keep this value consistent with RNDC_TIMEOUT_SEC in named-reconfig.sh
+# Keep in sync with named_max_retransmissions * named_retransmission_interval @ contrail-dns.conf (CLOUD-17650)
+# Note (simonov-d): after single-view contrail-dns (3.2.3.127) is deployed everywhere, this timeout may be lowered to 30 seconds.
+NAMED_TIMEOUT_SEC = 60
+
+NAMED_DIR = "/etc/contrail/dns/"
+NAMED_CONF = NAMED_DIR + "contrail-named.conf"
+NAMED_LOG = "/var/log/contrail/contrail-named.log"
+NAMED_LOG_TAIL_LINES = 1000
+NAMED_LOG_DATE_REGEX = r"^\S+ \d+:\d+:\d+"
+NAMED_LOG_DATE_FORMAT = "%d-%b-%Y"
+NAMED_LOG_DATETIME_FORMAT = NAMED_LOG_DATE_FORMAT + " %H:%M:%S"
+NAMED_LOG_DEPTH_MINUTES = 10
+NAMED_RECONFIG_WATCH_DEPTH = "15min"
+
+RESULT_LENGTH = 10
+
+
+def check_process(path: str) -> CheckResult:
+    pids = [pid for pid in os.listdir("/proc") if pid.isdigit()]
+
+    for pid in pids:
+        try:
+            with open(os.path.join("/proc", pid, "cmdline")) as f:
+                current_cmdline = f.read()
+        except IOError:  # proc has just terminated
+            continue
+
+        if current_cmdline.startswith(path):
+            return CheckResult(Status.OK)
+
+    return CheckResult(Status.CRIT)
+
+
+def check_contrail_dns_introspection() -> CheckResult:
+    try:
+        urlopen(INTROSPECT_URL, timeout=INTROSPECT_TIMEOUT_SEC).read()
+    # CLOUD-20135: Sometimes timeout is not caught by Python and raised as URLError.
+    # See also https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=663927
+    except (URLError, socket.timeout) as e:
+        return CheckResult(Status.CRIT, str(e))
+
+    return CheckResult(Status.OK)
+
+
+def check_contrail_named_response() -> CheckResult:
+    resolver = Resolver(configure=False)
+    resolver.lifetime = NAMED_TIMEOUT_SEC
+    resolver.nameservers = [NAMED_IP]
+
+    try:
+        resolver.query(HOST_TO_RESOLVE)
+    except dns.exception.DNSException as e:
+        exception_message = str(e)
+        if not exception_message:  # str(e) may be empty, e.g. for Timeout exception
+            exception_message = repr(e)
+        return CheckResult(Status.CRIT, exception_message)
+
+    return CheckResult(Status.OK)
+
+
+def find_missing_zone_files(verbose: bool) -> Tuple[int, int]:
+    total_count, missing_count = 0, 0
+
+    with open(NAMED_CONF) as f:
+        for line in f:
+            match = re.search('file "([^"]+)"', line)
+            if not match:
+                continue
+            total_count += 1
+
+            file_name = match.group(1)
+            if os.path.isfile(file_name):
+                continue
+
+            if verbose:
+                print("Zone file is missing: {!r}".format(file_name))
+            missing_count += 1
+
+    return total_count, missing_count
+
+
+def check_contrail_named_zones(verbose: bool) -> CheckResult:
+    max_retries = 3
+    retry_delay_sec = 5
+    total_count, missing_count = 0, 0
+
+    for retry in range(max_retries):  # Retry, in case we see named files when contrail-dns is rewriting them.
+        try:
+            total_count, missing_count = find_missing_zone_files(verbose)
+        except IOError as e:
+            return CheckResult(Status.CRIT, str(e))
+        if missing_count == 0:
+            return CheckResult(Status.OK, str(total_count))
+        time.sleep(retry_delay_sec)
+
+    return CheckResult(Status.CRIT, "{} of {} files are missing".format(missing_count, total_count))
+
+
+def check_contrail_named_reconfigs(verbose: bool) -> CheckResult:
+    service = "contrail-dns-reload"
+
+    lines = get_journalctl_logs(service, "-{}".format(NAMED_RECONFIG_WATCH_DEPTH))
+    if verbose:
+        for line in lines:
+            print(line)
+
+    if not lines:
+        return CheckResult(Status.WARN, "no reconfig attempts for last {}".format(NAMED_RECONFIG_WATCH_DEPTH))
+
+    has_successful_lines = any("Started" in line for line in lines)
+    if not has_successful_lines:
+        return CheckResult(Status.CRIT, "no successful reconfigs for last {}".format(NAMED_RECONFIG_WATCH_DEPTH))
+
+    return CheckResult(Status.OK)
+
+
+def filter_recent_lines(lines, depth_minutes, verbose: bool):
+    result = []
+    min_timestamp = datetime.now() - timedelta(minutes=depth_minutes)
+    if verbose:
+        print("min_timestamp = {}".format(min_timestamp))
+
+    date_regex = re.compile(NAMED_LOG_DATE_REGEX)
+    for line in lines:
+        match = date_regex.match(line)
+        if not match:
+            continue
+        timestamp = datetime.strptime(match.group(0), NAMED_LOG_DATETIME_FORMAT)
+        if timestamp < min_timestamp:
+            continue
+        result.append(line.rstrip())
+    return result
+
+
+def check_journal_rollforward_failure(verbose: bool) -> CheckResult:
+    error = "journal rollforward failed: journal out of sync with zone"
+    error_lines = []
+
+    last_lines = get_file_logs(NAMED_LOG, NAMED_LOG_TAIL_LINES)
+    last_lines = filter_recent_lines(last_lines, NAMED_LOG_DEPTH_MINUTES, verbose)
+    for line in last_lines:
+        if verbose:
+            print("[named log line] {!r}".format(line))
+        if error in line:
+            error_lines.append(line)
+
+    if not error_lines:
+        return CheckResult(Status.OK)
+
+    broken_vdnses = set()
+    for line in error_lines:
+        broken_vdnses.add(line.split(" ")[5].split("/")[-1])
+
+    if args.verbose:
+        msg = "out of sync zones: {}".format(", ".join(sorted(broken_vdnses)))
+    else:
+        msg = "{} out of sync zones [in last {} minutes of named log]".format(len(broken_vdnses),
+                                                                              NAMED_LOG_DEPTH_MINUTES)
+    return CheckResult(Status.CRIT, msg)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Contrail-DNS check")
+    parser.add_argument("--verbose", action="store_true")
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    args = parse_args()
+
+    cr = ComplexResult()
+
+    cr.add_result("dns process", check_process("/usr/bin/contrail-dns"))
+    cr.add_result("named process", check_process("/usr/bin/contrail-named"))
+    cr.add_result("dns introspection", check_contrail_dns_introspection())
+    cr.add_result("named response", check_contrail_named_response())
+    cr.add_result("named zone files", check_contrail_named_zones(args.verbose))
+    cr.add_result("named reconfigs", check_contrail_named_reconfigs(args.verbose))
+    cr.add_result("named rollforward failures", check_journal_rollforward_failure(args.verbose))
+
+    cr.report_and_exit()

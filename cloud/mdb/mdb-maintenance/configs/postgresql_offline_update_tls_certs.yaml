@@ -1,0 +1,29 @@
+info: Updating tls certificates
+repeatable: true
+supports_offline: true
+env_order_disabled: true
+clusters_selection:
+  db: >-
+    SELECT c.cid FROM dbaas.clusters c
+             JOIN dbaas.subclusters USING (cid)
+             JOIN dbaas.hosts h USING (subcid)
+             JOIN dbaas.pillar p ON (h.fqdn = p.fqdn)
+    WHERE dbaas.string_to_iso_timestamptz(value ->> 'cert.expiration') < now() + '60 days'::::interval
+      AND p.fqdn is not null
+      AND c.status = 'STOPPED'
+      AND type = 'postgresql_cluster'
+    GROUP BY c.cid
+pillar_change: 'SELECT 1
+
+  '
+worker:
+  operation_type: postgresql_cluster_modify
+  task_type: postgresql_cluster_maintenance
+  task_args:
+    update_tls: true
+    force_tls_certs: true
+    random_order: true
+  timeout: 24h
+max_delay_days: 1
+min_days: 0
+hours_delay: 1

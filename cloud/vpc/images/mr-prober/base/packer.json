@@ -1,0 +1,68 @@
+{
+  "variables": {
+    "folder_id": "{{env `FOLDER_ID`}}",
+    "subnet_id": "{{env `SUBNET_ID`}}",
+    "zone_id": "{{env `ZONE_ID`}}",
+    "commit_author": "{{env `COMMIT_AUTHOR`}}",
+    "service_account_id": "{{env `SERVICE_ACCOUNT_ID`}}",
+    "gsid": "1000"
+  },
+  "builders": [
+    {
+      "type": "yandex",
+      "source_image_family": "yc-vpc-base",
+      "source_image_folder_id": "{{user `folder_id`}}",
+
+      "zone": "{{user `zone_id`}}",
+      "folder_id": "{{user `folder_id`}}",
+      "subnet_id": "{{user `subnet_id`}}",
+      "disk_type": "network-nvme",
+      "service_account_id": "{{user `service_account_id`}}",
+
+      "labels": {
+        "skip_update_ssh_keys": "true"
+      },
+      "metadata": {
+        "gsid": "{{user `GSID`}}"
+      },
+
+      "use_ipv4_nat": true,
+      "use_ipv6": true,
+
+      "image_name": "yc-vpc-mr-prober-base-{{isotime | clean_resource_name}}",
+      "image_family": "yc-vpc-mr-prober-base",
+      "image_description": "Base image for VPC active monitoring also known as Mr. Prober. Comes with docker and docker-compose.",
+      "image_labels": {
+        "commit_author": "{{user `commit_author`}}",
+        "version": "1"
+      },
+
+      "ssh_username": "ubuntu"
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "salt-masterless",
+      "bootstrap_args": "stable 3004",
+      "local_state_tree": "{{template_dir}}/../../salt",
+      "local_pillar_roots": "{{template_dir}}/../../salt/pillar",
+      "grains_file": "{{template_dir}}/grains",
+      "log_level": "info"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'Purge Salt packages'",
+        "sudo apt-get -y purge salt-common salt-minion",
+        "sudo rm -rf /srv/salt",
+        "sudo rm -rf /srv/pillar",
+        "sudo rm -rf /var/cache/salt",
+        "sudo rm -rf /var/lib/cloud",
+        "sudo rm -ff /var/lib/dhcp/*.leases",
+        "echo 'List installed packages and versions'",
+        "dpkg -l",
+        "ls -al /var/lib/dpkg/"
+      ]
+    }
+  ]
+}

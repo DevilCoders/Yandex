@@ -1,0 +1,37 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro prog() %}
+
+let max_errors_per_second = max(group_lines('max', {
+  project='{{ project_id }}',
+  cluster='cloud_{{ env }}_oct',
+  service='contrail_api',
+  host='oct*',              // to avoid aggregates, such as 'Vla', 'Sas', 'Myt'
+  type='rps',
+  source='contrail-api',    // IMPORTANT: We use 'contrail-api' service here to avoid detection of contrail-api restarts [during them nginx answers 502]
+  group_by='status',
+  status='5*'
+}));
+
+// TODO: To be adjusted after metrics collection starts!
+let is_red    = max_errors_per_second > 0.2;
+let is_yellow = max_errors_per_second > 0;
+
+alarm_if(is_red);
+warn_if(is_yellow);
+{% endmacro %}
+
+
+{% block main %}
+    "name": "contrail-api errors @ {{ env }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "host": "{{ svm_fqdn() }}",
+        "tags": "Solomon",
+        "max_errors_per_second": "[[expression.max_errors_per_second]]",
+        "service": "contrail-api-errors",
+        "description": "Check '/var/log/contrail/contrail-api.log' for errors, exceptions."
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

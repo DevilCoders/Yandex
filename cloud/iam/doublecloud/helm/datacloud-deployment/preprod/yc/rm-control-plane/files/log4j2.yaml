@@ -1,0 +1,136 @@
+Configuration:
+  monitorInterval: 30
+  status: info
+  packages: "io.prometheus.client.log4j2"
+  Appenders:
+    RollingFile:
+      -
+        name: accessLogAppender
+        filename: "/var/log/yc/rm-control-plane/access.log"
+        filePattern: "/var/log/yc/rm-control-plane/access-%d{yyyy-MM-dd}-%i.log.gz"
+        PatternLayout:
+          pattern: "%msg%n"
+        Policies:
+          TimeBasedTriggeringPolicy:
+            interval: 1
+            modulate: true
+          SizeBasedTriggeringPolicy:
+            size: 1 GB
+        DefaultRolloverStrategy:
+          max: 100
+          Delete:
+            basePath: "/var/log/yc/rm-control-plane/"
+            IfFileName:
+              glob: access-*.log.gz
+            IfLastModified:
+              age: P7D
+      -
+        name: eventLogAppender
+        filename: "/var/log/yc/rm-control-plane/events.log"
+        filePattern: "/var/log/yc/rm-control-plane/events-%d{yyyy-MM-dd}-%i.log.gz"
+        PatternLayout:
+          pattern: "%msg%n"
+        Policies:
+          OnStartupTriggeringPolicy:
+            minSize: 1
+          TimeBasedTriggeringPolicy:
+            interval: 1
+            modulate: true
+          SizeBasedTriggeringPolicy:
+            size: 100 MB
+        DefaultRolloverStrategy:
+          max: 100
+          Delete:
+            basePath: "/var/log/yc/rm-control-plane/"
+            IfFileName:
+              glob: events-*.log.gz
+            IfLastModified:
+              age: P7D
+      -
+        name: serverLogAppender
+        filename: "/var/log/yc/rm-control-plane/server.log"
+        filePattern: "/var/log/yc/rm-control-plane/server-%d{yyyy-MM-dd}-%i.log.gz"
+        PatternLayout:
+          pattern: "%d [%t] %-5level %c{1.}:%notEmpty{ {rid=%X{rid}}} %msg%n%throwable"
+        Policies:
+          TimeBasedTriggeringPolicy:
+            interval: 1
+            modulate: true
+          SizeBasedTriggeringPolicy:
+            size: 1 GB
+        DefaultRolloverStrategy:
+          max: 100
+          Delete:
+            basePath: "/var/log/yc/rm-control-plane/"
+            IfFileName:
+              glob: server-*.log.gz
+            IfLastModified:
+              age: P7D
+      -
+        name: serverJsonLogAppender
+        filename: "/var/log/yc/rm-control-plane/server_json.log"
+        filePattern: "/var/log/yc/rm-control-plane/server_json-%d{yyyy-MM-dd}-%i.log.gz"
+        JsonLayout:
+          compact: true
+          eventEol: true
+          stacktraceAsString: true
+          KeyValuePair:
+            - key: "app"
+              value: "rm-control-plane"
+            - key: "hostname"
+              value: "$${hostName:-unknown}"
+        Policies:
+          TimeBasedTriggeringPolicy:
+            interval: 1
+            modulate: true
+          SizeBasedTriggeringPolicy:
+            size: 1 GB
+        DefaultRolloverStrategy:
+          max: 100
+          Delete:
+            basePath: "/var/log/yc/rm-control-plane/"
+            IfFileName:
+              glob: server_json-*.log.gz
+            IfLastModified:
+              age: P7D
+    Prometheus:
+      name: prometheus
+
+  Loggers:
+    Root:
+      level: info
+      AppenderRef:
+        - ref: serverLogAppender
+        - ref: serverJsonLogAppender
+        - ref: prometheus
+    Logger:
+      -
+        name: yandex.cloud
+        level: info
+      -
+        name: yandex.cloud.grpc
+        level: info
+      -
+        name: yandex.cloud.repository
+        level: info
+      -
+        name: yandex.cloud.rm
+        level: info
+      -
+        name: yandex.cloud.grpc.LoggingInterceptor
+        level: info
+      -
+        name: com.yandex.ydb.core.grpc.YdbNameResolver
+        level: warn
+      -
+        name: accessLog
+        level: debug
+        additivity: false
+        AppenderRef:
+          ref: accessLogAppender
+      -
+        name: eventLog
+        level: info
+        additivity: false
+        AppenderRef:
+          ref: eventLogAppender

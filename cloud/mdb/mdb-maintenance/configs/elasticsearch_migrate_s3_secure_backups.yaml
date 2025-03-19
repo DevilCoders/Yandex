@@ -1,0 +1,29 @@
+info: Enable Elasticsearch automatic backups
+repeatable: true
+clusters_selection:
+    db: >-
+        SELECT c.cid FROM dbaas.clusters c
+          JOIN dbaas.pillar p USING(cid)
+        WHERE dbaas.visible_cluster_status(c.status)
+          AND p.value #>> '{s3_migrate}' = 'true'
+          AND c.type = 'elasticsearch_cluster'
+pillar_change: >-
+ UPDATE dbaas.pillar p SET value = jsonb_set(
+    jsonb_set(
+        (value #- '{data,s3_bucket}') #- '{s3_migrate}', 
+        '{data,s3_buckets}', 
+        jsonb_build_object('backup', CONCAT('yandexcloud-dbaas-',p.cid), 'secure_backups', CONCAT('yandexcloud-dbaas-',p.cid))),
+    '{data,elasticsearch,auto_backups,enabled}',
+    'true')
+ WHERE
+   p.cid = :cid
+worker:
+    operation_type: elasticsearch_cluster_modify
+    task_type: elasticsearch_cluster_maintenance
+    task_args:
+        create_cloud_bucket: true
+        run_highstate: true
+        restart: true
+    timeout: 4h
+max_delay_days: 21
+min_days: 7

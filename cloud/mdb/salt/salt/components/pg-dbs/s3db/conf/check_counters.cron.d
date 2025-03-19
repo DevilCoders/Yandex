@@ -1,0 +1,6 @@
+MAILTO=''
+{% set pgmeta = salt['pillar.get']('data:s3db:chunk_splitter:pgmeta', salt['pillar.get']('data:s3pgmeta')) %}
+{% set db = salt['pillar.get']('data:s3db:db', 'host=localhost port=6432 dbname=s3db user=s3util') %}
+50 5 * * 1 s3 sleep $[$RANDOM \% 150]; flock -n /tmp/check_chunks_counters_storage_class.lock /usr/local/yandex/s3/s3db/check_chunks_counters/check_chunks_counters.py -d '{{ db }}' -p '{{ pgmeta }}' --critical-errors-filepath /var/log/s3/critical_errors.log --storage-class 1 --skip-deleted --run-on-replica >> /var/log/s3/check_chunks_counters_by_storage_class.log 2>&1
+50 5 * * 2 s3 sleep $[$RANDOM \% 150]; flock -n /tmp/check_chunks_counters_new.lock /usr/local/yandex/s3/s3db/check_chunks_counters/check_chunks_counters.py -d '{{ db }}' -p '{{ pgmeta }}' --critical-errors-filepath /var/log/s3/critical_errors.log --skip-deleted --run-on-replica >> /var/log/s3/check_chunks_counters_new.log 2>&1
+50 5 * * 3 s3 sleep $[$RANDOM \% 150]; flock -n /tmp/check_chunks_counters_presence.lock /usr/local/yandex/s3/s3db/check_chunks_counters/check_chunks_counters.py -d '{{ db }}' -p '{{ pgmeta }}' --critical-errors-filepath /var/log/s3/critical_errors.log --check-only-presence --run-on-replica >> /var/log/s3/check_chunks_counters_presence.log 2>&1

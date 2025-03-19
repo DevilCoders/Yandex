@@ -1,0 +1,34 @@
+{% extends "vpc_api_base_alert.j2" %}
+
+{% set service = "vpc-api-interrupted-tasks" %}
+
+{% set windowSecs = 300 %}
+
+{% macro prog() %}
+let ts = series_avg({
+    cluster='cloud_{{env}}_vpc-api'
+    ,service='vpc-config-plane'
+    ,sensor='taskprocessor_task_long_interrupted'
+    ,host='cluster'
+    ,meter_type='m1_rate'
+    ,zone='*'
+    ,pool='*'
+});
+
+let interrupted_tasks_count = avg(ts);
+
+alarm_if(interrupted_tasks_count > 0.001);
+{% endmacro %}
+
+{% block main %}
+    "name": "VPC API interrupted tasks {{env}}",
+    "annotations": {
+        "interrupted_tasks_count": "[[ expression.interrupted_tasks_count ]]",
+        "description": "VPC API interrupted tasks in DB: [[ expression.interrupted_tasks_count ]]",
+        "host": "{{ solomon_host() }}",
+        "service": "{{ service }}",
+        "dashboard": "{{ vpc_api_dashboard() }}",
+        "wiki": "{{ wiki_url(service) }}"
+    },
+    "type": {{ type_expression() }}
+{% endblock %}

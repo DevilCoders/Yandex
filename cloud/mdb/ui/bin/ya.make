@@ -1,0 +1,4 @@
+RECURSE(
+    http
+    manage
+)

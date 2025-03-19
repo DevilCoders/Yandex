@@ -1,0 +1,50 @@
+{
+    "annotations": {
+        "host": "{{labels.host}}.svc.cloud-testing.yandex.net", 
+        "service": "solomon_alert_nbs_server_fatal_errors", 
+        "tags": "yc-testing-nbs-solomon"
+    }, 
+    "channels": [
+        {
+            "config": {
+                "notifyAboutStatuses": [
+                    "ALARM", 
+                    "OK", 
+                    "NO_DATA", 
+                    "WARN", 
+                    "ERROR"
+                ], 
+                "repeatDelaySecs": 0
+            }, 
+            "id": "juggler"
+        }
+    ], 
+    "createdAt": "2021-02-05T12:03:49Z", 
+    "createdBy": "asorotsky", 
+    "delaySeconds": 30, 
+    "delaySecs": 30, 
+    "description": "", 
+    "groupByLabels": [
+        "host"
+    ], 
+    "id": "ecb9f2b7-308b-4b01-9208-b483f9bd5950", 
+    "name": "[TESTING][SVM] NBS Server Fatal Errors", 
+    "noPointsPolicy": "NO_POINTS_DEFAULT", 
+    "notificationChannels": [
+        "juggler"
+    ], 
+    "periodMillis": 600000, 
+    "projectId": "nbs", 
+    "resolvedEmptyPolicy": "RESOLVED_EMPTY_DEFAULT", 
+    "state": "ACTIVE", 
+    "type": {
+        "expression": {
+            "checkExpression": "", 
+            "program": "let io_requests='ReadBlocks|WriteBlocks|ZeroBlocks';\nlet not_so_fatal_error_list='MountVolume|AlterVolume|AssignVolume|DescribeVolume';\n\nlet io_fatal_errors = integrate_fn(group_lines('sum', {project=\"nbs\", cluster=\"yandexcloud_testing\", service=\"server\", host=\"nbs-control-*1|nbs-control-*2|nbs-control-*3\", request=\"{{io_requests}}\", sensor=\"Errors/Fatal\", type=\"ssd|hdd\"}));\n\nlet ctrl_fatal_errors = integrate_fn(group_lines('sum', {project=\"nbs\", cluster=\"yandexcloud_testing\", service=\"server\", host=\"nbs-control-*1|nbs-control-*2|nbs-control-*3\", request!=\"{{io_requests}}|{{not_so_fatal_error_list}}\", sensor=\"Errors/Fatal\"}));\n\nlet not_so_fatal_errors = integrate_fn(group_lines('sum', {project=\"nbs\", cluster=\"yandexcloud_testing\", service=\"server\", host=\"nbs-control-*1|nbs-control-*2|nbs-control-*3\", request=\"{{not_so_fatal_error_list}}\", sensor=\"Errors/Fatal\"}));\n\nno_data_if(count(ctrl_fatal_errors) == 0);\nno_data_if(count(io_fatal_errors) == 0);\n\n// temp thresholds (see https://st.yandex-team.ru/NBS-1808)\nwarn_if(max(ctrl_fatal_errors) > 2);\nalarm_if(max(ctrl_fatal_errors) > 5);\n\nwarn_if(max(io_fatal_errors) == 1);\nalarm_if(max(io_fatal_errors) > 1);\n\nwarn_if(max(not_so_fatal_errors) > 10);\nalarm_if(max(not_so_fatal_errors) > 20);"
+        }
+    }, 
+    "updatedAt": "2021-03-10T07:26:28Z", 
+    "updatedBy": "haposik", 
+    "version": 4, 
+    "windowSecs": 600
+}

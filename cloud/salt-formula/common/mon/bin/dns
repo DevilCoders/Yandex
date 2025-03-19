@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+""" Monrun DNS checker """
+
+import socket
+from sys import exit
+from dns import resolver, reversename
+
+
+def m_exit(status, message):
+    """
+    Monrun output function
+    """
+    print("PASSIVE-CHECK:dns;{0};{1}".format(status, message))
+    exit(0)
+
+def main():
+    """
+    Main function of checker
+    """
+    host_fqdn = None
+    try:
+        host_fqdn = socket.getfqdn()
+    except Exception as err:
+        m_exit(2, "Don't know who I am: {0}".format(err))
+    info = {}
+    addrs = [el[4][0] for el in socket.getaddrinfo(host_fqdn, 0, socket.AF_INET6) if el[4][0] != '::1']
+    for address in set(addrs):
+        address = str(address)
+        try:
+            reverse_record = reversename.from_address(address)
+            resolved_host_name = str(resolver.query(reverse_record, "PTR")[0])
+            addr6 = str(resolver.query(resolved_host_name, "AAAA")[0])
+            info.setdefault(resolved_host_name, [])
+            info[resolved_host_name].append(addr6)
+        except Exception as err:
+            if isinstance(err, resolver.NXDOMAIN):
+                m_exit(2, "Can't resolve name or address: {0}".format(address))
+            else:
+                m_exit(2, "Unexpectable error")
+    if len(info.keys()) > 1:
+        m_exit(2, "Host have more than one AAAA records")
+    else:
+        for resolved_host_name, ip_address in info.items():
+            if len(set(ip_address)) > 1:
+                m_exit(2, "Host have more than one PTR records")
+            if host_fqdn not in resolved_host_name:
+                m_exit(2, "Different hostname and AAAA record")
+
+    m_exit(0, "OK")
+
+
+if __name__ == '__main__':
+    main()
+    exit(0)

@@ -1,0 +1,141 @@
+uid: trail-compute
+refresh: 1m
+title: Audit Trails Compute
+
+tags:
+  - yc-trails
+  - yc-audit-trails
+links:
+  - { title: 'Dashboards', tags: [ yc-trails ] }
+
+variables:
+  ui:
+    !include include/_datasources.yaml
+    project:
+      values:
+        - b1gm277magvimb2gv0ld
+        - aoedsmvctptsmbkj4g90
+      titles:
+        - prod
+        - preprod
+    cluster:
+      values:
+        - b1gtrvd4ntcgpob8ga7r
+        - aoef3bqr00fuvnfaufbv
+      titles:
+        - prod
+        - preprod
+  replacement:
+    !include ../include/errors.yaml
+  repeat:
+    disk_op:
+      values:
+        - read
+        - write
+        - flush
+      titles:
+        - Read
+        - Write
+        - Flush
+    disk_op2:
+      values:
+        - read
+        - write
+      titles:
+        - Read
+        - Write
+    srv:
+      values:
+        - "*preparer*"
+        - "*exporter*"
+        - "*control-plane*"
+        - "*tool*"
+      titles:
+        - Preparer
+        - Exporter
+        - Control Plane
+        - Tool
+
+graphDefaults:
+  datasource: ${datasource}
+  width: 8
+  height: 6
+
+queryDefaults:
+  dropNan: false
+  labels: 'project=${project}, cluster=${cluster}, service=compute'
+  defaultTimeWindow: $__interval
+
+rows:
+  - title: '@{srv:title}'
+    repeat: srv
+    queryDefaults:
+      labels: 'resource_id=@{srv}'
+    panels:
+      - type: graph
+        title: Network Connections Quota
+        queries:
+          - params: { labels: 'name=network_connections.quota_utilization' }
+        yAxes: [ { min: 0, max: 100, format: percent, decimals: 0 } ]
+      - type: graph
+        title: Network Bytes
+        queries:
+          - params: { labels: 'name=network_received_bytes' }
+            select: { group_by_labels: [ 'sum', 'resource_id' ], alias: 'received {{resource_id}}' }
+          - params: { labels: 'name=network_sent_bytes' }
+            select: { group_by_labels: [ 'sum', 'resource_id' ], alias: 'sent {{resource_id}}' }
+        yAxes: [ { min: 0, format: decbytes, decimals: 0 } ]
+      - type: graph
+        title: Network Packets
+        queries:
+          - params: { labels: 'name=network_received_bytes' }
+            select: { group_by_labels: [ 'sum', 'resource_id' ], alias: 'received {{resource_id}}' }
+          - params: { labels: 'name=network_sent_bytes' }
+            select: { group_by_labels: [ 'sum', 'resource_id' ], alias: 'sent {{resource_id}}' }
+        yAxes: [ { min: 0, decimals: 0 } ]
+      - type: graph
+        title: CPU Usage
+        queries:
+          - params: { labels: 'name=cpu_usage' }
+            select: { group_by_labels: [ 'sum', 'resource_id' ], alias: '{{resource_id}}' }
+        yAxes: [ { min: 0, format: percent, decimals: 0 } ]
+      - type: graph
+        title: CPU Utilization
+        queries:
+          - params: { labels: 'name=cpu_utilization' }
+            select: { group_by_labels: [ 'sum', 'resource_id' ], alias: '{{resource_id}}' }
+        yAxes: [ { min: 0, format: percent, decimals: 0 } ]
+      - type: graph
+        title: Disk Bytes
+        queries:
+          - params: { labels: 'name=disk_write_bytes' }
+            select: { group_by_labels: [ 'sum', 'resource_id' ], alias: 'write {{resource_id}}' }
+          - params: { labels: 'name=disk_read_bytes' }
+            select: { group_by_labels: [ 'sum', 'resource_id' ], alias: 'read {{resource_id}}' }
+        yAxes: [ { min: 0, format: decbytes } ]
+      - type: graph
+        title: Disk Operations
+        queries:
+          - params: { labels: 'name=disk_write_bytes' }
+            select: { group_by_labels: [ 'sum', 'resource_id' ], alias: 'write {{resource_id}}' }
+          - params: { labels: 'name=disk_read_bytes' }
+            select: { group_by_labels: [ 'sum', 'resource_id' ], alias: 'read {{resource_id}}' }
+        yAxes: [ { min: 0, format: decbytes } ]
+      - type: graph
+        repeat: disk_op
+        title: Disk @{disk_op:title} Operations
+        queries:
+          - params: { labels: 'name=disk_@{disk_op}_ops' }
+            select: { group_by_labels: [ 'sum', 'resource_id' ], alias: 'operations {{resource_id}}' }
+          - params: { labels: 'name=disk_@{disk_op}_ops_failed' }
+            select: { group_by_labels: [ 'sum', 'resource_id' ], alias: 'failed {{resource_id}}' }
+          - params: { labels: 'name=disk_@{disk_op}_ops_in_flight' }
+            select: { group_by_labels: [ 'sum', 'resource_id' ], alias: 'in flight {{resource_id}}' }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        repeat: disk_op2
+        title: Disk @{disk_op2:title} Latency
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=disk_@{disk_op2}_latency' }
+        yAxes: [ { min: 0, format: ms } ]

@@ -1,0 +1,51 @@
+table filter {
+    chain INPUT {
+        # user access lists
+{% for cidr_block in salt['pillar.get']('data:access:ipv4_cidr_blocks', []) %}
+        proto tcp saddr '{{ cidr_block['value'] }}' dport (443 9091 19091) ACCEPT;
+{% endfor %}
+
+        # user network
+{% for cidr in salt['pillar.get']('data:access:user_net_ipv4_cidrs', []) %}
+        proto tcp saddr '{{ cidr }}' dport (443 9091 19091) ACCEPT;
+{% endfor %}
+
+        # cluster nodes
+{% for broker_fqdn in salt['pillar.get']('data:kafka:nodes', {}) %}
+        proto tcp saddr '{{ broker_fqdn }}' dport (443 8081 8083 9091 19091) ACCEPT;
+{% endfor %}
+
+{% if salt['pillar.get']('data:access:data_lens', False) %}
+        # datalens nets
+{%   for net in salt['pillar.get']('data:access:projects:datalens_nets', []) %}
+        proto tcp saddr {{ net }} dport (443 9091 19091)  ACCEPT;
+{%   endfor %}
+{% endif %}
+    }
+}
+
+domain ip6 {
+    table filter {
+        chain INPUT {
+            # user access lists
+{% for cidr_block in salt['pillar.get']('data:access:ipv6_cidr_blocks', []) %}
+            proto tcp saddr '{{ cidr_block['value'] }}' dport (443 9091 19091) ACCEPT;
+{% endfor %}
+
+            # datatransfer nets, now included by default
+{% for net in salt['pillar.get']('data:access:projects:datatransfer_nets', []) %}
+            proto tcp saddr {{ net }} dport (443 9091 19091)  ACCEPT;
+{% endfor %}
+
+            # user network
+{% for cidr in salt['pillar.get']('data:access:user_net_ipv6_cidrs', []) %}
+            proto tcp saddr '{{ cidr }}' dport (443 9091 19091) ACCEPT;
+{% endfor %}
+
+            # cluster nodes
+{% for broker_fqdn in salt['pillar.get']('data:kafka:nodes', {}) %}
+            proto tcp saddr '{{ broker_fqdn }}' dport (443 8081 8083 9091 19091) ACCEPT;
+{% endfor %}
+        }
+    }
+}

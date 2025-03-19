@@ -1,0 +1,65 @@
+uid: ycr-i18n
+refresh: 3m
+title: Container registry i18n dashboard
+
+tags: [ 'ycp', 'ycp-cr', 'ycp-duty', 'ycp-i18n']
+links:
+  - { title: 'Source spec', url: 'https://a.yandex-team.ru/arc/trunk/arcadia/cloud/java/dashboard/src/main/resources/dashboard/container-registry/i18n/cr-i18n.yaml' }
+
+variables:
+  repeat:
+    i18n_metrics:
+      values: ['single_key_localize', 'json_i18n_localization', 'grpc_localization', 'event_localization']
+      titles: ['Single i18n key', 'Json object', 'Proto object', 'Event']
+      variables:
+        subUid: ["dd_cr_i18n_host", "dd_cr_json_i18n_host", "dd_cr_proto_i18n_host", "dd_cr_event_i18n_host"]
+  ui:
+    cluster: { values: [prod, preprod] }
+    service:
+      values: ['viewer-ma', 'uploader-ma', 'manager-ma']
+      titles: ['viewer', 'uploader', 'manager']
+  replacement:
+    !include ../include/errors.yaml
+
+graphDefaults:
+  width: 8
+  height: 6
+
+rows:
+  - title: '@i18n_metrics:title localization'
+    repeat: i18n_metrics
+    graphDefaults: { datasource: 'Solomon Cloud' }
+    queryDefaults: { labels: 'project=container-registry, cluster=${cluster}, host!=cluster, service=${service}, app=i18n' }
+    drilldowns:
+      - subUid: '@i18n_metrics:subUid'
+        tags: [ 'ycp', 'ycp-cr', 'ycp-duty' ]
+        ui:
+          cluster: cluster
+          service: service
+          host:
+            multi: true
+            values: [ '*-*',     '*-myt*', '*-sas*', '*-vla*', '*-1-myt',      '*-2-myt',      '*-1-sas',      '*-2-sas',      '*-1-vla',      '*-2-vla' ]
+            titles: [ 'Cluster', 'DC myt', 'DC sas', 'DC vla', 'Host IG myt1', 'Host IG myt2', 'Host IG sas1', 'Host IG sas2', 'Host IG vla1', 'Host IG vla2']
+        uiRepeat: host
+        labels: 'host=$host'
+    panels:
+      - type: graph
+        templates: { name: rps, rate: ui }
+        title: '@i18n_metrics:title $rateUnit ($cluster)'
+        queries:
+          - params: { labels: 'method=@i18n_metrics' }
+
+      - type: graph
+        templates: { name: errors }
+        title: '@i18n_metrics:title errors ($cluster)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'method=@i18n_metrics, name=i18n_utils_statuses, status=Exception' }
+        draw: [{ alias: 'exception', color: '#b20', at: left }]
+
+      - type: graph
+        templates: { name: percentile, groupLines: true, format: solomon }
+        title: '@i18n_metrics:title duration ($cluster)'
+        queries:
+          - params: { labels: 'method=@i18n_metrics, name=i18n_utils_durations' }
+

@@ -1,0 +1,55 @@
+- juggler_check:
+  args: "{{ common_checks | hash_merge( unreach_pass, item ) }}"
+  with_items:
+    - service: dbaas-worker-alive
+      refresh_time: 60
+      ttl: 300
+      children:
+        service: dbaas_worker_alive
+
+- juggler_check:
+  args: "{{ common_checks | hash_merge( unreach_pass, item ) }}"
+  with_items:
+    - service: dbaas-worker-slb-available
+      refresh_time: 180
+      ttl: 900
+      children:
+        service: dbaas_worker_slb_available
+
+- juggler_check:
+  args: "{{ common_checks | hash_merge( unreach_pass, item ) }}"
+  with_items:
+    - service: dbaas-worker-acquire-failed-tasks
+      refresh_time: 300
+      ttl: 1800
+      aggregator_kwargs:
+        nodata_mode: skip
+      meta:
+        urls:
+          - {title: "How to handle?", url: "https://wiki.yandex-team.ru/MDB/internal/Operations/duty-howto/handling-alerts/worker-acquire-failed-tasks/", type: "mdb"}
+      children:
+        service: dbaas_worker_acquire_failed_tasks
+
+- juggler_check:
+  args: "{{ dict() | hash_replace(common_checks, dict(aggregator='logic_or', aggregator_kwargs=dict(mode='WARN'))) | hash_merge( unreach_pass, item ) }}"
+  with_items:
+    - service: orphan-resources
+      refresh_time: 3600
+      ttl: 10800
+      meta:
+        urls:
+          - {title: "How to handle?", url: "https://wiki.yandex-team.ru/MDB/internal/Operations/duty-howto/handling-alerts/orphanresources/", type: "mdb"}
+      children:
+        service: orphan_resources
+
+- juggler_check:
+  args: "{{ common_checks | hash_merge( unreach_pass, item ) }}"
+  with_items:
+    - service: dbaas-worker-acquire-timeout
+      refresh_time: 300
+      ttl: 1800
+      meta:
+        urls:
+          - {title: "How to handle?", url: "https://wiki.yandex-team.ru/mdb/internal/operations/duty-howto/handling-alerts/worker-acquire-timeout/", type: "mdb"}
+      children:
+        service: dbaas_worker_acquire_timeout

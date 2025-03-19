@@ -1,0 +1,35 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro prog() %}
+
+let value = avg({
+    cluster='{{ env }}',
+    project='{{ project }}',
+    service='{{ service }}',
+    name='io.Disks.IOMillisec',
+    disk='{{ disk }}'
+});
+
+let is_red = value > {{ alarm_limit }};
+let is_yellow = value > {{ warn_limit }};
+
+alarm_if(is_red);
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+    "name": "{{ unit }} disk {{ disk }} IO Millisec @ {{ env }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "host": "{{ host }}",
+        "tags": "Solomon",
+        "disk_io_millisec": "[[expression.value]]",
+        "disk": "{{ disk }}",
+        "crit_avail_perc": "{{ alarm_limit }}",
+        "warn_avail_perc": "{{ warn_limit }}",
+        "service": "{{ unit }}-disk-io",
+        "description": "{{ unit }} disk {{ disk }} IO Millisec. If goes WARN/CRIT, check for services disk overload (NBS throttling)"
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

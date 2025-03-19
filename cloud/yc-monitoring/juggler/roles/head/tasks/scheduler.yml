@@ -1,0 +1,79 @@
+- name: 'juggler_check: scheduler'
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, default_timed_limits_one_down_unreach_force_ok) }}"
+  with_items:
+    - service: scheduler
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-node/scheduler
+            type: wiki
+  # Возможно устаревший алерт. Подробнее см CLOUD-93083
+
+- name: 'juggler_check: unified_agent'
+  juggler_check: ''
+  # https://docs.yandex-team.ru/unified_agent/operations/#nanny-juggler-aggregate-example
+  # aggregator: logic_or
+  # https://docs.yandex-team.ru/juggler/aggregates/aggregators#timed_more_than_limit_is_problem
+  # В случае, если текущее время не попадает ни под один из лимитов, агрегат превращается в logic_or.
+  when: env in ["prod", "preprod"] # logbroker is available ony in those envs
+  args: "{{ silent_check | hash_merge(item, default_timed_limits_one_down_unreach_force_ok) }}"
+  with_items:
+    - service: unified_agent
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/unified_agent/operations/#juggler-check-messages
+            type: wiki
+
+- name: 'juggler_check: scheduler-has-master'
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, default_timed_limits_logic_and_nodata_skip_dt_skip) }}"
+  with_items:
+    - service: scheduler-has-master
+      children:
+        - "{{ children[0] }}:scheduler-status"
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-node/scheduler-has-master
+            type: wiki
+      flap: { stable: 120, critical: 300 }
+
+- name: 'juggler_check: scheduler-has-enough-nodes'
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, timed_limits_40perc_crit_99perc_warn) }}"
+  with_items:
+    - service: scheduler-has-enough-nodes
+      children:
+        - "{{ children[0] }}:scheduler-status"
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-node/scheduler-has-enough-nodes
+            type: wiki
+      flap: { stable: 120, critical: 300 }
+
+- name: 'juggler_check: scheduler-heartbeat'
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, default_timed_limits_one_down_unreach_force_ok) }}"
+  with_items:
+    - service: scheduler-heartbeat
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-node/scheduler-heartbeat
+            type: wiki
+      flap: { stable: 120, critical: 300 }
+
+- name: 'juggler_check: scheduler-solomon-agent'
+  juggler_check: ''
+  args: "{{ default_check | hash_merge(item, default_timed_limits_one_down_unreach_force_ok) }}"
+  with_items:
+    - service: solomon-agent-scheduler
+      meta:
+        urls:
+          - title: "[?] Инструкция по алерту"
+            url: https://docs.yandex-team.ru/yc-monitoring/compute-node/solomon-agent
+            type: wiki
+      flap: { stable: 120, critical: 300 }

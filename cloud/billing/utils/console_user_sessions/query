@@ -1,0 +1,124 @@
+$parse_date = DateTime::Parse("%Y-%m-%d");
+
+$now =DateTime::ToSeconds(CurrentUtcTimestamp()); ;
+
+$format_date = DateTime::Format("%Y-%m-%d");
+$get_date_by_timestamp = ($timestamp) -> { RETURN $format_date(AddTimezone(DateTime::FromSeconds(CAST($timestamp AS Uint32)), 'Europe/Moscow')); };
+
+$start = $get_date_by_timestamp($now - 3600 * 24 * $window_size);
+$finish = $get_date_by_timestamp($now);
+$get_start_of_week = ($date) -> {
+    $parsed_date = $parse_date($date);
+    $shift = DateTime::GetDayOfWeek($parsed_date) - 1;
+    
+    RETURN $get_date_by_timestamp(DateTime::ToSeconds(DateTime::MakeTimestamp($parsed_date)) - 24 * 3600 * $shift)
+};
+
+$get_date_from_tablepath = ($path) -> {
+    $list = String::SplitToList($path, '/'); 
+    $len = ListLength($list); 
+    RETURN ListHead(ListSkip($list, $len - 2));
+};
+
+$get_domain3 = ($tskv) -> { RETURN IF (Url::GetDomain($tskv.stuff_dict['url'], 2) IN ("aliyun.com", "alibabacloud.com"), "alicloud", Url::GetDomain($tskv.stuff_dict['url'], 3))  };
+
+$tables = (
+    SELECT
+        a.*,
+        $get_date_from_tablepath(TablePath()) AS `date`
+    FROM
+        RANGE(
+            $src_dir,
+            $start,
+            $finish,
+            $src_suffix
+        ) as a
+);
+
+
+$logs = (
+    SELECT
+        `date`,
+        $get_start_of_week(`date`) as week,
+        $get_domain3(TSKV_DATA) AS domain3level,
+        TSKV_DATA.stuff_dict['icookie'] AS icookie
+    FROM
+        $tables
+    WHERE
+            TSKV_DATA.stuff_dict['icookie'] IS NOT NULL 
+        AND
+            TSKV_DATA.stuff_dict['url'] IS NOT NULL
+        AND (
+                Url::GetHost(TSKV_DATA.stuff_dict['url']) in (
+                    'console.cloud.yandex.ru',
+                    'console.cloud.yandex.com',
+                    'my.selectel.ru',
+                    'console.cloud.google.com',
+                    'console.hc.sbercloud.ru',
+                    'infra.mail.ru',
+                    'portal.azure.com',
+                    'vcd.sbercloud.ru',
+                    'cloud.digitalocean.com',
+                    'console.cloud.croc.ru',
+                    'cloud.rt.ru',
+                    'iaas.cloud.mts.ru'
+                )
+            OR
+                Url::GetDomain(TSKV_DATA.stuff_dict['url'], 4) IN (
+                    "console.aws.amazon.com",
+                    "lightsail.aws.amazon.com", 
+                    "phd.aws.amazon.com",
+                    "portal.aws.amazon.com",
+                    "quicksight.aws.amazon.com",
+                    "signin.aws.amazon.com"
+                )
+            OR (
+                    Url::GetHost(TSKV_DATA.stuff_dict['url']) == 'mcs.mail.ru'
+                AND
+                    StartsWith(Url::GetPath(TSKV_DATA.stuff_dict['url']), '/app')
+            )
+            OR 
+                Url::GetDomain(TSKV_DATA.stuff_dict['url'], 3) IN (
+                    "console.aliyun.com",
+                    "account.aliyun.com",
+                    "account.alibabacloud.com",
+                    "myaccount.alibabacloud.com"
+                )
+        )
+);
+
+$count_per_day = (
+    SELECT
+        count(1) AS cnt,
+        domain3level,
+        `date`
+    FROM
+        $logs
+    GROUP BY
+        domain3level,
+        `date`
+);
+
+$uniqs_per_day = (
+    SELECT
+        count(distinct icookie) AS cnt,
+        domain3level,
+        `date`
+    FROM
+        $logs
+    GROUP BY
+        domain3level,
+        `date`
+);
+
+$uniqs_per_week = (
+    SELECT
+        count(distinct icookie) AS cnt,
+        domain3level,
+        week
+    FROM
+        $logs
+    GROUP BY
+        domain3level,
+        week
+);

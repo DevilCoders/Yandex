@@ -1,0 +1,70 @@
+uid: autoscaleAgent
+refresh: 1m
+title: Autoscale Agent
+
+graphDefaults:
+  datasource: 'Solomon Cloud'
+  width: 8
+  height: 6
+queryDefaults: { defaultTimeWindow: 30s, dropNan: true, labels: 'project=instance-group, cluster=${cluster}, service=autoscale-agent, host=${host}-zone' }
+
+variables:
+  ui:
+    cluster:
+      values: ['prod', 'preprod']
+    host:
+      multi: true
+      values: [ '*', 'myt', 'sas', 'vla']
+      titles: [ 'Cluster', 'DC myt', 'DC sas', 'DC vla']
+
+rows:
+  - title: 'Autoscale Agent ($host)'
+    uiRepeat: host
+
+    panels:
+      - type: graph
+        title: 'System Memory Usage'
+        queries:
+          - params: { labels: 'sensor=allocated_system_memory, host=${host}*-*-*' }
+            groupByTime: { max: $__interval }
+            select: {  group_lines: ['max'], alias: 'Max system memory' }
+        yAxes: [{ format: bytes }]
+      - type: graph
+        title: 'Batch Sending $rateUnit'
+        templates:
+          - { name: rps, rate: ui, sensor: rate }
+        queries:
+          - params: { labels: 'sensor=autoscale_metrics_export_count, success=true' }
+      - type: graph
+        title: 'Batch Sending Errors'
+        templates: { name: errors, sensor: rate }
+        queries:
+          - params: { labels: 'sensor=autoscale_metrics_export_count, success=false' }
+        draw:
+          - { alias: 'errors', color: 'red', at: left }
+      - type: graph
+        title: 'Retrieving Metric Errors'
+        templates: { name: errors, sensor: rate }
+        queries:
+          - params: { labels: 'sensor=compute_api_requests, success=false' }
+        draw:
+          - { alias: 'errors', color: 'red', at: left }
+      - type: graph
+        title: 'Send delay'
+        templates:
+          - { name: percentile, groupLines: true, format: solomon, sensor: rate }
+        queries:
+          - params: { labels: 'sensor=send_delay' }
+      - type: graph
+        title: 'Dropped batches count'
+        templates: { name: errors, sensor: rate }
+        queries:
+          - params: { labels: 'sensor=sent_batches_count, success=false' }
+        draw:
+          - { alias: 'drops', color: 'red', at: left }
+      - type: graph
+        title: 'Zero compute API requests agents count'
+        queries:
+          - params: { labels: 'sensor=compute_api_requests' }
+            groupByTime: { max: 30s }
+            select: {  diff: [], group_by_labels: ['sum', 'host'], drop_above: ['0'], drop_below: ['0'], group_lines: ['count'], alias: 'Agents count' }

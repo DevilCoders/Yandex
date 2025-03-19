@@ -1,0 +1,234 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.monitoring.v3;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "yandex/cloud/priv/monitoring/v3/evaluation_status.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/monitoring/v3;monitoring";
+
+// An Alert resource.
+message Alert {
+    enum Status {
+        STATUS_UNSPECIFIED = 0;
+
+        // Active.
+        STATUS_ACTIVE = 1;
+
+        // Muted.
+        STATUS_INACTIVE = 2;
+
+        // Deleted.
+        STATUS_DELETED = 3;
+    }
+
+    // ID of the alert.
+    string id = 1;
+
+    // ID of the folder that the alert belongs on.
+    string folder_id = 2;
+
+    // Creation timestamp.
+    google.protobuf.Timestamp created_at = 3;
+
+    // Modification timestamp.
+    google.protobuf.Timestamp modified_at = 4;
+
+    // ID of the user who created the alert.
+    string created_by = 5;
+
+    // ID of the user who modified the alert.
+    string modified_by = 6;
+
+    // Name of the alert.
+    string name = 7;
+
+    // Description of the alert.
+    string description = 8;
+
+    // Resource labels as key:value pairs.
+    map<string, string> labels = 9;
+
+    // Status of current alert.
+    Status status = 10;
+
+    repeated string group_by_labels = 11;
+
+    // Alert evaluation window in seconds.
+    google.protobuf.Duration window = 12;
+
+    // Alert evaluation delay in seconds.
+    google.protobuf.Duration delay = 13;
+
+    oneof type {
+        // Threshold alert.
+        ThresholdAlert threshold = 14;
+
+        // Expression alert.
+        ExpressionAlert expression = 15;
+    }
+
+    // Annotations.
+    map<string, string> annotations = 16;
+
+    // NO_DATA policy for selectors that resolve to empty set of metrics.
+    NoMetricsPolicy no_metrics_policy = 17;
+
+    // NO_DATA policy for timeseries without data points.
+    NoPointsPolicy no_points_policy = 18;
+
+    repeated NotificationConfig channels = 19;
+}
+
+message ThresholdAlert {
+    // Selectors that query data to be checked.
+    string selectors = 1;
+
+    // Transformations to be applied to the data before checking.
+    string transformations = 2;
+
+    // A list of predicate rules to test against the data.
+    repeated PredicateRule predicate_rules = 3;
+}
+
+message PredicateRule {
+    // Criteria by which the alert will be checked.
+    ThresholdType type = 1;
+
+    // Operation used to compare with threshold value.
+    Comparison comparison = 2;
+
+    // Threshold value.
+    double threshold = 3;
+
+    // Target status of the alert if the predicate is true.
+    TargetStatus target_status = 4;
+}
+
+enum TargetStatus {
+    TARGET_STATUS_UNSPECIFIED = 0;
+
+    // OK.
+    TARGET_STATUS_OK = 1;
+
+    // Warn.
+    TARGET_STATUS_WARN = 2;
+
+    // Alarm.
+    TARGET_STATUS_ALARM = 3;
+
+    // No data.
+    TARGET_STATUS_NO_DATA = 4;
+}
+
+enum ThresholdType {
+    THRESHOLD_TYPE_UNSPECIFIED = 0;
+
+    // At least one.
+    THRESHOLD_TYPE_AT_LEAST_ONE = 1;
+
+    // At all times.
+    THRESHOLD_TYPE_AT_ALL_TIMES = 2;
+
+    // Last non-NaN value.
+    THRESHOLD_TYPE_LAST_NON_NAN = 3;
+
+    // Average.
+    THRESHOLD_TYPE_AVG = 4;
+
+    // Minimum.
+    THRESHOLD_TYPE_MIN = 5;
+
+    // Maximum.
+    THRESHOLD_TYPE_MAX = 6;
+
+    // Sum.
+    THRESHOLD_TYPE_SUM = 7;
+
+    // Count.
+    THRESHOLD_TYPE_COUNT = 8;
+}
+
+enum Comparison {
+    COMPARISON_UNSPECIFIED = 0;
+
+    // Equal the specified value.
+    COMPARISON_EQ = 1;
+
+    // Not equal the specified value.
+    COMPARISON_NE = 2;
+
+    // Greater than the specified value.
+    COMPARISON_GT = 3;
+
+    // Less than the specified value.
+    COMPARISON_LT = 4;
+
+    // Greater than or equal to the specified value.
+    COMPARISON_GTE = 5;
+
+    // Less than or equal to the specified value.
+    COMPARISON_LTE = 6;
+}
+
+message ExpressionAlert {
+    // Expression to evaluate.
+    string program = 1;
+}
+
+message NotificationConfig {
+    // ID of the channel.
+    string channel_id = 1;
+
+    repeated EvaluationStatus notify_about_statuses = 2;
+
+    // Repeat notification period in seconds. Zero means no repeating.
+    google.protobuf.Duration repeat_period = 3;
+}
+
+// What to do when selectors are resolved to empty set of metrics.
+enum NoMetricsPolicy {
+    // Default policy is NO_METRICS_POLICY_NO_DATA both for expression and threshold alerts.
+    NO_METRICS_POLICY_UNSPECIFIED = 0;
+
+    // If any of the selectors resolves to nothing, trigger OK immediately.
+    NO_METRICS_POLICY_OK = 1;
+
+    // If any of the selectors resolves to nothing, trigger WARN immediately.
+    NO_METRICS_POLICY_WARN = 2;
+
+    // If any of the selectors resolves to nothing, trigger ALARM immediately.
+    NO_METRICS_POLICY_ALARM = 3;
+
+    // If any of the selectors resolves to nothing, trigger NO_DATA immediately.
+    NO_METRICS_POLICY_NO_DATA = 4;
+
+    // For expression alert return empty vector. Unsupported for threshold alerts.
+    NO_METRICS_POLICY_MANUAL = 5;
+}
+
+// What to do when a timeseries does not contain points
+enum NoPointsPolicy {
+    // Defaults to NO_POINTS_POLICY_MANUAL for expression and NO_POINTS_NO_DATA for threshold alerts.
+    NO_POINTS_POLICY_UNSPECIFIED = 0;
+
+    // If any of the selectors resolves to nothing, trigger OK immediately.
+    // For threshold alerts status is set for a line, for expression - for the whole alert.
+    NO_POINTS_POLICY_OK = 1;
+
+    // If any of the selectors resolves to nothing, trigger WARN immediately.
+    // For threshold alerts status is set for a line, for expression - for the whole alert.
+    NO_POINTS_POLICY_WARN = 2;
+
+    // If any of the selectors resolves to nothing, trigger ALARM immediately.
+    // For threshold alerts status is set for a line, for expression - for the whole alert.
+    NO_POINTS_POLICY_ALARM = 3;
+
+    // If any of the selectors resolves to nothing, trigger NO_DATA immediately.
+    // For threshold alerts status is set for a line, for expression - for the whole alert.
+    NO_POINTS_POLICY_NO_DATA = 4;
+
+    // Process timeseries as is.
+    NO_POINTS_POLICY_MANUAL = 5;
+}

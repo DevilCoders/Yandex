@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Менеджер квот</title>
+<style type ="text/css">
+table {
+  border-collapse: collapse;
+  width: 80%;
+}
+
+td, th {
+  border: 1px solid #dddddd;
+  text-align: left;
+  padding: 8px;
+}
+
+.true {
+     bgcolor: green;
+}
+
+.more {
+     bgcolor: red;
+}
+
+.compute {
+float: none;
+width: 40%;
+}
+
+.other {
+float: left;
+}
+
+.quotaname {
+font-size: 20px;
+}
+
+.balance {
+
+}
+
+.textarea {
+    border: none;
+    background-color: transparent;
+    resize: none;
+    outline: none;
+}
+
+</style>
+    <link rel="icon" href="/orig.gif" type="image/x-icon">
+</head>
+<body>
+
+<div class="balance">
+     <a href="/cloud_old/{{ cloud_id }}">Старый интерфейс</a>
+<table>
+<tr>
+<th>Идентификатор</th>
+    <th>Статусы запросов</th>
+    <th>Статусы лимитов</th>
+</tr>
+  <tr>
+      <td><input id='anyID' type="text" value='{{ cloud_id }}' size=15 multiple></td>
+      <td>
+          PENDING - в ожидании обработки<br>
+          PROCESSING - обрабатывается<br>
+          PROCESSED - обработан<br>
+          CANCELED - отменён
+      </td>
+      <td>
+          PENDING - в ожидании обработки<br>
+          PROCESSING - обрабатывается сервисом<br>
+          PARTIAL_APPROVED - частично увеличен<br>
+          APPROVED - увеличен<br>
+          REJECTED - полностью отклонён для этого запроса<br>
+          CANCELED - закрыт
+      </td>
+  </tr>
+</table>
+</div>
+<button onclick="senduserdata()" id='calc'>Искать</button>
+
+<p id="data">
+    {% block content %}
+    {% endblock %}
+</p>
+<script type="text/javascript">
+window.onload = function() {
+    if (document.getElementById("anyID").value != '') {
+        senduserdata()
+    }
+};
+
+function senduserdata() {
+    var regexps = {'/qm/':/b1g(\w)+/g,
+        '/req/':/atd(\w)+/g};
+    var id = document.getElementById("anyID").value;
+    for (var regexp in regexps) {
+        var match = id.match(regexps[regexp]);
+        if (match) {
+            match = regexp;
+            break
+        }
+    }
+    var request = new XMLHttpRequest();
+    var myHeaders = new Headers();
+    id = document.getElementById("anyID").value.replace(/\s/g, '')
+    request.open('GET', match + id, true);
+    request.setRequestHeader("Access-Control-Allow-Origin", "*");
+    request.setRequestHeader('Content-Type', 'application/json');
+    request.responseType = 'text';
+    request.send()
+    request.onload = function () {
+        document.getElementById('data').innerHTML = request.responseText;
+    }
+}
+function validateForm() {
+    var quotas = document.getElementById('quotas');
+    var quotasdict = {};
+    for (var row in Array.from(Array(quotas.rows.length).keys())) {
+        if (row == 0 ) {
+            continue;
+        }
+        quotasdict[quotas.rows[row].cells[0].innerText] = {};
+        quotasdict[quotas.rows[row].cells[0].innerText]['desired_limit'] = quotas.rows[row].cells[1].children[0].value;
+        quotasdict[quotas.rows[row].cells[0].innerText]['approved_limit'] = quotas.rows[row].cells[2].children[0].value;
+        quotasdict[quotas.rows[row].cells[0].innerText]['approved'] = quotas.rows[row].cells[4].children[0].checked;
+    }
+
+    var request = new XMLHttpRequest();
+    var myHeaders = new Headers();
+    request.open('POST', '/req/'+document.getElementById("request_id").value, true);
+    request.setRequestHeader("Content-type", "application/json");
+    request.onreadystatechange = function () {
+        if (request.readyState === 4 && request.status === 200) {
+            console.log(request.responseText);
+        }
+    }
+    var data = JSON.stringify(quotasdict);
+    request.send(data);
+}
+
+function send_quota_request (request) {
+    var quotasdict = {};
+    var request_id = request.id;
+    var table = document.getElementById(request_id);
+    for ( var limit in Array.from(Array(table.rows.length).keys())) {
+        if (limit == 0 ) {
+            continue;
+        }
+        var quota_id = table.rows[limit].cells[0].innerText;
+        var approved = document.getElementById("approve_"+request_id+"_"+quota_id).checked;
+        var passed = document.getElementById("pass_"+request_id+"_"+quota_id).checked;
+        if ( !passed ){
+            quotasdict[quota_id] = {};
+            var approved_limit = document.getElementById("approved_limit_"+request_id+"_"+quota_id).value;
+            quotasdict[quota_id]['desired_limit'] = approved_limit;
+            quotasdict[quota_id]['approved_limit'] = approved_limit;
+            quotasdict[quota_id]['approved'] = approved;
+        }
+
+    }
+    var request = new XMLHttpRequest();
+    var myHeaders = new Headers();
+    request.open('POST', '/req/'+request_id, true);
+    request.setRequestHeader("Content-type", "application/json");
+    document.getElementById(request_id+"_done").innerHTML = '<img src="/static/load.gif" alt="Loading" title="Loading" height="50" width="50" />'
+    request.onreadystatechange = function () {
+        if (request.status === 200) {
+            var request_op = new XMLHttpRequest();
+            var myHeaders = new Headers();
+            request_op.open('GET', '/op/' + request.responseText, true);
+            request_op.setRequestHeader("Access-Control-Allow-Origin", "*");
+            request_op.setRequestHeader('Content-Type', 'application/json');
+            request_op.responseType = 'text';
+            request_op.send()
+            request_op.onload = function () {
+                if (request_op.readyState === 4 && request_op.status === 200) {
+                    document.getElementById(request_id+"_done").innerHTML = 'Operation ' + request_op.responseText;
+                }
+            }
+
+            console.log(request.responseText);
+        }
+        if (request.status === 404) {
+            document.getElementById(request_id+"_done").innerHTML = request.responseText;
+        }
+    }
+    var data = JSON.stringify(quotasdict);
+    request.send(data);
+}
+
+function bytes_to_human(data) {
+    return data/(1024**3)
+}
+</script>
+
+</body>
+</html>

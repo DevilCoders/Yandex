@@ -1,0 +1,80 @@
+{#  Задачи с указанным временем  #}
+{% macro progress(issue, normalize_time) %}
+  {# progress bar #}
+  {# |spent_total|overtime|remaining| #}
+  {# progress.spent_total + progress.overtime = issue.total_time_spent #}
+  {#  #}
+  {% set progress = namespace(spent_total=0, overtime=0, remaining=0) %}
+  {% set total_time_spent = to_workdays(issue.total_time_spent) if normalize_time else to_workdays(issue.raw_total_time_spent) %}
+  {% set time_original_estimated = to_workdays(issue.time_original_estimated) if issue.time_original_estimated else total_time_spent %}
+  {% set remaining = to_workdays(issue.time_remaining) %}
+
+  {% set progress.spent_total = min(time_original_estimated, total_time_spent) %}
+  {% set progress.overtime = max(total_time_spent - time_original_estimated, 0) %}
+  {% set progress.remaining = remaining %}
+
+  {% set progress.total = progress.spent_total + progress.overtime + progress.remaining %}
+  {% if progress.total != 0 %}
+  <div class='progress issue-progress {{ 'normalized-time' if normalize_time else 'raw-time' }}'>
+    <div class='progress-bar time-spent-total' role='progressbar'
+         style='width: {{ progress.spent_total / progress.total * 100 }}%;'>
+      {{ progress.spent_total|round(1, 'ceil') }}
+    </div>
+    <div class='progress-bar time-overtime' role='progressbar'
+         style='width: {{ progress.overtime / progress.total * 100 }}%;'>
+      {{ progress.overtime|round(1, 'ceil') }}
+    </div>
+    <div class='progress-bar time-original-estimated {{ 'd-none' if progress.remaining == 0 }}' role='progressbar'
+         style='width: {{ progress.remaining / progress.total * 100 }}%;'>
+      {{ progress.remaining|round(1, 'ceil') }}
+    </div>
+  </div>
+  {% endif %}
+{% endmacro %}
+
+{# Отображение графиков #}
+{% macro monthly_graph(charts, normalize_time) %}
+      new google.visualization.PieChart($('#chart-0')[0]).draw(
+        google.visualization.arrayToDataTable([
+          ['Категория', 'Потраченное время'],
+  {% for key, category in task_tree.items.items() %}
+    {% set time_spent = category.time_spent if normalize_time else category.raw_time_spent %}
+          ['{{ key }}', {{ to_workdays(time_spent)|round(1) }}],
+  {% endfor %}
+        ]),
+        {
+          title: 'Категории',
+          pieHole: 0.4,
+          chartArea: {
+            width: $('#charts-body').width() / {{ charts.count }},
+            height: $('#charts-body').height() - 80
+          },
+          width: $('#charts-body').width() / {{ charts.count }},
+          height: $('#charts-body').height()
+        }
+      );
+
+  {% for key, category in task_tree.items.items() %}
+    {% if category.chart %}
+      new google.visualization.PieChart($('#chart-{{ loop.index }}')[0]).draw(
+        google.visualization.arrayToDataTable([
+          ['Категория', 'Потраченное время'],
+      {% for sub_key, sub_category in category.items.items() %}
+        {% set time_spent = sub_category.time_spent if normalize_time else sub_category.raw_time_spent %}
+          ['{{ sub_key }}', {{ to_workdays(time_spent)|round(1) }}],
+      {% endfor %}
+        ]),
+        {
+          title: '{{ key }}',
+          pieHole: 0.4,
+          chartArea: {
+            width: $('#charts-body').width() / {{ charts.count }},
+            height: $('#charts-body').height() - 80
+          },
+          width: $('#charts-body').width() / {{ charts.count }},
+          height: $('#charts-body').height()
+        }
+      );
+    {% endif %}
+  {% endfor %}
+{% endmacro %}

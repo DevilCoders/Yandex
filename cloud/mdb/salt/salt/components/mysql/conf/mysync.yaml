@@ -1,0 +1,87 @@
+log: /var/log/mysync/mysync.log
+loglevel: Debug
+lockfile: /var/run/mysync/mysync.lock
+emergefile: /var/run/mysync/mysync.emerge
+{% if salt['pillar.get']('pre_upgrade') %}
+resetupfile: /dev/null
+{% else %}
+resetupfile: /var/run/mysync/mysync.resetup
+{% endif %}
+resetup_crashed_hosts: {{ salt['pillar.get']('data:mysql:config:sync_binlog') != 1 or salt['pillar.get']('data:mysql:config:innodb_flush_log_at_trx_commit') != 1 }}
+db_timeout: 2s
+db_lost_check_timeout: {{ salt['pillar.get']('data:mysql:mysync_db_lost_check_timeout', 5) }}s
+tick_interval: 5s
+healthcheck_interval: 5s
+info_file_handler_interval: 5s
+dcs_wait_timeout: 30s
+{% set critical_du = salt['pillar.get']('data:mysql:critical_disk_usage', 95)|float %}
+{% set space_limit = salt['pillar.get']('data:dbaas:space_limit', 10*1024**3)|float %}
+{% set du_gap = 500*1024**2 %}
+critical_disk_usage: {{ "%.2f"|format(critical_du) }}
+not_critical_disk_usage: {{ "%.2f"|format((space_limit * critical_du/100 - du_gap) / space_limit * 100) }}
+disable_semi_sync_replication_on_maintenance: true
+{# mdb_mysql.find_master expects that mysql master's  @@super_read_only is 0 #}
+keep_super_writable_on_critical_disk_usage: true
+db_set_ro_timeout: {{ salt['pillar.get']('data:mysql:mysync_db_set_ro_timeout', 30) }}s
+db_set_ro_force_timeout: {{ salt['pillar.get']('data:mysql:mysync_db_set_ro_force_timeout', 60) }}s
+priority_choice_max_lag: {{ salt['pillar.get']('data:mysql:config:mdb_priority_choice_max_lag', 60) }}s
+offline_mode_enable_lag: {{ salt['pillar.get']('data:mysql:config:mdb_offline_mode_enable_lag', 1*24*60*60) }}s
+offline_mode_disable_lag: {{ salt['pillar.get']('data:mysql:config:mdb_offline_mode_disable_lag', 60) }}s
+disable_set_readonly_on_lost: {{ salt['pillar.get']('data:mysql:mysync_disable_set_readonly_on_lost', False ) }}
+exclude_users:
+    - 'repl'
+    - 'admin'
+    - 'monitor'
+    - 'event_scheduler'
+
+{% if salt['pillar.get']('data:cluster_nodes:ha', [])|length > 1 and salt['pillar.get']('data:mysql:use_semisync_replication', True) %}
+semi_sync: true
+rpl_semi_sync_master_wait_for_slave_count: {{ salt['pillar.get']('data:mysql:config:rpl_semi_sync_master_wait_for_slave_count', 1) }}
+semi_sync_enable_lag: 33554432
+{% endif %}
+
+{% if salt['pillar.get']('data:cluster_nodes:ha', [])|length > 1 and salt['pillar.get']('data:mysql:use_failover', True) %}
+failover: true
+{% endif %}
+failover_cooldown: {{ salt['pillar.get']('data:mysql:mysync_failover_cooldown', 3600) }}s
+failover_delay: {{ salt['pillar.get']('data:mysql:mysync_failover_delay', 60) }}s
+inactivation_delay: {{ salt['pillar.get']('data:mysql:mysync_inactivation_delay', 120) }}s
+
+zookeeper:
+  session_timeout: 10s
+  namespace: /mysql/{{ salt['pillar.get']('data:dbaas:cluster_id') }}
+  hosts:
+{% for h in salt['pillar.get']('data:mysql:zk_hosts', ['zk-test01i.mail.yandex.net:2181', 'zk-test01f.mail.yandex.net:2181', 'zk-test01h.mail.yandex.net:2181']) %}
+    - {{ h }}
+{% endfor %}
+
+mysql:
+  user: admin
+  password: {{ salt['pillar.get']('data:mysql:users:admin:password') }}
+  ssl_ca: /etc/mysql/ssl/allCAs.pem
+  replication_connect_retry: 10
+  replication_retry_count: 0
+  replication_heartbeat_period: 2
+  replication_port: 3307
+  replication_user: repl
+  replication_password: {{ salt['pillar.get']('data:mysql:users:repl:password') }}
+  replication_ssl_ca: /etc/mysql/ssl/allCAs.pem
+{% if salt['pillar.get']('pre_upgrade') %}
+  port: 3306
+{% else %}
+  port: 3307
+{% endif %}
+  hosts:
+{% for h in salt['pillar.get']('data:cluster_nodes:ha', []) %}
+    - {{ h }}:3307
+{% endfor %}
+
+stream_from_reasonable_lag: 5m
+stream_from_max_catchup_wait: 5m
+
+queries:
+  replication_lag: "SELECT UNIX_TIMESTAMP(CURRENT_TIMESTAMP(3)) - UNIX_TIMESTAMP(ts) AS Seconds_Behind_Master FROM mdb_repl_mon"
+
+replication_repair_aggressive_mode: {{ salt['pillar.get']('data:mysql:mysync_replication_repair_aggressive_mode', False ) }}
+replication_repair_cooldown: {{ salt['pillar.get']('data:mysql:mysync_replication_repair_cooldown', 60 ) }}s
+replication_repair_max_attempts: {{ salt['pillar.get']('data:mysql:mysync_replication_repair_max_attempts', 3 ) }}

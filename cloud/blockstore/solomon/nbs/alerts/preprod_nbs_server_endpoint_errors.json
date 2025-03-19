@@ -1,0 +1,41 @@
+{
+    "annotations": {
+        "host": "{{labels.host}}.cloud.yandex.net", 
+        "service": "solomon_alert_nbs_server_endpoint_errors", 
+        "tags": "yc-preprod-nbs-solomon"
+    }, 
+    "channels": [
+        {
+            "config": {}, 
+            "id": "juggler"
+        }
+    ], 
+    "createdAt": "2021-01-15T09:08:33Z", 
+    "createdBy": "arigachnyy", 
+    "delaySeconds": 30, 
+    "delaySecs": 30, 
+    "description": "", 
+    "groupByLabels": [
+        "host"
+    ], 
+    "id": "preprod_nbs_server_endpoint_errors", 
+    "name": "[PRE-PROD] NBS Server Endpoint Errors", 
+    "noPointsPolicy": "NO_POINTS_DEFAULT", 
+    "notificationChannels": [
+        "juggler"
+    ], 
+    "periodMillis": 600000, 
+    "projectId": "nbs", 
+    "resolvedEmptyPolicy": "RESOLVED_EMPTY_DEFAULT", 
+    "state": "ACTIVE", 
+    "type": {
+        "expression": {
+            "checkExpression": "", 
+            "program": "let endpoint_requests='StartEndpoint|StopEndpoint|ListEndpoints|KickEndpoint';\n\nlet total_errors = integrate_fn(group_lines('sum', {\n\tproject='nbs',\n\tcluster='yandexcloud_preprod',\n\tservice='server',\n\thost='vla04-*|myt1-*|sas09-*',\n\trequest='{{endpoint_requests}}',\n\tsensor='Errors'\n}));\n\nlet throttle_errors = integrate_fn(group_lines('sum', {\n\tproject='nbs',\n\tcluster='yandexcloud_preprod',\n\tservice='server',\n\thost='vla04-*|myt1-*|sas09-*',\n\trequest='{{endpoint_requests}}',\n\tsensor='Errors/Throttling'\n}));\n\nlet session_errors = integrate_fn(group_lines('sum', {\n\tproject='nbs',\n\tcluster='yandexcloud_preprod',\n\tservice='server',\n\thost='vla04-*|myt1-*|sas09-*',\n\trequest='{{endpoint_requests}}',\n\tsensor='Errors/Session'\n}));\n\nlet other_errors = total_errors - throttle_errors - session_errors;\n\nno_data_if(count(total_errors) == 0);\nno_data_if(count(throttle_errors) == 0);\nno_data_if(count(session_errors) == 0);\n\nlet max_session_errors = max(session_errors);\nlet max_throttle_errors = max(throttle_errors);\nlet max_total_errors = max(total_errors);\nlet max_other_errors = max(other_errors);\n\nalarm_if(max_session_errors >= 600);\nalarm_if(max_other_errors >= 1800);\n\nwarn_if(max_session_errors >= 10);\nwarn_if(max_other_errors >= 900);\n"
+        }
+    }, 
+    "updatedAt": "2021-01-15T15:36:43Z", 
+    "updatedBy": "arigachnyy", 
+    "version": 5, 
+    "windowSecs": 600
+}

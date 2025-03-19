@@ -1,0 +1,462 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.platform.alb.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "google/rpc/status.proto";
+
+import "yandex/cloud/priv/platform/alb/v1/protocol_options.proto";
+import "yandex/cloud/priv/platform/alb/v1/target_group.proto";
+import "yandex/cloud/priv/platform/alb/v1/tls.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/platform/alb/v1;alb";
+option java_outer_classname = "PALB";
+
+message LoadBalancer {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+
+    // Application load balancer is being created.
+    CREATING = 1;
+
+    // Application load balancer is being started.
+    STARTING = 2;
+
+    // Application load balancer is active and sends traffic to the targets.
+    ACTIVE = 3;
+
+    // Application load balancer is being stopped.
+    STOPPING = 4;
+
+    // Application load balancer is stopped and doesn't send traffic to the targets.
+    STOPPED = 5;
+
+    // Application load balancer is being deleted.
+    DELETING = 6;
+  }
+
+  enum CloseTrafficPolicy {
+    CLOSE_TRAFFIC_POLICY_UNSPECIFIED = 0;
+
+    CLOSE_TRAFFIC_POLICY_STRICT = 1;
+
+    CLOSE_TRAFFIC_POLICY_NEVER = 2;
+  }
+
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string folder_id = 4;
+  map<string, string> labels = 5;
+
+  // Status of the application load balancer.
+  Status status = 16;
+
+  // Deprecated.
+  repeated string messages = 25;
+  // Errors from the running operation.
+  repeated google.rpc.Status errors = 29;
+
+  // Internal field.
+  bool internal = 6;
+
+  repeated Listener listeners = 7;
+
+  // List of zones and subnets with the nodes of the load balancer.
+  AllocationPolicy allocation_policy = 8;
+
+  // Network with load balancer nodes.
+  string network_id = 9;
+
+  // Internal field. (Used in tests).
+  int64 health_check_port = 10;
+
+  string log_group_id = 11;
+  string region_id = 12;
+
+  // Internal field.
+  string service_account_id = 13;
+
+  // Internal field.
+  TrafficScheme traffic_scheme = 14;
+
+  // Security groups used instead of the network's default security group.
+  repeated string security_group_ids = 15;
+
+  // Internal field. Should not be exposed to public API proto spec.
+  LoadBalancerCloudSpec cloud_spec = 17;
+
+  // Forbids Delete() calls.
+  bool deletion_protection = 18;
+
+  // Creation time.
+  google.protobuf.Timestamp created_at = 19;
+
+  // Jaeger tracing.
+  Tracing tracing = 20;
+
+  // Optional custom solomon cluster name (instead of "l7-{id}").
+  string solomon_cluster_name = 21;
+
+  // Access logs will be sent to YT table.
+  bool persistent_logs = 22;
+
+  // Custom ALS server for serverless-gateway.
+  AlsSettings custom_als = 23;
+
+  // Custom host for Juggler alerts (instead of "cloud_{env}_l7-{id}").
+  string juggler_host = 24;
+
+  string cloud_id = 26;
+
+  // Last time when the load balancer was modified.
+  google.protobuf.Timestamp modified_at = 27;
+
+  // UA or SA that created the load balancer.
+  string created_by = 28;
+
+  CloseTrafficPolicy close_traffic_policy = 30;
+
+  AutoScalePolicy auto_scale_policy = 31;
+
+  // Next field number is 32.
+}
+
+message Tracing {
+  // Globally unique service name.
+  // E.g. "vpc.some-api" or "iam.some-api".
+  string service_name = 1;
+}
+
+message LoadBalancerCloudSpec {
+  // Use |inner load-balancer get-spec| to get other values.
+
+  message NLBSpec {
+    // ID of the network load balancer, created for the ALB needs.
+    // Will be deleted aside with all other allocated resources on ALB deletion.
+    string nlb_id = 1;
+
+    // If set, specifies ID of the created VPC address for NLB.
+    // Address created in the same folder as owner load balancer object.
+    // Will be deleted aside with all other allocated resources.
+    string address_id = 2;
+
+    // Describes type of the NLB, e.g. "ipv6" or "ipv4-internal".
+    string nlb_type = 3;
+  }
+
+  // ID of the dataplane instance group for the load balancer.
+  string instance_group_id = 1;
+
+  reserved 2; // target_group_id
+
+  // Log group ID for load balancer, owned by load balancer.
+  string log_group_id = 3;
+
+  string instance_sa_id = 4;
+
+  // List of all NLBs used by load balancer.
+  repeated NLBSpec network_load_balancers = 5;
+
+  // Only this color is active. Empty string means all colors are active.
+  string color = 6;
+
+  string version_tag = 7;
+
+  // Like labels but users cannot see/change them.
+  // Use inner.LoadBalancer.UpdateSpec() to change.
+  map<string, string> metadata = 9;
+}
+
+enum TrafficScheme {
+  // Same as TRAFFIC_SCHEME_MULTI_INTERFACE.
+  TRAFFIC_SCHEME_UNSPECIFIED = 0;
+
+  // Traffic goes into user-provided subnets.
+  TRAFFIC_SCHEME_MULTI_INTERFACE = 1;
+
+  // Do not use. (Legacy communal balancers).
+  TRAFFIC_SCHEME_LEGACY = 2;
+}
+
+message Location {
+  // Zone name (e.g. "ru-central1-a")
+  string zone_id = 1 [(required) = true];
+
+  // Subnet in the zone.
+  string subnet_id = 2;
+
+  // Disable traffic within zone.
+  bool disable_traffic = 3;
+}
+
+message AllocationPolicy {
+  repeated Location locations = 1 [(size) = ">=1", (unique) = true];
+}
+
+message Address {
+  oneof address {
+    option (exactly_one) = true;
+
+    // IPv4 address accessible from the internet.
+    ExternalIpv4Address external_ipv4_address = 1;
+    // IPv4 address within a provided subnet.
+    InternalIpv4Address internal_ipv4_address = 2;
+    // IPv6 address.
+    ExternalIpv6Address external_ipv6_address = 3;
+  }
+}
+
+message ExternalIpv4Address {
+  string address = 1;
+}
+
+message InternalIpv4Address {
+  string address = 1;
+  // Subnet of the address.
+  string subnet_id = 2;
+}
+
+message ExternalIpv6Address {
+  string address = 1;
+  // The address is accessible only from the Yandex networks.
+  bool yandex_only = 2;
+}
+
+message Listener {
+  // Deprecated.
+  enum IpVersion {
+    IP_VERSION_UNSPECIFIED = 0;
+    IPV4 = 1;
+    IPV6 = 2;
+  }
+
+  // Deprecated.
+  enum Type {
+    TYPE_UNSPECIFIED = 0;
+    EXTERNAL = 1;
+    INTERNAL = 2;
+  }
+
+  string name = 1 [(required) = true];
+
+  // Deprecated.
+  int64 port = 2 [(value) = "0-65535"];
+  // Deprecated.
+  string address = 3;
+  // Deprecated.
+  string subnet_id = 4;
+  // Deprecated.
+  IpVersion ip_version = 5;
+  // Deprecated.
+  Type type = 6;
+  // Deprecated.
+  bool yandex_only = 7;
+
+  repeated Endpoint endpoints = 11;
+
+  oneof listener {
+    option (exactly_one) = true;
+    // TCP.
+    StreamListener stream = 8;
+    // Plaintext.
+    HttpListener http = 9;
+    // HTTPS/gRPC.
+    TlsListener tls = 10;
+  }
+}
+
+message Endpoint {
+  repeated Address addresses = 1 [(size) = ">0"];
+  repeated int64 ports = 2 [(size) = ">0", (value) = "1-65535"];
+}
+
+message HttpListener {
+  // Sets plaintext HTTP router, optional.
+  HttpHandler handler = 1;
+
+  // Shortcut for adding http -> https redirects,
+  // can be used instead of the HttpHandler above.
+  Redirects redirects = 3;
+
+  TcpOptions tcp_options = 2;
+}
+
+message StreamListener {
+  StreamHandler handler = 1 [(required) = true];
+
+  TcpOptions tcp_options = 2;
+}
+
+message TlsListener {
+  // Handles requests not matched by SNI matches.
+  TlsHandler default_handler = 1 [(required) = true];
+
+  //  List of handlers for certain server names.
+  repeated SniMatch sni_handlers = 2;
+
+  TcpOptions tcp_options = 3;
+}
+
+message AlsEndpoint {
+  oneof address_type {
+    option (exactly_one) = true;
+
+    // Endpoint address.
+    string ip_address = 1;
+
+    // DNS name.
+    string hostname = 2;
+  }
+
+  int64 port = 3 [(value) = "0-65535"];
+
+  bool tls = 4;
+}
+
+message AlsSettings {
+  AlsEndpoint endpoint = 1;
+  repeated string additional_request_headers = 2;
+  repeated string additional_response_headers = 3;
+  repeated string additional_response_trailers = 4;
+}
+
+message HttpHandler {
+  string http_router_id = 1;
+
+  // Edge balancer takes requests from untrusted clients.
+  // Will generate new x-request-id header.
+  // True is LB is for public API, false for private API.
+  bool is_edge = 2;
+
+  // Deprecated. No not use.
+  AlsSettings als = 3;
+
+  oneof protocol_settings {
+    // Custom HTTP/2 protocol options. HTTP/2 is enabled by default.
+    Http2Options http2_options = 4;
+
+    // Enables HTTP/1.0 support and disables HTTP/2.
+    bool allow_http10 = 5;
+  }
+
+  ExternalAuthorization external_authorization = 6;
+}
+
+message ExternalAuthorizationBufferSettings {
+  int64 max_request_bytes = 1 [(value) = ">=0"];
+  bool allow_partial_message = 2;
+}
+
+message ExternalAuthorization {
+  enum APIVersion {
+    API_VERSION_UNSPECIFIED = 0;
+    API_VERSION_V2 = 2;
+    API_VERSION_V3 = 3;
+  }
+  string backend_group_id = 8 [(required) = true];
+  google.protobuf.Duration timeout = 3 [(required) = true];
+  bool include_peer_certificate = 4;
+  ExternalAuthorizationBufferSettings with_request_body = 6;
+  google.protobuf.Int64Value status_on_error = 7 [(value) = "100,200,201,202,203,204,205,206,207,208,226,300,301,302,303,304,305,307,308,400,401,402,403,404,405,406,407,408,409,410,411,412,413,414,415,416,417,421,422,423,424,426,428,429,431,500,501,502,503,504,505,506,507,508,510,511"];
+  APIVersion api_version = 9;
+}
+
+message Redirects {
+  bool http_to_https = 1;
+
+  // TODO: something for letsencrypt redirect, i.e.
+  // /.well-known/acme-challenge/* -> https://validation.certificate-manager.api.cloud.yandex.net/{certificate_id}/*
+  // string letsencrypt_redirect_cert_id = N;
+}
+
+message StreamHandler {
+  string backend_group_id = 1 [(required) = true];
+}
+
+message SniMatch {
+  string name = 1 [(required) = true];
+  // List of domain names or masks.
+  // Server name in the incoming request will be matched against those.
+  repeated string server_names = 2 [(size) = ">0"];
+  TlsHandler handler = 3 [(required) = true];
+}
+
+message TlsHandler {
+  oneof handler {
+    option (exactly_one) = true;
+    // Not implemented yet.
+    StreamHandler stream_handler = 1;
+    HttpHandler http_handler = 2;
+  }
+
+  // Deprecated. No not use.
+  ListenerTls tls = 3;
+
+  // Certificate ID in the Certificate Manager.
+  repeated string certificate_ids = 4 [(size) = "<=1", (length) = ">1"];
+
+  TlsOptions tls_options = 5;
+}
+
+// Deprecated. No not use.
+message ListenerTls {
+  repeated string certificate_ids = 1 [(size) = "<=1", (length) = ">1"];
+  TlsOptions tls_options = 2;
+}
+
+message TargetState {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    HEALTHY = 1;
+    PARTIALLY_HEALTHY = 2;
+    UNHEALTHY = 3;
+    DRAINING = 4;
+    TIMEOUT = 5;
+  }
+
+  message HealthcheckStatus {
+    repeated ZoneHealthcheckStatus zone_statuses = 1;
+  }
+
+  message ZoneHealthcheckStatus {
+    string zone_id = 1 [(required) = true];
+
+    // Healthcheck status of target for the specific zone.
+    Status status = 2;
+
+    // Whether UNHEALTHY status was set due to failed active checks or not.
+    bool failed_active_hc = 3;
+  }
+
+  // List of statuses of the target for all known zones.
+  HealthcheckStatus status = 1;
+
+  // Target in the target group.
+  Target target = 2 [(required) = true];
+}
+
+message AggregatedTargetState {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    HEALTHY = 1;
+    UNHEALTHY = 3;
+  }
+
+  // Aggregated status of the target.
+  Status status = 1;
+
+  // Target in the target group.
+  Target target = 2 [(required) = true];
+}
+
+message AutoScalePolicy {
+    // Lower limit for instance count in each zone.
+    int64 min_zone_size = 1 [(value) = "0-1000"];
+    // Upper limit for total instance count (across all zones).
+    // Default if not set: 2 * initialSize
+    int64 max_size = 2 [(value) = "0-1000"];
+}

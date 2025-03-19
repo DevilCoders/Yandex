@@ -1,0 +1,41 @@
+{% extends "../../../base/alert.j2" %}
+{%- set ydb_project = 'kikimr' if env not in ('israel',) else 'yc.ydb.ydbaas-cloud' %}
+
+{% set windowSecs = 600 %}
+{% set delaySecs = 30 %}
+
+{% macro prog() %}
+let total_duration = {
+  project='{{ ydb_project }}',
+  cluster='{{ cluster }}',
+  service='ydb',
+  cloud_id='*',
+  host='cluster|-',
+  database='{{ database }}',
+  name='table.transaction.total_duration_milliseconds',
+  tx_kind='write_only'
+  };
+
+let p99_percentile = avg(histogram_percentile(99, total_duration));
+let is_red = p99_percentile >= {{ red_threshold }};
+let is_yellow = p99_percentile  >= {{ yellow_threshold }};
+let p99_percentile_str = to_fixed(p99_percentile, 2) + '%';
+let description = 'Alert for write-only transactions latency, p99: '+p99_percentile_str;
+
+alarm_if(is_red);
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+  "id": "{{ id }}",
+  "name": "{{ name }}",
+  "type": {{ type_expression() }},
+  "annotations": {
+    "details": "[[expression.description]]",
+    "service": "{{ serviceName }}",
+    "wiki": "https://docs.yandex-team.ru/yc-monitoring/ydb/{{ serviceName }}",
+    "p99_percentile": "[[expression.p99_percentile_str]]",
+    "host": "{{ host }}",
+    "database": "{{ database }}"
+  }
+{% endblock %}

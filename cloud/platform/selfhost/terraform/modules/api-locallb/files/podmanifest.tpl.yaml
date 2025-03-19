@@ -1,0 +1,135 @@
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: api
+    namespace: kube-system
+    labels:
+      role: api
+    annotations:
+      config_digest: ${api_config_digest}
+      scheduler.alpha.kubernetes.io/critical-pod: ""
+  spec:
+    priority: 2000000001
+    priorityClassName: system-cluster-critical
+    hostNetwork: true
+    hostPID: true
+    initContainers:
+      - name: deploy-api-configs
+        image: cr.yandex/crp7nvlkttssi7kapoho/infra/metadata:${metadata_version}
+        command:
+          - /usr/bin/metadata
+          - --attribute-name
+          - api-configs
+        volumeMounts:
+          - name: all-configs
+            mountPath: /etc
+            terminationGracePeriodSeconds: 30
+    containers:
+      - name: configserver
+        image: cr.yandex/crp7nvlkttssi7kapoho/api/configserver:${configserver_version}
+        resources:
+          requests:
+            memory: ${configserver_pod_memory}
+          limits:
+            memory: ${configserver_pod_memory}
+        volumeMounts:
+          - name: api-logs
+            mountPath: /var/log/configserver
+            terminationGracePeriodSeconds: 30
+          - name: configserver-configs
+            mountPath: /etc/configserver
+            readOnly: true
+          - name: etc-passwd
+            mountPath: /etc/passwd
+            readOnly: true
+      - name: gateway
+        image: cr.yandex/crp7nvlkttssi7kapoho/api/gateway:${gateway_version}
+        resources:
+          requests:
+            memory: ${gateway_pod_memory}
+          limits:
+            memory: ${gateway_pod_memory}
+        volumeMounts:
+          - name: api-logs
+            mountPath: /var/log/gateway
+            terminationGracePeriodSeconds: 30
+          - name: gateway-configs
+            mountPath: /etc/gateway
+            readOnly: true
+          - name: etc-passwd
+            mountPath: /etc/passwd
+            readOnly: true
+      - name: envoy
+        image: cr.yandex/crp7nvlkttssi7kapoho/envoy:${envoy_version}
+        command: ["/usr/bin/envoy", "-c", "/etc/api/envoy/envoy.yaml", "--base-id", "0"]
+        resources:
+          requests:
+            memory: ${envoy_pod_memory}
+          limits:
+            memory: ${envoy_pod_memory}
+        volumeMounts:
+          - name: envoy-configs
+            mountPath: /etc/api/envoy
+            readOnly: true
+          - name: certs
+            mountPath: /run/api/envoy
+            readOnly: true
+          - name: api-logs
+            mountPath: /var/log/api
+            terminationGracePeriodSeconds: 30
+          - name: ca-certificates
+            mountPath: /usr/local/share/ca-certificates
+            readOnly: true
+      - name: private-envoy
+        image: cr.yandex/crp7nvlkttssi7kapoho/envoy:${envoy_version}
+        command: ["/usr/bin/envoy", "-c", "/etc/api/envoy/private-envoy.yaml", "--base-id", "1"]
+        resources:
+          requests:
+            memory: ${envoy_pod_memory}
+          limits:
+            memory: ${envoy_pod_memory}
+        volumeMounts:
+          - name: envoy-configs
+            mountPath: /etc/api/envoy
+            readOnly: true
+          - name: certs
+            mountPath: /run/api/envoy
+            readOnly: true
+          - name: api-logs
+            mountPath: /var/log/api
+            terminationGracePeriodSeconds: 30
+          - name: ca-certificates
+            mountPath: /usr/local/share/ca-certificates
+            readOnly: true
+    volumes:
+      - name: all-configs
+        hostPath:
+          path: /etc
+          type: DirectoryOrCreate
+      - name: configserver-configs
+        hostPath:
+          path: /etc/api/configserver
+          type: DirectoryOrCreate
+      - name: gateway-configs
+        hostPath:
+          path: /etc/api/gateway
+          type: DirectoryOrCreate
+      - name: envoy-configs
+        hostPath:
+          path: /etc/api/envoy
+          type: DirectoryOrCreate
+      - name: certs
+        hostPath:
+          path: /run/api/envoy
+          type: Directory
+      - name: api-logs
+        hostPath:
+          path: /var/log/api
+          type: DirectoryOrCreate
+      - name: etc-passwd
+        hostPath:
+          path: /etc/passwd
+      - name: ca-certificates
+        hostPath:
+          path: /usr/local/share/ca-certificates
+          type: DirectoryOrCreate

@@ -1,0 +1,469 @@
+{% extends 'base.html'%}
+{% import 'daily_macros.html' as macros with context %}
+{% from 'common_macros.html' import avatar with context %}
+
+{% block extra_styles %}
+  <style>
+    .this-day {
+      background: #f3f1ed !important;
+    }
+
+    .absence-vacation {
+      background: #73c9eb !important;
+    }
+
+    .absence-illness {
+      background: #ffd1cb !important;
+    }
+
+    .absence-duty-off {
+      background: #8ba3f4 !important;
+    }
+
+    .absence-other {
+      background: #dfeec8 !important;
+    }
+
+    td, th {
+      border-bottom-width: 0 !important;
+    }
+
+    th, td {
+      vertical-align: middle;
+    }
+
+    tbody:after {
+        content: '-';
+        display: block;
+        line-height: 20px;
+        color: transparent;
+    }
+
+    thead tr:nth-child(1) th {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      text-align: start;
+      background: white;
+    }
+
+    a.name:hover {
+      color: #cc0000;
+    }
+
+    .name {
+      display: inline-block;
+    }
+
+    .name::first-letter {
+      color: #cc0000;
+    }
+
+    .issue, .group-indent {
+      margin-left: 24px;
+    }
+
+    .issue > a, .issue > i {
+      display: inline-block;
+    }
+
+    .group-indent {
+      display: inline-block;
+    }
+
+    .tracker-summary {
+      max-width: 800px;
+    }
+
+    .time {
+      text-align: end;
+    }
+
+    .group {
+      font-weight: bold;
+    }
+
+    .tree-button {
+      min-width: 15px;
+    }
+
+    .tree-button:hover {
+      cursor: pointer;
+    }
+
+    .tree-button-collapsed {
+      transform: rotate(0deg);
+      transition: transform 0.2s linear;
+    }
+
+    .tree-button-expanded {
+      transform: rotate(90deg);
+      transition: transform 0.2s linear;
+    }
+
+    .not-in-sprint {
+      color: #cc0000;
+    }
+
+    .other-day {
+    }
+
+    #top-right-panel {
+      background: white;
+      padding: 10px;
+      z-index: 15;
+      opacity: 0.75;
+    }
+
+    #timer {
+      cursor: pointer;
+    }
+
+    .timer-body {
+      position: relative;
+      width: {{ timer.size }}px;
+      height: {{ timer.size }}px;
+    }
+
+    .timer-svg {
+      transform: scaleX(-1);
+    }
+
+    .timer-circle {
+      fill: none;
+      stroke: none;
+    }
+
+    .timer-path-elapsed {
+      stroke-width: 7px;
+      stroke: grey;
+    }
+
+    #timer-path-remaining {
+      stroke-width: 7px;
+      stroke-linecap: round;
+      stroke: grey;
+      transform: rotate(90deg);
+      transform-origin: center;
+      transition: 1s linear all;
+      fill-rule: nonzero;
+    }
+
+    #timer-label {
+      position: absolute;
+      width: {{ timer.size }}px;
+      height: {{ timer.size }}px;
+      top: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 48px;
+    }
+
+    #current-time {
+      float: right;
+      margin-right: 10px;
+      font-size: 25px;
+    }
+  </style>
+{% endblock extra_styles %}
+
+{% block title %}Отчет к ежедневной встрече{% endblock title %}
+
+{% block legend %}
+  <div>
+    <i class='fas fa-running not-in-sprint legend-item'></i>Задача не из спринта
+  </div>
+  <div>
+    <span class='legend-color this-day'></span>День отчета
+  </div>
+  <div>
+    <span class='legend-color absence-vacation'></span>Отпуск, отгул
+  </div>
+  <div>
+    <span class='legend-color absence-illness'></span>Болезнь
+  </div>
+  <div>
+    <span class='legend-color absence-duty-off'></span>Отгул за дежурство
+  </div>
+  <div style='padding-bottom: 30px;'>
+    <span class='legend-color absence-other'></span>Отсутствие
+  </div>{% endblock legend %}
+
+{% block body %}
+  <div id='top-right-panel' class='position-fixed top-0 end-0'>
+    <div id='timer' onclick='startTimer()'></div>
+    <button id='scroll-top' class='btn btn-primary' style='width: 40px'><i class='fas fa-angle-left'></i></button>
+    <button id='scroll-bottom' class='btn btn-primary' style='width: 40px'><i class='fas fa-angle-right'></i></button>
+    <span id='current-time'>${formatCurrentTime()}</span>
+  </div>
+
+  <div class='table-fixed'>
+    <table id='tree' class='table table-hover table-auto w-auto' style='margin-bottom: 80px;'>
+    {# node - номер дерева, которое может быть раскрыто (Остальные задачи в спринте, Повисшие задачи), используется для раскрытия задач #}
+    {# item - номер задачи в дереве node, используется для раскрытия задач #}
+    {# scroll - номер логина, используется для перехода между людьми по кнопкам #}
+    {% set count = namespace(node=-1, item=-1, scroll=-1) %}
+  {% for login, daily_person in issues.items() %}
+    {% set count.scroll = count.scroll + 1 %}
+      <thead class='sticky-header' scroll-path='{{ count.scroll }}'>
+        <tr>
+          <th>
+            {{ avatar(login, daily_person.person_data['name']['first']['ru'], daily_person.person_data['name']['last']['ru']) }}
+          </th>
+          {{ macros.dates(daily_person, normalize_time=True) }}
+          {{ macros.dates(daily_person, normalize_time=False) }}
+        </tr>
+      </thead>
+
+      <tbody>
+{#  Задачи, у которых отмечено время  #}
+      {{ macros.worklog_issues(daily_person.norm_issues_list, normalize_time=True) }}
+      {{ macros.worklog_issues(daily_person.raw_issues_list, normalize_time=False) }}
+{#  Остальные задачи в спринте  #}
+      {{ macros.node_issues(daily_person.other_in_sprint_issues, 'Остальные задачи в спринте', count, normalize_time=True) }}
+      {{ macros.node_issues(daily_person.other_in_sprint_issues, 'Остальные задачи в спринте', count, normalize_time=False) }}
+{#  Повисшие задачи  #}
+      {{ macros.node_issues(daily_person.other_in_progress_issues, 'Повисшие задачи', count, normalize_time=True) }}
+      {{ macros.node_issues(daily_person.other_in_progress_issues, 'Повисшие задачи', count, normalize_time=False) }}
+      </tbody>
+    {% endfor %}
+    </table>
+  </div>
+{% endblock body %}
+
+{% block extra_scripts %}
+  <script>
+    let nodes = []; // список деревьев, каждое их которых является списком элементов - задач, которые появляются после раскрытия дерева
+    let scroll_elements = [] // список элементов, между которыми нужно скроллить страницу
+    let scroll_position = 0 // текущая позиция для скролла
+
+    $(document).ready(function() {
+      // отрисовка текущего времени
+      startDisplayCurrentTime();
+      // инициализация дерева задач
+      $('#tree *[tree-path]').each(function() {
+        let path = $(this).attr('tree-path').split(' ');
+        let node_number = Number(path[0]);
+        if (path.length === 1) {
+          nodes[node_number] = []
+        } else if (path.length === 2) {
+          let item_number = Number(path[1]);
+          nodes[node_number][item_number] = $(this);
+        }
+      });
+      // инициализация списка элементов для скролла
+      $('#tree *[scroll-path]').each(function() {
+        let scroll_number = Number($(this).attr('scroll-path'))
+        scroll_elements[scroll_number] = this;
+      });
+    });
+
+    $('.tree-button').on('click', function(e) {
+      $(this).toggleClass('tree-button-collapsed tree-button-expanded');
+
+      let node_number = Number($(this).attr('tree-path'))
+
+      if ($(this).hasClass('tree-button-collapsed')) {
+        nodes[node_number].forEach(item => item.addClass('d-none'));
+      } else {
+        nodes[node_number].forEach(item => item.removeClass('d-none'));
+      }
+    });
+
+    // скролл страницы
+    document.getElementById('scroll-top').addEventListener('click', scrollTop);
+    document.getElementById('scroll-bottom').addEventListener('click', scrollBottom);
+
+    function scrollTop(e) {
+      if (scroll_position - 1 < 0) {
+        return;
+      }
+      scroll_position -= 1;
+      scrollToPosition();
+    }
+
+    function scrollBottom(e) {
+      if (scroll_position + 1 >= scroll_elements.length) {
+        return;
+      }
+      scroll_position += 1;
+      scrollToPosition();
+    }
+
+    function scrollToPosition() {
+      startTimer();
+      scroll_elements[scroll_position].scrollIntoView(true);
+    }
+
+    // Timer
+    const TIME_LIMIT = {{ timer.limit }};
+    const CIRCLE_BORDER_LENGTH = 283;
+    const BEGIN_COLOR = [65, 105, 225] // blue;
+    const END_COLOR = [178, 34, 34] // red;
+    const BLINK_COLOR = [139, 0, 0] // dark red
+    const TIMER_OPACITY = 0.75;
+
+    const KEY_MOMENTS = new Set([{{ timer.key_moments|join(', ') }}]);
+    const BLINK_DURATION = {{ timer.blink_duration }}; // сколько миллисекунд нужно мигать
+    const BLINK_FREQUENCY = {{ timer.blink_frequency }}; // сколько раз нужно мигать
+
+    let timeLeft = {{ timer.limit }}; // оставшееся в таймере время в сек
+    let blinkTimePassed = 0;
+
+    {% if timer.blink_audio_src is not none %}
+      let audio = new Audio('{{ timer.blink_audio_src }}');
+      audio.crossOrigin = 'anonymous';
+    {% else %}
+      let audio = null;
+    {% endif %}
+
+    document.getElementById('timer').innerHTML = `
+    <div class='timer-body'>
+      <svg class='timer-svg' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'>
+        <g class='timer-circle'>
+          <circle class='timer-path-elapsed' cx='50' cy='50' r='45'></circle>
+          <path
+            id='timer-path-remaining'
+            stroke-dasharray='${CIRCLE_BORDER_LENGTH}'
+            d='
+              M 50, 50
+              m -45, 0
+              a 45,45 0 1,0 90,0
+              a 45,45 0 1,0 -90,0
+            '
+            style='stroke: grey'
+          ></path>
+        </g>
+      </svg>
+      <span id='timer-label'>${formatTime(timeLeft)}</span>
+    </div>`;
+
+    let timerInterval = null;
+    let blinkInterval = null;
+
+    function startDisplayCurrentTime() {
+      displayCurrentTime();
+      let displayDelay = (60 - new Date().getSeconds()) * 1000;
+      setTimeout(function() {
+        displayCurrentTime();
+        setInterval(displayCurrentTime, 1000 * 60);
+      }, displayDelay);
+    }
+
+    function displayCurrentTime() {
+      document.getElementById('current-time').innerHTML = formatCurrentTime();
+    }
+
+    function formatCurrentTime() {
+      let currentDate = new Date();
+      let hours = currentDate.getHours();
+      let minutes = currentDate.getMinutes();
+      if (minutes < 10) {
+        minutes = `0${minutes}`;
+      }
+      return `${hours}:${minutes}`;
+    }
+
+    function resetTimer() {
+      clearInterval(timerInterval);
+      clearInterval(blinkInterval);
+      blinkInterval = null;
+      setTimerOpacity(TIMER_OPACITY);
+      timeLeft = TIME_LIMIT;
+    }
+
+    function startTimer() {
+      resetTimer();
+      setCircleBorderColor(BEGIN_COLOR);
+      timerTick();
+      timerInterval = setInterval(timerTick, 1000);
+    }
+
+    function timerTick() {
+      document.getElementById('timer-label').innerHTML = formatTime(timeLeft);
+      setCircleBorderLength();
+      setCircleBorderColor(getGradient(BEGIN_COLOR, END_COLOR, timeLeft / TIME_LIMIT));
+      checkKeyMoments();
+      if (timeLeft === 0) {
+        resetTimer();
+      }
+      timeLeft -= 1;
+    }
+
+    function setCircleBorderLength() {
+      const circleBorder = `${((timeLeft - 1) / TIME_LIMIT * CIRCLE_BORDER_LENGTH).toFixed(0)} ${CIRCLE_BORDER_LENGTH}`;
+      document.getElementById('timer-path-remaining').setAttribute('stroke-dasharray', circleBorder);
+    }
+
+    function checkKeyMoments() {
+      if (KEY_MOMENTS.has(timeLeft)) {
+        startBlinking();
+      }
+    }
+
+    function startBlinking() {
+      // если уже мигаем, мигаем заново
+      if (blinkInterval != null) {
+        clearInterval(blinkInterval)
+      }
+      blinkTimePassed = 0;
+      blink();
+      blinkInterval = setInterval(blink, BLINK_DURATION / BLINK_FREQUENCY / 2);
+    }
+
+    function formatTime(time) {
+      let minutes = Math.floor(time / 60);
+      let seconds = time % 60;
+      if (seconds < 10) {
+        seconds = `0${seconds}`;
+      }
+      return `${minutes}:${seconds}`;
+    }
+
+    function formatRGB(tupleRGB) {
+      return 'rgb(' + tupleRGB[0] + ', ' +  tupleRGB[1] + ', ' + tupleRGB[2] + ')';
+    }
+
+    function getGradient(firstColor, secondColor, firstRatio) {
+      // ratio of beginColor
+      let gradColor = firstColor.slice()
+      for (let i = 0; i < 3; ++i) {
+        gradColor[i] += (secondColor[i] - firstColor[i]) * (1 - firstRatio)
+        gradColor[i] = Math.floor(gradColor[i])
+      }
+      return gradColor;
+    }
+
+    function setCircleBorderColor(tupleRGB) {
+      document.getElementById('timer-path-remaining').style.stroke = formatRGB(tupleRGB);
+    }
+
+    function setTimerOpacity(opacity) {
+      document.getElementById('top-right-panel').style.opacity = opacity;
+    }
+
+    function blink() {
+      if (blinkTimePassed % 2 === 1) {
+        // мигаем
+        setCircleBorderColor(BLINK_COLOR);
+        setTimerOpacity(1);
+        if (blinkTimePassed === 1 && audio !== null) {
+          audio.play();
+        }
+      } else {
+        setCircleBorderColor(getGradient(BEGIN_COLOR, END_COLOR, (timeLeft - blinkTimePassed / BLINK_FREQUENCY / 2) / TIME_LIMIT));
+        setTimerOpacity(TIMER_OPACITY);
+      }
+      if (blinkTimePassed === BLINK_FREQUENCY * 2) {
+        clearInterval(blinkInterval);
+        blinkInterval = null;
+      }
+      blinkTimePassed += 1;
+    }
+
+    $('#start-timer').on('click', function(e) {
+      startTimer();
+    });
+  </script>
+{% endblock extra_scripts %}

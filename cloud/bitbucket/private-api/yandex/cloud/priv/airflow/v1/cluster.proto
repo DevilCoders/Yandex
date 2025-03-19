@@ -1,0 +1,153 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.airflow.v1;
+
+import "yandex/cloud/priv/airflow/v1/common.proto";
+import "yandex/cloud/api/tools/options.proto";
+import "yandex/cloud/priv/validation.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/airflow/v1;airflow";
+option java_outer_classname = "AFC";
+
+// Airflow cluster.
+message Cluster {
+  enum Environment {
+    ENVIRONMENT_UNSPECIFIED = 0;
+
+    // Stable environment with a conservative update policy:
+    // only hotfixes are applied during regular maintenance.
+    PRODUCTION = 1;
+
+    // Environment with more aggressive update policy: new versions
+    // are rolled out irrespective of backward compatibility.
+    PRESTABLE = 2;
+  }
+
+  enum Status {
+    option (cloud.api.tools.enumeration).lint_skip.unspecified_value = true;
+    STATUS_UNKNOWN = 0; // Cluster status is unknown
+    CREATING = 1; // Cluster is being created
+    RUNNING = 2; // Cluster is running
+    ERROR = 3; // Cluster failed
+    STOPPING = 4; // Cluster stopping
+    STOPPED = 5; // Cluster stopped
+    STARTING = 6; // Cluster starting
+  }
+
+  // Required. Unique ID of the Airflow cluster.
+  // This ID is assigned by MDB in the process of creating a Airflow cluster.
+  string id = 1;
+
+  // ID of the folder that the Airflow cluster belongs to.
+  string folder_id = 2;
+
+  // The time when the Airflow cluster was created.
+  google.protobuf.Timestamp created_at = 3;
+
+  // Name of the Airflow cluster.
+  // The name is unique within the folder. 1-64 characters long.
+  string name = 4;
+
+  // Description of the Airflow cluster. 0-256 characters long.
+  string description = 5;
+
+  map<string, string> labels = 6;
+
+  // Deployment environment of the Airflow cluster.
+  Environment environment = 7;
+
+  // Monitoring systems relevant to the Airflow cluster.
+  repeated Monitoring monitoring = 8;
+
+  // Configuration of the Airflow cluster.
+  ClusterConfig config = 9;
+
+  // Aggregated cluster health.
+  Health health = 10;
+
+  // Cluster status.
+  Status status = 11;
+
+  NetworkConfig network = 12;
+
+  CodeSyncConfig code_sync = 13;
+
+  // Deletion Protection inhibits deletion of the cluster
+  bool deletion_protection = 14;
+}
+
+// Monitoring system.
+message Monitoring {
+  // Name of the monitoring system.
+  string name = 1;
+
+  // Description of the monitoring system.
+  string description = 2;
+
+  // Link to the monitoring system.
+  string link = 3;
+}
+
+message ClusterConfig {
+    // Version of image for cluster provisioning
+    string version_id = 1;
+
+    // Airflow specific options
+    AirflowConfig airflow = 2;
+
+    // Configuration for workloads
+    WebserverConfig webserver = 3 [(required) = true];
+    SchedulerConfig scheduler = 4 [(required) = true];
+    TriggererConfig triggerer = 5;
+    WorkerConfig worker = 6 [(required) = true];
+}
+
+message AirflowConfig {
+    // Properties to be passed to Airflow configuration file.
+    map<string, string> config = 1;
+}
+
+message WebserverConfig {
+    int64 count = 1 [(value) = "1-512"];
+    Resources resources = 2;
+}
+
+message SchedulerConfig {
+    int64 count = 1 [(value) = "1-512"];
+    Resources resources = 2;
+}
+
+message TriggererConfig {
+    int64 count = 1 [(value) = "0-512"];
+    Resources resources = 2;
+}
+
+message WorkerConfig {
+    // Limits for worker count
+    int64 min_count = 1 [(value) = "0-512"];
+    int64 max_count = 2 [(value) = "1-512"];
+
+    Resources resources = 3;
+
+    // Time interval for KEDA to poll queue status
+    google.protobuf.Duration polling_interval = 4 [(value) = "5s-30m"];
+
+    // Time interval for KEDA to poll queue status
+    google.protobuf.Duration cooldown_period = 5 [(value) = "5s-30m"];
+}
+
+message NetworkConfig {
+    // Availability zones
+    repeated string subnet_ids = 1;
+
+    // User security groups
+    repeated string security_group_ids = 2;
+}
+
+message CodeSyncConfig {
+    // Object storage bucket name for Airflow DAGs.
+    // TODO: Auth for s3 reading
+    string s3_bucket = 14;
+}

@@ -1,0 +1,76 @@
+  # TODO: Use AA with `kill' flags to end misbehaving processes ASAP
+
+  # Common communication-related settings
+  # TODO: Find out why the following line does not work. YAMA?
+  # audit deny ptrace (read,trace,readby,tracedby),
+  signal peer=@{profile_name},
+  signal (receive),
+  network inet6 tcp,
+
+  /sys/devices/system/cpu/ r,
+  /sys/devices/system/cpu/online r,
+  /proc/stat r,
+  /proc/cpuinfo r,
+  /proc/sys/vm/overcommit_memory r,
+
+  /sys/devices/system/node/ r,
+  /sys/devices/system/node/node[0-9]*/meminfo r,
+
+  /proc/@{qemu_PID}/status r,
+  /proc/@{qemu_PID}/cmdline r,
+  /proc/@{qemu_PID}/smaps r,
+  /proc/@{qemu_PID}/pagemap r,
+
+  /dev/zero r,
+  /dev/null rw,
+  /dev/urandom r,
+  /dev/vfio/* rw,
+
+  /dev/kvm rw,
+  /dev/net/tun rw,
+  # For MDB VMs
+  /dev/nvme* rwk,
+  /sys/devices/pci0000:*/0000:*/0000:*/nvme/nvme*/nvme*/queue/max_segments r,
+
+  # Silently deny system-wide preloading
+  deny /etc/ld.so.preload r,
+
+  # Silently deny lbsasl2 plugins as they're not used yet
+  deny /usr/lib/sasl2/ r,
+  deny /usr/lib/x86_64-linux-gnu/sasl2/ r,
+  # libsasl2 yells into journald!
+  deny /run/systemd/journal/dev-log rw,
+
+  /etc/ld.so.cache mr,
+  @{qemu_LIBS} mr,
+
+  /usr/share/zoneinfo/** r,
+  deny /usr/lib/x86_64-linux-gnu/gconv/ r,
+  /usr/lib{,32,64}/gconv/*.so r,
+  /usr/lib{,32,64}/gconv/gconv-modules* r,
+
+  @{qemu_BIOS_DIR}/* r,
+  @{qemu_KEYMAPS_DIR}/* r,
+  @{qemu_PXE_ROMS} r,
+
+  # TODO: should be allowed only keys required by specific VM
+  @{qemu_SECRETS}/* kr,
+  @{qemu_WORKDIR}/nocloud_metadata/nocloud.iso kr,
+
+  owner @{qemu_WORKDIR}/@{qemu_QMP_FILENAME} rw,
+  owner @{qemu_WORKDIR}/@{qemu_DUMPS} rw,
+  network unix stream,
+  unix (create,listen,accept,send,receive,shutdown,rw),
+  owner @{qemu_WORKDIR}/@{qemu_CONSOLE_FILENAME} w,
+  owner @{qemu_WORKDIR}/@{qemu_LOG_FILENAME} w,
+
+  # CLOUD-17697 live migration
+  owner @{qemu_WORKDIR}/@{qemu_MIGRATION} rw,
+  owner @{qemu_MIGRATION_MOD} rw,
+  owner @{qemu_SHM}/numa-*.memory rw,
+
+  # CLOUD-15303: Serial Proxy
+  @{qemu_SERIALPROXY_SOCKETS} rw,
+
+  # CLOUD-21032: Allowing coredums
+  @{qemu_CRASH_DUMPS} rw,

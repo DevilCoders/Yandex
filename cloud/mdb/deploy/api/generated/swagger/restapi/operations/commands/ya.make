@@ -1,0 +1,48 @@
+GO_LIBRARY()
+
+OWNER(g:mdb)
+
+SRCS(
+    create_job_result.go
+    create_job_result_parameters.go
+    create_job_result_responses.go
+    create_job_result_urlbuilder.go
+    create_shipment.go
+    create_shipment_parameters.go
+    create_shipment_responses.go
+    create_shipment_urlbuilder.go
+    get_command.go
+    get_command_parameters.go
+    get_command_responses.go
+    get_command_urlbuilder.go
+    get_commands_list.go
+    get_commands_list_parameters.go
+    get_commands_list_responses.go
+    get_commands_list_urlbuilder.go
+    get_job.go
+    get_job_parameters.go
+    get_job_responses.go
+    get_job_result.go
+    get_job_result_parameters.go
+    get_job_result_responses.go
+    get_job_result_urlbuilder.go
+    get_job_results_list.go
+    get_job_results_list_parameters.go
+    get_job_results_list_responses.go
+    get_job_results_list_urlbuilder.go
+    get_job_urlbuilder.go
+    get_jobs_list.go
+    get_jobs_list_parameters.go
+    get_jobs_list_responses.go
+    get_jobs_list_urlbuilder.go
+    get_shipment.go
+    get_shipment_parameters.go
+    get_shipment_responses.go
+    get_shipment_urlbuilder.go
+    get_shipments_list.go
+    get_shipments_list_parameters.go
+    get_shipments_list_responses.go
+    get_shipments_list_urlbuilder.go
+)
+
+END()

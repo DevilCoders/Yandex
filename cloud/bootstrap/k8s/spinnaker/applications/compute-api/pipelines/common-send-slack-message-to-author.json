@@ -1,0 +1,97 @@
+{
+    "appConfig": {},
+    "application": "compute-api",
+    "id": "288b49b6-0c37-4733-a329-e4fae22701a7",
+    "index": 4,
+    "keepWaitingPipelines": false,
+    "limitConcurrent": true,
+    "name": "common-send-slack-message-to-author",
+    "parameterConfig": [
+        {
+            "default": "",
+            "description": "Message text",
+            "hasOptions": false,
+            "label": "",
+            "name": "message",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": false,
+            "required": true
+        }
+    ],
+    "spelEvaluator": "v4",
+    "stages": [
+        {
+            "failOnFailedExpressions": true,
+            "name": "Evaluate Variables",
+            "refId": "1",
+            "requisiteStageRefIds": [],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "author_login",
+                    "value": "${trigger.user.split(\"@\")[0]}"
+                }
+            ]
+        },
+        {
+            "application": "compute-api",
+            "failPipeline": true,
+            "name": "Resolve author slack id",
+            "pipeline": "721c01f3-a74d-4b22-a8dd-0a3794a9dcb3",
+            "pipelineParameters": {
+                "login": "${author_login}"
+            },
+            "refId": "2",
+            "requisiteStageRefIds": [
+                "1"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "name": "Notify author",
+            "notifications": [
+                {
+                    "address": "${author_slack_id}",
+                    "level": "stage",
+                    "message": {
+                        "stage.complete": {
+                            "text": "${parameters.message}"
+                        }
+                    },
+                    "type": "slack",
+                    "when": [
+                        "stage.complete"
+                    ]
+                }
+            ],
+            "refId": "3",
+            "requisiteStageRefIds": [
+                "4"
+            ],
+            "sendNotifications": true,
+            "type": "wait",
+            "waitTime": 1
+        },
+        {
+            "failOnFailedExpressions": true,
+            "name": "Evaluate author's slackId",
+            "refId": "4",
+            "requisiteStageRefIds": [
+                "2"
+            ],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "author_slack_id",
+                    "value": "${#stage('Resolve author slack id').outputs.slack_user_id}"
+                }
+            ]
+        }
+    ],
+    "triggers": []
+}

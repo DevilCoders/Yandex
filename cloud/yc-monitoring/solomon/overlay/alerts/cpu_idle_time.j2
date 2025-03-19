@@ -1,0 +1,36 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro prog() %}
+let avg_idle_time = avg({
+    project='{{ project_id }}',
+    cluster='cloud_{{ env }}_oct',
+    service='sys',
+    path='/System/IdleTime',
+    cpu='-'
+});
+
+let crit_level = {{ (arg_crit_level|default({})).get(env, 1500) }};
+let warn_level = {{ (arg_warn_level|default({})).get(env, 2000) }};
+
+let is_red = avg_idle_time < crit_level;
+let is_yellow = avg_idle_time < warn_level;
+
+alarm_if(is_red);
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+    "name": "cpu idle time @ {{ env }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "host": "{{ svm_fqdn() }}",
+        "tags": "Solomon",
+        "current_value": "[[expression.avg_idle_time]]",
+        "crit_level": "[[expression.crit_level]]",
+        "warn_level": "[[expression.warn_level]]",
+        "service": "cpu-idle-time",
+        "description": "If goes WARN/CRIT, check for overload. Find service that consumes too much CPU."
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

@@ -1,0 +1,91 @@
+{% extends "../../base/alert.j2" %}
+
+{% set windowSecs = 3600 * 24 * 3 %}
+{% set delaySecs = 300 %}
+{% set checkExpression = "" %}
+{% set cluster = "production" %}
+
+{% if solomon == "israel" %}
+  {% set host = "cluster" %}
+  {% set solomon_web_ui = "https://solomon.yandexcloud.co.il" %}
+{% else %}
+  {% set host = "Vla" %}
+  {% set solomon_web_ui = solomon_endpoint %}
+{% endif %}
+
+{% set cloudEnv = "cloud_" + env + "_" %}
+
+{% set id_prefix = "" if no_project_id_prefix else project_id + "_" %} {# Legacy, should not be used in new projects #}
+{% set shardId = id_prefix + cloudEnv + "*|" + cloudEnv + "*ylb*" %}
+
+{% macro prog() %}
+    let usage = {
+        project='{{ solomon_project_id }}',
+        cluster='{{ cluster }}',
+        service='coremon',
+        host='{{ host }}',
+        sensor='engine.fileSensors',
+        projectId='{{ project_id }}',
+        shardId='{{ shardId }}'
+    };
+    let limit = {
+        project='{{ solomon_project_id }}',
+        cluster='{{ cluster }}',
+        service='coremon',
+        host='{{ host }}',
+        sensor='engine.fileSensorsLimit',
+        projectId='{{ project_id }}',
+        shardId='{{ shardId }}'
+    };
+    let usage_now = last(usage);
+    let limit_now = last(limit);
+    let usage_percent = 100 * usage_now / limit_now;
+
+    // Why 3 days? We want to have enough time to bump Solomon quota before Saturday and Sunday.
+    let usage_prediction_3d_trend = linear_trend(usage, -3d, 3d);
+    let usage_prediction_7d_trend = linear_trend(usage, -3d, 7d);
+
+    let usage_prediction_3d = last(usage_prediction_3d_trend);
+    let usage_prediction_7d = last(usage_prediction_7d_trend);
+
+    let may_end_in_3_day = usage_prediction_3d > limit_now;
+    let may_end_in_7_days = usage_prediction_7d > limit_now;
+
+    // Format human strings.
+    let usage_prediction_3d_human = to_fixed(usage_prediction_3d / 1000000, 2);
+    let usage_prediction_7d_human = to_fixed(usage_prediction_7d / 1000000, 2);
+    let usage_human = to_fixed(usage_now / 1000000, 2);
+    let limit_human = to_fixed(limit_now / 1000000, 2);
+    let usage_percent_human = to_fixed(usage_percent, 2);
+
+    alarm_if(usage_percent > 98);  // These thresholds are so close to 100%, because we monitor trends.
+    alarm_if(may_end_in_3_day);
+    warn_if(usage_percent > 95);   // These thresholds are so close to 100%, because we monitor trends.
+    warn_if(may_end_in_7_days);
+{% endmacro %}
+
+{% set description = "If shard reaches its limit, new metrics are discarded. https://docs.yandex-team.ru/yc-monitoring/shared/solomon-quotas" %}
+
+{# FIXME: In Juggler aggregates we have hard-coded "yandexcloud_" prefix for all quotas.
+   We return back the prefix in "service" field for integration with Juggler to work well. #}
+{% set juggler_service_prefix_hack = "yandexcloud_" if no_project_id_prefix else "" %}
+
+{% block main %}
+    "name": "solomon quotas {{ env }}",
+    "groupByLabels": [
+        "shardId"
+    ],
+    "annotations": {
+        "tags": "vpc-solomon, vpc-infra, yc-{{ env }}",
+        "host": "vpc-infra-{{ env }}",
+        "service": "{{ juggler_service_prefix_hack }}[[labels.shardId]]-solomon-quotas",
+        "usage_current": "[[expression.usage_human]] million ([[expression.usage_percent_human]] % of quota)",
+        "usage_3d": "[[expression.usage_prediction_3d_human]] million (prediction)",
+        "usage_7d": "[[expression.usage_prediction_7d_human]] million (prediction)",
+        "limit": "[[expression.limit_human]] million",
+        "shard": "{{ solomon_web_ui }}/admin/projects/{{ project_id }}/shards/[[labels.shardId]]",
+        "description": "{{ description }}"
+    },
+    "description": "{{ description }}",
+    "type": {{ type_expression() }}
+{% endblock %}

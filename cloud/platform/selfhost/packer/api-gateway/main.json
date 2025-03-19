@@ -1,0 +1,110 @@
+{
+  "variables": {
+    "endpoint": "{{env `YC_ENDPOINT`}}",
+    "service_account_key_file": "{{env `YC_SA_KEY_FILE`}}",
+    "folder_id": "{{env `YC_FOLDER_ID`}}",
+    "subnet_id": "{{env `YC_SUBNET_ID`}}",
+    "source_folder_id": "{{env `YC_SOURCE_FOLDER_ID`}}",
+    "commit_revision": "{{env `COMMIT_REVISION`}}",
+    "commit_author": "{{env `COMMIT_AUTHOR`}}",
+    "commit_message": "{{env `COMMIT_MESSAGE`}}",
+    "yav_token": "{{env `YAV_TOKEN`}}",
+    "docker_token": "{{env `DOCKER_TOKEN`}}"
+  },
+  "builders": [
+    {
+      "type": "yandex",
+      "endpoint": "{{user `endpoint`}}",
+      "service_account_key_file": "{{user `service_account_key_file`}}",
+      "folder_id": "{{user `folder_id`}}",
+      "subnet_id": "{{user `subnet_id`}}",
+      "zone": "ru-central1-b",
+      "labels": {
+        "skip_update_ssh_keys": "true"
+      },
+      "use_ipv4_nat": false,
+      "use_ipv6": true,
+      "image_name": "platform-api-gateway-{{isotime | clean_resource_name}}",
+      "image_family": "platform-api-gateway",
+      "image_labels": {
+        "commit_revision": "{{user `commit_revision` | lower}}",
+        "commit_author": "{{user `commit_author` | lower}}"
+      },
+      "image_description": "based on commit (https://a.yandex-team.ru/arc/commit/{{user `commit_revision`}}) by {{user `commit_author`}}@ with message '{{user `commit_message`}}'",
+      "source_image_folder_id": "{{user `source_folder_id`}}",
+      "source_image_family": "platform-base-kubelet-static",
+      "disk_type": "network-ssd",
+      "ssh_username": "ubuntu",
+      "ssh_bastion_host": "bastion.cloud.yandex.net",
+      "ssh_bastion_username": "xgen",
+      "ssh_bastion_agent_auth": true
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "shell",
+      "inline": [
+        "mkdir -p /usr/local/share/ca-certificates/",
+        "sudo wget https://crls.yandex.net/YandexInternalRootCA.crt -O /usr/local/share/ca-certificates/YandexInternalRootCA.crt",
+        "sudo update-ca-certificates"
+      ]
+    },
+    {
+      "type": "file",
+      "source": "skm",
+      "destination": "/tmp/"
+    },
+    {
+      "type": "file",
+      "source": "skm_preprod.yaml",
+      "destination": "/tmp/skm_preprod.yaml"
+    },
+    {
+      "type": "shell",
+      "environment_vars": [
+        "YAV_TOKEN={{user `yav_token`}}",
+        "BAR=bar's"
+      ],
+      "inline": [
+        "#curl -v https://storage.cloud-preprod.yandex.net/skm/linux/skm -o /tmp/skm",
+        "#curl -v https://proxy.sandbox.yandex-team.ru/1154288145 -o /tmp/skm",
+        "sudo mv /tmp/skm /usr/bin/skm",
+        "sudo mv /tmp/skm_preprod.yaml /etc/skm.yaml",
+        "sudo -E /usr/bin/skm encrypt --verbose --config /etc/skm.yaml"
+      ]
+    },
+    {
+      "type": "salt-masterless",
+      "local_state_tree": "{{template_dir}}/salt"
+    },
+    {
+      "type": "shell",
+      "environment_vars": [
+        "DOCKER_TOKEN={{user `docker_token`}}"
+      ],
+        "inline": [
+        "set -x",
+        "echo  \"${DOCKER_TOKEN}\" | sudo docker login --username robot-yc-api-viewer --password-stdin registry.yandex.net # add docker login creds",
+        "for i in /etc/kubelet.d/* ; do fgrep 'image: ' $i  | awk '{print $NF}'; done | sort | uniq > /tmp/images_for_download",
+        "for i in $(cat /tmp/images_for_download); do sudo docker pull $i; done",
+        "sudo docker logout registry.yandex.net # remove docker login creds"
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'Purge Salt packages'",
+        "sudo apt-get -y purge salt-common salt-minion",
+        "sudo rm -rf /srv/salt",
+        "sudo rm -rf /var/cache/salt"
+      ]
+    }
+  ],
+  "post-processors": [
+    {
+      "type": "manifest",
+      "output": "{{ pwd }}/manifest.json",
+      "strip_path": true
+    }
+  ]
+}

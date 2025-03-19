@@ -1,0 +1,173 @@
+id: 597660
+uid: iam-clients
+title: IAM Clients
+folderId: 412692
+refresh: 1m
+
+tags: [ 'iam', 'iam-clients' ]
+links:
+  !include shared/links.yaml clients
+
+graphDefaults: { datasource: '${ds}', width: 12, height: 5 }
+queryDefaults:
+  labels: 'project=yc.iam.service-cloud, service=${service}, cluster=${service}-${cluster}, host=${host:pipe}, app=${app:pipe}, method=*'
+  dropNan: true
+
+variables:
+  ui:
+    !include shared/services.yaml
+    !include shared/datasources.yaml
+    !include shared/tp_pools.yaml
+  uiQuery:
+    !include shared/clusters.yaml '${service}'
+    host:
+      labels: 'host=@all_hosts, remote_service=-|*, app=-|*, method=-|*'
+      multi: true
+    app:
+      labels: 'host=@all_hosts, app=@clients_app, sensor=grpc_requests|servlet_requests|http_requests'
+      multi: true
+  replacement:
+    !include shared/replacements.yaml
+    !include shared/errors.yaml
+  repeat:
+    !include shared/jvm_memory_area.yaml
+
+rows:
+  - title: '${service} Client methods'
+    graphDefaults: { height: 7 }
+    panels:
+      !include shared/grpc_methods_graph.yaml 'Read' '!@write_methods' '${app:pipe}' 2
+      !include shared/grpc_methods_graph.yaml 'Write' '@write_methods' '${app:pipe}' 1
+    drilldowns:
+      - subUid: dd-method-by-host
+        title: 'Client Methods by Hosts'
+        tags: [ 'iam-clients', 'iam-clients-method-host' ]
+        ui:
+          service: service
+          ds: ds
+        uiQuery:
+          cluster: cluster
+          host: host
+          app: app
+        uiRepeat: host
+        labels: 'host=${host}'
+
+      - subUid: dd-method-by-app
+        title: 'Client Methods by Apps'
+        tags: [ 'iam-clients', 'iam-clients-method-app' ]
+        ui:
+          service: service
+          ds: ds
+        uiQuery:
+          cluster: cluster
+          host: host
+          app: app
+        uiRepeat: app
+        labels: 'app=${app}'
+
+  - title: '${service} server methods'
+    panels:
+      !include shared/grpc_methods_graph.yaml 'Read' '!@write_methods' '*_server' 1
+      !include shared/grpc_methods_graph.yaml 'Write' '@write_methods' '*_server' 1
+    drilldowns:
+      - subUid: dd-srvmethod-by-host
+        title: 'Server Methods by Hosts'
+        tags: [ 'iam-clients', 'iam-clients-srvmethod-host' ]
+        ui:
+          service: service
+          ds: ds
+        uiQuery:
+          cluster: cluster
+          host: host
+          app: app
+        uiRepeat: host
+        labels: 'host=${host}'
+
+  - title: '${service} statuses'
+    panels:
+      !include shared/grpc_statuses_graph.yaml
+      !include shared/grpc_errors_graph.yaml
+    drilldowns:
+      - subUid: dd-status-by-host
+        title: 'Statuses by Hosts'
+        tags: [ 'iam-clients', 'iam-clients-status-host' ]
+        ui:
+          service: service
+          ds: ds
+        uiQuery:
+          cluster: cluster
+          host: host
+          app: app
+        uiRepeat: host
+        labels: 'host=${host}'
+
+      - subUid: dd-status-by-app
+        title: 'Statuses by Apps'
+        tags: [ 'iam-clients', 'iam-clients-status-app' ]
+        ui:
+          service: service
+          ds: ds
+        uiQuery:
+          cluster: cluster
+          host: host
+          app: app
+        uiRepeat: app
+        labels: 'app=${app}'
+
+  - title: '${service} Task Processor - ${taskprocessor_pool} Pool'
+    graphDefaults: { width: 6 }
+    queryDefaults: { labels: 'app=-, method=-' }
+    panels:
+      !include shared/task_processor_panels.yaml
+
+    drilldowns:
+      - subUid: dd-tp-by-host
+        title: 'Task Processor by Hosts'
+        tags: [ 'iam-duty', 'iam-clients-tp-host' ]
+        ui:
+          service: service
+          ds: ds
+          taskprocessor_pool: taskprocessor_pool
+        uiQuery:
+          cluster: cluster
+          host: host
+        uiRepeat: host
+        labels: 'host=${host}'
+
+  - title: '${service} JVM'
+    graphDefaults: { width: 8 }
+    queryDefaults: { labels: 'app=-, method=-' }
+    panels:
+      !include shared/jvm_panels.yaml
+
+    drilldowns:
+      - subUid: dd-jvm-by-host
+        title: 'JVM by Hosts'
+        tags: [ 'iam-duty', 'iam-clients-jvm-host' ]
+        ui:
+          service: service
+          ds: ds
+        uiQuery:
+          cluster: cluster
+          host: host
+        uiRepeat: host
+        labels: 'host=${host}'
+
+  - title: '${service} System'
+    graphDefaults: { width: 8 }
+    queryDefaults: { labels: 'app=-, method=-' }
+    panels:
+      !include shared/system_panels.yaml
+
+    drilldowns:
+      - subUid: dd-sys-by-host
+        title: 'System by Hosts'
+        tags: [ 'iam-duty', 'iam-clients-sys-host' ]
+        ui:
+          service: service
+          ds: ds
+        uiQuery:
+          cluster: cluster
+          host: host
+        uiRepeat: host
+        labels: 'host=${host}'

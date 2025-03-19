@@ -1,0 +1,65 @@
+{% extends "../../base/alert.j2" %}
+
+{% set windowSecs = 3600 * 24 * 3 %}
+{% set delaySecs = 300 %}
+{% set checkExpression = "" %}
+{% set cluster = "production" %}
+
+{% if solomon == "israel" %}
+    {% set host = "cluster" %}
+{% else %}
+    {% set host = "Vla" %}
+{% endif %}
+
+{% set cloudEnv = "cloud_" + env + "_" %}
+{% set id_prefix = "" if no_project_id_prefix else project_id + "_" %} {# Legacy, should not be used in new projects #}
+{% set shardId = id_prefix + cloudEnv + "compute_oct_vrouter_snh*|" + id_prefix + cloudEnv + "oct_oct_control*"%}
+
+{% macro prog() %}
+    let pushed = {
+        project='{{ solomon_project_id }}',
+        cluster='{{ cluster }}',
+        service='coremon',
+        host='{{ host }}',
+        sensor='engine.pushSensorsToStorage',
+        projectId='{{ project_id }}',
+        shardId='{{ shardId }}'
+    };
+    let pushed_now = last(pushed);
+
+    let pushed_prediction_current_trend = linear_trend(pushed, 0d, 3d);
+    let pushed_prediction_historical_trend = linear_trend(pushed, -3d, 0d);
+
+    let pushed_prediction_current = last(pushed_prediction_current_trend);
+    let pushed_prediction_historical = last(pushed_prediction_historical_trend);
+
+    let grows = pushed_prediction_current/pushed_prediction_historical * 100;
+
+    alarm_if(grows < 90);  // Possible some metrics are missed
+    alarm_if(grows > 110); // Possible write more metrics when previous period
+    warn_if(grows < 95);
+    warn_if(grows > 105);
+{% endmacro %}
+
+{% set description = "If count of metrics sent to storage has been noticeably changed, possible some metrics have been skipped. https://docs.yandex-team.ru/yc-monitoring/overlay/contrail-snh-push-sensors" %}
+
+{# FIXME: In Juggler aggregates we have hard-coded "yandexcloud_" prefix for all metrics.
+   We return back the prefix in "service" field for integration with Juggler to work well.
+   See juggler/vpc-infra/alerts/solomon_quotas.j2 also. #}
+{% set juggler_service_prefix_hack = "yandexcloud_" if no_project_id_prefix else "" %}
+
+{% block main %}
+    "name": "solomon push sensors {{ env }}",
+    "groupByLabels": [
+        "shardId"
+    ],
+    "annotations": {
+        "host": "vpc-infra-{{ env }}",
+        "service": "{{ juggler_service_prefix_hack }}[[labels.shardId]]-push-sensors",
+        "shard": "{{ solomon_endpoint }}/admin/projects/{{ project_id }}/shards/[[labels.shardId]]",
+        "description": "{{ description }}"
+    },
+    "description": "{{ description }}",
+    "type": {{ type_expression() }}
+{% endblock %}
+

@@ -1,0 +1,498 @@
+{% extends 'base.html'%}
+{% from 'common_macros.html' import ticket with context %}
+{% from 'monthly_macros.html' import progress, monthly_graph with context %}
+
+{% block extra_styles %}
+  <style>
+    td, th {
+      border-bottom-width: 0 !important;
+    }
+
+    .time-spent-after {
+      background: #26198a;
+      color: white;
+    }
+
+    .time-spent-total {
+      background: #3f8819;
+      color: white;
+    }
+
+    .time-overtime {
+      background: #e23f3f;
+      color: white;
+    }
+
+    .time-remaining {
+      background: #ffbbbc;
+      color: black;
+    }
+
+    table.time-label tr > td {
+        min-width: 4em;
+        box-sizing: content-box;
+    }
+
+    span.time-label {
+        border-radius: 8px;
+        font-weight: bold;
+        padding: 4px;
+        min-width: 4em;
+        display: inline-block;
+        text-align: center;
+    }
+    .comment_from_tracker {
+        border: 1px dashed black;
+        padding: 10px;
+        background-color:#fff7e0;
+        margin-top: 10px;
+        margin-bottom: 10px;
+    }
+
+    .progress-bar.time-estimated {
+      border-style: dashed dashed dashed none !important;
+      border: 2px #e23f3f;
+    }
+
+    .time-original-estimated {
+      background: lightgray;
+      color: black;
+    }
+
+    .progress-bar.time-original-estimated {
+      border-style: dashed dashed dashed none !important;
+      border: 2px #8f8f8f;
+    }
+
+    thead tr:nth-child(1) th {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      text-align: start;
+      background: white;
+    }
+
+    .tracker-summary {
+      max-width: 800px;
+    }
+
+    .tracker-importance {
+      width: 2em;
+      height: 1em;
+      line-height: 1em;
+      border: 3px solid gray;
+      color: white;
+      text-align: center;
+      border-radius: 8px;
+      box-sizing: content-box;
+      font-weight: bold;
+      background: gray;
+      padding: 2px;
+      margin: 2px 0.2em 2px 0;
+    }
+
+    .tracker-importance-legend {
+      background: gray;
+    }
+
+    .tracker-tag {
+      border-radius: 4px;
+      font-size: 80%;
+      font-weight: bold;
+      padding: 2px;
+    }
+
+    .tracker-tag-new {
+      background: #deebff;
+      color: #0e4ca9;
+    }
+
+    .tracker-tag-previous {
+      background: #e3fcef;
+      color: #006644;
+    }
+
+    .issue-progress {
+      width: 600px;
+    }
+
+    .issue > *, .category > * {
+      vertical-align: middle;
+    }
+
+    .tree-button {
+      min-width: 15px;
+    }
+
+    .tree-button:hover {
+      cursor: pointer;
+    }
+
+    .tree-button-collapsed {
+      transform: rotate(0deg);
+      transition: transform 0.2s linear;
+    }
+
+    .tree-button-expanded {
+      transform: rotate(90deg);
+      transition: transform 0.2s linear;
+    }
+
+    .modal-body {
+      display: flex;
+    }
+
+    #charts-body {
+      display: flex;
+      width: 100%;
+      padding: 20px;
+    }
+  </style>
+{% endblock extra_styles %}
+
+{% block title %}Отчет по задачам (агрегированный){% endblock title %}
+
+{% block legend %}
+  <a id='expand-all' class='pointer' style='display: block;'>
+    <i class='fas fa-stream'></i>
+    Раскрыть все
+  </a>
+
+  <a class='pointer' data-bs-toggle='modal' data-bs-target='#charts' style='margin-bottom: 30px; display: block;'>
+    <i class='fas fa-external-link-alt'></i>
+    Показать графики
+  </a>
+
+  {% if show_priority %}
+  <div>
+    <span class='legend-color tracker-importance-legend'></span>Приоритет
+  </div>
+  {% endif %}
+  {% if show_time_orig_estimated %}
+  <div>
+    <span class='legend-color time-original-estimated'></span>Начальная оценка
+  </div>
+  {% endif %}
+  {% if show_time_remaining %}
+  <div>
+    <span class='legend-color time-remaining'></span>Остаток
+  </div>
+  {% endif %}
+  {% if show_progress_bar %}
+  <div>
+    <span class='legend-color time-overtime'></span>Потрачено сверх оценки
+  </div>
+  {% endif %}
+  {% if show_time_total %}
+  <div>
+    <span class='legend-color time-spent-total'></span>Потрачено всего
+  </div>
+  {% endif %}
+  {% if show_time_after %}
+  <div style='margin-bottom: 30px;'>
+    <span class='legend-color time-spent-after'></span>Потрачено в этом периоде
+  </div>
+  {% endif %}
+{% endblock legend %}
+
+{% block body %}
+  <div class='table-fixed'>
+    <table id='tree' class='table table-hover w-auto'>
+  {% set context = namespace(node=0, path=[], collapsed=[False]) %}
+  {% for key, item in task_tree.items.items() recursive %}
+    {% if item.visible %}
+      {% set category_loop = loop %}
+      {% set context.node = context.node + 1 %}
+      {% set _ = context.collapsed.append(item.collapsed) %}
+      {% set _ = context.path.append(context.node) %}
+
+      <thead class='sticky-header tree-item {{ 'd-none' if context.collapsed[-2] }}' tree-path='{{ context.path|join(' ') }}'>
+        <tr>
+          <th>
+            <span class='category'>
+              <span style='display: inline-block; margin-left: {{ category_loop.depth0 * 30 }}px;'></span>
+              <i class='fas fa-chevron-right tree-button {{ 'tree-button-collapsed' if item.collapsed else 'tree-button-expanded' }}'
+                 tree-path='{{ context.path|join(' ') }}'>
+              </i>
+              <span style="display: inline-block">
+                {{ key }}
+              </span>
+              {% if show_time_ratio %}
+              <span class='raw-time' style='display: inline-block;'>({{ (item.raw_ratio * 100)|round(1, 'ceil') }}%)</span>
+              <span class='normalized-time' style='display: inline-block;'>({{ (item.ratio * 100)|round(1, 'ceil') }}%)</span>
+              {% endif %}
+            </span>
+          </th>
+
+          <th>
+            <table class="time-label">
+              <tr>
+              {% if show_time_after %}
+                <td>
+                  <span class='time-label time-spent-after {{ 'invisible' if item.time_spent.total_seconds() == 0 }}'>
+                    <span class='raw-time'>
+                      {{ to_workdays(item.raw_time_spent)|round(1, 'ceil') }}
+                    </span>
+                    <span class='normalized-time'>
+                      {{ to_workdays(item.time_spent)|round(1, 'ceil') }}
+                    </span>
+                  </span>
+                </td>
+              {% endif %}
+              {% if show_time_total and not show_time_after %}
+                <td>
+                  <span class='time-label time-spent-total'>
+                    <span class='raw-time'>
+                      {{ to_workdays(item.raw_total_time_spent)|round(1, 'ceil') }}
+                    </span>
+                    <span class='normalized-time'>
+                      {{ to_workdays(item.total_time_spent)|round(1, 'ceil') }}
+                    </span>
+                  </span>
+                </td>
+              {% endif %}
+              {% if show_time_orig_estimated %}
+                <td>
+                </td>
+              {% endif %}
+              {% if show_time_remaining %}
+                <td></td>
+              {% endif %}
+              </tr>
+            </table>
+          </th>
+        </tr>
+      </thead>
+
+      <tbody>
+
+      {% for issue in item.issues recursive %}
+        {% set issue_loop = loop %}
+        {% set context.node = context.node + 1 %}
+        {% set _= context.path.append(context.node) %}
+
+        <tr class='tree-item {{ 'd-none' if context.collapsed[-1] or issue_loop.depth != 1 }}' tree-path='{{ context.path|join(' ') }}'>
+          <td>
+            <span class='issue'>
+              <span style='display: inline-block; margin-left: {{ (category_loop.depth0 + issue_loop.depth) * 30 }}px;'></span>
+              <i class='fas fa-chevron-right tree-button tree-button-collapsed {{ 'invisible' if issue.sub_issues|length == 0 }}'
+                 tree-path='{{ context.path|join(' ') }}'>
+              </i>
+
+
+              <div style='display: inline-block;'>
+                {{ ticket(issue, with_priority=show_priority and issue_loop.depth == 1, with_tags=True) }}
+              {% if show_progress_bar and issue_loop.depth == 1 %}
+                {# Raw time #}
+                {% if (issue.total_time_spent is not none and issue.raw_total_time_spent.total_seconds() != 0)
+                        or (issue.time_original_estimated is not none and issue.time_original_estimated.total_seconds() != 0) %}
+                  {{ progress(issue, normalize_time=False) }}
+                {% endif %}
+                {# Normalized time #}
+                {% if (issue.raw_total_time_spent is not none and issue.total_time_spent.total_seconds() != 0)
+                        or (issue.time_original_estimated is not none and issue.time_original_estimated.total_seconds() != 0) %}
+                  {{ progress(issue, normalize_time=True) }}
+                {% endif %}
+              {% endif %}
+              </div>
+              {% if issue.comment|length > 0 %}
+                <div class='comment_from_tracker' style='margin-left: {{ (category_loop.depth0 + issue_loop.depth) * 30 }}px;'>{{ issue.comment|safe }}</div>
+              {% endif %}
+
+            </span>
+          </td>
+
+          <td>
+          <table class="time-label">
+            <tr>
+            {% if show_time_after %}
+              <td>
+                <span class='time-label time-spent-after {{ 'invisible' if issue.time_spent.total_seconds() == 0 }}'>
+                  <span class='raw-time'>
+                    {{ to_workdays(issue.raw_time_spent)|round(1, 'ceil') }}
+                  </span>
+                  <span class='normalized-time'>
+                    {{ to_workdays(issue.time_spent)|round(1, 'ceil') }}
+                  </span>
+                </span>
+              </td>
+            {% endif %}
+            {% if show_time_total %}
+              <td>
+                <span class='time-label time-spent-total'>
+                  <span class='raw-time'>
+                    {{ to_workdays(issue.raw_total_time_spent)|round(1, 'ceil') }}
+                  </span>
+                  <span class='normalized-time'>
+                    {{ to_workdays(issue.total_time_spent)|round(1, 'ceil') }}
+                  </span>
+                </span>
+              </td >
+            {% endif %}
+            {% if show_time_orig_estimated %}
+              <td>
+                <span class='time-label time-original-estimated'>
+                  {{ '?' if issue.time_original_estimated is none else to_workdays(issue.time_original_estimated)|round(1, 'ceil') }}
+                </span>
+              </td>
+            {% endif %}
+            {% if show_time_remaining %}
+              <td>
+                <span class='time-label time-remaining'>
+                {% if issue.remaining_tasks|length != 0 %}
+                  <a class='time d-inline-block pointer' data-bs-toggle='popover'>
+                    {{ to_workdays(issue.time_remaining)|round(1, 'ceil') }}
+                  </a>
+                {% else %}
+                  {{ to_workdays(issue.time_remaining)|round(1, 'ceil') }}
+                {% endif %}
+                  <div class='popover d-none'>
+                  {% for task in issue.remaining_tasks %}
+                    {{ ticket(task, with_spent=True) }}
+                  {% endfor %}
+                  </div>
+                </span>
+              </td>
+            {% endif %}
+            </tr>
+          </table>
+          </td>
+        </tr>
+
+        {{ loop(issue.sub_issues.values()) }}
+
+        {% set _ = context.path.pop() %}
+      {% endfor %}
+      </tbody>
+
+      {% if item.items %}
+        {{ loop(item.items.items()) }}
+      {% endif %}
+
+      {% set _ = context.collapsed.pop() %}
+      {% set _ = context.path.pop() %}
+    {% endif %}
+  {% endfor %}
+    </table>
+  </div>
+
+  <div id='charts' class="modal fade" aria-hidden='true' tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" style='max-width: 90%;'>
+      <div class="modal-content">
+        <div class="modal-body" style='min-height: calc(100vh - 150px);'>
+          <div id='charts-body'>
+            <div id='chart-0' class='chart'></div>
+  {% for key, category in task_tree.items.items() %}
+            <div id='chart-{{ loop.index }}' class='chart'></div>
+  {% endfor %}
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock body %}
+
+{% block extra_scripts %}
+  <script>
+    google.charts.load('current', {packages: ['corechart']});
+    google.charts.setOnLoadCallback(function() {
+      drawCharts();
+      $(window).on('resize', drawCharts);
+      $('#charts').on('shown.bs.modal', drawCharts);
+    });
+
+  {% set charts = namespace(count=1) %}
+  {% for key, category in task_tree.items.items() %}
+    {% if category.chart %}
+      {% set charts.count = charts.count + 1 %}
+    {% endif %}
+  {% endfor %}
+
+    function drawCharts() {
+      if ($('#normalize').is(':checked')) {
+        {{ monthly_graph(charts, normalize_time=True) }}
+      } else {
+        {{ monthly_graph(charts, normalize_time=False) }}
+      }
+    }
+
+    var taskTree = {};
+
+    $(document).ready(function() {
+      $('#tree *[tree-path]').each(function() {
+        let node = taskTree;
+        for (const item of $(this).attr('tree-path').split(' ')) {
+          if (!(item in node)) {
+            node[item] = {}
+          }
+          node = node[item]
+        }
+
+        if ($(this).hasClass('tree-button')) {
+          node['button'] = $(this);
+        }
+
+        if ($(this).hasClass('tree-item')) {
+          node['item'] = $(this);
+        }
+      });
+    });
+
+    function addTreeItems(node, visible_only, result) {
+      result.push(node);
+
+      if (visible_only && node['button'].hasClass('tree-button-collapsed')) {
+        return;
+      }
+
+      for (const key in node) {
+        if (key === 'button' || key === 'item') {
+          continue;
+        }
+
+        addTreeItems(node[key], visible_only, result);
+      }
+    }
+
+    function subTree(path, visible_only) {
+      var node = taskTree;
+      for (const item of path) {
+        node = node[item];
+      }
+
+      var result = [];
+      for (const key in node) {
+        if (key !== 'button' && key !== 'item') {
+          addTreeItems(node[key], visible_only, result);
+        }
+      }
+
+      return result;
+    }
+
+    function expandAll() {
+      subTree([], false).forEach(function(node) {
+        node['button'].addClass('tree-button-expanded');
+        node['button'].removeClass('tree-button-collapsed');
+        node['item'].removeClass('d-none');
+      });
+    }
+
+    $('#expand-all').on('click', expandAll);
+
+    $('.tree-button').on('click', function(e) {
+      $(this).toggleClass('tree-button-collapsed tree-button-expanded');
+
+      path = $(this).attr('tree-path').split(' ');
+
+      if ($(this).hasClass('tree-button-collapsed')) {
+        subTree(path, false).forEach(node => node['item'].addClass('d-none'));
+      } else {
+        subTree(path, true).forEach(node => node['item'].removeClass('d-none'));
+      }
+    });
+  </script>
+{% endblock extra_scripts %}

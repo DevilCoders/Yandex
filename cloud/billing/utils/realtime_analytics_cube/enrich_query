@@ -1,0 +1,1853 @@
+-- CHEKCS IF ba_puid_dict_hist CONTAINS DATA FOR TODAY
+$today = DateTime::Format("%Y-%m-%d")(CurrentTzDate("Europe/Moscow"));
+
+DISCARD SELECT
+    Ensure(
+        max_date,
+        max_date >= $today,
+        'Table ba_puid_dict_hist does not have any data for today ' || UNWRAP($today) || ' , has only up to ' || UNWRAP(max_date)
+    )
+FROM (
+    SELECT
+        MAX(`date`) AS max_date
+    FROM $billing_account_dimensions_history_table
+);
+
+
+
+$convert_to_rub = ($value, $rate) -> { RETURN $value * NVL($rate, 1); };
+$get_amount_by_type = ($raw, $type) -> { RETURN IF(Yson::LookupString($raw, "credit_type") == $type, CAST(Yson::LookupString($raw, "consumed_amount") AS Double), 0); };
+$get_committed_use_discount_credit_charge = ($raw) -> { RETURN $get_amount_by_type($raw, "CommittedUseDiscount"); };
+$get_credit_charge = ($raw, $func) -> { RETURN COALESCE(ListAggregate(ListMap(Yson::ConvertToList(Yson::ParseJson(Yson::ConvertToString($raw))), $func), AGGREGATION_FACTORY("SUM")), 0); };
+$get_disabled_credit_charge = ($raw) -> { RETURN $get_amount_by_type($raw, "Disabled"); };
+$get_monetary_grant_credit_charge = ($raw) -> { RETURN $get_amount_by_type($raw, "MonetaryGrant"); };
+$get_service_credit_charge = ($raw) -> { RETURN $get_amount_by_type($raw, "Service"); };
+$get_trial_credit_charge = ($raw) -> { RETURN $get_amount_by_type($raw, "Trial"); };
+$get_volume_incentive_credit_charge = ($raw) -> { RETURN $get_amount_by_type($raw, "VolumeIncentive"); };
+
+$format_date = DateTime::Format("%Y-%m-%d");
+$format_month = DateTime::Format("%Y-%m");
+$format_datetime = DateTime::Format("%Y-%m-%d %H:%M:%S");
+$parse_date = DateTime::Parse("%Y-%m-%d");
+
+$make_not_null = ($field, $default_value) -> { RETURN IF($field is NULL, $default_value, $field); };
+$get_date_by_timestamp = ($timestamp) -> { RETURN $format_date(AddTimezone(DateTime::FromSeconds(CAST($timestamp AS Uint32)), 'Europe/Moscow')); };
+$get_datetime_by_timestamp = ($timestamp) -> { RETURN $format_datetime(AddTimezone(DateTime::FromSeconds(CAST($timestamp AS Uint32)), 'Europe/Moscow')); };
+$get_month_by_timestamp = ($timestamp) -> { RETURN $format_month(AddTimezone(DateTime::FromSeconds(CAST($timestamp AS Uint32)), 'Europe/Moscow')); };
+
+$get_vat = ($field, $date, $currency) -> {
+  RETURN CASE
+    WHEN $date < '2019-01-01' AND $currency == 'RUB' THEN $field/1.18
+    WHEN $date >= '2019-01-01' AND $currency == 'RUB' THEN $field/1.2
+    WHEN $currency == 'KZT' THEN $field/1.12
+    ELSE $field END
+};
+
+$get_tag_by_schema = ($tags, $field, $schema, $expected_schemas, $type) -> { RETURN if(
+    $schema in $expected_schemas,
+    Yson::ConvertTo(
+        Yson::SerializePretty(
+            Yson::Lookup(
+                $tags,
+                $field)
+            ),
+        $type,
+        Yson::Options(true as AutoConvert)
+    )
+)};
+
+-- Генерируем на каждый день строку для KZT, USD, RUB (дефолт 1)
+$conversion_rates_dates = (
+    SELECT cast(`date` as String) as `date` FROM (
+        SELECT ListCollect(ListMap(ListFromRange(0, (DateTime::ToDays(
+        DateTime::MakeDate(DateTime::MakeDatetime(AddTimezone(CurrentUtcTimestamp(), 'Europe/Moscow')))-
+        DATE("2015-01-01")) + 1) ?? 0), ($x) -> {return DATE("2015-01-01") + DateTime::IntervalFromDays(CAST($x AS Int16))})) AS `date`
+        )
+    FLATTEN LIST BY `date`
+);
+$conversion_rates_generated = (
+    SELECT currency, `date`, IF( currency != 'RUB', NULL, 1) as quote FROM (
+        SELECT * FROM (SELECT AsList("KZT", "USD", "RUB") as currency)
+        FLATTEN by currency
+    ) as currencies CROSS JOIN $conversion_rates_dates as dates
+);
+
+
+-- Делаем JOIN с реальными курсами валют на имеющиеся даты, заполняем пропуски
+$conversion_rates_with_filled_nulls = (
+    SELECT
+      `date`,
+      currency,
+      LAST_VALUE(quote) IGNORE NULLS OVER w AS quote
+    FROM (
+        SELECT
+          generated.`date`    AS `date`,
+          generated.currency  AS currency,
+          NVL(actual.quote, generated.quote) as quote
+        FROM
+          $conversion_rates_generated as generated
+        LEFT JOIN
+          (SELECT * FROM $conversion_rates_table WHERE currency IN ("USD", "KZT")) AS actual
+        USING (`date`, `currency`)
+    )
+      WINDOW w AS (PARTITION BY currency ORDER BY `date`)
+);
+
+$billing_accounts_mapping = (
+  SELECT
+    *
+  FROM
+    $billing_accounts_table as billing_accounts
+  LEFT JOIN
+    $conversion_rates_with_filled_nulls as rates
+  ON
+    billing_accounts.currency = rates.currency
+  WHERE
+    billing_accounts.creation_date <= rates.`date`
+);
+
+$old_billing_records_mapping = (
+    SELECT
+
+    billing_records.billing_account_id                                                                                              AS billing_account_id,
+    billing_records.cloud_id                                                                                                        AS cloud_id,
+    $get_credit_charge(billing_records.credit_charges, $get_committed_use_discount_credit_charge)                                   AS committed_use_discount_credit_charge,
+    billing_records.cost                                                                                                            AS cost,
+    billing_records.credit                                                                                                          AS credit,
+    $get_date_by_timestamp(billing_records.end_time)                                                                                AS `date`,
+    $get_credit_charge(billing_records.credit_charges, $get_disabled_credit_charge)                                                 AS disabled_credit_charge,
+    billing_records.end_time                                                                                                        AS end_time,
+    billing_records.labels_hash                                                                                                     AS labels_hash,
+    $get_credit_charge(billing_records.credit_charges, $get_monetary_grant_credit_charge)                                           AS monetary_grant_credit_charge,
+    $get_month_by_timestamp(billing_records.end_time)                                                                               AS month,
+    billing_records.pricing_quantity                                                                                                AS pricing_quantity,
+    $get_credit_charge(billing_records.credit_charges, $get_service_credit_charge)                                                  AS service_credit_charge,
+    billing_records.sku_id                                                                                                          AS sku_id,
+    billing_records.start_time                                                                                                      AS start_time,
+    billing_records.credit + billing_records.cost                                                                                   AS total,
+    $get_credit_charge(billing_records.credit_charges, $get_trial_credit_charge)                                                    AS trial_credit_charge,
+    $get_credit_charge(billing_records.credit_charges, $get_volume_incentive_credit_charge)                                         AS volume_incentive_credit_charge,
+
+    FROM $billing_records_table AS billing_records
+    WHERE billing_records.end_time <= $migration_border
+);
+
+
+-- please, keep alphabetical order by alias
+
+$sku_mapping = (
+    SELECT
+
+    -- service
+    skus.service_id                                                                                                                 AS service_id,
+    services.name                                                                                                                   AS service_name,
+    services.product_name                                                                                                           AS product_name,
+
+    -- sku
+    skus.id                                                                                                                         AS sku_id,
+    skus.name                                                                                                                       AS sku_name,
+    skus.pricing_unit                                                                                                               AS pricing_unit,
+    skus.usage_unit                                                                                                                 AS usage_unit,
+
+    -- sku_tags
+    sku_tags.core_fraction                                                                                                          AS sku_tag_core_fraction,
+    sku_tags.core_fraction_number                                                                                                   AS sku_tag_core_fraction_number,
+    sku_tags.cores                                                                                                                  AS sku_tag_cores,
+    sku_tags.cores_number                                                                                                           AS sku_tag_cores_number,
+    sku_tags.database                                                                                                               AS sku_tag_database,
+    sku_tags.sku_lazy                                                                                                               AS sku_tag_lazy,
+    sku_tags.preemptible                                                                                                            AS sku_tag_preemptible,
+    sku_tags.ram                                                                                                                    AS sku_tag_ram,
+    sku_tags.ram_number                                                                                                             AS sku_tag_ram_number,
+    sku_tags.platform                                                                                                               AS sku_tag_platform,
+    sku_tags.service_group                                                                                                          AS sku_tag_service_group,
+    sku_tags.service_long_name                                                                                                      AS sku_tag_service_long_name,
+    sku_tags.service_name                                                                                                           AS sku_tag_service_name,
+    sku_tags.subservice_name                                                                                                        AS sku_tag_subservice_name,
+    sku_tags.mk8s_relevant                                                                                                          AS sku_tag_mk8s_relevant,
+    sku_tags.is_committed                                                                                                           AS sku_tag_is_committed,
+    sku_tags.is_sustainable                                                                                                         AS sku_tag_is_sustainable
+
+    FROM $sku_table AS skus
+
+    LEFT JOIN $sku_tags_table AS sku_tags
+    ON skus.id == sku_tags.sku_id
+
+    LEFT JOIN $service_table AS services
+    ON skus.service_id == services.id
+);
+
+$old_analytics_cube = (SELECT
+    -- billing_account actual
+
+    dimensions.architect_actual                                                                                                     AS billing_account_architect,
+    billing_accounts.balance                                                                                                        AS billing_account_balance,
+    dimensions.board_segment_actual                                                                                                 AS billing_account_board_segment,
+    dimensions.account_name                                                                                                         AS billing_account_company_name,
+    billing_accounts.created_at                                                                                                     AS billing_account_created_at,
+    billing_accounts.creation_date                                                                                                  AS billing_account_creation_date,
+    billing_accounts.creation_month                                                                                                 AS billing_account_creation_month,
+    billing_accounts.creation_time                                                                                                  AS billing_account_creation_time,
+    billing_accounts.creation_week                                                                                                  AS billing_account_creation_week,
+    billing_accounts.currency                                                                                                       AS billing_account_currency,
+    billing_records.billing_account_id                                                                                              AS billing_account_id,
+    dimensions.is_corporate_card                                                                                                    AS billing_account_is_corporate_card,
+    dimensions.is_fraud                                                                                                             AS billing_account_is_fraud,
+    dimensions.is_isv_actual                                                                                                        AS billing_account_is_isv,
+    dimensions.is_iot_actual                                                                                                        AS billing_account_is_iot,
+    dimensions.is_var_actual                                                                                                        AS billing_account_is_var,
+    billing_accounts.is_verified                                                                                                    AS billing_account_is_verified,
+    billing_accounts.master_account_id                                                                                              AS billing_account_master_account_id,
+    billing_accounts.metadata                                                                                                       AS billing_account_metadata,
+    billing_accounts.name                                                                                                           AS billing_account_name,
+    billing_accounts.payment_cycle_type                                                                                             AS billing_account_payment_cycle_type,
+    billing_accounts.payment_method_id                                                                                              AS billing_account_payment_method_id,
+    dimensions.potential_actual                                                                                                     AS billing_account_potential,
+    dimensions.puid                                                                                                                 AS billing_account_puid,
+    billing_accounts.person_type                                                                                                    AS billing_account_person_type,
+    dimensions.sales_name_actual                                                                                                    AS billing_account_sales_name,
+    dimensions.segment_actual                                                                                                       AS billing_account_segment,
+    billing_accounts.state                                                                                                          AS billing_account_state,
+    billing_accounts.type                                                                                                           AS billing_account_type,
+    billing_accounts.usage_status                                                                                                   AS billing_account_usage_status,
+    billing_accounts.usage_status                                                                                                   AS billing_account_usage_status_actual,
+
+    -- billing_account at moment
+    dimensions.architect_at_moment                                                                                                  AS billing_account_architect_at_moment,
+    dimensions.balance                                                                                                              AS billing_account_balance_at_moment,
+    dimensions.balance_long_name                                                                                                    AS billing_account_balance_long_name_at_moment,
+    dimensions.balance_name                                                                                                         AS billing_account_balance_name_at_moment,
+    dimensions.block_reason_at_moment                                                                                               AS billing_account_block_reason_at_moment,
+    dimensions.board_segment_at_moment                                                                                              AS billing_account_board_segment_at_moment,
+    dimensions.is_iot_at_moment                                                                                                     AS billing_account_is_iot_at_moment,
+    dimensions.is_isv_at_moment                                                                                                     AS billing_account_is_isv_at_moment,
+    dimensions.is_var_at_moment                                                                                                     AS billing_account_is_var_at_moment,
+    dimensions.is_verified_at_moment                                                                                                AS billing_account_is_verified_at_moment,
+    dimensions.ba_payment_cycle_type_at_moment                                                                                      AS billing_account_payment_cycle_type_at_moment,
+    dimensions.ba_person_type_at_moment                                                                                             AS billing_account_person_type_at_moment,
+    dimensions.potential_at_moment                                                                                                  AS billing_account_potential_at_moment,
+    dimensions.sales_name_at_moment                                                                                                 AS billing_account_sales_name_at_moment,
+    dimensions.segment_at_moment                                                                                                    AS billing_account_segment_at_moment,
+    dimensions.ba_state_at_moment                                                                                                   AS billing_account_state_at_moment,
+    dimensions.ba_type_at_moment_at_moment                                                                                          AS billing_account_type_at_moment,
+    dimensions.unblock_reason_at_moment                                                                                             AS billing_account_unblock_reason_at_moment,
+    dimensions.ba_usage_status_at_moment                                                                                            AS billing_account_usage_status_at_moment,
+
+    -- grants
+    dimensions.active_grant_ids                                                                                                     AS billing_account_active_grant_ids_at_moment,
+    dimensions.active_grants                                                                                                        AS billing_account_active_grants_at_moment,
+    dimensions.grant_sources                                                                                                        AS billing_account_grant_sources_at_moment,
+    dimensions.grant_amount                                                                                                         AS billing_account_grant_amount_at_moment,
+    dimensions.grant_amounts                                                                                                        AS billing_account_grant_amounts_at_moment,
+    dimensions.grant_end_times                                                                                                      AS billing_account_grant_end_times_at_moment,
+    dimensions.grant_source_ids                                                                                                     AS billing_account_grant_source_ids_at_moment,
+    dimensions.grant_start_times                                                                                                    AS billing_account_grant_start_times_at_moment,
+
+    -- billing_record
+    billing_records.cloud_id                                                                                                                        AS billing_record_cloud_id,
+    billing_records.committed_use_discount_credit_charge                                                                                            AS billing_record_committed_use_discount_credit_charge,
+    $convert_to_rub(billing_records.committed_use_discount_credit_charge, billing_accounts.quote)                                                   AS billing_record_committed_use_discount_credit_charge_rub,
+    null                                                                                                                                            AS billing_record_compute_core_fraction,
+    null                                                                                                                                            AS billing_record_compute_cores,
+    null                                                                                                                                            AS billing_record_compute_memory,
+    null                                                                                                                                            AS billing_record_compute_platform_id,
+    null                                                                                                                                            AS billing_record_compute_product_ids,
+    null                                                                                                                                            AS billing_record_compute_public_fips,
+    null                                                                                                                                            AS billing_record_compute_sockets,
+    billing_records.cost                                                                                                                            AS billing_record_cost,
+    $convert_to_rub(billing_records.cost, billing_accounts.quote)                                                                                   AS billing_record_cost_rub,
+    billing_records.credit                                                                                                                          AS billing_record_credit,
+    $convert_to_rub(billing_records.credit, billing_accounts.quote)                                                                                 AS billing_record_credit_rub,
+    billing_records.`date`                                                                                                                          AS billing_record_date,
+    billing_records.disabled_credit_charge                                                                                                          AS billing_record_disabled_credit_charge,
+    $convert_to_rub(billing_records.disabled_credit_charge, billing_accounts.quote)                                                                 AS billing_record_disabled_credit_charge_rub,
+    billing_records.end_time                                                                                                                        AS billing_record_end_time,
+    labels_map.folder_id                                                                                                                            AS billing_record_folder_id,
+    null                                                                                                                                            AS billing_record_mdb_cluster_id,
+    null                                                                                                                                            AS billing_record_mdb_cluster_type,
+    null                                                                                                                                            AS billing_record_mdb_compute_instance_id,
+    null                                                                                                                                            AS billing_record_mdb_core_fraction,
+    null                                                                                                                                            AS billing_record_mdb_cores,
+    null                                                                                                                                            AS billing_record_mdb_disk_size,
+    null                                                                                                                                            AS billing_record_mdb_disk_type_id,
+    null                                                                                                                                            AS billing_record_mdb_memory,
+    null                                                                                                                                            AS billing_record_mdb_online,
+    null                                                                                                                                            AS billing_record_mdb_platform_id,
+    null                                                                                                                                            AS billing_record_mdb_public_ip,
+    null                                                                                                                                            AS billing_record_mdb_resource_preset_id,
+    null                                                                                                                                            AS billing_record_mdb_roles,
+    null                                                                                                                                            AS billing_record_mdb_software_accelerated_network_cores,
+    billing_records.monetary_grant_credit_charge                                                                                                    AS billing_record_monetary_grant_credit_charge,
+    $convert_to_rub(billing_records.monetary_grant_credit_charge, billing_accounts.quote)                                                           AS billing_record_monetary_grant_credit_charge_rub,
+    billing_records.month                                                                                                                           AS billing_record_month,
+    null                                                                                                                                            AS billing_record_nbs_size,
+    null                                                                                                                                            AS billing_record_nbs_type,
+    billing_records.pricing_quantity                                                                                                                AS billing_record_pricing_quantity,
+    skus.pricing_unit                                                                                                                               AS billing_record_pricing_unit,
+    NULL                                                                                                                                            AS billing_record_resource_id,
+    billing_records.service_credit_charge                                                                                                           AS billing_record_service_credit_charge,
+    $convert_to_rub(billing_records.service_credit_charge, billing_accounts.quote)                                                                  AS billing_record_service_credit_charge_rub,
+    billing_records.start_time                                                                                                                      AS billing_record_start_time,
+    billing_records.total                                                                                                                           AS billing_record_total,
+    $convert_to_rub(billing_records.total, billing_accounts.quote)                                                                                  AS billing_record_total_rub,
+    billing_records.trial_credit_charge                                                                                                             AS billing_record_trial_credit_charge,
+    $convert_to_rub(billing_records.trial_credit_charge, billing_accounts.quote)                                                                    AS billing_record_trial_credit_charge_rub,
+    skus.usage_unit                                                                                                                                 AS billing_record_usage_unit,
+    0                                                                                                                                               AS billing_record_var_reward,
+    0                                                                                                                                               AS billing_record_var_reward_rub,
+    billing_records.volume_incentive_credit_charge                                                                                                  AS billing_record_volume_incentive_credit_charge,
+    $convert_to_rub(billing_records.volume_incentive_credit_charge, billing_accounts.quote)                                                         AS billing_record_volume_incentive_credit_charge_rub,
+
+    -- person
+    dimensions.email                                                                                                                AS person_email,
+    dimensions.first_name                                                                                                           AS person_first_name,
+    dimensions.last_name                                                                                                            AS person_last_name,
+    dimensions.login                                                                                                                AS person_login,
+    dimensions.phone                                                                                                                AS person_phone,
+    dimensions.user_settings_email                                                                                                  AS person_user_settings_email,
+
+    -- labels_map
+    BITCAST(billing_records.labels_hash as Uint64)                                                                                  AS labels_hash,
+    labels_map.labels_json                                                                                                          AS labels_json,
+    labels_map.system_labels                                                                                                        AS labels_system_labels,
+    labels_map.user_labels                                                                                                          AS labels_user_labels,
+
+    -- publisher
+    NULL                                                                                                                            AS publisher_account_id,
+    NULL                                                                                                                            AS publisher_balance_client_id,
+    NULL                                                                                                                            AS publisher_currency,
+
+    -- service
+    skus.service_id                                                                                                                 AS service_id,
+    skus.service_name                                                                                                               AS service_name,
+    skus.product_name                                                                                                               AS product_name,
+
+    -- sku
+    billing_records.sku_id                                                                                                          AS sku_id,
+    skus.sku_name                                                                                                                   AS sku_name,
+
+    -- sku_tags
+    skus.sku_tag_core_fraction                                                                                                      AS sku_tag_core_fraction,
+    skus.sku_tag_core_fraction_number                                                                                               AS sku_tag_core_fraction_number,
+    skus.sku_tag_cores                                                                                                              AS sku_tag_cores,
+    skus.sku_tag_cores_number                                                                                                       AS sku_tag_cores_number,
+    skus.sku_tag_database                                                                                                           AS sku_tag_database,
+    skus.sku_tag_lazy                                                                                                               AS sku_tag_lazy,
+    skus.sku_tag_preemptible                                                                                                        AS sku_tag_preemptible,
+    skus.sku_tag_ram                                                                                                                AS sku_tag_ram,
+    skus.sku_tag_ram_number                                                                                                         AS sku_tag_ram_number,
+    skus.sku_tag_platform                                                                                                           AS sku_tag_platform,
+    skus.sku_tag_service_group                                                                                                      AS sku_tag_service_group,
+    skus.sku_tag_service_long_name                                                                                                  AS sku_tag_service_long_name,
+    skus.sku_tag_service_name                                                                                                       AS sku_tag_service_name,
+    skus.sku_tag_subservice_name                                                                                                    AS sku_tag_subservice_name,
+    skus.sku_tag_mk8s_relevant                                                                                                      AS sku_tag_mk8s_relevant,
+    skus.sku_tag_is_committed                                                                                                       AS sku_tag_is_committed,
+    skus.sku_tag_is_sustainable                                                                                                     AS sku_tag_is_sustainable,
+    -- conversion_rates
+    IF (billing_accounts.currency != "RUB", billing_accounts.quote, 1)                                                              AS cb_quote,
+
+    ba_crm_tags.acc_name                                                                                                            AS crm_account_name,
+    ba_crm_tags.segment                                                                                                             AS crm_account_segment,
+    ba_crm_tags.account_owner                                                                                                       AS crm_account_owner,
+    ba_crm_tags.architect                                                                                                           AS crm_account_architect,
+    ba_crm_tags.bus_dev                                                                                                             AS crm_account_bus_dev,
+    ba_crm_tags.partner_manager                                                                                                     AS crm_account_partner_manager,
+    ba_crm_tags.sales                                                                                                               AS crm_account_sales,
+    ba_crm_tags.segment_current                                                                                                     AS crm_account_segment_current,
+    ba_crm_tags.account_owner_current                                                                                               AS crm_account_owner_current,
+    ba_crm_tags.architect_current                                                                                                   AS crm_account_architect_current,
+    ba_crm_tags.bus_dev_current                                                                                                     AS crm_account_bus_dev_current,
+    ba_crm_tags.partner_manager_current                                                                                             AS crm_account_partner_manager_current,
+    ba_crm_tags.sales_current                                                                                                       AS crm_account_sales_current,
+    ba_crm_tags.crm_account_tags                                                                                                    AS crm_account_tags,
+
+    0                                                                                                                               AS marketing_attribution_event_id,
+    ''                                                                                                                              AS marketing_attribution_event_type,
+    0                                                                                                                               AS marketing_attribution_event_time,
+    ''                                                                                                                              AS marketing_attribution_channel,
+    ''                                                                                                                              AS marketing_attribution_channel_marketing_influenced,
+    ''                                                                                                                              AS marketing_attribution_utm_campaign,
+    ''                                                                                                                              AS marketing_attribution_utm_source,
+    ''                                                                                                                              AS marketing_attribution_utm_medium,
+    ''                                                                                                                              AS marketing_attribution_utm_term,
+    0                                                                                                                               AS marketing_attribution_counter_id_serial,
+    1.0                                                                                                                             AS marketing_attribution_event_first_weight,
+    1.0                                                                                                                             AS marketing_attribution_event_last_weight,
+    1.0                                                                                                                             AS marketing_attribution_event_uniform_weight,
+    1.0                                                                                                                             AS marketing_attribution_event_u_shape_weight,
+    1.0                                                                                                                             AS marketing_attribution_event_exp_7d_half_life_time_decay_weight,
+
+    ba_marketing_events_tags.events_count                                                                                           AS marketing_touched_events_count,
+    ba_marketing_events_tags.events_list                                                                                            AS marketing_touched_events_list
+
+
+    FROM $old_billing_records_mapping AS billing_records
+
+    LEFT JOIN $billing_account_dimensions_history_table AS dimensions
+    ON dimensions.billing_account_id == billing_records.billing_account_id AND billing_records.`date` == dimensions.`date`
+
+    LEFT JOIN $billing_accounts_mapping as billing_accounts
+    ON billing_records.`date` == billing_accounts.`date` AND billing_records.billing_account_id = billing_accounts.id
+
+    LEFT JOIN $labels_map_table AS labels_map
+    ON billing_records.billing_account_id == labels_map.billing_account_id AND billing_records.labels_hash == labels_map.labels_hash
+
+    LEFT JOIN $sku_mapping AS skus
+    ON billing_records.sku_id == skus.sku_id
+
+    LEFT JOIN $ba_crm_tags as ba_crm_tags
+    ON ba_crm_tags.billing_account_id == billing_records.billing_account_id AND billing_records.`date` == ba_crm_tags.`date`
+
+    LEFT JOIN $ba_marketing_events_tags as ba_marketing_events_tags
+    ON ba_marketing_events_tags.billing_account_id == billing_records.billing_account_id
+
+    WHERE billing_records.`date` < $today
+);
+
+$lookup_string_dict = ($json, $field) -> { RETURN Yson::ConvertToStringDict(Yson::Lookup(Yson::ParseJson($json), $field)) };
+
+$get_next_date = ($date) -> { RETURN $get_date_by_timestamp(DateTime::ToSeconds(cast($date as Date)) + cast(24 * 60 * 60 as uint32)) };
+
+$max_day_path = (
+    SELECT MAX(Path)
+    FROM FOLDER($realtime_metrics_dir || "1d", "row_count")
+    WHERE Type = "table"
+    AND Yson::LookupInt64(Attributes, "row_count") > 0
+);
+
+$realtime_metrics_paths = (
+    SELECT AGGREGATE_LIST(Path) AS paths
+    FROM (
+        SELECT Path
+        FROM FOLDER($realtime_metrics_dir || "1d", "row_count")
+        WHERE Path <= $max_day_path
+        AND Type = "table"
+        AND Yson::LookupInt64(Attributes, "row_count") > 0
+
+        UNION ALL
+
+        SELECT Path
+        FROM FOLDER($realtime_metrics_dir || "1h", "row_count")
+        WHERE TableName(Path) >= $get_next_date(TableName($max_day_path))
+        AND Type = "table"
+        AND Yson::LookupInt64(Attributes, "row_count") > 0
+    )
+);
+
+$realtime_billing_records = (
+    SELECT
+
+    COALESCE(billing_account_id, "")                        AS billing_account_id,
+    COALESCE(cloud_id, "")                                  AS cloud_id,
+    end_time                                                AS end_time,
+    COALESCE(folder_id, "")                                 AS folder_id,
+    labels_hash                                             AS labels_hash,
+    COALESCE(resource_id, "")                               AS resource_id,
+    COALESCE(sku_id, "")                                    AS sku_id,
+
+    $get_date_by_timestamp(end_time)                        AS `date`,
+    $get_month_by_timestamp(end_time)                       AS month,
+
+    SOME(currency)                                          AS currency,
+    SOME(labels)                                            AS labels,
+    SOME(labels_json)                                       AS labels_json,
+    $lookup_string_dict(SOME(labels_json), "system_labels") AS system_labels,
+    $lookup_string_dict(SOME(labels_json), "user_labels")   AS user_labels,
+    SOME(master_account_id)                                 AS master_account_id,
+    SOME(pricing_unit)                                      AS pricing_unit,
+    SOME(publisher_account_id)                              AS publisher_account_id,
+    SOME(publisher_balance_client_id)                       AS publisher_balance_client_id,
+    SOME(publisher_currency)                                AS publisher_currency,
+    SOME(service_id)                                        AS service_id,
+    SOME(sku_name)                                          AS sku_name,
+    SOME(start_time)                                        AS start_time,
+
+    -SUM(CAST(cud_credit AS double))                                                                AS committed_use_discount_credit_charge,
+    SUM(CAST(cost AS double))                                                                       AS cost,
+    SUM(CAST(credit AS double))                                                                     AS credit,
+    -SUM(CAST(disabled_credit AS double))                                                           AS disabled_credit_charge,
+    -SUM(CAST(service_credit AS double))                                                            AS service_credit_charge,
+    SUM(CAST(cost AS double) + CAST(credit AS double))                                              AS total,
+    -SUM(CAST(trial_credit AS double))                                                              AS trial_credit_charge,
+    -SUM(CAST(monetary_grant_credit AS double))                                                     AS monetary_grant_credit_charge,
+    SUM(CAST(pricing_quantity AS double))                                                           AS pricing_quantity,
+    SUM(CAST(revenue AS double))                                                                    AS revenue,
+    SUM(CAST(reward AS double))                                                                     AS var_reward,
+    -SUM(CAST(volume_incentive_credit AS double))                                                   AS volume_incentive_credit_charge,
+
+    $get_tag_by_schema(some(tags), "core_fraction", some(`schema`), ["compute.vm.generic.v1"], Uint64)                      AS compute_core_fraction,
+    $get_tag_by_schema(some(tags), "cores", some(`schema`), ["compute.vm.generic.v1"], Uint64)                              AS compute_cores,
+    $get_tag_by_schema(some(tags), "memory", some(`schema`), ["compute.vm.generic.v1"], Uint64)                             AS compute_memory,
+    $get_tag_by_schema(some(tags), "platform_id", some(`schema`), ["compute.vm.generic.v1"], String)                        AS compute_platform_id,
+    $get_tag_by_schema(some(tags), "product_ids", some(`schema`), ["compute.vm.generic.v1"], List<String>)                  AS compute_product_ids,
+    $get_tag_by_schema(some(tags), "public_fips", some(`schema`), ["compute.vm.generic.v1"], Uint64)                        AS compute_public_fips,
+    $get_tag_by_schema(some(tags), "sockets", some(`schema`), ["compute.vm.generic.v1"], Uint64)                            AS compute_sockets,
+    $get_tag_by_schema(some(tags), "cluster_id", some(`schema`), ["mdb.db.generic.v1"], String)                             AS mdb_cluster_id,
+    $get_tag_by_schema(some(tags), "cluster_type", some(`schema`), ["mdb.db.generic.v1"], String)                           AS mdb_cluster_type,
+    $get_tag_by_schema(some(tags), "compute_instance_id", some(`schema`), ["mdb.db.generic.v1"], String)                    AS mdb_compute_instance_id,
+    $get_tag_by_schema(some(tags), "core_fraction", some(`schema`), ["mdb.db.generic.v1"], Uint64)                          AS mdb_core_fraction,
+    $get_tag_by_schema(some(tags), "cores", some(`schema`), ["mdb.db.generic.v1"], Uint64)                                  AS mdb_cores,
+    $get_tag_by_schema(some(tags), "disk_size", some(`schema`), ["mdb.db.generic.v1"], Uint64)                              AS mdb_disk_size,
+    $get_tag_by_schema(some(tags), "disk_type_id", some(`schema`), ["mdb.db.generic.v1"], String)                           AS mdb_disk_type_id,
+    $get_tag_by_schema(some(tags), "memory", some(`schema`), ["mdb.db.generic.v1"], Uint64)                                 AS mdb_memory,
+    $get_tag_by_schema(some(tags), "online", some(`schema`), ["mdb.db.generic.v1"], Uint64)                                 AS mdb_online,
+    $get_tag_by_schema(some(tags), "platform_id", some(`schema`), ["mdb.db.generic.v1"], String)                            AS mdb_platform_id,
+    $get_tag_by_schema(some(tags), "public_ip", some(`schema`), ["mdb.db.generic.v1"], Uint64)                              AS mdb_public_ip,
+    $get_tag_by_schema(some(tags), "resource_preset_id", some(`schema`), ["mdb.db.generic.v1"], String)                     AS mdb_resource_preset_id,
+    $get_tag_by_schema(some(tags), "roles", some(`schema`), ["mdb.db.generic.v1"], List<String>)                            AS mdb_roles,
+    $get_tag_by_schema(some(tags), "software_accelerated_network_cores", some(`schema`), ["mdb.db.generic.v1"], Uint64)     AS mdb_software_accelerated_network_cores,
+    $get_tag_by_schema(some(tags), "size", some(`schema`), ["nbs.volume.allocated.v2", "nbs.volume.allocated.v3"], Uint64)  AS nbs_size,
+    $get_tag_by_schema(some(tags), "type", some(`schema`), ["nbs.volume.allocated.v2", "nbs.volume.allocated.v3"], String)  AS nbs_type
+
+    FROM EACH($realtime_metrics_paths)
+
+    WHERE end_time > $migration_border
+
+    GROUP BY
+    billing_account_id,
+    cloud_id,
+    end_time,
+    folder_id,
+    labels_hash,
+    resource_id,
+    sku_id
+);
+
+$corrections = (
+    SELECT
+        billing_account_id,
+        cloud_id,
+        -- -3 hrs for msk, +24 hrs for day, -1 for last second. Equiv to last second of day.
+        DateTime::ToSeconds(DateTime::MakeTimestamp($parse_date(`date`))) + 21 * 3600 - 1 as end_time,
+        folder_id,
+        labels_hash,
+        resource_id,
+        sku_id,
+        CAST(cost as Double) as cost,
+        CAST(credit as Double) as credit
+    FROM $cube_corrections
+);
+
+$realtime_billing_records_corrected = (
+    SELECT
+        COALESCE(records.billing_account_id, corrs.billing_account_id) AS billing_account_id,
+        COALESCE(records.cloud_id, corrs.cloud_id) AS cloud_id,
+        COALESCE(records.end_time, corrs.end_time) AS end_time,
+        COALESCE(records.folder_id, corrs.folder_id) AS folder_id,
+        COALESCE(records.labels_hash, corrs.labels_hash) AS labels_hash,
+        COALESCE(records.resource_id, corrs.resource_id) AS resource_id,
+        COALESCE(records.sku_id, corrs.sku_id) AS sku_id,
+
+        COALESCE(records.currency, "") AS currency,
+        records.labels                                              AS labels,
+        records.labels_json                                         AS labels_json,
+        records.system_labels                                       AS system_labels,
+        records.user_labels                                         AS user_labels,
+        COALESCE(records.master_account_id, "")                     AS master_account_id,
+        COALESCE(records.pricing_unit, "")                          AS pricing_unit,
+        COALESCE(records.publisher_account_id, "")                  AS publisher_account_id,
+        COALESCE(records.publisher_balance_client_id, "")           AS publisher_balance_client_id,
+        COALESCE(records.publisher_currency, "")                    AS publisher_currency,
+        COALESCE(records.service_id, "")                            AS service_id,
+        COALESCE(records.sku_name, "")                              AS sku_name,
+        COALESCE(records.start_time, corrs.end_time - 3599)         AS start_time,
+
+        COALESCE(records.`date`, $get_date_by_timestamp(corrs.end_time))                        AS `date`,
+        COALESCE(records.month, $get_month_by_timestamp(corrs.end_time))                        AS month,
+
+        COALESCE(records.committed_use_discount_credit_charge, 0)                               AS committed_use_discount_credit_charge,
+        COALESCE(records.cost, 0) + COALESCE(corrs.cost, 0)                                     AS cost,
+        COALESCE(records.credit, 0) + COALESCE(corrs.credit, 0)                                 AS credit,
+        COALESCE(records.disabled_credit_charge, 0) + COALESCE(corrs.credit, 0)                 AS disabled_credit_charge,
+        COALESCE(records.service_credit_charge, 0)                                              AS service_credit_charge,
+        COALESCE(records.total, 0) + COALESCE(corrs.credit, 0) + COALESCE(corrs.cost, 0)        AS total,
+        COALESCE(records.trial_credit_charge, 0)                                                AS trial_credit_charge,
+        COALESCE(records.monetary_grant_credit_charge, 0)                                       AS monetary_grant_credit_charge,
+        COALESCE(records.pricing_quantity, 0)                                                   AS pricing_quantity,
+        COALESCE(records.revenue, 0)                                                            AS revenue,
+        COALESCE(records.var_reward, 0)                                                         AS var_reward,
+        COALESCE(records.volume_incentive_credit_charge, 0)                                     AS volume_incentive_credit_charge,
+
+        records.compute_core_fraction                       AS compute_core_fraction,
+        records.compute_cores                               AS compute_cores,
+        records.compute_memory                              AS compute_memory,
+        records.compute_platform_id                         AS compute_platform_id,
+        records.compute_product_ids                         AS compute_product_ids,
+        records.compute_public_fips                         AS compute_public_fips,
+        records.compute_sockets                             AS compute_sockets,
+        records.mdb_cluster_id                              AS mdb_cluster_id,
+        records.mdb_cluster_type                            AS mdb_cluster_type,
+        records.mdb_compute_instance_id                     AS mdb_compute_instance_id,
+        records.mdb_core_fraction                           AS mdb_core_fraction,
+        records.mdb_cores                                   AS mdb_cores,
+        records.mdb_disk_size                               AS mdb_disk_size,
+        records.mdb_disk_type_id                            AS mdb_disk_type_id,
+        records.mdb_memory                                  AS mdb_memory,
+        records.mdb_online                                  AS mdb_online,
+        records.mdb_platform_id                             AS mdb_platform_id,
+        records.mdb_public_ip                               AS mdb_public_ip,
+        records.mdb_resource_preset_id                      AS mdb_resource_preset_id,
+        records.mdb_roles                                   AS mdb_roles,
+        records.mdb_software_accelerated_network_cores      AS mdb_software_accelerated_network_cores,
+        records.nbs_size                                    AS nbs_size,
+        records.nbs_type                                    AS nbs_type
+
+    FROM
+        $realtime_billing_records as records
+    FULL JOIN
+        $corrections as corrs
+    USING (billing_account_id, cloud_id, end_time, folder_id, labels_hash, resource_id, sku_id)
+);
+
+$realtime_analytics_cube = (
+    SELECT
+
+    -- billing_account actual
+
+    dimensions.architect_actual                                                                                                     AS billing_account_architect,
+    billing_accounts.balance                                                                                                        AS billing_account_balance,
+    dimensions.board_segment_actual                                                                                                 AS billing_account_board_segment,
+    dimensions.account_name                                                                                                         AS billing_account_company_name,
+    billing_accounts.created_at                                                                                                     AS billing_account_created_at,
+    billing_accounts.creation_date                                                                                                  AS billing_account_creation_date,
+    billing_accounts.creation_month                                                                                                 AS billing_account_creation_month,
+    billing_accounts.creation_time                                                                                                  AS billing_account_creation_time,
+    billing_accounts.creation_week                                                                                                  AS billing_account_creation_week,
+    billing_records.currency                                                                                                        AS billing_account_currency,
+    billing_records.billing_account_id                                                                                              AS billing_account_id,
+    dimensions.is_corporate_card                                                                                                    AS billing_account_is_corporate_card,
+    dimensions.is_fraud                                                                                                             AS billing_account_is_fraud,
+    dimensions.is_isv_actual                                                                                                        AS billing_account_is_isv,
+    dimensions.is_iot_actual                                                                                                        AS billing_account_is_iot,
+    dimensions.is_var_actual                                                                                                        AS billing_account_is_var,
+    billing_accounts.is_verified                                                                                                    AS billing_account_is_verified,
+    billing_records.master_account_id                                                                                               AS billing_account_master_account_id,
+    billing_accounts.metadata                                                                                                       AS billing_account_metadata,
+    billing_accounts.name                                                                                                           AS billing_account_name,
+    billing_accounts.payment_cycle_type                                                                                             AS billing_account_payment_cycle_type,
+    billing_accounts.payment_method_id                                                                                              AS billing_account_payment_method_id,
+    dimensions.potential_actual                                                                                                     AS billing_account_potential,
+    dimensions.puid                                                                                                                 AS billing_account_puid,
+    billing_accounts.person_type                                                                                                    AS billing_account_person_type,
+    dimensions.sales_name_actual                                                                                                    AS billing_account_sales_name,
+    dimensions.segment_actual                                                                                                       AS billing_account_segment,
+    billing_accounts.state                                                                                                          AS billing_account_state,
+    billing_accounts.type                                                                                                           AS billing_account_type,
+    billing_accounts.usage_status                                                                                                   AS billing_account_usage_status,
+    billing_accounts.usage_status                                                                                                   AS billing_account_usage_status_actual,
+
+    -- billing_account at moment
+    dimensions.architect_at_moment                                                                                                  AS billing_account_architect_at_moment,
+    dimensions.balance                                                                                                              AS billing_account_balance_at_moment,
+    dimensions.balance_long_name                                                                                                    AS billing_account_balance_long_name_at_moment,
+    dimensions.balance_name                                                                                                         AS billing_account_balance_name_at_moment,
+    dimensions.block_reason_at_moment                                                                                               AS billing_account_block_reason_at_moment,
+    dimensions.board_segment_at_moment                                                                                              AS billing_account_board_segment_at_moment,
+    dimensions.is_iot_at_moment                                                                                                     AS billing_account_is_iot_at_moment,
+    dimensions.is_isv_at_moment                                                                                                     AS billing_account_is_isv_at_moment,
+    dimensions.is_var_at_moment                                                                                                     AS billing_account_is_var_at_moment,
+    dimensions.is_verified_at_moment                                                                                                AS billing_account_is_verified_at_moment,
+    dimensions.ba_payment_cycle_type_at_moment                                                                                      AS billing_account_payment_cycle_type_at_moment,
+    dimensions.ba_person_type_at_moment                                                                                             AS billing_account_person_type_at_moment,
+    dimensions.potential_at_moment                                                                                                  AS billing_account_potential_at_moment,
+    dimensions.sales_name_at_moment                                                                                                 AS billing_account_sales_name_at_moment,
+    dimensions.segment_at_moment                                                                                                    AS billing_account_segment_at_moment,
+    dimensions.ba_state_at_moment                                                                                                   AS billing_account_state_at_moment,
+    dimensions.ba_type_at_moment_at_moment                                                                                          AS billing_account_type_at_moment,
+    dimensions.unblock_reason_at_moment                                                                                             AS billing_account_unblock_reason_at_moment,
+    dimensions.ba_usage_status_at_moment                                                                                            AS billing_account_usage_status_at_moment,
+
+    -- grants
+    dimensions.active_grant_ids                                                                                                     AS billing_account_active_grant_ids_at_moment,
+    dimensions.active_grants                                                                                                        AS billing_account_active_grants_at_moment,
+    dimensions.grant_sources                                                                                                        AS billing_account_grant_sources_at_moment,
+    dimensions.grant_amount                                                                                                         AS billing_account_grant_amount_at_moment,
+    dimensions.grant_amounts                                                                                                        AS billing_account_grant_amounts_at_moment,
+    dimensions.grant_end_times                                                                                                      AS billing_account_grant_end_times_at_moment,
+    dimensions.grant_source_ids                                                                                                     AS billing_account_grant_source_ids_at_moment,
+    dimensions.grant_start_times                                                                                                    AS billing_account_grant_start_times_at_moment,
+
+    -- billing_record
+    billing_records.cloud_id                                                                                                                        AS billing_record_cloud_id,
+    billing_records.committed_use_discount_credit_charge                                                                                            AS billing_record_committed_use_discount_credit_charge,
+    $convert_to_rub(billing_records.committed_use_discount_credit_charge, billing_accounts.quote)                                                   AS billing_record_committed_use_discount_credit_charge_rub,
+    billing_records.compute_core_fraction                                                                                                           AS billing_record_compute_core_fraction,
+    billing_records.compute_cores                                                                                                                   AS billing_record_compute_cores,
+    billing_records.compute_memory                                                                                                                  AS billing_record_compute_memory,
+    billing_records.compute_platform_id                                                                                                             AS billing_record_compute_platform_id,
+    billing_records.compute_product_ids                                                                                                             AS billing_record_compute_product_ids,
+    billing_records.compute_public_fips                                                                                                             AS billing_record_compute_public_fips,
+    billing_records.compute_sockets                                                                                                                 AS billing_record_compute_sockets,
+    billing_records.cost                                                                                                                            AS billing_record_cost,
+    $convert_to_rub(billing_records.cost, billing_accounts.quote)                                                                                   AS billing_record_cost_rub,
+    billing_records.credit                                                                                                                          AS billing_record_credit,
+    $convert_to_rub(billing_records.credit, billing_accounts.quote)                                                                                 AS billing_record_credit_rub,
+    billing_records.`date`                                                                                                                          AS billing_record_date,
+    billing_records.disabled_credit_charge                                                                                                          AS billing_record_disabled_credit_charge,
+    $convert_to_rub(billing_records.disabled_credit_charge, billing_accounts.quote)                                                                 AS billing_record_disabled_credit_charge_rub,
+    billing_records.end_time                                                                                                                        AS billing_record_end_time,
+    billing_records.folder_id                                                                                                                       AS billing_record_folder_id,
+    billing_records.mdb_cluster_id                                                                                                                  AS billing_record_mdb_cluster_id,
+    billing_records.mdb_cluster_type                                                                                                                AS billing_record_mdb_cluster_type,
+    billing_records.mdb_compute_instance_id                                                                                                         AS billing_record_mdb_compute_instance_id,
+    billing_records.mdb_core_fraction                                                                                                               AS billing_record_mdb_core_fraction,
+    billing_records.mdb_cores                                                                                                                       AS billing_record_mdb_cores,
+    billing_records.mdb_disk_size                                                                                                                   AS billing_record_mdb_disk_size,
+    billing_records.mdb_disk_type_id                                                                                                                AS billing_record_mdb_disk_type_id,
+    billing_records.mdb_memory                                                                                                                      AS billing_record_mdb_memory,
+    billing_records.mdb_online                                                                                                                      AS billing_record_mdb_online,
+    billing_records.mdb_platform_id                                                                                                                 AS billing_record_mdb_platform_id,
+    billing_records.mdb_public_ip                                                                                                                   AS billing_record_mdb_public_ip,
+    billing_records.mdb_resource_preset_id                                                                                                          AS billing_record_mdb_resource_preset_id,
+    billing_records.mdb_roles                                                                                                                       AS billing_record_mdb_roles,
+    billing_records.mdb_software_accelerated_network_cores                                                                                          AS billing_record_mdb_software_accelerated_network_cores,
+    billing_records.monetary_grant_credit_charge                                                                                                    AS billing_record_monetary_grant_credit_charge,
+    $convert_to_rub(billing_records.monetary_grant_credit_charge, billing_accounts.quote)                                                           AS billing_record_monetary_grant_credit_charge_rub,
+    billing_records.month                                                                                                                           AS billing_record_month,
+    billing_records.nbs_size                                                                                                                        AS billing_record_nbs_size,
+    billing_records.nbs_type                                                                                                                        AS billing_record_nbs_type,
+    billing_records.pricing_quantity                                                                                                                AS billing_record_pricing_quantity,
+    billing_records.pricing_unit                                                                                                                    AS billing_record_pricing_unit,
+    billing_records.resource_id                                                                                                                     AS billing_record_resource_id,
+    billing_records.service_credit_charge                                                                                                           AS billing_record_service_credit_charge,
+    $convert_to_rub(billing_records.service_credit_charge, billing_accounts.quote)                                                                  AS billing_record_service_credit_charge_rub,
+    billing_records.start_time                                                                                                                      AS billing_record_start_time,
+    billing_records.total                                                                                                                           AS billing_record_total,
+    $convert_to_rub(billing_records.total, billing_accounts.quote)                                                                                  AS billing_record_total_rub,
+    billing_records.trial_credit_charge                                                                                                             AS billing_record_trial_credit_charge,
+    $convert_to_rub(billing_records.trial_credit_charge, billing_accounts.quote)                                                                    AS billing_record_trial_credit_charge_rub,
+    skus.usage_unit                                                                                                                                 AS billing_record_usage_unit,
+    billing_records.var_reward                                                                                                                      AS billing_record_var_reward,
+    $convert_to_rub(billing_records.var_reward, billing_accounts.quote)                                                                             AS billing_record_var_reward_rub,
+    billing_records.volume_incentive_credit_charge                                                                                                  AS billing_record_volume_incentive_credit_charge,
+    $convert_to_rub(billing_records.volume_incentive_credit_charge, billing_accounts.quote)                                                         AS billing_record_volume_incentive_credit_charge_rub,
+
+    -- person
+    dimensions.email                                                                                                                AS person_email,
+    dimensions.first_name                                                                                                           AS person_first_name,
+    dimensions.last_name                                                                                                            AS person_last_name,
+    dimensions.login                                                                                                                AS person_login,
+    dimensions.phone                                                                                                                AS person_phone,
+    dimensions.user_settings_email                                                                                                  AS person_user_settings_email,
+
+    -- labels_map
+    if(DictContains(billing_records.user_labels , "managed-kubernetes-cluster-id"), 'mk8s-worker', 'other')                         AS labels_vm_origin,
+    BITCAST(billing_records.labels_hash as Uint64)                                                                                  AS labels_hash,
+    billing_records.labels_json                                                                                                     AS labels_json,
+    billing_records.system_labels                                                                                                   AS labels_system_labels,
+    billing_records.user_labels                                                                                                     AS labels_user_labels,
+
+    -- publisher
+
+    billing_records.publisher_account_id                                                                                            AS publisher_account_id,
+    billing_records.publisher_balance_client_id                                                                                     AS publisher_balance_client_id,
+    billing_records.publisher_currency                                                                                              AS publisher_currency,
+
+    -- service
+    billing_records.service_id                                                                                                      AS service_id,
+    skus.service_name                                                                                                               AS service_name,
+    skus.product_name                                                                                                               AS product_name,
+
+    -- sku
+    billing_records.sku_id                                                                                                          AS sku_id,
+    skus.sku_name                                                                                                                   AS sku_name,
+
+    -- sku_tags
+    skus.sku_tag_core_fraction                                                                                                      AS sku_tag_core_fraction,
+    skus.sku_tag_core_fraction_number                                                                                               AS sku_tag_core_fraction_number,
+    skus.sku_tag_cores                                                                                                              AS sku_tag_cores,
+    skus.sku_tag_cores_number                                                                                                       AS sku_tag_cores_number,
+    skus.sku_tag_database                                                                                                           AS sku_tag_database,
+    skus.sku_tag_lazy                                                                                                               AS sku_tag_lazy,
+    skus.sku_tag_preemptible                                                                                                        AS sku_tag_preemptible,
+    skus.sku_tag_ram                                                                                                                AS sku_tag_ram,
+    skus.sku_tag_ram_number                                                                                                         AS sku_tag_ram_number,
+    skus.sku_tag_platform                                                                                                           AS sku_tag_platform,
+    skus.sku_tag_service_group                                                                                                      AS sku_tag_service_group,
+    skus.sku_tag_service_long_name                                                                                                  AS sku_tag_service_long_name,
+    skus.sku_tag_service_name                                                                                                       AS sku_tag_service_name,
+    skus.sku_tag_subservice_name                                                                                                    AS sku_tag_subservice_name,
+    skus.sku_tag_mk8s_relevant                                                                                                      AS sku_tag_mk8s_relevant,
+    skus.sku_tag_is_committed                                                                                                       AS sku_tag_is_committed,
+    skus.sku_tag_is_sustainable                                                                                                     AS sku_tag_is_sustainable,
+
+    -- conversion_rates
+    IF (billing_accounts.currency != "RUB", billing_accounts.quote, 1)                                                              AS cb_quote,
+
+    ba_crm_tags.acc_name                                                                                                            AS crm_account_name,
+    ba_crm_tags.segment                                                                                                             AS crm_account_segment,
+    ba_crm_tags.account_owner                                                                                                       AS crm_account_owner,
+    ba_crm_tags.architect                                                                                                           AS crm_account_architect,
+    ba_crm_tags.bus_dev                                                                                                             AS crm_account_bus_dev,
+    ba_crm_tags.partner_manager                                                                                                     AS crm_account_partner_manager,
+    ba_crm_tags.sales                                                                                                               AS crm_account_sales,
+    ba_crm_tags.segment_current                                                                                                     AS crm_account_segment_current,
+    ba_crm_tags.account_owner_current                                                                                               AS crm_account_owner_current,
+    ba_crm_tags.architect_current                                                                                                   AS crm_account_architect_current,
+    ba_crm_tags.bus_dev_current                                                                                                     AS crm_account_bus_dev_current,
+    ba_crm_tags.partner_manager_current                                                                                             AS crm_account_partner_manager_current,
+    ba_crm_tags.sales_current                                                                                                       AS crm_account_sales_current,
+    ba_crm_tags.crm_account_tags                                                                                                    AS crm_account_tags,
+
+    0                                                                                                                               AS marketing_attribution_event_id,
+    ''                                                                                                                              AS marketing_attribution_event_type,
+    0                                                                                                                               AS marketing_attribution_event_time,
+    ''                                                                                                                              AS marketing_attribution_channel,
+    ''                                                                                                                              AS marketing_attribution_channel_marketing_influenced,
+    ''                                                                                                                              AS marketing_attribution_utm_campaign,
+    ''                                                                                                                              AS marketing_attribution_utm_source,
+    ''                                                                                                                              AS marketing_attribution_utm_medium,
+    ''                                                                                                                              AS marketing_attribution_utm_term,
+    0                                                                                                                               AS marketing_attribution_counter_id_serial,
+    1.0                                                                                                                             AS marketing_attribution_event_first_weight,
+    1.0                                                                                                                             AS marketing_attribution_event_last_weight,
+    1.0                                                                                                                             AS marketing_attribution_event_uniform_weight,
+    1.0                                                                                                                             AS marketing_attribution_event_u_shape_weight,
+    1.0                                                                                                                             AS marketing_attribution_event_exp_7d_half_life_time_decay_weight,
+
+
+    ba_marketing_events_tags.events_count                                                                                           AS marketing_touched_events_count,
+    ba_marketing_events_tags.events_list                                                                                            AS marketing_touched_events_list
+
+    FROM $realtime_billing_records_corrected AS billing_records
+
+    LEFT JOIN $billing_account_dimensions_history_table AS dimensions
+    ON dimensions.billing_account_id == billing_records.billing_account_id AND billing_records.`date` == dimensions.`date`
+
+    LEFT JOIN $billing_accounts_mapping as billing_accounts
+    ON billing_records.`date` == billing_accounts.`date` AND billing_accounts.id == billing_records.billing_account_id
+
+    LEFT JOIN $sku_mapping AS skus
+    ON billing_records.sku_id == skus.sku_id
+
+    LEFT JOIN $ba_crm_tags as ba_crm_tags
+    ON ba_crm_tags.billing_account_id == billing_records.billing_account_id AND billing_records.`date` == ba_crm_tags.`date`
+
+    LEFT JOIN $ba_marketing_events_tags as ba_marketing_events_tags
+    ON ba_marketing_events_tags.billing_account_id == billing_records.billing_account_id
+
+    WHERE billing_records.`date` < $today
+
+);
+
+$analytics_cube = (
+SELECT * FROM $old_analytics_cube
+UNION ALL
+SELECT * FROM $realtime_analytics_cube
+);
+
+
+$consumption_aggregation = (SELECT
+    -- group by fields
+    billing_account_currency                                        AS billing_account_currency,
+    billing_account_is_fraud                                        AS billing_account_is_fraud,
+    billing_account_is_verified                                     AS billing_account_is_verified,
+    billing_account_person_type                                     AS billing_account_person_type,
+    billing_account_segment_at_moment                               AS billing_account_segment_at_moment,
+    billing_account_state_at_moment                                 AS billing_account_state_at_moment,
+    billing_account_usage_status                                    AS billing_account_usage_status,
+    billing_account_usage_status_actual                             AS billing_account_usage_status_actual,
+    billing_record_date                                             AS billing_record_date,
+    billing_record_end_time                                         AS billing_record_end_time,
+    billing_record_month                                            AS billing_record_month,
+    product_name                                                    AS product_name,
+    sku_name                                                        AS sku_name,
+    service_name                                                    AS service_name,
+    -- other fields. Keep alphabeticalco order by alias
+    SUM(billing_record_committed_use_discount_credit_charge)        AS billing_record_committed_use_discount_credit_charge,
+    SUM(billing_record_committed_use_discount_credit_charge_rub)    AS billing_record_committed_use_discount_credit_charge_rub,
+    SUM(billing_record_cost)                                        AS billing_record_cost,
+    SUM(billing_record_cost_rub)                                    AS billing_record_cost_rub,
+    SUM(billing_record_credit)                                      AS billing_record_credit,
+    SUM(billing_record_credit_rub)                                  AS billing_record_credit_rub,
+    SUM(billing_record_disabled_credit_charge)                      AS billing_record_disabled_credit_charge,
+    SUM(billing_record_disabled_credit_charge_rub)                  AS billing_record_disabled_credit_charge_rub,
+    SUM(billing_record_monetary_grant_credit_charge)                AS billing_record_monetary_grant_credit_charge,
+    SUM(billing_record_monetary_grant_credit_charge_rub)            AS billing_record_monetary_grant_credit_charge_rub,
+    SUM(billing_record_pricing_quantity)                            AS billing_record_pricing_quantity,
+    SUM(billing_record_service_credit_charge)                       AS billing_record_service_credit_charge,
+    SUM(billing_record_service_credit_charge_rub)                   AS billing_record_service_credit_charge_rub,
+    SUM(billing_record_total)                                       AS billing_record_total,
+    SUM(billing_record_total_rub)                                   AS billing_record_total_rub,
+    SUM(billing_record_trial_credit_charge)                         AS billing_record_trial_credit_charge,
+    SUM(billing_record_trial_credit_charge_rub)                     AS billing_record_trial_credit_charge_rub,
+    SUM(billing_record_var_reward)                                  AS billing_record_var_reward,
+    SUM(billing_record_var_reward)                                  AS billing_record_var_reward_rub,
+    SUM(billing_record_volume_incentive_credit_charge)              AS billing_record_volume_incentive_credit_charge,
+    SUM(billing_record_volume_incentive_credit_charge_rub)          AS billing_record_volume_incentive_credit_charge_rub,
+FROM $analytics_cube
+GROUP BY(
+    billing_account_currency,
+    billing_account_is_fraud,
+    billing_account_is_verified,
+    billing_account_person_type,
+    billing_account_segment_at_moment,
+    billing_account_state_at_moment,
+    billing_account_usage_status,
+    billing_account_usage_status_actual,
+    billing_record_date,
+    billing_record_end_time,
+    billing_record_month,
+    product_name,
+    service_name,
+    sku_name
+    -- no comma at the end
+));
+
+$analytics_cube_with_acquisition_fields = (SELECT
+    analytics_cube.*,
+    -- default values for acquisition_cube fields
+    'day_use'                                                               AS event,
+    $get_datetime_by_timestamp(analytics_cube.billing_record_end_time)      AS event_time,
+    0                                                                       AS metrika_ad_block,
+    ''                                                                      AS metrika_area,
+    ''                                                                      AS metrika_age,
+    ''                                                                      AS metrika_channel,
+    ''                                                                      AS metrika_city,
+    ''                                                                      AS metrika_client_ip,
+    ''                                                                      AS metrika_country,
+    ''                                                                      AS metrika_device_model,
+    ''                                                                      AS metrika_device_type,
+    0                                                                       AS metrika_duration,
+    ''                                                                      AS metrika_general_interests,
+    0                                                                       AS metrika_hits,
+    0                                                                       AS metrika_income,
+    ''                                                                      AS metrika_interests,
+    0                                                                       AS metrika_is_bounce,
+    ''                                                                      AS metrika_is_robot,
+    0                                                                       AS metrika_mobile_phone_vendor,
+    ''                                                                      AS metrika_os,
+    0                                                                       AS metrika_page_views,
+    ''                                                                      AS metrika_referer,
+    ''                                                                      AS metrika_remote_ip,
+    0                                                                       AS metrika_resolution_depth,
+    0                                                                       AS metrika_resolution_height,
+    0                                                                       AS metrika_resolution_width,
+    ''                                                                      AS metrika_search_phrase,
+    ''                                                                      AS metrika_session_start_time,
+    ''                                                                      AS metrika_sex,
+    ''                                                                      AS metrika_start_url,
+    0                                                                       AS metrika_total_visits,
+    ''                                                                      AS metrika_utm_campaign,
+    ''                                                                      AS metrika_utm_content,
+    ''                                                                      AS metrika_utm_medium,
+    ''                                                                      AS metrika_utm_source,
+    ''                                                                      AS metrika_utm_term,
+    0                                                                       AS metrika_window_client_height,
+    ''                                                                      AS person_cloud_name,
+    ''                                                                      AS person_cloud_status,
+    0                                                                       AS person_mail_billing,
+    0                                                                       AS person_mail_event,
+    0                                                                       AS person_mail_feature,
+    0                                                                       AS person_mail_info,
+    0                                                                       AS person_mail_promo,
+    0                                                                       AS person_mail_tech,
+    0                                                                       AS person_mail_testing,
+    ''                                                                      AS puid,
+    'total'                                                                 AS total,
+    0.0                                                                     AS usd_rur_quote
+FROM $analytics_cube AS analytics_cube
+);
+
+$acquisition_cube = (
+SELECT
+    IF(billing_account_is_verified = 'true', true, false) AS billing_account_is_verified,
+    billing_account_active_grant_ids_at_moment,
+    billing_account_active_grants_at_moment,
+    billing_account_architect,
+    billing_account_architect_at_moment,
+    billing_account_balance,
+    billing_account_balance_at_moment,
+    billing_account_balance_long_name_at_moment,
+    billing_account_balance_name_at_moment,
+    billing_account_block_reason_at_moment,
+    billing_account_board_segment,
+    billing_account_board_segment_at_moment,
+    billing_account_company_name,
+    billing_account_created_at,
+    billing_account_creation_date,
+    billing_account_creation_month,
+    billing_account_creation_time,
+    billing_account_creation_week,
+    billing_account_currency,
+    billing_account_grant_amount_at_moment,
+    billing_account_grant_amounts_at_moment,
+    billing_account_grant_end_times_at_moment,
+    billing_account_grant_source_ids_at_moment,
+    billing_account_grant_sources_at_moment,
+    billing_account_grant_start_times_at_moment,
+    billing_account_id,
+    billing_account_is_corporate_card,
+    billing_account_is_fraud,
+    billing_account_is_iot,
+    billing_account_is_iot_at_moment,
+    billing_account_is_isv,
+    billing_account_is_isv_at_moment,
+    billing_account_is_var,
+    billing_account_is_var_at_moment,
+    billing_account_is_verified_at_moment,
+    billing_account_master_account_id,
+    --billing_account_metadata,
+    billing_account_name,
+    billing_account_payment_cycle_type,
+    billing_account_payment_cycle_type_at_moment,
+    billing_account_payment_method_id,
+    billing_account_person_type,
+    billing_account_person_type_at_moment,
+    billing_account_potential,
+    billing_account_potential_at_moment,
+    billing_account_puid,
+    billing_account_sales_name,
+    billing_account_sales_name_at_moment,
+    billing_account_segment,
+    billing_account_segment_at_moment,
+    billing_account_state,
+    billing_account_state_at_moment,
+    billing_account_type,
+    billing_account_type_at_moment,
+    billing_account_unblock_reason_at_moment,
+    billing_account_usage_status,
+    billing_account_usage_status_actual,
+    billing_account_usage_status_at_moment,
+    billing_record_cloud_id,
+    billing_record_committed_use_discount_credit_charge,
+    billing_record_committed_use_discount_credit_charge_rub,
+    null AS billing_record_compute_core_fraction,
+    null AS billing_record_compute_cores,
+    null AS billing_record_compute_memory,
+    null AS billing_record_compute_platform_id,
+    null AS billing_record_compute_product_ids,
+    null AS billing_record_compute_public_fips,
+    null AS billing_record_compute_sockets,
+    billing_record_cost,
+    billing_record_cost_rub,
+    billing_record_credit,
+    billing_record_credit_rub,
+    billing_record_date,
+    billing_record_disabled_credit_charge,
+    billing_record_disabled_credit_charge_rub,
+    billing_record_end_time,
+    labels_folder_id AS billing_record_folder_id,
+    null AS billing_record_mdb_cluster_id,
+    null AS billing_record_mdb_cluster_type,
+    null AS billing_record_mdb_compute_instance_id,
+    null AS billing_record_mdb_core_fraction,
+    null AS billing_record_mdb_cores,
+    null AS billing_record_mdb_disk_size,
+    null AS billing_record_mdb_disk_type_id,
+    null AS billing_record_mdb_memory,
+    null AS billing_record_mdb_online,
+    null AS billing_record_mdb_platform_id,
+    null AS billing_record_mdb_public_ip,
+    null AS billing_record_mdb_resource_preset_id,
+    null AS billing_record_mdb_roles,
+    null AS billing_record_mdb_software_accelerated_network_cores,
+    billing_record_monetary_grant_credit_charge,
+    billing_record_monetary_grant_credit_charge_rub,
+    billing_record_month,
+    null AS billing_record_nbs_size,
+    null AS billing_record_nbs_type,
+    billing_record_pricing_quantity,
+    billing_record_pricing_unit,
+    NULL AS billing_record_resource_id,
+    billing_record_service_credit_charge,
+    billing_record_service_credit_charge_rub,
+    billing_record_start_time,
+    billing_record_total,
+    billing_record_total_rub,
+    billing_record_trial_credit_charge,
+    billing_record_trial_credit_charge_rub,
+    billing_record_usage_unit,
+    0 AS billing_record_var_reward,
+    0 AS billing_record_var_reward_rub,
+    0 AS billing_record_volume_incentive_credit_charge,
+    0 AS billing_record_volume_incentive_credit_charge_rub,
+    cb_quote,
+    event,
+    event_time,
+    labels_hash,
+    labels_json,
+    --labels_system_labels,
+    --labels_user_labels,
+    metrika_ad_block,
+    metrika_age,
+    metrika_area,
+    metrika_channel,
+    metrika_city,
+    metrika_client_ip,
+    metrika_country,
+    metrika_device_model,
+    metrika_device_type,
+    metrika_duration,
+    metrika_general_interests,
+    metrika_hits,
+    metrika_income,
+    metrika_interests,
+    metrika_is_bounce,
+    metrika_is_robot,
+    metrika_mobile_phone_vendor,
+    metrika_os,
+    metrika_page_views,
+    metrika_referer,
+    metrika_remote_ip,
+    metrika_resolution_depth,
+    metrika_resolution_height,
+    metrika_resolution_width,
+    metrika_search_phrase,
+    metrika_session_start_time,
+    metrika_sex,
+    metrika_start_url,
+    metrika_total_visits,
+    metrika_utm_campaign,
+    metrika_utm_content,
+    metrika_utm_medium,
+    metrika_utm_source,
+    metrika_utm_term,
+    metrika_window_client_height,
+    person_cloud_name,
+    person_cloud_status,
+    person_email,
+    person_first_name,
+    person_last_name,
+    person_login,
+    person_mail_billing,
+    person_mail_event,
+    person_mail_feature,
+    person_mail_info,
+    person_mail_promo,
+    person_mail_tech,
+    person_mail_testing,
+    person_phone,
+    person_user_settings_email,
+    product_name,
+    NULL AS publisher_currency,
+    NULL AS publisher_account_id,
+    NULL AS publisher_balance_client_id,
+    puid,
+    service_id,
+    service_name,
+    sku_id,
+    sku_name,
+    sku_tag_core_fraction,
+    sku_tag_core_fraction_number,
+    sku_tag_cores,
+    sku_tag_cores_number,
+    sku_tag_database,
+    sku_tag_lazy,
+    sku_tag_platform,
+    sku_tag_preemptible,
+    sku_tag_ram,
+    sku_tag_ram_number,
+    sku_tag_service_group,
+    sku_tag_service_long_name,
+    sku_tag_service_name,
+    sku_tag_subservice_name,
+    total,
+    usd_rur_quote
+FROM $acquisition_cube_table
+);
+
+$full_cube = (
+    SELECT * FROM $analytics_cube_with_acquisition_fields
+    UNION ALL
+    SELECT * FROM $acquisition_cube
+);
+$full_cube_aggregation_source = (
+    SELECT
+    billing_account_company_name                                                                                    AS account_name,
+    billing_account_active_grant_ids_at_moment                                                                      AS active_grant_ids,
+    billing_account_active_grants_at_moment                                                                         AS active_grants,
+    metrika_ad_block                                                                                                AS ad_block,
+    metrika_age                                                                                                     AS age,
+    'all'                                                                                                           AS all,
+    billing_account_architect_at_moment                                                                             AS architect,
+    billing_account_architect                                                                                       AS architect_actual,
+    metrika_area                                                                                                    AS area,
+    billing_account_currency                                                                                        AS ba_currency,
+    billing_account_name                                                                                            AS ba_name,
+    billing_account_payment_cycle_type_at_moment                                                                    AS ba_payment_cycle_type,
+    billing_account_payment_cycle_type                                                                              AS ba_payment_cycle_type_actual,
+    billing_account_person_type_at_moment                                                                           AS ba_person_type,
+    billing_account_person_type                                                                                     AS ba_person_type_actual,
+    billing_account_state_at_moment                                                                                 AS ba_state,
+    billing_account_state                                                                                           AS ba_state_actual,
+    billing_account_type_at_moment                                                                                  AS ba_type,
+    billing_account_type                                                                                            AS ba_type_actual,
+    billing_account_usage_status_at_moment                                                                          AS ba_usage_status,
+    billing_account_usage_status                                                                                    AS ba_usage_status_actual,
+    billing_account_balance_at_moment                                                                               AS balance,
+    CAST(billing_account_balance AS Float)                                                                          AS balance_actual,
+    $make_not_null(billing_account_balance_long_name_at_moment, 'unknown')                                          AS balance_long_name,
+    $make_not_null(billing_account_balance_name_at_moment, 'unknown')                                               AS balance_name,
+    billing_account_id                                                                                              AS billing_account_id,
+    billing_record_committed_use_discount_credit_charge                                                             AS billing_record_committed_use_discount_credit_charge,
+    billing_record_committed_use_discount_credit_charge_rub                                                         AS billing_record_committed_use_discount_credit_charge_rub,
+    $get_vat(billing_record_committed_use_discount_credit_charge_rub, billing_record_date, billing_account_currency)    AS billing_record_committed_use_discount_credit_charge_rub_vat,
+    billing_record_credit                                                                                           AS billing_record_credit,
+    billing_record_credit_rub                                                                                       AS billing_record_credit_rub,
+    $get_vat(billing_record_credit_rub, billing_record_date, billing_account_currency)                              AS billing_record_credit_rub_vat,
+    billing_record_disabled_credit_charge                                                                           AS billing_record_disabled_credit_charge,
+    billing_record_disabled_credit_charge_rub                                                                       AS billing_record_disabled_credit_charge_rub,
+    $get_vat(billing_record_disabled_credit_charge_rub, billing_record_date, billing_account_currency)              AS billing_record_disabled_credit_charge_rub_vat,
+    billing_record_end_time                                                                                         AS billing_record_end_time,
+    billing_record_monetary_grant_credit_charge                                                                     AS billing_record_monetary_grant_credit_charge,
+    billing_record_monetary_grant_credit_charge_rub                                                                 AS billing_record_monetary_grant_credit_charge_rub,
+    $get_vat(billing_record_monetary_grant_credit_charge_rub, billing_record_date, billing_account_currency)        AS billing_record_monetary_grant_credit_charge_rub_vat,
+    billing_record_pricing_quantity                                                                                 AS billing_record_pricing_quantity,
+    billing_record_pricing_unit                                                                                     AS billing_record_pricing_unit,
+    billing_record_service_credit_charge                                                                            AS billing_record_service_credit_charge,
+    billing_record_service_credit_charge_rub                                                                        AS billing_record_service_credit_charge_rub,
+    $get_vat(billing_record_service_credit_charge_rub, billing_record_date, billing_account_currency)               AS billing_record_service_credit_charge_rub_vat,
+    billing_record_total                                                                                            AS billing_record_total,
+    billing_record_trial_credit_charge                                                                              AS billing_record_trial_credit_charge,
+    billing_record_trial_credit_charge_rub                                                                          AS billing_record_trial_credit_charge_rub,
+    $get_vat(billing_record_trial_credit_charge_rub, billing_record_date, billing_account_currency)                 AS billing_record_trial_credit_charge_rub_vat,
+    billing_record_usage_unit                                                                                       AS billing_record_usage_unit,
+    billing_record_var_reward                                                                                       AS billing_record_var_reward,
+    billing_record_var_reward_rub                                                                                   AS billing_record_var_reward_rub,
+    $get_vat(billing_record_var_reward_rub, billing_record_date, billing_account_currency)                          AS billing_record_var_reward_rub_vat,
+    billing_record_volume_incentive_credit_charge                                                                   AS billing_record_volume_incentive_credit_charge,
+    billing_record_volume_incentive_credit_charge_rub                                                               AS billing_record_volume_incentive_credit_charge_rub,
+    $get_vat(billing_record_volume_incentive_credit_charge_rub, billing_record_date, billing_account_currency)      AS billing_record_volume_incentive_credit_charge_rub_vat,
+    billing_record_compute_core_fraction                                                                            AS compute_core_fraction,
+    billing_record_compute_cores                                                                                    AS compute_cores,
+    billing_record_compute_memory                                                                                   AS compute_memory,
+    billing_record_compute_platform_id                                                                              AS compute_platform_id,
+    billing_record_compute_product_ids                                                                              AS compute_product_ids,
+    billing_record_compute_public_fips                                                                              AS compute_public_fips,
+    billing_record_compute_sockets                                                                                  AS compute_sockets,
+    billing_record_mdb_cluster_id                                                                                   AS mdb_cluster_id,
+    billing_record_mdb_cluster_type                                                                                 AS mdb_cluster_type,
+    billing_record_mdb_compute_instance_id                                                                          AS mdb_compute_instance_id,
+    billing_record_mdb_core_fraction                                                                                AS mdb_core_fraction,
+    billing_record_mdb_cores                                                                                        AS mdb_cores,
+    billing_record_mdb_disk_size                                                                                    AS mdb_disk_size,
+    billing_record_mdb_disk_type_id                                                                                 AS mdb_disk_type_id,
+    billing_record_mdb_memory                                                                                       AS mdb_memory,
+    billing_record_mdb_online                                                                                       AS mdb_online,
+    billing_record_mdb_platform_id                                                                                  AS mdb_platform_id,
+    billing_record_mdb_public_ip                                                                                    AS mdb_public_ip,
+    billing_record_mdb_resource_preset_id                                                                           AS mdb_resource_preset_id,
+    billing_record_mdb_roles                                                                                        AS mdb_roles,
+    billing_record_mdb_software_accelerated_network_cores                                                           AS mdb_software_accelerated_network_cores,
+    billing_record_nbs_size                                                                                         AS nbs_size,
+    billing_record_nbs_type                                                                                         AS nbs_type,
+    billing_account_block_reason_at_moment                                                                          AS block_reason,
+    billing_account_board_segment_at_moment                                                                         AS board_segment,
+    billing_account_board_segment                                                                                   AS board_segment_actual,
+    metrika_channel                                                                                                 AS channel,
+    metrika_city                                                                                                    AS city,
+    metrika_client_ip                                                                                               AS client_ip,
+    billing_record_cloud_id                                                                                         AS cloud_id,
+    person_cloud_name                                                                                               AS cloud_name,
+    person_cloud_status                                                                                             AS cloud_status,
+    IF(sku_tag_core_fraction IS NULL OR sku_tag_core_fraction = '', 'inapplicable', sku_tag_core_fraction)          AS core_fraction,
+    sku_tag_core_fraction_number                                                                                    AS core_fraction_number,
+    CASE
+        WHEN sku_tag_core_fraction = '100' THEN '100%'
+        WHEN sku_tag_core_fraction > '0' AND sku_tag_core_fraction < '9999' THEN 'burst'
+        ELSE 'inapplicable'
+    END                                                                                                             AS core_type,
+    sku_tag_cores                                                                                                   AS cores,
+    sku_tag_cores_number                                                                                            AS cores_number,
+    billing_record_cost                                                                                             AS cost,
+    billing_record_cost_rub                                                                                         AS cost_rub,
+    $get_vat(billing_record_cost_rub, billing_record_date, billing_account_currency)                                AS cost_rub_vat,
+    metrika_country                                                                                                 AS country,
+    sku_tag_database                                                                                                AS database,
+    metrika_device_model                                                                                            AS device_model,
+    metrika_device_type                                                                                             AS device_type,
+    metrika_duration                                                                                                AS duration,
+    person_email                                                                                                    AS email,
+    event                                                                                                           AS event,
+    IF(event != 'day_use', event_time, billing_record_date ||' 23:59:59')                                           AS event_time,
+    person_first_name                                                                                               AS first_name,
+    metrika_general_interests                                                                                       AS general_interests,
+    billing_account_grant_amount_at_moment                                                                          AS grant_amount,
+    billing_account_grant_amounts_at_moment                                                                         AS grant_amounts,
+    billing_account_grant_end_times_at_moment                                                                       AS grant_end_times,
+    billing_account_grant_source_ids_at_moment                                                                      AS grant_source_ids,
+    billing_account_grant_sources_at_moment                                                                         AS grant_sources,
+    billing_account_grant_start_times_at_moment                                                                     AS grant_start_times,
+    metrika_hits                                                                                                    AS hits,
+    metrika_income                                                                                                  AS income,
+    metrika_interests                                                                                               AS interests,
+    metrika_is_bounce                                                                                               AS is_bounce,
+    IF(sku_name LIKE 'v1%', 'reserve', 'on demand')                                                                 AS is_reserve,
+    metrika_is_robot                                                                                                AS is_robot,
+    sku_tag_is_committed                                                                                            AS is_committed,
+    sku_tag_is_sustainable                                                                                          AS is_sustainable,
+    billing_account_is_corporate_card                                                                               AS is_corporate_card,
+    billing_account_is_fraud                                                                                        AS is_fraud,
+    billing_account_is_iot_at_moment                                                                                AS is_iot,
+    billing_account_is_iot                                                                                          AS is_iot_actual,
+    billing_account_is_isv_at_moment                                                                                AS is_isv,
+    billing_account_is_isv                                                                                          AS is_isv_actual,
+    billing_account_is_var_at_moment                                                                                AS is_var,
+    billing_account_is_var                                                                                          AS is_var_actual,
+    billing_account_is_verified_at_moment                                                                           AS is_verified,
+    billing_account_is_verified                                                                                     AS is_verified_actual,
+    person_last_name                                                                                                AS last_name,
+    person_login                                                                                                    AS login,
+    person_mail_billing                                                                                             AS mail_billing,
+    person_mail_event                                                                                               AS mail_event,
+    person_mail_feature                                                                                             AS mail_feature,
+    person_mail_info                                                                                                AS mail_info,
+    person_mail_promo                                                                                               AS mail_promo,
+    person_mail_tech                                                                                                AS mail_tech,
+    person_mail_testing                                                                                             AS mail_testing,
+    billing_account_master_account_id                                                                               AS master_account_id,
+    sku_tag_mk8s_relevant                                                                                           AS mk8s_relevant,
+    metrika_mobile_phone_vendor                                                                                     AS mobile_phone_vendor,
+    metrika_os                                                                                                      AS os,
+    metrika_page_views                                                                                              AS page_views,
+    person_phone                                                                                                    AS phone,
+    sku_tag_platform                                                                                                AS platform,
+    billing_account_potential_at_moment                                                                             AS potential,
+    billing_account_potential                                                                                       AS potential_actual,
+    CASE
+        WHEN (sku_tag_preemptible IS NULL OR sku_tag_preemptible = '') AND sku_name LIKE '%compute%cpu%' THEN 'non-preemptible'
+        WHEN (sku_tag_preemptible IS NULL OR sku_tag_preemptible = '') AND sku_name NOT LIKE '%compute%cpu%' THEN 'inapplicable'
+        ELSE sku_tag_preemptible
+    END                                                                                                             AS preemptible,
+    billing_account_puid                                                                                            AS puid,
+    sku_tag_ram                                                                                                     AS ram,
+    sku_tag_ram_number                                                                                              AS ram_number,
+    billing_record_total_rub  - billing_record_var_reward_rub                                                       AS real_consumption,
+    $get_vat(billing_record_total_rub - billing_record_var_reward_rub,
+             billing_record_date,
+             billing_account_currency)                                                                              AS real_consumption_vat,
+    metrika_referer                                                                                                 AS referer,
+    metrika_remote_ip                                                                                               AS remote_ip,
+    metrika_resolution_depth                                                                                        AS resolution_depth,
+    metrika_resolution_height                                                                                       AS resolution_height,
+    metrika_resolution_width                                                                                        AS resolution_width,
+    billing_account_sales_name_at_moment                                                                            AS sales_name,
+    billing_account_sales_name                                                                                      AS sales_name_actual,
+    metrika_search_phrase                                                                                           AS search_phrase,
+    billing_account_segment_at_moment                                                                               AS segment,
+    billing_account_segment                                                                                         AS segment_actual,
+    sku_tag_service_group                                                                                           AS service_group,
+    service_id                                                                                                      AS service_id,
+    sku_tag_service_long_name                                                                                       AS service_long_name,
+    sku_tag_service_name                                                                                            AS service_name,
+    metrika_session_start_time                                                                                      AS session_start_time,
+    metrika_sex                                                                                                     AS sex,
+    sku_id                                                                                                          AS sku_id,
+    sku_tag_lazy                                                                                                    AS sku_lazy,
+    sku_name                                                                                                        AS sku_name,
+    metrika_start_url                                                                                               AS start_url,
+    sku_tag_subservice_name                                                                                         AS subservice_name,
+    total                                                                                                           AS total,
+    metrika_total_visits                                                                                            AS total_visits,
+    billing_record_monetary_grant_credit_charge_rub                                                             AS trial_consumption,
+    $get_vat(billing_record_monetary_grant_credit_charge_rub, billing_record_date, billing_account_currency)    AS trial_consumption_vat,
+    billing_account_unblock_reason_at_moment                                                                        AS unblock_reason,
+    cb_quote                                                                                                        AS usd_rur_quote,
+    person_user_settings_email                                                                                      AS user_settings_email,
+    metrika_utm_campaign                                                                                            AS utm_campaign,
+    metrika_utm_content                                                                                             AS utm_content,
+    metrika_utm_medium                                                                                              AS utm_medium,
+    metrika_utm_source                                                                                              AS utm_source,
+    metrika_utm_term                                                                                                AS utm_term,
+    labels_vm_origin                                                                                                AS vm_origin,
+    metrika_window_client_height                                                                                    AS window_client_height,
+    crm_account_name                                                                                                AS crm_account_name,
+    crm_account_segment                                                                                             AS crm_account_segment,
+    crm_account_owner                                                                                               AS crm_account_owner,
+    crm_account_architect                                                                                           AS crm_account_architect,
+    crm_account_bus_dev                                                                                             AS crm_account_bus_dev,
+    crm_account_partner_manager                                                                                     AS crm_account_partner_manager,
+    crm_account_sales                                                                                               AS crm_account_sales,
+    crm_account_segment_current                                                                                     AS crm_account_segment_current,
+    crm_account_owner_current                                                                                       AS crm_account_owner_current,
+    crm_account_architect_current                                                                                   AS crm_account_architect_current,
+    crm_account_bus_dev_current                                                                                     AS crm_account_bus_dev_current,
+    crm_account_partner_manager_current                                                                             AS crm_account_partner_manager_current,
+    crm_account_sales_current                                                                                       AS crm_account_sales_current,
+    crm_account_tags                                                                                                AS crm_account_tags,
+
+    marketing_attribution_event_id                                                                                  AS marketing_attribution_event_id,
+    marketing_attribution_event_type                                                                                AS marketing_attribution_event_type,
+    marketing_attribution_event_time                                                                                AS marketing_attribution_event_time,
+    marketing_attribution_channel                                                                                   AS marketing_attribution_channel,
+    marketing_attribution_channel_marketing_influenced                                                              AS marketing_attribution_channel_marketing_influenced,
+    marketing_attribution_utm_campaign                                                                              AS marketing_attribution_utm_campaign,
+    marketing_attribution_utm_source                                                                                AS marketing_attribution_utm_source,
+    marketing_attribution_utm_medium                                                                                AS marketing_attribution_utm_medium,
+    marketing_attribution_utm_term                                                                                  AS marketing_attribution_utm_term,
+    marketing_attribution_counter_id_serial                                                                         AS marketing_attribution_counter_id_serial,
+    marketing_attribution_event_first_weight                                                                        AS marketing_attribution_event_first_weight,
+    marketing_attribution_event_last_weight                                                                         AS marketing_attribution_event_last_weight,
+    marketing_attribution_event_uniform_weight                                                                      AS marketing_attribution_event_uniform_weight,
+    marketing_attribution_event_u_shape_weight                                                                      AS marketing_attribution_event_u_shape_weight,
+    marketing_attribution_event_exp_7d_half_life_time_decay_weight                                                  AS marketing_attribution_event_exp_7d_half_life_time_decay_weight,
+
+    marketing_touched_events_count                                                                                    AS marketing_touched_events_count,
+    marketing_touched_events_list                                                                                     AS marketing_touched_events_list
+
+FROM $full_cube
+);
+
+$full_cube_aggregation_without_event_times = (
+SELECT
+
+    $make_not_null(account_name, 'unknown')                                                             AS account_name,
+    $make_not_null(active_grant_ids, '')                                                                AS active_grant_ids,
+    $make_not_null(active_grants, -1)                                                                   AS active_grants,
+    $make_not_null(ad_block, 0)                                                                         AS ad_block,
+    $make_not_null(age, '')                                                                             AS age,
+    $make_not_null(`all`, 'all')                                                                        AS `all`,
+    $make_not_null(architect_actual, '')                                                                AS architect_actual,
+    $make_not_null(architect, '')                                                                       AS architect,
+    $make_not_null(area, '')                                                                            AS area,
+    $make_not_null(ba_currency, '')                                                                     AS ba_currency,
+    $make_not_null(ba_name, '')                                                                         AS ba_name,
+    $make_not_null(ba_payment_cycle_type_actual, '')                                                    AS ba_payment_cycle_type_actual,
+    $make_not_null(ba_payment_cycle_type, '')                                                           AS ba_payment_cycle_type,
+    $make_not_null(ba_person_type_actual, '')                                                           AS ba_person_type_actual,
+    $make_not_null(ba_person_type, '')                                                                  AS ba_person_type,
+    $make_not_null(ba_state_actual, '')                                                                 AS ba_state_actual,
+    $make_not_null(ba_state, '')                                                                        AS ba_state,
+    $make_not_null(ba_type_actual, '')                                                                  AS ba_type_actual,
+    $make_not_null(ba_type, '')                                                                         AS ba_type,
+    $make_not_null(ba_usage_status_actual, '')                                                          AS ba_usage_status_actual,
+    $make_not_null(ba_usage_status, '')                                                                 AS ba_usage_status,
+    $make_not_null(balance, 0.0)                                                                        AS balance,
+    $make_not_null(balance_actual, 0.0)                                                                 AS balance_actual,
+    $make_not_null(balance_long_name, '')                                                               AS balance_long_name,
+    $make_not_null(balance_name, '')                                                                    AS balance_name,
+    $make_not_null(billing_account_id, '')                                                              AS billing_account_id,
+    $make_not_null(billing_record_pricing_unit , '')                                                    AS billing_record_pricing_unit,
+    $make_not_null(billing_record_usage_unit , '')                                                      AS billing_record_usage_unit,
+    $make_not_null(block_reason, '')                                                                    AS block_reason,
+    $make_not_null(board_segment_actual, '')                                                            AS board_segment_actual,
+    $make_not_null(board_segment, '')                                                                   AS board_segment,
+    $make_not_null(channel, '')                                                                         AS channel,
+    $make_not_null(city, '')                                                                            AS city,
+    $make_not_null(client_ip, '')                                                                       AS client_ip,
+    $make_not_null(cloud_id , '')                                                                       AS cloud_id,
+    $make_not_null(cloud_name, '')                                                                      AS cloud_name,
+    $make_not_null(cloud_status, '')                                                                    AS cloud_status,
+    $make_not_null(core_fraction, '')                                                                   AS core_fraction,
+    $make_not_null(core_fraction_number, -1)                                                            AS core_fraction_number,
+    $make_not_null(cores, '')                                                                           AS cores,
+    $make_not_null(cores_number, -1)                                                                    AS cores_number,
+    $make_not_null(core_type, '')                                                                       AS core_type,
+    $make_not_null(country, '')                                                                         AS country,
+    $make_not_null(database, '')                                                                        AS database,
+    $make_not_null(device_model, '')                                                                    AS device_model,
+    $make_not_null(device_type, '')                                                                     AS device_type,
+    $make_not_null(duration, -1)                                                                        AS duration,
+    $make_not_null(email, 'fake@fake.ru')                                                               AS email,
+    $make_not_null(event , '')                                                                          AS event,
+    $make_not_null(event_time, '0000-00-00 00:00:00')                                                   AS event_time,
+    $make_not_null(first_name, '')                                                                      AS first_name,
+    $make_not_null(general_interests, '')                                                               AS general_interests,
+    $make_not_null(grant_amount, 0.0)                                                                   AS grant_amount,
+    $make_not_null(grant_amounts, '')                                                                   AS grant_amounts,
+    $make_not_null(grant_end_times, '')                                                                 AS grant_end_times,
+    $make_not_null(grant_source_ids, '')                                                                AS grant_source_ids,
+    $make_not_null(grant_sources, '')                                                                   AS grant_sources,
+    $make_not_null(grant_start_times, '')                                                               AS grant_start_times,
+    $make_not_null(hits, 0)                                                                             AS hits,
+    $make_not_null(income, -1)                                                                          AS income,
+    $make_not_null(interests, '')                                                                       AS interests,
+    $make_not_null(is_bounce, 0)                                                                        AS is_bounce,
+    $make_not_null(is_committed, 0)                                                                     AS is_committed,
+    $make_not_null(is_sustainable, 0)                                                                   AS is_sustainable,
+    $make_not_null(is_corporate_card, 0,)                                                               AS is_corporate_card,
+    $make_not_null(is_fraud, 0)                                                                         AS is_fraud,
+    $make_not_null(is_iot, 0)                                                                           AS is_iot,
+    $make_not_null(is_iot_actual, 0)                                                                    AS is_iot_actual,
+    $make_not_null(is_isv, 0)                                                                           AS is_isv,
+    $make_not_null(is_isv_actual, 0)                                                                    AS is_isv_actual,
+    $make_not_null(is_reserve, 'unknown')                                                               AS is_reserve,
+    $make_not_null(is_robot, '')                                                                        AS is_robot,
+    $make_not_null(is_var_actual, '')                                                                   AS is_var_actual,
+    $make_not_null(is_var, '')                                                                          AS is_var,
+    $make_not_null(is_verified, 'false')                                                                AS is_verified,
+    IF(is_verified_actual IS NULL, 'false', CAST(is_verified_actual AS String))                         AS is_verified_actual,
+    $make_not_null(last_name, '')                                                                       AS last_name,
+    $make_not_null(login, '')                                                                           AS login,
+    $make_not_null(mail_billing, -1)                                                                    AS mail_billing,
+    $make_not_null(mail_event, -1)                                                                      AS mail_event,
+    $make_not_null(mail_feature, -1)                                                                    AS mail_feature,
+    $make_not_null(mail_info, -1)                                                                       AS mail_info,
+    $make_not_null(mail_promo, -1)                                                                      AS mail_promo,
+    $make_not_null(mail_tech, -1)                                                                       AS mail_tech,
+    $make_not_null(mail_testing, -1)                                                                    AS mail_testing,
+    $make_not_null(master_account_id, '')                                                               AS master_account_id,
+    $make_not_null(mk8s_relevant, -1)                                                                   AS mk8s_relevant,
+    $make_not_null(mobile_phone_vendor,-1)                                                              AS mobile_phone_vendor,
+    $make_not_null(os, '')                                                                              AS os,
+    $make_not_null(page_views, -1)                                                                      AS page_views,
+    $make_not_null(phone, '')                                                                           AS phone,
+    $make_not_null(platform, '')                                                                        AS platform,
+    $make_not_null(potential_actual, '')                                                                AS potential_actual,
+    $make_not_null(potential, '')                                                                       AS potential,
+    $make_not_null(preemptible, '')                                                                     AS preemptible,
+    $make_not_null(puid, '')                                                                            AS puid,
+    $make_not_null(ram, '')                                                                             AS ram,
+    $make_not_null(ram_number, -1)                                                                      AS ram_number,
+    $make_not_null(referer, '')                                                                         AS referer,
+    $make_not_null(remote_ip, '')                                                                       AS remote_ip,
+    $make_not_null(resolution_depth, 0)                                                                 AS resolution_depth,
+    $make_not_null(resolution_height, 0)                                                                AS resolution_height,
+    $make_not_null(resolution_width, 0)                                                                 AS resolution_width,
+    $make_not_null(sales_name_actual, '')                                                               AS sales_name_actual,
+    $make_not_null(sales_name, '')                                                                      AS sales_name,
+    $make_not_null(search_phrase, '')                                                                   AS search_phrase,
+    $make_not_null(segment_actual, '')                                                                  AS segment_actual,
+    $make_not_null(segment, '')                                                                         AS segment,
+    $make_not_null(service_group, sku_name)                                                             AS service_group,
+    $make_not_null(service_id, '')                                                                      AS service_id,
+    $make_not_null(service_long_name, '')                                                               AS service_long_name,
+    $make_not_null(service_name, sku_name)                                                              AS service_name,
+    $make_not_null(session_start_time, '')                                                              AS session_start_time,
+    $make_not_null(sex, '')                                                                             AS sex,
+    $make_not_null(sku_id, '')                                                                          AS sku_id,
+    $make_not_null(sku_name, '')                                                                        AS sku_name,
+    IF(sku_lazy IS NULL, -1, CAST(sku_lazy AS Int64))                                                   AS sku_lazy,
+    $make_not_null(start_url, '')                                                                       AS start_url,
+    $make_not_null(subservice_name, sku_name)                                                           AS subservice_name,
+    $make_not_null(total, 'total')                                                                      AS total,
+    $make_not_null(total_visits, 0)                                                                     AS total_visits,
+    $make_not_null(unblock_reason, '')                                                                  AS unblock_reason,
+    $make_not_null(usd_rur_quote , 0.0)                                                                 AS usd_rur_quote,
+    $make_not_null(user_settings_email, 'fake@fake.ru')                                                 AS user_settings_email,
+    $make_not_null(utm_campaign, '')                                                                    AS utm_campaign,
+    $make_not_null(utm_content, '')                                                                     AS utm_content,
+    $make_not_null(utm_medium, '')                                                                      AS utm_medium,
+    $make_not_null(utm_source, '')                                                                      AS utm_source,
+    $make_not_null(utm_term, '')                                                                        AS utm_term,
+    $make_not_null(vm_origin,'')                                                                        AS vm_origin,
+    $make_not_null(window_client_height, 0)                                                             AS window_client_height,
+    $make_not_null(compute_core_fraction, 0)                                                            AS compute_core_fraction,
+    $make_not_null(compute_cores, 0)                                                                    AS compute_cores,
+    $make_not_null(compute_memory, 0)                                                                   AS compute_memory,
+    $make_not_null(compute_platform_id, '')                                                             AS compute_platform_id,
+    $make_not_null(compute_product_ids, [])                                                             AS compute_product_ids,
+    $make_not_null(compute_public_fips, 0)                                                              AS compute_public_fips,
+    $make_not_null(compute_sockets, 0)                                                                  AS compute_sockets,
+    $make_not_null(mdb_cluster_id, '')                                                                  AS mdb_cluster_id,
+    $make_not_null(mdb_cluster_type, '')                                                                AS mdb_cluster_type,
+    $make_not_null(mdb_compute_instance_id, '')                                                         AS mdb_compute_instance_id,
+    $make_not_null(mdb_core_fraction, 0)                                                                AS mdb_core_fraction,
+    $make_not_null(mdb_cores, 0)                                                                        AS mdb_cores,
+    $make_not_null(mdb_disk_size, 0)                                                                    AS mdb_disk_size,
+    $make_not_null(mdb_disk_type_id, '')                                                                AS mdb_disk_type_id,
+    $make_not_null(mdb_memory, 0)                                                                       AS mdb_memory,
+    $make_not_null(mdb_online, 0)                                                                       AS mdb_online,
+    $make_not_null(mdb_platform_id, '')                                                                 AS mdb_platform_id,
+    $make_not_null(mdb_public_ip, 0)                                                                    AS mdb_public_ip,
+    $make_not_null(mdb_resource_preset_id, '')                                                          AS mdb_resource_preset_id,
+    $make_not_null(mdb_roles, [])                                                                       AS mdb_roles,
+    $make_not_null(mdb_software_accelerated_network_cores, 0)                                           AS mdb_software_accelerated_network_cores,
+    $make_not_null(nbs_size, 0)                                                                         AS nbs_size,
+    $make_not_null(nbs_type, '')                                                                        AS nbs_type,
+    $make_not_null(SUM(billing_record_committed_use_discount_credit_charge), 0.0)                       AS br_credit_cud,
+    $make_not_null(SUM(billing_record_committed_use_discount_credit_charge_rub), 0.0)                   AS br_credit_cud_rub,
+    $make_not_null(SUM(billing_record_committed_use_discount_credit_charge_rub_vat), 0.0)               AS br_credit_cud_rub_vat,
+    $make_not_null(SUM(cost), 0.0)                                                                      AS br_cost,
+    $make_not_null(SUM(cost_rub), 0.0)                                                                  AS br_cost_rub,
+    $make_not_null(SUM(cost_rub_vat), 0.0)                                                              AS br_cost_rub_vat,
+    $make_not_null(SUM(billing_record_credit), 0.0)                                                     AS br_credit,
+    $make_not_null(SUM(billing_record_credit_rub), 0.0)                                                 AS br_credit_rub,
+    $make_not_null(SUM(billing_record_credit_rub_vat), 0.0)                                             AS br_credit_rub_vat,
+    $make_not_null(SUM(billing_record_disabled_credit_charge), 0.0)                                     AS br_credit_disabled,
+    $make_not_null(SUM(billing_record_disabled_credit_charge_rub), 0.0)                                 AS br_credit_disabled_rub,
+    $make_not_null(SUM(billing_record_disabled_credit_charge_rub_vat), 0.0)                             AS br_credit_disabled_rub_vat,
+    $make_not_null(SUM(billing_record_monetary_grant_credit_charge),0.0)                                AS br_credit_grant,
+    $make_not_null(SUM(billing_record_monetary_grant_credit_charge_rub) , 0.0)                          AS br_credit_grant_rub,
+    $make_not_null(SUM(billing_record_monetary_grant_credit_charge_rub_vat) , 0.0)                      AS br_credit_grant_rub_vat,
+    $make_not_null(SUM(billing_record_pricing_quantity), 0.0)                                           AS br_pricing_quantity,
+    $make_not_null(SUM(billing_record_service_credit_charge), 0.0)                                      AS br_credit_service,
+    $make_not_null(SUM(billing_record_service_credit_charge_rub), 0.0)                                  AS br_credit_service_rub,
+    $make_not_null(SUM(billing_record_service_credit_charge_rub_vat), 0.0)                              AS br_credit_service_rub_vat,
+    $make_not_null(SUM(billing_record_total), 0.0)                                                      AS br_total,
+    $make_not_null(SUM(billing_record_trial_credit_charge), 0.0)                                        AS br_credit_trial,
+    $make_not_null(SUM(billing_record_trial_credit_charge_rub), 0.0)                                    AS br_credit_trial_rub,
+    $make_not_null(SUM(billing_record_trial_credit_charge_rub_vat), 0.0)                                AS br_credit_trial_rub_vat,
+    $make_not_null(SUM(billing_record_var_reward), 0.0)                                                 AS br_var_reward,
+    $make_not_null(SUM(billing_record_var_reward_rub), 0.0)                                             AS br_var_reward_rub,
+    $make_not_null(SUM(billing_record_var_reward_rub_vat), 0.0)                                         AS br_var_reward_rub_vat,
+    $make_not_null(SUM(billing_record_volume_incentive_credit_charge), 0.0)                             AS br_credit_volume_incentive,
+    $make_not_null(SUM(billing_record_volume_incentive_credit_charge_rub), 0.0)                         AS br_credit_volume_incentive_rub,
+    $make_not_null(SUM(billing_record_volume_incentive_credit_charge_rub_vat), 0.0)                     AS br_credit_volume_incentive_rub_vat,
+    $make_not_null(SUM(real_consumption), 0.0,)                                                         AS real_consumption,
+    $make_not_null(SUM(real_consumption_vat), 0.0)                                                      AS real_consumption_vat,
+    $make_not_null(SUM(trial_consumption), 0.0)                                                         AS trial_consumption,
+    $make_not_null(SUM(trial_consumption_vat), 0.0)                                                     AS trial_consumption_vat,
+    $make_not_null(crm_account_name, '')                                                                AS crm_account_name,
+    $make_not_null(crm_account_segment, 'Mass')                                                         AS crm_account_segment,
+    $make_not_null(crm_account_owner, 'No Account Owner')                                               AS crm_account_owner,
+    $make_not_null(crm_account_architect, 'No Architect')                                               AS crm_account_architect,
+    $make_not_null(crm_account_bus_dev, 'No BizDev')                                                    AS crm_account_bus_dev,
+    $make_not_null(crm_account_partner_manager, 'No Partner Manager')                                   AS crm_account_partner_manager,
+    $make_not_null(crm_account_sales, 'No Sales Manager')                                                               AS crm_account_sales,
+    $make_not_null(crm_account_segment_current, 'Mass')                                                 AS crm_account_segment_current,
+    $make_not_null(crm_account_owner_current, 'No Account Owner')                                                       AS crm_account_owner_current,
+    $make_not_null(crm_account_architect_current, 'No Architect')                                                   AS crm_account_architect_current,
+    $make_not_null(crm_account_bus_dev_current, 'No BizDev')                                                     AS crm_account_bus_dev_current,
+    $make_not_null(crm_account_partner_manager_current, 'No Partner Manager')                                             AS crm_account_partner_manager_current,
+    $make_not_null(crm_account_sales_current, 'No Sales Manage')                                                       AS crm_account_sales_current,
+    $make_not_null(crm_account_tags, '')                                                                AS crm_account_tags,
+
+    $make_not_null(marketing_attribution_event_id, 0)                                                   AS marketing_attribution_event_id,
+    $make_not_null(marketing_attribution_event_type, '')                                                AS marketing_attribution_event_type,
+    $make_not_null(marketing_attribution_event_time, 0)                                                 AS marketing_attribution_event_time,
+    $make_not_null(marketing_attribution_channel, '')                                                   AS marketing_attribution_channel,
+    $make_not_null(marketing_attribution_channel_marketing_influenced, '')                              AS marketing_attribution_channel_marketing_influenced,
+    $make_not_null(marketing_attribution_utm_campaign, '')                                              AS marketing_attribution_utm_campaign,
+    $make_not_null(marketing_attribution_utm_source, '')                                                AS marketing_attribution_utm_source,
+    $make_not_null(marketing_attribution_utm_medium, '')                                                AS marketing_attribution_utm_medium,
+    $make_not_null(marketing_attribution_utm_term, '')                                                  AS marketing_attribution_utm_term,
+    $make_not_null(marketing_attribution_counter_id_serial, 0)                                          AS marketing_attribution_counter_id_serial,
+    $make_not_null(marketing_attribution_event_first_weight, 1.0)                                       AS marketing_attribution_event_first_weight,
+    $make_not_null(marketing_attribution_event_last_weight, 1.0)                                        AS marketing_attribution_event_last_weight,
+    $make_not_null(marketing_attribution_event_uniform_weight, 1.0)                                     AS marketing_attribution_event_uniform_weight,
+    $make_not_null(marketing_attribution_event_u_shape_weight, 1.0)                                     AS marketing_attribution_event_u_shape_weight,
+    $make_not_null(marketing_attribution_event_exp_7d_half_life_time_decay_weight, 1.0)                 AS marketing_attribution_event_exp_7d_half_life_time_decay_weight,
+
+    $make_not_null(marketing_touched_events_count, 0)                                                   AS marketing_touched_events_count,
+    $make_not_null(marketing_touched_events_list, '')                                                   AS marketing_touched_events_list
+FROM $full_cube_aggregation_source
+GROUP BY
+    account_name,
+    active_grants,
+    active_grant_ids,
+    ad_block,
+    age,
+    `all`,
+    architect,
+    architect_actual,
+    area,
+    balance,
+    balance_actual,
+    balance_long_name,
+    balance_name,
+    ba_currency,
+    ba_name,
+    ba_payment_cycle_type,
+    ba_payment_cycle_type_actual,
+    ba_person_type,
+    ba_person_type_actual,
+    ba_state,
+    ba_state_actual,
+    ba_type,
+    ba_type_actual,
+    ba_usage_status,
+    ba_usage_status_actual,
+    billing_account_id,
+    billing_record_pricing_unit,
+    billing_record_usage_unit,
+    block_reason,
+    board_segment,
+    board_segment_actual,
+    channel,
+    city,
+    client_ip,
+    cloud_id,
+    cloud_name,
+    cloud_status,
+    compute_core_fraction,
+    compute_cores,
+    compute_memory,
+    compute_platform_id,
+    compute_product_ids,
+    compute_public_fips,
+    compute_sockets,
+    cores,
+    cores_number,
+    core_fraction,
+    core_fraction_number,
+    core_type,
+    country,
+    database,
+    device_model,
+    device_type,
+    duration,
+    email,
+    event,
+    event_time,
+    first_name,
+    general_interests,
+    grant_amount,
+    grant_amounts,
+    grant_end_times,
+    grant_sources,
+    grant_source_ids,
+    grant_start_times,
+    hits,
+    income,
+    interests,
+    is_bounce,
+    is_committed,
+    is_sustainable,
+    is_corporate_card,
+    is_fraud,
+    is_iot,
+    is_iot_actual,
+    is_isv,
+    is_isv_actual,
+    is_reserve,
+    is_robot,
+    is_var,
+    is_var_actual,
+    is_verified,
+    is_verified_actual,
+    last_name,
+    login,
+    mail_billing,
+    mail_event,
+    mail_feature,
+    mail_info,
+    mail_promo,
+    mail_tech,
+    mail_testing,
+    master_account_id,
+    mdb_cluster_id,
+    mdb_cluster_type,
+    mdb_compute_instance_id,
+    mdb_core_fraction,
+    mdb_cores,
+    mdb_disk_size,
+    mdb_disk_type_id,
+    mdb_memory,
+    mdb_online,
+    mdb_platform_id,
+    mdb_public_ip,
+    mdb_resource_preset_id,
+    mdb_roles,
+    mdb_software_accelerated_network_cores,
+    mk8s_relevant,
+    mobile_phone_vendor,
+    nbs_size,
+    nbs_type,
+    os,
+    page_views,
+    phone,
+    platform,
+    potential,
+    potential_actual,
+    preemptible,
+    puid,
+    ram,
+    ram_number,
+    referer,
+    remote_ip,
+    resolution_depth,
+    resolution_height,
+    resolution_width,
+    sales_name,
+    sales_name_actual,
+    search_phrase,
+    segment,
+    segment_actual,
+    service_group,
+    service_id,
+    service_long_name,
+    service_name,
+    session_start_time,
+    sex,
+    sku_id,
+    sku_lazy,
+    sku_name,
+    start_url,
+    subservice_name,
+    total,
+    total_visits,
+    unblock_reason,
+    usd_rur_quote,
+    user_settings_email,
+    utm_campaign,
+    utm_content,
+    utm_medium,
+    utm_source,
+    utm_term,
+    vm_origin,
+    window_client_height,
+    crm_account_name,
+    crm_account_segment,
+    crm_account_owner,
+    crm_account_architect,
+    crm_account_bus_dev,
+    crm_account_partner_manager,
+    crm_account_sales,
+    crm_account_segment_current,
+    crm_account_owner_current,
+    crm_account_architect_current,
+    crm_account_bus_dev_current,
+    crm_account_partner_manager_current,
+    crm_account_sales_current,
+    crm_account_tags,
+
+    marketing_attribution_event_id,
+    marketing_attribution_event_type,
+    marketing_attribution_event_time,
+    marketing_attribution_channel,
+    marketing_attribution_channel_marketing_influenced,
+    marketing_attribution_utm_campaign,
+    marketing_attribution_utm_source,
+    marketing_attribution_utm_medium,
+    marketing_attribution_utm_term,
+    marketing_attribution_counter_id_serial,
+    marketing_attribution_event_first_weight,
+    marketing_attribution_event_last_weight,
+    marketing_attribution_event_uniform_weight,
+    marketing_attribution_event_u_shape_weight,
+    marketing_attribution_event_exp_7d_half_life_time_decay_weight,
+
+    marketing_touched_events_count,
+    marketing_touched_events_list
+);
+$event_times = (
+SELECT
+    billing_account_id,
+    MAX(IF(event='ba_created',event_time,'0000-00-00 00:00:00'))                AS first_ba_created_datetime,
+    MAX(IF(event='first_trial_consumption',event_time,'0000-00-00 00:00:00'))   AS first_first_trial_consumption_datetime,
+    MAX(IF(event='first_paid_consumption',event_time,'0000-00-00 00:00:00'))    AS first_first_paid_consumption_datetime
+FROM $acquisition_cube_table
+WHERE billing_account_id IS NOT NULL
+GROUP BY billing_account_id
+);
+$full_cube_aggregated = (
+SELECT
+    `cube`.*,
+    $make_not_null(time.first_ba_created_datetime, '0000-00-00 00:00:00')               AS first_ba_created_datetime,
+    $make_not_null(time.first_first_trial_consumption_datetime, '0000-00-00 00:00:00')  AS first_first_trial_consumption_datetime,
+    $make_not_null(time.first_first_paid_consumption_datetime, '0000-00-00 00:00:00')   AS first_first_paid_consumption_datetime
+FROM $full_cube_aggregation_without_event_times AS `cube`
+LEFT JOIN $event_times AS time
+ON `cube`.billing_account_id = time.billing_account_id
+);
+
+$billing_records_union = (
+    SELECT
+    billing_account_id,
+    cloud_id,
+    cost,
+    credit,
+    end_time,
+    labels_hash,
+    pricing_quantity,
+    sku_id,
+    start_time,
+    FROM $old_billing_records_mapping
+
+    UNION ALL
+
+    SELECT
+    billing_account_id,
+    cloud_id,
+    end_time,
+    labels_hash,
+    sku_id,
+    start_time,
+    cost,
+    credit,
+    pricing_quantity
+    FROM $realtime_billing_records_corrected
+);

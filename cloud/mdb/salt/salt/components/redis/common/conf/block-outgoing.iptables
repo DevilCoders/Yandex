@@ -1,0 +1,18 @@
+{% set service_iface = 'eth0' %}
+{% set ports = salt.mdb_redis.get_all_ports() %}
+
+table filter {
+    chain OUTPUT {
+        policy ACCEPT;
+        mod state state (ESTABLISHED RELATED) ACCEPT;
+{% for host in salt.pillar.get('data:dbaas:cluster_hosts', []) %}
+
+        # {{ host }}
+        daddr {{ host }} proto tcp mod multiport destination-ports ( {{ ports|join(' ') }} ) ACCEPT;
+{% endfor %}
+
+        outerface {{service_iface}} {
+            mod owner uid-owner 'redis' REJECT reject-with icmp-net-unreachable;
+        }
+    }
+}

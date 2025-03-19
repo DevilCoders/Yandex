@@ -1,0 +1,339 @@
+From b26fb6eb3e7774a408c4c6541be0c54b01d00072 Mon Sep 17 00:00:00 2001
+From: Mikhail Epikhin <schizophrenia@yandex-team.ru>
+Date: Wed, 1 Sep 2021 13:07:31 +0300
+Subject: [PATCH] SPARK-35270: elimintate guava using
+
+---
+ .../spark/util/kvstore/InMemoryStore.java     |  4 ++--
+ .../network/protocol/AbstractMessage.java     |  4 ++--
+ .../protocol/mesos/RegisterDriver.java        |  6 +++---
+ .../apache/spark/rdd/RDDOperationScope.scala  |  4 ++--
+ .../apache/spark/mllib/linalg/Matrices.scala  |  4 ++--
+ .../linalg/distributed/BlockMatrix.scala      |  4 +++-
+ .../tree/model/InformationGainStats.scala     |  4 +++-
+ .../spark/mllib/tree/model/Predict.scala      |  4 +++-
+ .../org/apache/spark/deploy/yarn/Client.scala |  5 ++---
+ .../apache/spark/sql/JavaDatasetSuite.java    | 19 +++++++++----------
+ .../org/apache/spark/sql/hive/HiveShim.scala  |  4 ++--
+ 11 files changed, 33 insertions(+), 29 deletions(-)
+
+diff --git a/common/kvstore/src/main/java/org/apache/spark/util/kvstore/InMemoryStore.java b/common/kvstore/src/main/java/org/apache/spark/util/kvstore/InMemoryStore.java
+index 431c7e4277..dbcae7e35e 100644
+--- a/common/kvstore/src/main/java/org/apache/spark/util/kvstore/InMemoryStore.java
++++ b/common/kvstore/src/main/java/org/apache/spark/util/kvstore/InMemoryStore.java
+@@ -24,6 +24,7 @@ import java.util.Iterator;
+ import java.util.HashSet;
+ import java.util.List;
+ import java.util.NoSuchElementException;
++import java.util.Objects;
+ import java.util.concurrent.ConcurrentHashMap;
+ import java.util.concurrent.ConcurrentMap;
+ import java.util.function.BiConsumer;
+@@ -31,7 +32,6 @@ import java.util.function.Predicate;
+ import java.util.stream.Collectors;
+ import java.util.stream.Stream;
+ 
+-import com.google.common.base.Objects;
+ import com.google.common.base.Preconditions;
+ 
+ import org.apache.spark.annotation.Private;
+@@ -70,7 +70,7 @@ public class InMemoryStore implements KVStore {
+     Object comparable = asKey(indexedValue);
+     KVTypeInfo.Accessor accessor = list.getIndexAccessor(index);
+     for (Object o : view(type)) {
+-      if (Objects.equal(comparable, asKey(accessor.get(o)))) {
++      if (Objects.equals(comparable, asKey(accessor.get(o)))) {
+         count++;
+       }
+     }
+diff --git a/common/network-common/src/main/java/org/apache/spark/network/protocol/AbstractMessage.java b/common/network-common/src/main/java/org/apache/spark/network/protocol/AbstractMessage.java
+index 2924218c2f..1170fd3f1a 100644
+--- a/common/network-common/src/main/java/org/apache/spark/network/protocol/AbstractMessage.java
++++ b/common/network-common/src/main/java/org/apache/spark/network/protocol/AbstractMessage.java
+@@ -17,7 +17,7 @@
+ 
+ package org.apache.spark.network.protocol;
+ 
+-import com.google.common.base.Objects;
++import java.util.Objects;
+ 
+ import org.apache.spark.network.buffer.ManagedBuffer;
+ 
+@@ -48,7 +48,7 @@ public abstract class AbstractMessage implements Message {
+   }
+ 
+   protected boolean equals(AbstractMessage other) {
+-    return isBodyInFrame == other.isBodyInFrame && Objects.equal(body, other.body);
++    return isBodyInFrame == other.isBodyInFrame && Objects.equals(body, other.body);
+   }
+ 
+ }
+diff --git a/common/network-shuffle/src/main/java/org/apache/spark/network/shuffle/protocol/mesos/RegisterDriver.java b/common/network-shuffle/src/main/java/org/apache/spark/network/shuffle/protocol/mesos/RegisterDriver.java
+index d5f53ccb7f..4559a13a22 100644
+--- a/common/network-shuffle/src/main/java/org/apache/spark/network/shuffle/protocol/mesos/RegisterDriver.java
++++ b/common/network-shuffle/src/main/java/org/apache/spark/network/shuffle/protocol/mesos/RegisterDriver.java
+@@ -17,7 +17,7 @@
+ 
+ package org.apache.spark.network.shuffle.protocol.mesos;
+ 
+-import com.google.common.base.Objects;
++import java.util.Objects;
+ import io.netty.buffer.ByteBuf;
+ 
+ import org.apache.spark.network.protocol.Encoders;
+@@ -58,7 +58,7 @@ public class RegisterDriver extends BlockTransferMessage {
+ 
+   @Override
+   public int hashCode() {
+-    return Objects.hashCode(appId, heartbeatTimeoutMs);
++    return Objects.hash(appId, heartbeatTimeoutMs);
+   }
+ 
+   @Override
+@@ -66,7 +66,7 @@ public class RegisterDriver extends BlockTransferMessage {
+     if (!(o instanceof RegisterDriver)) {
+       return false;
+     }
+-    return Objects.equal(appId, ((RegisterDriver) o).appId);
++    return Objects.equals(appId, ((RegisterDriver) o).appId);
+   }
+ 
+   public static RegisterDriver decode(ByteBuf buf) {
+diff --git a/core/src/main/scala/org/apache/spark/rdd/RDDOperationScope.scala b/core/src/main/scala/org/apache/spark/rdd/RDDOperationScope.scala
+index 3abb2d8a11..6edfe9b321 100644
+--- a/core/src/main/scala/org/apache/spark/rdd/RDDOperationScope.scala
++++ b/core/src/main/scala/org/apache/spark/rdd/RDDOperationScope.scala
+@@ -23,7 +23,7 @@ import com.fasterxml.jackson.annotation.{JsonIgnore, JsonInclude, JsonPropertyOr
+ import com.fasterxml.jackson.annotation.JsonInclude.Include
+ import com.fasterxml.jackson.databind.ObjectMapper
+ import com.fasterxml.jackson.module.scala.DefaultScalaModule
+-import com.google.common.base.Objects
++import java.util.Objects
+ 
+ import org.apache.spark.SparkContext
+ import org.apache.spark.internal.Logging
+@@ -69,7 +69,7 @@ private[spark] class RDDOperationScope(
+     }
+   }
+ 
+-  override def hashCode(): Int = Objects.hashCode(id, name, parent)
++  override def hashCode(): Int = Objects.hash(id, name, parent)
+ 
+   override def toString: String = toJson
+ }
+diff --git a/mllib/src/main/scala/org/apache/spark/mllib/linalg/Matrices.scala b/mllib/src/main/scala/org/apache/spark/mllib/linalg/Matrices.scala
+index 57edc96511..c2e0ce112a 100644
+--- a/mllib/src/main/scala/org/apache/spark/mllib/linalg/Matrices.scala
++++ b/mllib/src/main/scala/org/apache/spark/mllib/linalg/Matrices.scala
+@@ -17,7 +17,7 @@
+ 
+ package org.apache.spark.mllib.linalg
+ 
+-import java.util.{Arrays, Random}
++import java.util.{Arrays, Objects, Random}
+ 
+ import scala.collection.mutable.{ArrayBuffer, ArrayBuilder => MArrayBuilder, HashSet => MHashSet}
+ import scala.language.implicitConversions
+@@ -314,7 +314,7 @@ class DenseMatrix @Since("1.3.0") (
+   }
+ 
+   override def hashCode: Int = {
+-    com.google.common.base.Objects.hashCode(numRows: Integer, numCols: Integer, toArray)
++    Objects.hash(numRows: Integer, numCols: Integer, toArray)
+   }
+ 
+   private[mllib] def asBreeze: BM[Double] = {
+diff --git a/mllib/src/main/scala/org/apache/spark/mllib/linalg/distributed/BlockMatrix.scala b/mllib/src/main/scala/org/apache/spark/mllib/linalg/distributed/BlockMatrix.scala
+index 452bbbe5f4..f2c6604e68 100644
+--- a/mllib/src/main/scala/org/apache/spark/mllib/linalg/distributed/BlockMatrix.scala
++++ b/mllib/src/main/scala/org/apache/spark/mllib/linalg/distributed/BlockMatrix.scala
+@@ -17,6 +17,8 @@
+ 
+ package org.apache.spark.mllib.linalg.distributed
+ 
++import java.util.Objects
++
+ import breeze.linalg.{DenseMatrix => BDM, DenseVector => BDV, Matrix => BM}
+ import scala.collection.mutable.ArrayBuffer
+ 
+@@ -90,7 +92,7 @@ private[mllib] class GridPartitioner(
+   }
+ 
+   override def hashCode: Int = {
+-    com.google.common.base.Objects.hashCode(
++    Objects.hash(
+       rows: java.lang.Integer,
+       cols: java.lang.Integer,
+       rowsPerPart: java.lang.Integer,
+diff --git a/mllib/src/main/scala/org/apache/spark/mllib/tree/model/InformationGainStats.scala b/mllib/src/main/scala/org/apache/spark/mllib/tree/model/InformationGainStats.scala
+index 54d95a3ffa..5a29516c92 100644
+--- a/mllib/src/main/scala/org/apache/spark/mllib/tree/model/InformationGainStats.scala
++++ b/mllib/src/main/scala/org/apache/spark/mllib/tree/model/InformationGainStats.scala
+@@ -17,6 +17,8 @@
+ 
+ package org.apache.spark.mllib.tree.model
+ 
++import java.util.Objects
++
+ import org.apache.spark.annotation.Since
+ import org.apache.spark.mllib.tree.impurity.ImpurityCalculator
+ 
+@@ -56,7 +58,7 @@ class InformationGainStats(
+   }
+ 
+   override def hashCode: Int = {
+-    com.google.common.base.Objects.hashCode(
++    Objects.hash(
+       gain: java.lang.Double,
+       impurity: java.lang.Double,
+       leftImpurity: java.lang.Double,
+diff --git a/mllib/src/main/scala/org/apache/spark/mllib/tree/model/Predict.scala b/mllib/src/main/scala/org/apache/spark/mllib/tree/model/Predict.scala
+index 44bc625d21..f3d66c4f5b 100644
+--- a/mllib/src/main/scala/org/apache/spark/mllib/tree/model/Predict.scala
++++ b/mllib/src/main/scala/org/apache/spark/mllib/tree/model/Predict.scala
+@@ -17,6 +17,8 @@
+ 
+ package org.apache.spark.mllib.tree.model
+ 
++import java.util.Objects
++
+ import org.apache.spark.annotation.Since
+ 
+ /**
+@@ -39,6 +41,6 @@ class Predict @Since("1.2.0") (
+   }
+ 
+   override def hashCode: Int = {
+-    com.google.common.base.Objects.hashCode(predict: java.lang.Double, prob: java.lang.Double)
++    Objects.hash(predict: java.lang.Double, prob: java.lang.Double)
+   }
+ }
+diff --git a/resource-managers/yarn/src/main/scala/org/apache/spark/deploy/yarn/Client.scala b/resource-managers/yarn/src/main/scala/org/apache/spark/deploy/yarn/Client.scala
+index 6da6a8daad..c2628ce843 100644
+--- a/resource-managers/yarn/src/main/scala/org/apache/spark/deploy/yarn/Client.scala
++++ b/resource-managers/yarn/src/main/scala/org/apache/spark/deploy/yarn/Client.scala
+@@ -21,14 +21,13 @@ import java.io.{FileSystem => _, _}
+ import java.net.{InetAddress, UnknownHostException, URI}
+ import java.nio.ByteBuffer
+ import java.nio.charset.StandardCharsets
+-import java.util.{Locale, Properties, UUID}
++import java.util.{Locale, Objects, Properties, UUID}
+ import java.util.zip.{ZipEntry, ZipOutputStream}
+ 
+ import scala.collection.JavaConverters._
+ import scala.collection.mutable.{ArrayBuffer, HashMap, HashSet, ListBuffer, Map}
+ import scala.util.control.NonFatal
+ 
+-import com.google.common.base.Objects
+ import com.google.common.io.Files
+ import org.apache.hadoop.conf.Configuration
+ import org.apache.hadoop.fs._
+@@ -1482,7 +1481,7 @@ private object Client extends Logging {
+       }
+     }
+ 
+-    Objects.equal(srcHost, dstHost) && srcUri.getPort() == dstUri.getPort()
++    Objects.equals(srcHost, dstHost) && srcUri.getPort() == dstUri.getPort()
+ 
+   }
+ 
+diff --git a/sql/core/src/test/java/test/org/apache/spark/sql/JavaDatasetSuite.java b/sql/core/src/test/java/test/org/apache/spark/sql/JavaDatasetSuite.java
+index d8462ae064..870e7fc265 100644
+--- a/sql/core/src/test/java/test/org/apache/spark/sql/JavaDatasetSuite.java
++++ b/sql/core/src/test/java/test/org/apache/spark/sql/JavaDatasetSuite.java
+@@ -32,7 +32,6 @@ import scala.Tuple3;
+ import scala.Tuple4;
+ import scala.Tuple5;
+ 
+-import com.google.common.base.Objects;
+ import org.junit.*;
+ import org.junit.rules.ExpectedException;
+ 
+@@ -789,12 +788,12 @@ public class JavaDatasetSuite implements Serializable {
+       if (this == o) return true;
+       if (o == null || getClass() != o.getClass()) return false;
+       SmallBean smallBean = (SmallBean) o;
+-      return b == smallBean.b && com.google.common.base.Objects.equal(a, smallBean.a);
++      return b == smallBean.b && Objects.equals(a, smallBean.a);
+     }
+ 
+     @Override
+     public int hashCode() {
+-      return Objects.hashCode(a, b);
++      return Objects.hash(a, b);
+     }
+   }
+ 
+@@ -814,12 +813,12 @@ public class JavaDatasetSuite implements Serializable {
+       if (this == o) return true;
+       if (o == null || getClass() != o.getClass()) return false;
+       NestedSmallBean that = (NestedSmallBean) o;
+-      return Objects.equal(f, that.f);
++      return Objects.equals(f, that.f);
+     }
+ 
+     @Override
+     public int hashCode() {
+-      return Objects.hashCode(f);
++      return Objects.hash(f);
+     }
+   }
+ 
+@@ -1365,7 +1364,7 @@ public class JavaDatasetSuite implements Serializable {
+     }
+ 
+     public int hashCode() {
+-      return Objects.hashCode(enumField, regularField);
++      return Objects.hash(enumField, regularField);
+     }
+ 
+     public boolean equals(Object other) {
+@@ -1554,14 +1553,14 @@ public class JavaDatasetSuite implements Serializable {
+       if (this == o) return true;
+       if (o == null || getClass() != o.getClass()) return false;
+       SpecificListsBean that = (SpecificListsBean) o;
+-      return Objects.equal(arrayList, that.arrayList) &&
+-        Objects.equal(linkedList, that.linkedList) &&
+-        Objects.equal(list, that.list);
++      return Objects.equals(arrayList, that.arrayList) &&
++        Objects.equals(linkedList, that.linkedList) &&
++        Objects.equals(list, that.list);
+     }
+ 
+     @Override
+     public int hashCode() {
+-      return Objects.hashCode(arrayList, linkedList, list);
++      return Objects.hash(arrayList, linkedList, list);
+     }
+   }
+ }
+diff --git a/sql/hive/src/main/scala/org/apache/spark/sql/hive/HiveShim.scala b/sql/hive/src/main/scala/org/apache/spark/sql/hive/HiveShim.scala
+index 04a6a8f8aa..862c1ccc2b 100644
+--- a/sql/hive/src/main/scala/org/apache/spark/sql/hive/HiveShim.scala
++++ b/sql/hive/src/main/scala/org/apache/spark/sql/hive/HiveShim.scala
+@@ -20,12 +20,12 @@ package org.apache.spark.sql.hive
+ import java.io.{InputStream, OutputStream}
+ import java.lang.reflect.Method
+ import java.rmi.server.UID
++import java.util.Objects
+ 
+ import scala.collection.JavaConverters._
+ import scala.language.implicitConversions
+ import scala.reflect.ClassTag
+ 
+-import com.google.common.base.Objects
+ import org.apache.avro.Schema
+ import org.apache.hadoop.conf.Configuration
+ import org.apache.hadoop.fs.Path
+@@ -130,7 +130,7 @@ private[hive] object HiveShim {
+ 
+     override def hashCode(): Int = {
+       if (functionClassName == HIVE_GENERIC_UDF_MACRO_CLS) {
+-        Objects.hashCode(functionClassName, instance.asInstanceOf[GenericUDFMacro].getBody())
++        Objects.hash(functionClassName, instance.asInstanceOf[GenericUDFMacro].getBody())
+       } else {
+         functionClassName.hashCode()
+       }
+-- 
+2.25.1
+

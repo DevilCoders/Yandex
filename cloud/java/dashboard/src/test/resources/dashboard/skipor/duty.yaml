@@ -1,0 +1,65 @@
+id: 166551
+uid: skipor_duty_test
+title: (skipor-test) Duty dashboard (platform team)
+refresh: 3m
+
+variables:
+  ui:
+    cluster: { values: [prod, preprod] }
+
+graphDefaults:
+  width: 8
+  height: 6
+
+rows:
+  - title: Managed Kubernetes API
+    graphDefaults: { datasource: 'Solomon Cloud' }
+    queryDefaults: { labels: 'project=platform, cluster=cloud_${cluster}_k8sapi, service=k8sapi, host=cluster, grpc_method=*, grpc_type=*, grpc_service=yandex.cloud.*' }
+    panels:
+
+      - type: graph
+        title: 'mk8s API rps ($cluster)'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'sensor=grpc_server_request_total, system=*' }
+
+      - type: graph
+        title: 'mk8s API errors ($cluster)'
+        templates: { name: errors }
+        queries:
+          - params: { labels: 'sensor=grpc_server_response_duration_seconds, hist_type=count, system=grpc, grpc_code=5xx, grpc_method=all, grpc_service=yandex.cloud' }
+          - params: { labels: 'sensor=grpc_server_response_duration_seconds, hist_type=count, system=grpc, grpc_code=4xx, grpc_method=all, grpc_service=yandex.cloud' }
+        draw:
+          - { alias: '5xx & 503', color: '#b20', at: left }
+          - { alias: '4xx', color: '#147', at: right }
+
+      - type: graph
+        templates: { name: percentile, levels: [50, 75, 90, 99] }
+        title: 'mk8s API response duration ($cluster)'
+        queries:
+          - params: { labels: 'sensor=grpc_server_response_duration_seconds, grpc_method=all, grpc_type=unary, grpc_service=all, system=grpc, grpc_code=all' }
+
+  - title: Managed Kubernetes Controller
+    graphDefaults: { datasource: 'Solomon Cloud' }
+    queryDefaults: { labels: 'project=platform, cluster=cloud_${cluster}_mk8s-controller, service=mk8s-controller, host=cluster' }
+    panels:
+      - type: graph
+        title: 'mk8s operation errors ($cluster)'
+        templates: { name: errors }
+        queries:
+          - params: { labels: 'sensor=failed_operation_total, target_resource_type=all, target_method=all, grpc_code=5xx' }
+          - params: { labels: 'sensor=failed_operation_total, target_resource_type=all, target_method=all, grpc_code=4xx' }
+        draw:
+          - { alias: '5xx & 503', color: '#b20', at: left }
+          - { alias: '4xx', color: '#147', at: right }
+
+      - type: graph
+        title: 'mk8s hang operations ($cluster)'
+        queries:
+          - params: { labels: 'sensor=hang_operation_total, target_resource_type=*, target_method=*' }
+            groupByTime: { max: 'default' }
+            select: { group_lines: sum, alias: '>20m' }
+
+        draw:
+          - { alias: '>20m', color: '#b20', at: left }
+

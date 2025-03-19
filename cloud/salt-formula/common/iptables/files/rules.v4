@@ -1,0 +1,31 @@
+{%- set this_host_roles = salt["grains.get"]("cluster_map:hosts:" ~ grains["nodename"] ~ ":roles") -%}
+
+*filter
+{% if "compute" in this_host_roles %}
+-A INPUT -p tcp -m tcpmss --mss 1:56 -m comment --comment "SACK bugfix" -j DROP
+{% endif %}
+
+-A INPUT -p tcp -m tcp --dport 22 -m comment --comment DEF_SSH_Block -j DROP
+
+{% if "rkn-filter-node" in this_host_roles %}
+{% set rfn_nginx_loopback_ipv4_address = pillar["generic_rfn_config"]["rfn_nginx_loopback_ipv4_address"] %}
+{% set rfn_fv_peering_loopback_ipv4_addresss = pillar["specific_rfn_config"]["rfn_fv_peering_loopback_ipv4_address"] %}
+{% set deployment = pillar["specific_rfn_config"][grains['nodename']]["deployment"] %}
+-A INPUT -s 10.255.254.1/32 -p icmp -j ACCEPT
+-A INPUT -d {{rfn_nginx_loopback_ipv4_address}}/32 -p icmp -m icmp --icmp-type 8 -j ACCEPT
+{% for BORDER in pillar["generic_netinfra_config"]["borders"] %}
+-A INPUT -s {{BORDER.ipv4_address}}/32 -p icmp -j ACCEPT
+{% endfor %}
+{% for RR in pillar["generic_netinfra_config"]["fv_reflectors"][deployment] %}
+-A INPUT -s {{RR.ipv4_address}}/32 -p icmp -j ACCEPT
+{% endfor %}
+{% for BORDER in pillar["generic_netinfra_config"]["borders"] %}
+-A INPUT -s {{BORDER.ipv4_address}}/32 -p gre -j ACCEPT
+{% endfor %}
+-A INPUT -d 127.0.0.1/32 -i lo -p tcp -m tcp --dport 50051 -j ACCEPT
+-A INPUT -d {{rfn_nginx_loopback_ipv4_address}}/32 -i eth1 -p tcp -m tcp --dport 80 -j ACCEPT
+-A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+-A INPUT -j DROP
+{% endif %}
+-A OUTPUT -p tcp -m tcp --dport 22 -m comment --comment DEF_SSH_Block -j DROP
+COMMIT

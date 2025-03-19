@@ -1,0 +1,26 @@
+{% from "components/greenplum/map.jinja" import gpdbvars,sysvars,pxfvars with context %}
+{% set java_home = salt['cmd.shell']('echo $(dirname $(dirname $(readlink $(readlink $(which javac)))))') %}
+{% set bin_path="%s-%s/bin"|format(pxfvars.pxfhome, pxfvars.major_version) %}
+{% set conf_var = 'PXF_CONF' if pxfvars.major_version == 5 else 'PXF_BASE' %}
+[Unit]
+Description=The PXF Extension Framework
+Documentation=https://github.com/greenplum-db/pxf
+After=network.target
+
+[Service]
+{% if salt.pillar.get('data:database_slice:enable', False) and salt.dbaas.is_dataplane() %}
+Slice=database.slice
+{% endif %}
+Environment="{{ conf_var }}={{ pxfvars.pxfconf }}"
+Environment="JAVA_HOME={{ java_home }}"
+User={{ gpdbvars.gpadmin }}
+Group={{ gpdbvars.gpadmin }}
+Type=forking
+ExecStart={{ bin_path }}/pxf start
+ExecStop={{ bin_path }}/pxf stop
+Restart=on-failure
+TimeoutStartSec=60
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

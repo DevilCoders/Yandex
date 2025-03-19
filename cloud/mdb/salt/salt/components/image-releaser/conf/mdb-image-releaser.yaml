@@ -1,0 +1,68 @@
+{% set mode = salt.pillar.get('data:image-releaser:mode') %}
+mode: {{ mode }}
+{% if mode == 'porto' %}
+porto:
+  source_bucket: {{ salt.pillar.get('data:image-releaser:porto:source_bucket', 'dbaas-images-vm-built-test') }}
+  destination_bucket: {{ salt.pillar.get('data:image-releaser:porto:destination_bucket', 'dbaas-images-vm-built') }}
+  s3:
+    region: ru-central-1
+    host: {{ salt.pillar.get('data:image-releaser:porto:s3:host') }}
+    access_key: {{ salt.pillar.get('data:image-releaser:porto:s3:access_key') }}
+    secret_key: {{ salt.pillar.get('data:image-releaser:porto:s3:secret_key') }}
+{% else %}
+compute:
+  s3_url_prefix: {{ salt.pillar.get('data:image-releaser:compute:s3_url_prefix') }}
+  destination:
+    service_account:
+      id: {{ salt.pillar.get('data:image-releaser:compute:destination:service_account:id') }}
+      key_id: {{ salt.pillar.get('data:image-releaser:compute:destination:service_account:key_id') }}
+      private_key: {{ salt.pillar.get('data:image-releaser:compute:destination:service_account:private_key') | yaml_encode }}
+    folder: {{ salt.pillar.get('data:image-releaser:compute:destination:folder') }}
+    compute_url: {{ salt.pillar.get('data:image-releaser:compute:destination:compute_url') }}
+    compute_client_conf:
+      retries:
+        max_tries: 3
+        per_retry_timeout: 30s
+    token_service_url: {{ salt.pillar.get('data:token_service:address') }}
+    token_client_conf:
+      retries:
+        max_tries: 3
+        per_retry_timeout: 1s
+{% if salt.pillar.get('data:image-releaser:compute:source', False) %}
+  source:
+    service_account:
+      id: {{ salt.pillar.get('data:image-releaser:compute:source:service_account:id') }}
+      key_id: {{ salt.pillar.get('data:image-releaser:compute:source:service_account:key_id') }}
+      private_key: {{ salt.pillar.get('data:image-releaser:compute:source:service_account:private_key') | yaml_encode }}
+    folder: {{ salt.pillar.get('data:image-releaser:compute:source:folder') }}
+    compute_url: {{ salt.pillar.get('data:image-releaser:compute:source:compute_url') }}
+    compute_client_conf:
+      retries:
+        max_tries: 3
+        per_retry_timeout: 30s
+    token_service_url: {{ salt.pillar.get('data:image-releaser:compute:source:token_service_url') }}
+    token_client_conf:
+      retries:
+        max_tries: 3
+        per_retry_timeout: 1s
+{% else %}
+  s3:
+    bucket: {{ salt.pillar.get('data:image-releaser:compute:s3:bucket') }}
+    client:
+      region: ru-central-1
+      host: {{ salt.pillar.get('data:image-releaser:compute:s3:client:host') }}
+      access_key: {{ salt.pillar.get('data:image-releaser:compute:s3:client:access_key') }}
+      secret_key: {{ salt.pillar.get('data:image-releaser:compute:s3:client:secret_key') }}
+    image_pattern: {{ salt.pillar.get('data:image-releaser:compute:s3:image_pattern', 'dbaas-%s-image') }}
+{% endif %}
+{% endif %}
+app:
+  logging:
+    level: {{ salt.pillar.get('data:image-releaser:app:logging:level', 'info') }}
+  sentry:
+    dsn: {{ salt.pillar.get('data:image-releaser:sentry:dsn') }}
+    environment: {{ salt.pillar.get('data:sentry:environment') }}
+{% if salt.pillar.get('data:image-releaser:juggler', False) %}
+juggler:
+  host: {{ salt.pillar.get('data:image-releaser:juggler:host') }}
+{% endif %}

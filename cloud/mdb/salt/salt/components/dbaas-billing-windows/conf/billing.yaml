@@ -1,0 +1,107 @@
+{% set fqdn = salt['pillar.get']('data:dbaas:fqdn', salt['grains.get']('fqdn')) %}
+{% set roles = [] %}
+{% set checks = {} %}
+{% set license_checks = {} %}
+{% 
+    set checks_map = {
+        'components.sqlserver_cluster': {
+            'managed_sqlserver_sli_is_alive': '1'
+        },
+        'components.windows_witness': {
+            'cluster_membership_is_alive': '1'
+        }
+    }
+%}
+{%
+    set license_checks_map = {
+        'components.sqlserver_cluster': {
+            'managed_sqlserver_sli_is_master': '1'
+        },
+    }
+%}
+{% for component in salt['pillar.get']('data:runlist') %}
+{% do checks.update(checks_map.get(component, {})) %}
+{% do license_checks.update(license_checks_map.get(component, {})) %}
+{% do roles.append(component.replace('components.', '')) %}
+{% endfor %}
+
+app:
+    logging:
+        level: ERROR 
+        file: 'file://localhost/Logs/billing.log'
+telegraf_state_file: 'C:\ProgramData\telegraf\current.json' 
+telegraf_checks:
+{% for metric, val in checks.items() %}
+    {{ metric|yaml_encode }}: {{val|yaml_encode}}
+{% endfor %}
+send_license_metrics: {{ salt['pillar.get']('data:billing2:send_license_metrics', true) }}
+telegraf_license_checks:
+{% for metric, val in license_checks.items() %}
+    {{ metric|yaml_encode }}: {{val|yaml_encode}}
+{% endfor %}
+data_dir: 'C:\ProgramData\MdbBilling\data'
+send_timeout: '30s'
+retry_timeout: '30s'
+report_interval: '60s'
+poll_interval: '10s'
+max_metrics_log_size: 1048576
+lock_file: 'C:\ProgramData\MdbBilling\data\billing.lock'
+logbroker:
+    endpoint: {{ salt['pillar.get']('data:billing2:logbroker:endpoint') }}
+    database: {{ salt['pillar.get']('data:billing2:logbroker:database') }}
+    topic: {{ salt['pillar.get']('data:billing2:logbroker:topic') }}
+    source_id: {{ fqdn|yaml_encode }}
+    max_memory: 16777216
+    tls:
+        ca_file: 'C:\ProgramData\yandex\allCAs.pem'
+    iam:
+        token_service:
+            useragent: {{ salt['pillar.get']('data:billing2:logbroker:iam:token_service:useragent', 'mdb_billing') }}
+            endpoint: {{ salt['pillar.get']('data:billing2:logbroker:iam:token_service:endpoint') }}
+        service_account:
+            id: {{ salt['pillar.get']('data:billing2:logbroker:iam:service_account:id') }}
+            key_id: {{ salt['pillar.get']('data:billing2:logbroker:iam:service_account:key_id') }}
+            private_key: |
+                {{ salt['pillar.get']('data:billing2:logbroker:iam:service_account:private_key')|indent(16) }}
+billing:
+    schema: 'mdb.db.generic.v1'
+    license_schema: 'mdb.db.license.v1'
+    fqdn: {{ fqdn|yaml_encode }}
+    folder_id: {{ salt['pillar.get']('data:dbaas:folder:folder_ext_id')|yaml_encode }}
+    cloud_id: {{ salt['pillar.get']('data:dbaas:cloud:cloud_ext_id')|yaml_encode }}
+    cluster_id: {{ salt['pillar.get']('data:dbaas:cluster_id')|yaml_encode }}
+    tags:
+        online: 1
+        cluster_id: {{ salt['pillar.get']('data:dbaas:cluster_id')|yaml_encode }}
+        cluster_type: {{ salt['pillar.get']('data:dbaas:cluster_type') }}
+        compute_instance_id: {{ salt['pillar.get']('data:dbaas:vtype_id')|yaml_encode }}
+        core_fraction: {{ salt['pillar.get']('data:dbaas:flavor:cpu_fraction') }}
+        cores: {{ salt['pillar.get']('data:dbaas:flavor:cpu_limit')|int }}
+        disk_size: {{ salt['pillar.get']('data:dbaas:space_limit') }}
+        disk_type_id: {{ salt['pillar.get']('data:dbaas:disk_type_id') }}
+        memory: {{ salt['pillar.get']('data:dbaas:flavor:memory_limit') }} 
+        platform_id: {{ 'mdb-v' + salt['pillar.get']('data:dbaas:flavor:generation')|string }}
+        resource_preset_id: {{ salt['pillar.get']('data:dbaas:flavor:name') }}
+        on_dedicated_host: {{ 1 if salt['pillar.get']('data:dbaas:on_dedicated_host') else 0 }}
+        roles:
+{% for role in roles %}
+            - {{ role|yaml_encode }}
+{% endfor %}
+        software_accelerated_network_cores: {{ salt['pillar.get']('data:dbaas:flavor:io_cores_limit') }}
+{% if salt['pillar.get']('data:dbaas:cluster_type') == 'sqlserver_cluster' %}
+        edition: {{ salt['pillar.get']('data:sqlserver:version:edition', '') }} 
+{% endif %}
+
+{% if salt['pillar.get']('data:dbaas:cluster_type') == 'sqlserver_cluster' %}
+    license_tags:
+{% if salt['pillar.get']('data:sqlserver:unreadable_replicas', false) %}
+        cores: {{ [4, salt['pillar.get']('data:dbaas:flavor:cpu_limit')|int]|max }}
+{% else %}
+        cores: {{ ([4, (salt['pillar.get']('data:dbaas:flavor:cpu_limit')|int)]|max) * (salt['mdb_windows.get_hosts_by_role']('sqlserver_cluster')|length) }}
+{% endif %}
+        edition: {{ salt['pillar.get']('data:sqlserver:version:edition', '') }} 
+        roles:
+{% for role in roles %}
+            - {{ role|yaml_encode }}
+{% endfor %}
+{% endif %}

@@ -1,0 +1,325 @@
+uid: ycp-jaeger-ydb
+title: Jaeger YDB dashboard
+variables:
+  ui:
+    cluster:
+      values:
+        - preprod
+        - prod
+queryDefaults:
+  labels: project=jaeger, service=jaeger_service
+links:
+  - title: "LB Plugin"
+    url: https://grafana.yandex-team.ru/d/ycp-jaeger-lb-plugin
+  - title: "LB Reader"
+    url: https://grafana.yandex-team.ru/d/ycp-jaeger-lb-reader
+  - title: "YDB Plugin"
+    url: https://grafana.yandex-team.ru/d/ycp-jaeger-ydb-plugin
+  - title: "Errors"
+    url: https://grafana.yandex-team.ru/d/ycp-jaeger-errors
+  - title: "Drops"
+    url: https://grafana.yandex-team.ru/d/ycp-jaeger-drops
+rows:
+  - title: Ingress
+    graphDefaults:
+      datasource: Solomon Cloud
+      width: 12
+      height: 6
+    queryDefaults:
+      labels: cluster=jaeger_collector_${cluster}, host=jaeger-collector-*-${cluster}-*
+    panels:
+      - type: graph
+        templates:
+          name: rps
+          sumLines:
+            - host
+        display:
+          sort: decreasing
+          stack: true
+          empty: false
+          fill: 0
+          nulls: zero
+        title: Received by host ($cluster)
+        queries:
+          - params:
+              labels: name=jaeger_collector_spans_received_total, format=*, svc=*, debug=false
+        yAxes:
+          - label: span/s
+      - type: graph
+        templates:
+          name: rps
+          sumLines:
+            - svc
+        display:
+          sort: decreasing
+          fill: 0
+          nulls: zero
+        title: Received by service ($cluster)
+        queries:
+          - params:
+              labels: name=jaeger_collector_spans_received_total, debug=false, format=*
+  - title: Application status
+    graphDefaults:
+      datasource: Solomon Cloud
+      width: 12
+      height: 6
+    queryDefaults:
+      labels: cluster=jaeger_collector_${cluster}, host=*
+    panels:
+      - type: graph
+        links:
+          - title: See more
+            url: https://grafana.yandex-team.ru/d/ycp-jaeger-drops
+        templates:
+          name: rps
+          sumLines:
+            - host
+        display:
+          sort: decreasing
+          stack: false
+          fill: 0
+          nulls: zero
+        title: Drops ($cluster)
+        queries:
+          - params:
+              labels: name=jaeger_collector_spans_dropped_total|jaeger_ydb_writer_spans_dropped_total|jaeger_ydb_writer_indexer_dropped_total|jaeger_ydb_writer_tag_index_dropped_total|jaeger_ydb_writer_service_name_index_dropped_total|jaeger_ydb_writer_service_operation_index_dropped_total|jaeger_ydb_writer_duration_index_dropped_total
+      - type: graph
+        links:
+          - title: See more
+            url: https://grafana.yandex-team.ru/d/ycp-jaeger-errors
+        templates:
+          name: rps
+          sumLines:
+            - host
+        display:
+          sort: decreasing
+          stack: false
+          fill: 0
+          nulls: zero
+        title: Errors ($cluster)
+        queries:
+          - params:
+              labels: name=jaeger_lb_writer_errors_total|jaeger_lb_writer_persqueue_issues_total|jaeger_ydb_writer_traces_errors_total|jaeger_ydb_writer_tag_index_errors_total|jaeger_ydb_writer_service_name_index_errors_total|jaeger_ydb_writer_service_operation_index_errors_total|jaeger_ydb_writer_duration_index_errors_total|jaeger_reader_errors_total
+  - title: Queue length
+    graphDefaults:
+      datasource: Solomon Cloud
+      width: 12
+      height: 6
+    queryDefaults:
+      labels: cluster=jaeger_collector_${cluster}, host=*
+    panels:
+      - type: graph
+        title: Queue length ($cluster)
+        queries:
+          - params:
+              labels: name=jaeger_collector_queue_length
+            select:
+              group_by_labels:
+                - sum
+                - host
+              diff: []
+              drop_below:
+                - 0
+        display:
+          sort: decreasing
+          stack: true
+          empty: false
+          fill: 0
+          nulls: zero
+  - title: Storage usage (YDB)
+    graphDefaults:
+      datasource: Solomon Cloud
+      width: 12
+      height: 6
+    queryDefaults:
+      labels: cluster=jaeger_collector_${cluster}, host=*
+    panels:
+      - type: graph
+        templates:
+          name: rps
+        display:
+          sort: decreasing
+          stack: false
+          fill: 0
+          nulls: zero
+        title: YDB Records ($cluster)
+        queries:
+          - params:
+              labels: name=jaeger_ydb_writer_traces_records_ok_total|jaeger_ydb_writer_tag_index_records_ok_total|jaeger_ydb_writer_service_name_index_records_ok_total|jaeger_ydb_writer_service_operation_index_records_ok_total|jaeger_ydb_writer_duration_index_records_ok_total
+      - type: graph
+        templates:
+          name: rps
+        display:
+          sort: decreasing
+          stack: false
+          fill: 0
+          nulls: zero
+        title: YDB Requests ($cluster)
+        queries:
+          - params:
+              labels: name=jaeger_ydb_writer_traces_attempts_total|jaeger_ydb_writer_tag_index_attempts_total|jaeger_ydb_writer_service_name_index_attempts_total|jaeger_ydb_writer_service_operation_index_attempts_total|jaeger_ydb_writer_duration_index_attempts_total
+  - title: Query Service
+    graphDefaults:
+      datasource: Solomon Cloud
+      width: 12
+      height: 6
+    queryDefaults:
+      labels: cluster=jaeger_query_${cluster}
+    panels:
+      - type: graph
+        templates:
+          name: rps
+          sumLines:
+            - host
+          rate: rpm
+        display:
+          stack: false
+          fill: 0
+          nulls: zero
+        title: HTTP requests (total) ($cluster)
+        queries:
+          - params:
+              labels: name=jaeger_rpc_http_requests_total, status_code=*
+      - type: graph
+        templates:
+          name: rps
+          sumLines:
+            - host
+          rate: rpm
+        display:
+          stack: false
+          fill: 0
+          nulls: zero
+        title: HTTP requests (5xx) ($cluster)
+        queries:
+          - params:
+              labels: name=jaeger_rpc_http_requests_total, status_code=5xx
+  - title: Collector system monitors
+    graphDefaults:
+      datasource: Solomon Cloud
+      width: 8
+      height: 6
+    queryDefaults:
+      labels: cluster=jaeger_collector_${cluster}, host=*
+    panels:
+      - type: graph
+        title: Available memory
+        display:
+          sort: decreasing
+          stack: false
+          fill: 0
+          nulls: zero
+        queries:
+          - params:
+              labels: name=node_memory_MemAvailable_bytes
+            select:
+              drop_below: '0'
+              alias: '{{host}}'
+        yAxes:
+          - format: bytes
+            min: 0
+      - type: graph
+        title: Free Space
+        display:
+          sort: decreasing
+          stack: false
+          fill: 0
+          nulls: zero
+        queries:
+          - params:
+              labels: name=node_filesystem_free_bytes
+            select:
+              group_by_labels:
+                - sum
+                - host
+        yAxes:
+          - format: bytes
+            min: 0
+      - type: graph
+        title: CPU
+        display:
+          sort: decreasing
+          stack: false
+          fill: 0
+          nulls: zero
+        queries:
+          - params:
+              labels: name=node_cpu_seconds_total, mode=user|system
+            select:
+              non_negative_derivative: []
+              group_by_labels:
+                - sum
+                - host
+              drop_below:
+                - 0
+              math:
+                - '*50'
+              alias: '{{host}}'
+        yAxes:
+          - min: 0
+            decimals: 1
+  - title: Query system monitors
+    graphDefaults:
+      datasource: Solomon Cloud
+      width: 8
+      height: 6
+    queryDefaults:
+      labels: cluster=jaeger_query_${cluster}, host=*
+    panels:
+      - type: graph
+        title: Available memory
+        display:
+          sort: decreasing
+          stack: false
+          fill: 0
+          nulls: zero
+        queries:
+          - params:
+              labels: name=node_memory_MemAvailable_bytes
+            groupByTime:
+              max: default
+            select:
+              drop_below: '0'
+              alias: '{{host}}'
+        yAxes:
+          - format: bytes
+            min: 0
+      - type: graph
+        title: Free Space
+        display:
+          stack: false
+          fill: 0
+          nulls: zero
+        queries:
+          - params:
+              labels: name=node_filesystem_free_bytes
+            select:
+              group_by_labels:
+                - sum
+                - host
+        yAxes:
+          - format: bytes
+            min: 0
+      - type: graph
+        title: CPU
+        display:
+          sort: decreasing
+          stack: false
+          fill: 0
+          nulls: zero
+        queries:
+          - params:
+              labels: name=node_cpu_seconds_total, mode=user|system
+            select:
+              non_negative_derivative: []
+              group_by_labels:
+                - sum
+                - host
+              drop_below:
+                - 0
+              math:
+                - '*50'
+              alias: '{{host}}'
+        yAxes:
+          - min: 0
+            decimals: 1

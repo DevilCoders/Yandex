@@ -1,0 +1,40 @@
+{% from "components/redis/walg/map.jinja" import walg, s3 with context %}
+
+{% set password = salt.pillar.get('data:redis:config:requirepass') %}
+{% set master_name = salt.pillar.get('data:dbaas:cluster_name', 'mymaster') %}
+
+{% set def_walg_coroutines = salt.pillar.get('data:dbaas:flavor:cpu_guarantee', salt.pillar.get('data:walg:parallel_workers', 1)) %}
+{% if def_walg_coroutines < 4 %}
+{%   set walg_coroutines = 1 %}
+{% else %}
+{%   set walg_coroutines = def_walg_coroutines %}
+{% endif %}
+{% set compression = salt.pillar.get('data:walg:compression', 'brotli') %}
+
+AWS_ACCESS_KEY_ID:           {{ s3.restore_access_key_id }}
+AWS_SECRET_ACCESS_KEY:       {{ s3.restore_access_secret_key }}
+AWS_ENDPOINT:                {{ s3.endpoint }}
+AWS_S3_FORCE_PATH_STYLE:     {{ (not salt.pillar.get('data:s3:virtual_addressing_style', False)) | json }}
+AWS_REGION:                  {{ s3.region }}
+WALG_PGP_KEY_PATH:           {{ walg.restore_confdir}}/PGP_KEY
+WALG_S3_PREFIX:              {{ s3.restore_path }}
+S3_MAX_PART_SIZE:            '{{s3.multipart_chunk_size}}'
+WALG_S3_RANGE_BATCH_ENABLED: {{ 'true' if walg.s3_range_batch_enabled else 'false' }}
+WALG_S3_RANGE_MAX_RETRIES:   {{ walg.s3_range_max_retries | int }}
+
+GOMAXPROCS:                  {{ (walg_coroutines + 1) | int }}
+
+WALG_LOG_LEVEL:              'DEVEL'
+WALG_COMPRESSION_METHOD:     '{{ compression }}'
+
+WALG_REDIS_PASSWORD:         '{{ password }}'
+
+WALG_SENTINEL_USER_DATA:     '{"shard_name": "{{walg.shard_name}}", "backup_id": "{{walg.backup_id}}"}'
+
+WALG_STREAM_CREATE_COMMAND:  {{salt.mdb_redis.walg_get_create_cmd() | yaml_squote}}
+
+WALG_STREAM_RESTORE_COMMAND: 'cat > {{salt.mdb_redis.get_rdb_fullpath()}}'
+
+HTTP_LISTEN:                '127.0.0.1:8090'
+HTTP_EXPOSE_PPROF:          'true'
+HTTP_EXPOSE_EXPVAR:         'true'

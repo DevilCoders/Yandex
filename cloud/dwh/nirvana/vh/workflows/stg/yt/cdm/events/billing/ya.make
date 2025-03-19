@@ -1,0 +1,9 @@
+RECURSE(
+    became_trial
+    common
+    feature_flag_changed
+    first_paid_consumption
+    first_payment
+    first_trial_consumption
+    state_changed
+)

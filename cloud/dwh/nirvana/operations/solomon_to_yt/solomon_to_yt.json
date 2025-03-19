@@ -1,0 +1,237 @@
+{
+    "meta": {
+        "name": "Solomon to YT",
+        "description": "Upload solomon sensors to YT directory",
+        "versionNumber": "1.0.3",
+        "deterministic": false,
+        "processorCode": "mr",
+        "processorOperationCode": "run",
+        "owner": "makhalin"
+    },
+    "inputs": [
+        {
+            "name": "dst",
+            "description": "Destination directory",
+            "dataTypes": [
+                "mrDirectory"
+            ],
+            "lowerBound": 1,
+            "upperBound": 1,
+            "processingHints": []
+        }
+    ],
+    "outputs": [],
+    "parameters": [
+        {
+            "parameter": "job-command",
+            "description": "Job command line template. The template is written in [Freemarker Template Language](http://freemarker.org), using square bracket syntax.\n* To access **source and destination MR paths**, use `${mr_input[\"<input's name>\"]}` and `${mr_output[\"<output's name>\"]}`:\n    ```\n    ${mr_input[\"...\"]} => \"//statbox/qloud-runtime-log/2016-04-04\" (native path, e.g. YPath when using YT)\n    ${mr_input[\"...\"].raw} => \"statbox/qloud-runtime-log/2016-04-04\" (prefixless path for mapreduce binary, ${mapreduce})\n    ${mr_input[\"...\"].server} => plato.yt.yandex.net:80 (YaMR server/YT proxy for MR path)\n    ${mr_input[\"...\"].cluster} => plato (cluster name)\n    ${mr_input[\"...\"].host} => plato.yt.yandex.net (YaMR server/YT proxy host)\n    ${mr_input[\"...\"].port} => 80 (YaMR server/YT proxy port)\n\n    ```\n  * Paths are **normalized** before usage: empty path segments and leading/trailing slashes are removed. *E.g.*, `///a/b////c/` becomes `//a/b/c` when using YT, and `a/b/c` when using YaMR\n  * Paths **need not be shell-quoted** because MR Processor requires all (normalized) paths to satisfy regexp `[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*`\n  * Destination MR paths are **generated automatically**. To influence their base path, see the `mr-output-path` option\n* Substitute relevant mapreduce binary name with `${mapreduce}` and [MR runtime type](https://wiki.yandex-team.ru/yt/cppwrapper/#usage) with `${mr_runtime}`\n* Substitute YaMR server/YT proxy address with `${mr_cluster}` (also available: `${mr_cluster.name}`, `${mr_cluster.host}`, `${mr_cluster.port}`)\n* Just like with Job Processor's `job-command`:\n  * Substitute absolute paths to ordinary input files with `${input[\"<input's name>\"]}`\n  * Substitute absolute paths to ordinary output files with `${output[\"<input's name>\"]}`\n  * Substitute required options' values with `${param[\"<option's name>\"]}`\n  * Substitute optional options' values with `${param[\"<option's name>\"]!<default value>}`\n  * Remember to quote options of type `String` when passing them as command line arguments:\n    * Shell-quote a single command line argument using `${param[\"string option\"].bash}`\n    * Shell-quote a string of command line arguments using `${param[\"string option\"].args}`\n  * If you need pipes (`|`) and redirection (`< > >>`):\n    * Write `bash -c '<your command>'`\n    * OR Write a [ba]sh script, specify it as the job's binary (`job-binary-url`) and run it as `./your_script_name`.\n  * See https://nda.ya.ru/3QnJYz for more information.",
+            "type": "string",
+            "required": true,
+            "defaultValue": "${resource[\"solomon_to_yt\"]}",
+            "cacheInsensitive": false
+        },
+        {
+            "parameter": "solomon-endpoint",
+            "description": "",
+            "type": "string",
+            "required": false,
+            "defaultValue": "https://solomon.yandex-team.ru/api/v2",
+            "label": "solomon-endpoint",
+            "tooltip": "",
+            "cacheInsensitive": false
+        },
+        {
+            "parameter": "solomon-token",
+            "description": "",
+            "type": "secret",
+            "required": true,
+            "label": "solomon-token",
+            "tooltip": "",
+            "cacheInsensitive": false
+        },
+        {
+            "parameter": "solomon-project",
+            "description": "",
+            "type": "string",
+            "required": true,
+            "label": "solomon-project",
+            "tooltip": "",
+            "cacheInsensitive": false
+        },
+        {
+            "parameter": "solomon-selectors",
+            "description": "Solomon selector for download (e.g. {a=\"1\",b=\"2\"})",
+            "type": "string",
+            "required": true,
+            "label": "solomon-selectors",
+            "tooltip": "",
+            "cacheInsensitive": false
+        },
+        {
+            "parameter": "solomon-expression",
+            "description": "Solomon program for selector. Use placeholder `{selectors}` to specify place for selectors from solomon-selectors option. For example,  `drop_empty_lines({selectors})`. More functions in solomon docs https://docs.yandex-team.ru/solomon/concepts/querying",
+            "type": "string",
+            "required": false,
+            "label": "solomon-expression",
+            "tooltip": "",
+            "cacheInsensitive": false
+        },
+        {
+            "parameter": "solomon-partition-by-labels",
+            "description": "If your selector has many sensors, you can use this option to split selector using this labels.",
+            "type": "multiple_strings",
+            "required": false,
+            "label": "solomon-partition-by-labels",
+            "tooltip": "",
+            "cacheInsensitive": false
+        },
+        {
+            "parameter": "solomon-default-from-dttm",
+            "description": "If destination yt folder empty, this datetime will be used as start time for solomon data . Otherwise it will be from last yt table name",
+            "type": "date",
+            "required": true,
+            "label": "solomon-default-from-dttm",
+            "tooltip": "",
+            "cacheInsensitive": false
+        },
+        {
+            "parameter": "solomon-now-lag",
+            "description": "Seconds from current time which will be used for the end time for solomon data",
+            "type": "integer",
+            "required": true,
+            "defaultValue": 600,
+            "label": "solomon-now-lag",
+            "tooltip": "",
+            "cacheInsensitive": false
+        },
+        {
+            "parameter": "solomon-page-size",
+            "description": "Page size in seconds for solomon data fetcher",
+            "type": "integer",
+            "required": true,
+            "defaultValue": 86400,
+            "label": "solomon-page-size",
+            "tooltip": "",
+            "cacheInsensitive": false
+        },
+        {
+            "parameter": "yt-table-ttl",
+            "description": "TTL for yt tables in milliseconds. More info https://yt.yandex-team.ru/docs/description/common/cypress#TTL",
+            "type": "number",
+            "required": false,
+            "label": "yt-table-ttl",
+            "tooltip": "",
+            "cacheInsensitive": false
+        },
+        {
+            "parameter": "yt-tables-split-interval",
+            "description": "",
+            "type": "enum",
+            "required": true,
+            "defaultValue": "DAILY",
+            "extra": {
+                "items": [
+                    {
+                        "label": "HOURLY",
+                        "value": "HOURLY"
+                    },
+                    {
+                        "label": "DAILY",
+                        "value": "DAILY"
+                    },
+                    {
+                        "label": "MONTHLY",
+                        "value": "MONTHLY"
+                    }
+                ],
+                "@type": "DumpedParameterTypeSpecificEnum"
+            },
+            "label": "yt-tables-split-interval",
+            "tooltip": "",
+            "cacheInsensitive": false
+        },
+        {
+            "parameter": "mr-output-path",
+            "description": "Directory for output MR tables and directories.\n\nLimited templating is supported: `${param[\"...\"]}`, `${meta[\"...\"]}`, `${mr_input[\"...\"]}` (path to input MR *directory*) and `${uniq}` (= unique path-friendly string).\n\nThe default template for `mr-output-path` is\n\n        home[#if param[\"mr-account\"] != meta.owner]/${param[\"mr-account\"]}[/#if]/${meta.owner}/nirvana/${meta.operation_uid}\n\nIf output path does not exist, it will be created.\n\nTemporary directory, `${mr_tmp}`, is derived from output path in an unspecified way. It is ensured that:\n  * It will exist before `job-command` is started\n  * It need not be removed manually after execution ends. However, you **should** remove all temporary data created in `${mr_tmp}`, even if your command fails",
+            "type": "string",
+            "required": false,
+            "defaultValue": "${mr_input[\"dst\"]}",
+            "cacheInsensitive": false
+        },
+        {
+            "parameter": "mr-account",
+            "description": "MR account name (e.g. `rank_machine`) used to build MR output path for this operation.\n\nSee the `mr-output-path` option for more information",
+            "type": "string",
+            "required": false,
+            "cacheInsensitive": true
+        },
+        {
+            "parameter": "job-is-vanilla",
+            "description": "**Vanilla** jobs have **minimal dependencies** on their execution environment and **wait much less in scheduler queue** because they can run on more hosts, including search runtime container (RTC) VMs. Note that:\n* Vanilla jobs **cannot access any network resources** besides YQL and public YT clusters (*e.g.*, `hahn`, `banach`, `freud`).\n* Vanilla jobs can be **throttled or restarted *at any time***. When the job is restarted on the same host, Nirvana will clean up its working directory so that it looks like it started afresh.\n* Vanilla jobs **run in a [minimal environment](https://nda.ya.ru/3RdpfC) *by default***. See https://nda.ya.ru/3RdpfC for instructions on installing additional packages and utilities.",
+            "type": "boolean",
+            "required": false,
+            "defaultValue": false,
+            "cacheInsensitive": false
+        },
+        {
+            "parameter": "mr-tmp-policy",
+            "description": "",
+            "type": "string",
+            "required": false,
+            "defaultValue": "NONE",
+            "cacheInsensitive": false
+        },
+        {
+            "parameter": "debug-logging",
+            "description": "",
+            "type": "boolean",
+            "required": false,
+            "defaultValue": false,
+            "label": "debug-logging",
+            "tooltip": "",
+            "cacheInsensitive": false
+        }
+    ],
+    "permissions": [
+        {
+            "action": "modify",
+            "roles": [
+                {
+                    "role": "yc-dwh"
+                }
+            ]
+        },
+        {
+            "action": "read",
+            "roles": [
+                {
+                    "role": "nirvana.user.yandex.staff"
+                }
+            ]
+        }
+    ],
+    "logs": [
+        {
+            "name": "stdout.log",
+            "level": "debug",
+            "fileNamePattern": "stdout.log",
+            "fileNamePatternIsRegexp": false,
+            "description": "Your command's stdout"
+        }
+    ],
+    "resources": [
+        {
+            "name": "solomon_to_yt",
+            "target": "cloud/dwh/nirvana/operations/solomon_to_yt",
+            "artifact": "solomon_to_yt",
+            "@type": "DumpedOperationYaMakeResource"
+        }
+    ],
+    "tags": {
+        "names": [
+            "solomon",
+            "yt"
+        ],
+        "strictTagCheck": false
+    }
+}

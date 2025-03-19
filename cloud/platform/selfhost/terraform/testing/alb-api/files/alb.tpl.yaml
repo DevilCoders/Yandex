@@ -1,0 +1,124 @@
+log:
+  level: DEBUG
+
+tracing:
+  adaptive:
+    default_probability: 1.0
+    per_second_guaranteed: 0.001
+    operations:
+      /grpc.health.v1.Health/Check: 0.001
+  remote_reporter:
+    endpoint: localhost:5775
+
+prometheus_http:
+  listener:
+    tcp:
+      port: 18001
+
+healthcheck_handler:
+  http:
+    path: /health
+    probe:
+      listener:
+        listener:
+          tcp:
+            port: 80
+
+server:
+  listeners:
+  - listener:
+      tcp:
+        port: 443
+    tls:
+      key_file: /etc/alb/ssl/private/server.key
+      cert_file: /etc/alb/ssl/certs/server.crt
+
+alb:
+  node:
+    # Make ALB node name to be unique across all instances.
+    id: "alb-node-{instance.internal_dc}0{instance.index_in_zone}"
+
+  poll_interval: 3s
+
+  ydb:
+    # Use instance group templates to make a YDB dynnode endpoint for this zone.
+    # endpoint: ydb-alb.cloud-testing.yandex.net:2135
+    endpoint: alb-dn-{instance.internal_dc}1.svc.cloud-testing.yandex.net:2135
+    no_discovery: false
+    plaintext: true
+
+    name: /testing_global/apigateway-alb
+    tablespace: /testing_global/apigateway-alb
+    use_sa_token: false
+
+    session:
+      pool_size: 20
+      idle_threshold: 5s
+      keep_alive_timeout: 1s
+    table_max_retries: 10
+
+  id_prefix: alb
+
+  poll_buckets:
+    - key: "controlplane"
+      endpoint: "https://storage.cloud-preprod.yandex.net"
+      bucket: "ycloud-platform-xds-dumps"
+      instance_group_id: amcvpdcttc2ok7t300s3
+      http_router_id: a5d39v77dpdjqsr001m4
+
+  access:
+    # This endpoint will overwrite one from private sdk.
+    # TODO(iceman,novikoff): change this to use private sdk endpoints settings.
+    endpoint: "as.private-api.cloud-testing.yandex.net:4286"
+
+    # Note that this is a path in docker container.
+    certificate_path: "/etc/ssl/certs/allCAs.pem"
+
+    # Will use immutable image ID for ALB API UA.
+    user_agent: "alb-api/c2pfpbnerbs2k291cv6k"
+    warnings_for:
+      - alb.backendGroups.create
+      - alb.backendGroups.delete
+      - alb.backendGroups.get
+      - alb.backendGroups.list
+      - alb.backendGroups.update
+      - alb.routers.create
+      - alb.routers.delete
+      - alb.routers.get
+      - alb.routers.list
+      - alb.routers.update
+      - alb.loadBalancers.create
+      - alb.loadBalancers.delete
+      - alb.loadBalancers.get
+      - alb.loadBalancers.list
+      - alb.loadBalancers.update
+      - alb.targetGroups.create
+      - alb.targetGroups.delete
+      - alb.targetGroups.get
+      - alb.targetGroups.list
+      - alb.targetGroups.update
+      - alb.virtualHosts.get
+      - alb.virtualHosts.list
+      - alb.virtualHosts.update
+
+  inner_api_auth_folder_id: batmvm4btt1d2eidsuqf # alb folder
+
+  s3_credentials:
+    file_credentials:
+      access_key: "/etc/alb/config_dump_access_key"
+      secret_key: "/etc/alb/config_dump_secret_key"
+
+ycpsdk:
+  metadata_service: {}
+  ycp_endpoints:
+    - prefix: iam
+      addr: "api-adapter.private-api.cloud-testing.yandex.net:8443"
+    - prefix: iam.v1.IamTokenService
+      addr: "ts.private-api.cloud-testing.yandex.net:4282"
+    - prefix: iam.v1.IamCookieService
+      addr: "ts.private-api.cloud-testing.yandex.net:4282"
+    - prefix: microcosm.instancegroup
+      addr: "[2a02:6b8:c0e:2c0:0:fc1a:0:1bb]:443"
+      plaintext: true
+    - prefix: servicecontrol
+      addr: "as.private-api.cloud-testing.yandex.net:4286"

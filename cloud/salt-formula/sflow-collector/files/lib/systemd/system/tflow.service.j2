@@ -1,0 +1,22 @@
+{%- set sflow_anycast_loopback = pillar["gobgp"]["sflow_anycast_loopback"] -%}
+[Unit]
+Description="tflow - sFlow daemon"
+After=network.target gobgp.service statbox-push-client.service
+Requires=gobgp.service statbox-push-client.service
+ConditionPathExists=/etc/tflow/tflow.conf
+StartLimitInterval=100
+StartLimitBurst=5
+
+[Service]
+User=tflow
+Group=tflow
+Type=simple
+ExecStart=/usr/bin/tflow
+Restart=always
+RestartSec=15
+MemoryLimit=4G
+ExecStartPost=/usr/bin/gobgp global rib add -a ipv4-mpls {{ sflow_anycast_loopback }}/32 3 community 65535:65282
+ExecStopPost=/usr/bin/gobgp global rib del -a ipv4-mpls {{ sflow_anycast_loopback }}/32 3
+
+[Install]
+WantedBy=multi-user.target

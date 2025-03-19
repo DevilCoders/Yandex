@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: PodList
+items:
+${infra_pod_spec}
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: devices-application
+    annotations:
+      config_digest: ${config_digest}
+  spec:
+    initContainers:
+      - name: deploy-configs
+        image: registry.yandex.net/cloud/api/metadata:6c1bc05bc
+        volumeMounts:
+          - name: config-dir
+            mountPath: /etc
+            terminationGracePeriodSeconds: 30
+    containers:
+      - name: devices
+        image: registry.yandex.net/cloud/devices-application:12141-ea915e217
+        env:
+          - name: IOT_ID_PREFIX
+            value: are
+          - name: IOT_KIKIMR_ENDPOINT
+            value: ydb-iotdevices.cloud.yandex.net:2135
+          - name: IOT_KIKIMR_TABLESPACE
+            value: /global/iotdevices
+          - name: IOT_KIKIMR_DATABASE
+            value: /global/iotdevices
+          - name: IOT_FOLDER_ID
+            value: ${iot_folder}
+          - name: IOT_AUTH_ENDPOINT
+            value: as.private-api.cloud.yandex.net:4286
+          - name: IOT_RESOURCE_MANAGER_ENDPOINT
+            value: api-adapter.private-api.ycp.cloud.yandex.net:443
+          - name: IOT_LOG_GROUP_ENDPOINT
+            value: log-groups.private-api.ycp.cloud.yandex.net:443
+          - name: IOT_GRPC_CERT_FILE_PATH
+            value: /etc/yc-iot/devices/ssl/certs/server.crt
+          - name: JAVA_TOOL_OPTIONS
+            value: "-Xms384m -Xmx384m -XX:-UseContainerSupport -XX:+PrintFlagsFinal -XX:+UseCompressedOops -Djava.net.preferIPv6Addresses=true -Dfile.encoding=UTF-8 -Xlog:gc*,safepoint:${log_path}/gc.log:time,uptime:filecount=32,filesize=32M -Dlog4j.configurationFile=/etc/log4j2.yaml"
+        volumeMounts:
+          - name: iot-logs
+            mountPath: ${log_path}
+          - name: devicesconfig
+            mountPath: /etc/yc-iot/devices/application.yaml
+            readOnly: true
+          - name: devices-tls-cert-file
+            mountPath: /etc/yc-iot/devices/ssl/certs/server.crt
+            readOnly: true
+          - name: log4jconf
+            mountPath: /etc/log4j2.yaml
+            readOnly: true
+      - name: push-client
+        image: registry.yandex.net/cloud/platform/push-client:${push_client_version}
+        volumeMounts:
+          - name: all-logs
+            mountPath: /var/log
+            terminationGracePeriodSeconds: 30
+          - name: var-spool
+            mountPath: /var/spool
+            terminationGracePeriodSeconds: 30
+          - name: push-client-config
+            mountPath: /etc/yandex/statbox-push-client
+            readOnly: true
+    hostNetwork: true
+    volumes:
+      - name: all-logs
+        hostPath:
+          path: /var/log
+      - name: iot-logs
+        hostPath:
+          path: ${log_path}
+          type: DirectoryOrCreate
+      - name: devicesconfig
+        hostPath:
+          path: /etc/yc-iot/devices/application.yaml
+      - name: devices-tls-cert-file
+        hostPath:
+          path: /etc/yc-iot/devices/ssl/certs/server.crt
+      - name: config-dir
+        hostPath:
+          path: /etc
+      - name: var-spool
+        hostPath:
+          path: /data/var/spool
+          type: DirectoryOrCreate
+      - name: push-client-config
+        hostPath:
+          path: /etc/yandex/statbox-push-client
+      - name: log4jconf
+        hostPath:
+          path: /etc/log4j2.yaml

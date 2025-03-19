@@ -1,0 +1,57 @@
+{% extends "../../base/alert.j2" %}
+
+{% set delaySecs = 300 %}
+{% set windowSecs = 259200 %}
+{% set notificationChannels = ['vpc-api-juggler', 'vpc_cfg_telegram'] if solomon == 'main' else ['vpc-api-juggler'] %}
+
+{% macro prog() %}
+// 'zone' label was removed from allocator metrics after approximately 01.11.2020
+// group timelines using series_max until old metrics are expired (180 days)
+let free = series_max({cluster='cloud_{{ env }}_vpc-api', service='vpc-config-plane', sensor='resources_allocator_usage', project='{{ project_id }}', resource_id='*', allocator='*',metric='free'});
+
+let total = last(series_max({cluster='cloud_{{ env }}_vpc-api', service='vpc-config-plane', sensor='resources_allocator_usage', project='{{ project_id }}', resource_id='*', allocator='*',metric='total'}));
+
+// red alert is ON when free/total < 0.1 (more info in CLOUD-26186)
+let red_ratio = 0.1;
+// yellow alert is ON when free/total < 0.2
+let yellow_ratio = 0.2;
+
+let red_rel = red_ratio * total;
+let yellow_rel = yellow_ratio * total;
+
+let now_rest = last(free);
+let future_week = last(linear_trend(free, -1d, 7d));
+let future_2days = last(linear_trend(free, 0d, 2d));
+let may_consume_in_2_days = now_rest - future_2days;
+let may_consume_in_a_week_linear_approximation = now_rest - future_week;
+
+let is_red = future_2days < 0 || now_rest < red_rel;
+let is_yellow = future_week < 0 || now_rest < yellow_rel;
+
+let trafficColor = is_red ? 'red' : (is_yellow ? 'yellow' : 'green');
+{% endmacro %}
+
+
+{% block main %}
+    "name": "allocator_resources @ {{ env }}",
+    "groupByLabels": [
+        "resource_id",
+        "allocator",
+        "cluster"
+    ],
+    "annotations": {
+        "trafficLight.color": "[[expression.trafficColor]]",
+        "service": "[[alert.id]]-[[labels.allocator]]-[[labels.resource_id]]",
+        "host": "solomon-alert-[[labels.cluster]]",
+        "now_rest": "[[expression.now_rest]]",
+        "free_left_in_a_week_linear_approximation": "[[expression.future_week]]",
+        "may_consume_in_a_week_linear_approximation": "[[expression.may_consume_in_a_week_linear_approximation]]",
+        "may_consume_in_2_days_linear_approximation": "[[expression.may_consume_in_2_days]]",
+        "free_left_in_2_days_linear_approximation": "[[expression.future_2days]]",
+        "sensors_start_time": "[[fromTime]]",
+        "sensors_finish_time": "[[toTime]]",
+        "total": "[[expression.total]]"
+    },
+    "description": "Checks if there are enough resources for allocation e.g. (public IPs — fips, qrator IPs, etc). Raises alert if linear approximation for 2/7 days indicates we're out of resource.",
+    "type": {{ type_expression() }}
+{% endblock %}

@@ -1,0 +1,23 @@
+info: Update MongoDB TLS Certificates
+disabled: true
+clusters_selection:
+  db: >-
+    SELECT
+      cid
+    FROM dbaas.clusters c JOIN dbaas.pillar p USING(cid) WHERE
+      c.type = 'mongodb_cluster'
+      AND c.status = 'RUNNING'
+      AND p.value #>> '{data,need_update_tls}' = 'true'
+pillar_change: >-
+  UPDATE dbaas.pillar p
+     SET value = jsonb_set(value, '{data,need_update_tls}', to_jsonb(CAST('false' as BOOLEAN)))
+   WHERE
+     p.cid = :cid
+worker:
+  operation_type: mongodb_cluster_modify
+  task_type: mongodb_cluster_maintenance
+  task_args:
+    restart: true
+    update_tls: true
+max_delay_days: 21
+min_days: 7

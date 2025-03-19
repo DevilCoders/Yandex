@@ -1,0 +1,26 @@
+{% extends "../../base/alert.j2" %}
+{% macro prog() %}
+    let retries = sum(group_lines('sum', diff({cluster='cloud_{{ env }}_vpc-control', service='vpc-control', sensor="operation_retries_total"})));
+    ok_if(retries == 0);
+
+    let is_red = retries > {{ alarm_limit }};
+    let is_yellow = retries > {{ warn_limit }};
+    let trafficColor = is_red ? 'red' : (is_yellow ? 'yellow' : 'green');
+    let description = 'Operation retries count: ' + retries;
+    alarm_if(is_red);
+    warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+    "name": "vpc-control operation retry count @ {{ env }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "tags": "Solomon",
+        "host": "{{ svm_fqdn() }}",
+        "service": "vpc-control-operation-retries",
+        "trafficLight.color": "[[expression.trafficColor]]",
+        "details": "[[expression.description]]"
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

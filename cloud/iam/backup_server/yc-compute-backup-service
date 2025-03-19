@@ -1,0 +1,364 @@
+#!/usr/bin/env python3
+from psh import sh
+import ntplib
+from datetime import datetime, timezone
+import os
+import requests
+from tldextract import extract
+import boto3
+from base64 import b64decode
+import yaml
+from threading import Thread
+import json
+import socket
+import shutil
+
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+BACKUP_RUNNING = False
+BACKUP_OUTPUTS = {}
+
+#TODO: Handle ydb tool errors
+
+class ComputeBackupHTTPServer_RequestHandler(BaseHTTPRequestHandler):
+    def response_processing(self, message):
+        self.send_response(102)
+        self.send_header('Content-type','text/html')
+        self.end_headers()
+
+        self.wfile.write(bytes(message, "utf8"))
+
+
+    def do_GET(self):
+        if self.path == "/":
+            self.send_response(200)
+            self.end_headers()
+        if self.path == "/start":
+            if BACKUP_RUNNING:
+                message = ("Backup already processing. "
+                           "Visit /status handle for examine completion status.")
+                self.response_processing(message)
+                return
+
+            backup_main_thread = Thread(target=backup_main)
+            backup_main_thread.start()
+            self.send_response(200)
+            self.send_header('Content-type','text/html')
+            self.end_headers()
+            self.wfile.write(bytes("OK", "utf8"))
+            return
+
+        if self.path == "/status":
+            if BACKUP_RUNNING:
+                message = ("Backup still processing. "
+                           "Wait for completion.")
+                self.response_processing(message)
+                return
+
+            if (not BACKUP_RUNNING) and BACKUP_OUTPUTS == {}:
+                self.send_response(412)
+                self.end_headers()
+                self.wfile.write(bytes("Backup not initiated.", "utf8"))
+                return
+
+            self.send_response(200)
+            self.send_header('Content-type','text/html')
+            self.end_headers()
+            self.wfile.write(bytes(json.dumps(BACKUP_OUTPUTS), "utf8"))
+            return
+
+
+def lookup_environment(suffixes, suffix):
+    if suffix in suffixes:
+        return suffixes[suffix]
+    raise Exception("Cannot lookup {} environmemt.".format(suffix))
+
+def decrypt_key(config, encrypted_key):
+    os.environ["KMS_HTTP_ENDPOINT"] = config["kms"]["endpoint"]
+    b64_key = sh("kms-decrypt")(config["kms"]["key"], config["kms"]["add_context"], encrypted_key).execute().stdout()
+    del os.environ["KMS_HTTP_ENDPOINT"]
+    return b64decode(b64_key).decode("utf-8")
+
+
+with open("/etc/yc/backup/config.yaml") as f:
+    config = yaml.load(f)
+
+response = requests.get(
+    'http://169.254.169.254/computeMetadata/v1/instance/hostname',
+    headers={"Metadata-Flavor": "Google"}
+)
+suffix = extract(response.text).subdomain.split(".")[-1]
+environment = lookup_environment(config["environment_suffixes"], suffix)
+local_config = config[environment]
+
+ntp_servers = config["npt_serevrs"]
+server_port = config["server"]["port"]
+YDB_ENDPOINT = local_config["ydb"]["endpoint"]
+DATABASE = local_config["ydb"]["database"]
+DATABASE_PATH = local_config["ydb"]["path"]
+FOLDER = local_config["ydb"].get("folder", None)
+
+
+
+ydb_tool_args = ["--verbose", "-e", YDB_ENDPOINT, "-d", DATABASE]
+
+def remove_ydb_db(name):
+    db_dirs = (
+        sh.ydb(
+            *ydb_tool_args,
+            "scheme",
+            "ls",
+            "{}/backup/{}".format(DATABASE_PATH, name)
+        ) | \
+        sh.awk("{print $1}")
+    ).execute().stdout().rstrip().split("\n")
+    for directory in db_dirs:
+        db_tables = (
+            sh.ydb(
+                *ydb_tool_args,
+                "scheme",
+                "ls",
+                "{}/backup/{}/{}".format(DATABASE_PATH, name, directory)
+            ) | \
+            sh.awk("{print $1}")
+        ).execute().stdout().rstrip().split("\n")
+        for table in db_tables:
+            print("dropping: {}".format("{}/backup/{}/{}/{}".format(DATABASE_PATH, name, directory, table)))
+            print(sh.ydb(
+                *ydb_tool_args,
+                "table",
+                "drop",
+                "{}/backup/{}/{}/{}".format(DATABASE_PATH, name, directory, table)
+            ).execute().stdout())
+        print(sh.ydb(
+            *ydb_tool_args,
+            "scheme",
+            "rmdir",
+            "{}/backup/{}/{}".format(DATABASE_PATH, name, directory)
+        ).execute().stdout())
+    print(sh.ydb(
+        *ydb_tool_args,
+        "scheme",
+        "rmdir",
+        "{}/backup/{}".format(DATABASE_PATH, name)
+    ).execute().stdout())
+
+
+
+def cleanup_old_backup_tables(current_datedatetime):
+    BACKUP_OUTPUTS["removed_databases"] = []
+    current_datedatetime = datetime.strptime(current_datedatetime, "%Y-%m-%d-%H-%M")
+    backup_tables = (
+        sh.ydb(
+            *ydb_tool_args,
+            "scheme",
+            "ls",
+            "{}/backup".format(DATABASE_PATH)
+        ) | \
+        sh.awk("{print $1}")
+    ).execute().stdout().rstrip().split("\n")
+    backup_times = []
+    for backup_table in backup_tables:
+        try:
+            backup_times.append(backup_table)
+        except ValueError:
+            print("cannot parse \"{}\" table".format(backup_table))
+    backup_times = [datetime.strptime(dt, "%Y-%m-%d-%H-%M") for dt in backup_tables]
+    old_backups_times = filter(lambda dt: (current_datedatetime - dt).days >= 30, backup_times)
+    for old_backup_time in old_backups_times:
+        print("removing {}".format(old_backup_time.strftime("%Y-%m-%d-%H-%M")))
+        remove_ydb_db(old_backup_time.strftime("%Y-%m-%d-%H-%M"))
+        BACKUP_OUTPUTS["removed_databases"].append(old_backup_time.strftime("%Y-%m-%d-%H-%M"))
+        break
+
+
+def backup_in_ydb(current_datedatetime):
+    global BACKUP_OUTPUTS
+    replicate_log = sh.ydb(
+        *ydb_tool_args,
+        "tools",
+        "restore",
+        "-p",
+        "{}/backup/{}".format(DATABASE_PATH, current_datedatetime),
+        "-i",
+        os.path.expanduser(
+            "~/backups_ycloud_{}".format(current_datedatetime)
+        )
+    ).execute().stdout()
+    BACKUP_OUTPUTS["replicate_log"] = replicate_log
+    print(replicate_log)
+
+def calculate_stats(current_datedatetime):
+    global BACKUP_OUTPUTS
+    tables_path = os.path.expanduser(
+        "~/backups_ycloud_{}".format(current_datedatetime)
+    )
+    os.chdir(tables_path)
+    tables_statistics = (
+        sh.find(".", "-name", "*.csv", "-type", "f", "-exec", "wc", "-l", "{}", "+") |\
+        sh.head("-n-1") |\
+        sh.sed("s@/data_[[:digit:]]\+\.csv@@g") |\
+        sh.sed("s@\./@@g") |\
+        sh.awk('{arr[$2]+=$1} END {for (i in arr) {print i,arr[i]}}')
+    ).execute().stdout().rstrip()
+    print("Tables stats:")
+    print(tables_statistics)
+    null_size_tables = (
+        sh.find(".", "-type", "f", "-size", "0") |\
+        sh.sed("s@/data_[[:digit:]]\+\.csv@@g") | sh.sed("s@\./@@g")
+    ).execute().stdout()
+    print("Tables with null size:")
+    print(null_size_tables)
+    BACKUP_OUTPUTS["tables_statistics"] = tables_statistics
+    BACKUP_OUTPUTS["null_size_tables"] = null_size_tables
+
+
+def encrypt_and_upload(current_datedatetime):
+    global BACKUP_OUTPUTS
+    os.environ["RANDFILE"] = os.path.expanduser("~/.rnd")
+    archive_path = os.path.expanduser(
+        "~/backups_ycloud_{}.tar.gz".format(current_datedatetime)
+    )
+    # C would not correctly handle environment variable with null byte
+    while True:
+        backup_open_passphrase = sh.openssl("rand", "32").execute().raw_stdout()
+        if b"\0" not in backup_open_passphrase:
+            break
+    os.environb[b"backup_open_passphrase"] = backup_open_passphrase
+    print(
+    (sh.tar(
+        "--use-compress-program=pigz",
+        "-cf",
+        "-",
+        os.path.expanduser(
+            "~/backups_ycloud_{}".format(current_datedatetime)
+        )
+    ) | sh.openssl(
+            "enc",
+            "-e",
+            "-aes256",
+            "-pass",
+            "env:backup_open_passphrase",
+            "-out",
+            archive_path
+        )
+    ).execute().stdout())
+
+    with open(os.path.expanduser("~/public_key.pem"), "w+") as f:
+        public_key_encrypted = local_config["encryption"]["public_key_encrypted"]
+        public_key = decrypt_key(local_config, public_key_encrypted)
+        f.write(public_key)
+
+    backup_encrypted_passphrase = sh.openssl(
+        "rsautl",
+        "-encrypt",
+        "-inkey",
+        os.path.expanduser("~/public_key.pem"),
+        "-pubin",
+        _stdin=backup_open_passphrase,
+    ).execute().raw_stdout()
+
+    os.unlink(os.path.expanduser("~/public_key.pem"))
+
+    os.environb[b"backup_open_passphrase"] = b"\01"*32
+    del os.environb[b"backup_open_passphrase"]
+
+    with open(archive_path, "ab") as f:
+        f.write(backup_encrypted_passphrase)
+
+    session = boto3.session.Session()
+    s3 = session.client(
+            service_name='s3',
+            endpoint_url=local_config["s3"]["endpoint"],
+            aws_secret_access_key=decrypt_key(local_config, local_config["s3"]["encypted_key"]).rstrip(),
+            aws_access_key_id=local_config["s3"]["key_id"]
+    )
+    s3.upload_file(
+            archive_path,
+            local_config["s3"]["bucket"],
+            os.path.basename(archive_path),
+            ExtraArgs={"StorageClass": "COLD"}
+    )
+    BACKUP_OUTPUTS["s3_key"] = os.path.basename(archive_path)
+    os.unlink(archive_path)
+
+
+def upload_to_yt(fs_directory):
+    import os
+    os.environ["YT_PROXY"] = "hahn"
+    sh("iam_backup")("--yt-directory", "//home/cloud/iam/export/" + environment,
+                     "--fs-directory", fs_directory,
+                     "--table", "hardware/default/identity/r3/clouds", "clouds", "id,modified_at,status",
+                     "--table", "hardware/default/identity/r3/clouds_history", "clouds_history", "id,modified_at,status",
+                     "--table", "hardware/default/identity/r3/folders", "folders", "id,cloud_id,status",
+                     "--table", "hardware/default/identity/r3/folders_history", "folders_history", "id,modified_at,cloud_id,status",
+                     "--table", "hardware/default/identity/r3/subjects/service_accounts", "service_accounts", "id,cloud_id,folder_id",
+                     "--table", "hardware/default/identity/r3/subjects/service_accounts", "service_accounts_history", "id,cloud_id,folder_id",
+                     "--table", "hardware/default/scms/access_keys", "access_keys", "folder_id,id,key_id,user_id",
+                     ).execute().stdout()
+
+
+def backup_main():
+    global BACKUP_RUNNING
+    global BACKUP_OUTPUTS
+    BACKUP_RUNNING = True
+    BACKUP_OUTPUTS = {}
+    ntp_client = ntplib.NTPClient()
+    for ntp_server in ntp_servers:
+        try:
+            response = ntp_client.request(ntp_server, version=3)
+            break
+        except ntplib.NTPException as e:
+            log.error("Failed to get time from {}.".format(ntp_server))
+    else:
+        log.error("Failed to get time from any NTP server.")
+
+    current_datedatetime = datetime.fromtimestamp(response.tx_time, timezone.utc).strftime("%Y-%m-%d-%H-%M")
+    print("Fething data from YDB.")
+    fs_directory = os.path.expanduser(
+        "~/backups_ycloud_{}".format(current_datedatetime)
+    )
+    if FOLDER is not None:
+        dump_path = "{}/{}".format(DATABASE_PATH, FOLDER)
+    else:
+        dump_path = DATABASE_PATH
+        if not dump_path.endswith("/"):
+            dump_path = dump_path + "/"
+
+    fetch_log = sh.ydb(
+        *ydb_tool_args,
+        "tools",
+        "dump",
+        "-p",
+        dump_path,
+        "-o",
+        fs_directory,
+    ).execute().stdout()
+    BACKUP_OUTPUTS["fetch_log"] = fetch_log
+    print(fetch_log)
+    # t1 = Thread(target=backup_in_ydb, args=(current_datedatetime,))
+    # t2 = Thread(target=calculate_stats, args=(current_datedatetime,))
+    t3 = Thread(target=encrypt_and_upload, args=(current_datedatetime,))
+    # t4 = Thread(target=cleanup_old_backup_tables, args=(current_datedatetime,))
+    # t1.start()
+    # t2.start()
+    # t4.start()
+    # t2.join()
+    # t4.join()
+    t3.start()
+    # t1.join()
+    t3.join()
+    upload_to_yt(fs_directory)
+    BACKUP_RUNNING = False
+    shutil.rmtree(fs_directory)
+
+
+def run():
+  print('starting server...')
+  server_address = ('127.0.0.1', server_port)
+  httpd = HTTPServer(server_address, ComputeBackupHTTPServer_RequestHandler)
+  print('running server...')
+  httpd.serve_forever()
+
+
+run()

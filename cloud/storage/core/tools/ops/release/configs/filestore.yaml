@@ -1,0 +1,160 @@
+name: filestore
+description: FileStore Service
+definitions:
+  # https://t.me/joinchat/_hCN-oKP99JiNzgy
+  - &prod-telegram-chat-id "-543487793"
+  - &prod-qmssngr-chat-id "0/0/ef78a535-e317-4073-a151-38cf324b9947"
+  - &testing-telegram-chat-id "-543487793"
+  - &testing-qmssngr-chat-id "0/0/ef78a535-e317-4073-a151-38cf324b9947"
+  - &nfs-juggler-project "nfs"
+  - &nfs-alerts
+    - solomon_alert_nfs_server_restarts
+    - solomon_alert_nfs_vhost_restarts
+    - solomon_alert_nfs_server_version
+    - solomon_alert_nfs_vhost_version
+  - &nfs-binary-packages
+    - yandex-cloud-filestore-client
+    - yandex-cloud-filestore-http-proxy
+    - yandex-cloud-filestore-server
+    - yandex-cloud-filestore-vhost
+  - &nfs-control-binary-packages
+    - yandex-cloud-filestore-client
+    - yandex-cloud-filestore-server
+  - &nfs-infra-service-id 3261
+  - &nfs-services
+    - name: nfs-server
+      restart_delay: 5s
+    - name: nfs-vhost
+      restart_delay: 5s
+  - &nfs-control-services
+    - name: nfs-server
+      restart_delay: 5s
+clusters:
+  hw-nbs-stable-lab:
+    global:
+      telegram:
+        chat_id: *testing-telegram-chat-id
+      qmssngr:
+        chat_id: *testing-qmssngr-chat-id
+      infra:
+        service_id: *nfs-infra-service-id
+        environment_id: 5028
+      juggler:
+      targets:
+        - name: nfs
+          binary_packages: *nfs-binary-packages
+          config_package: yandex-search-kikimr-nfs-conf-hw-nbs-stable-lab-global
+          services: *nfs-services
+          z2:
+            meta_group: YCLOUD_HW_NBS_STABLE_LAB_NFS
+            group: YCLOUD_HW_NBS_STABLE_LAB_NFS_GLOBAL
+            config_meta_group: YCLOUD_HW_NBS_STABLE_LAB_NFS_GLOBAL_CONF
+        - name: nfs-control
+          tags:
+            - svm
+          max_parallelism: 1
+          binary_packages: *nfs-control-binary-packages
+          config_package: yandex-search-kikimr-nfs-control-conf-hw-nbs-stable-lab-global
+          services: *nfs-control-services
+          z2:
+            meta_group: YCLOUDVM_HW_NBS_STABLE_LAB_NFS_CONTROL
+            group: YCLOUDVM_HW_NBS_STABLE_LAB_NFS_CONTROL_GLOBAL
+            config_meta_group: YCLOUDVM_HW_NBS_STABLE_LAB_NFS_CONTROL_GLOBAL_CONF
+  testing:
+    {{- range (seq "sas" "vla" "myt")}}
+    {{.}}:
+      telegram:
+        chat_id: *testing-telegram-chat-id
+      qmssngr:
+        chat_id: *testing-qmssngr-chat-id
+      infra:
+        service_id: *nfs-infra-service-id
+        environment_id: 5028
+      targets:
+        - name: nfs
+          binary_packages: *nfs-binary-packages
+          config_package: yandex-search-kikimr-nfs-conf-testing-{{.}}
+          services: *nfs-services
+          z2:
+            meta_group: YCLOUD_TESTING_NFS
+            group: YCLOUD_TESTING_NFS_{{.|ToUpper}}
+            config_meta_group: YCLOUD_TESTING_NFS_{{.|ToUpper}}_CONF
+        - name: nfs-control
+          tags:
+            - svm
+          binary_packages: *nfs-control-binary-packages
+          config_package: yandex-search-kikimr-nfs-control-conf-testing-{{.}}
+          services: *nfs-control-services
+          z2:
+            meta_group: YCLOUDVM_TESTING_NFS_CONTROL
+            group: YCLOUDVM_TESTING_NFS_CONTROL_{{.|ToUpper}}
+            config_meta_group: YCLOUDVM_TESTING_NFS_CONTROL_{{.|ToUpper}}_CONF
+    {{end}}
+  preprod:
+    {{- range (seq "sas" "vla" "myt")}}
+    {{.}}:
+      telegram:
+        chat_id: *testing-telegram-chat-id
+      qmssngr:
+        chat_id: *testing-qmssngr-chat-id
+      infra:
+        service_id: *nfs-infra-service-id
+        environment_id: 5029
+      juggler:
+        host: solomon-alert-cloud_preprod_nfs_{{.}}
+        alerts: *nfs-alerts
+        project: *nfs-juggler-project
+      targets:
+        - name: nfs
+          binary_packages: *nfs-binary-packages
+          config_package: yandex-search-kikimr-nfs-conf-preprod-{{.}}
+          services: *nfs-services
+          z2:
+            meta_group: YCLOUD_PREPROD_NFS
+            group: YCLOUD_PREPROD_NFS_{{.|ToUpper}}
+            config_meta_group: YCLOUD_PREPROD_NFS_{{.|ToUpper}}_CONF
+        - name: nfs-control
+          tags:
+            - svm
+          binary_packages: *nfs-control-binary-packages
+          config_package: yandex-search-kikimr-nfs-control-conf-preprod-{{.}}
+          services: *nfs-control-services
+          z2:
+            meta_group: YCLOUDVM_PREPROD_NFS_CONTROL
+            group: YCLOUDVM_PREPROD_NFS_CONTROL_{{.|ToUpper}}
+            config_meta_group: YCLOUDVM_PREPROD_NFS_CONTROL_{{.|ToUpper}}_CONF
+    {{end}}
+  prod:
+    {{- range (seq "sas" "vla" "myt")}}
+    {{.}}:
+      telegram:
+        chat_id: *prod-telegram-chat-id
+      qmssngr:
+        chat_id: *prod-qmssngr-chat-id
+      infra:
+        service_id: *nfs-infra-service-id
+        environment_id: 5030
+      juggler:
+        host: solomon-alert-cloud_prod_nfs_{{.}}
+        alerts: *nfs-alerts
+        project: *nfs-juggler-project
+      targets:
+        - name: nfs
+          binary_packages: *nfs-binary-packages
+          config_package: yandex-search-kikimr-nfs-conf-prod-{{.}}
+          services: *nfs-services
+          z2:
+            meta_group: YCLOUD_PROD_NFS
+            group: YCLOUD_PROD_NFS_{{.|ToUpper}}
+            config_meta_group: YCLOUD_PROD_NFS_{{.|ToUpper}}_CONF
+        - name: nfs-control
+          tags:
+            - svm
+          binary_packages: *nfs-control-binary-packages
+          config_package: yandex-search-kikimr-nfs-control-conf-prod-{{.}}
+          services: *nfs-control-services
+          z2:
+            meta_group: YCLOUDVM_PROD_NFS_CONTROL
+            group: YCLOUDVM_PROD_NFS_CONTROL_{{.|ToUpper}}
+            config_meta_group: YCLOUDVM_PROD_NFS_CONTROL_{{.|ToUpper}}_CONF
+    {{end}}

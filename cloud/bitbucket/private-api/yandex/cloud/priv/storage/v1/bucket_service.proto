@@ -1,0 +1,214 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.storage.v1;
+
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/struct.proto";
+
+import "yandex/cloud/api/operation.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+import "yandex/cloud/priv/sensitive.proto";
+import "yandex/cloud/priv/storage/v1/bucket.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/storage/v1;storage";
+
+// BucketService provides API methods for interacting with buckets. It
+// unions S3 Public and S3 Private API.
+service BucketService {
+  // Lists available buckets. For this request
+  // fields "cors", "website_settings", "lifecycle_rules", "acl", "policy"
+  // will not be filled.
+  rpc List(ListBucketsRequest) returns (ListBucketsResponse);
+  // Get specific bucket.
+  rpc Get(GetBucketRequest) returns (Bucket);
+
+  // Create new bucket and returns created entity.
+  rpc Create(CreateBucketRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "CreateBucketMetadata"
+      response: "Bucket"
+    };
+  };
+
+  // Update peforms partial update of the bucket.
+  rpc Update(UpdateBucketRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateBucketMetadata"
+      response: "Bucket"
+    };
+  }
+
+  // Delete requested bucket.
+  rpc Delete(DeleteBucketRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeleteBucketMetadata"
+      response: "google.protobuf.Empty"
+    };
+  };
+
+  // Fetch stats of the bucket.
+  rpc GetStats(GetBucketStatsRequest) returns (BucketStats);
+
+  rpc GetHTTPSConfig(GetBucketHTTPSConfigRequest) returns (HTTPSConfig);
+
+  rpc SetHTTPSConfig(SetBucketHTTPSConfigRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "SetBucketHTTPSConfigMetadata"
+      response: "HTTPSConfig"
+    };
+  }
+
+  rpc DeleteHTTPSConfig(DeleteBucketHTTPSConfigRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeleteBucketHTTPSConfigMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+}
+
+message GetBucketRequest {
+  // view allows to fetch additional information about
+  // the bucket in a single request.
+  // Please note, that fetching extended information
+  // may require additional permissions according to
+  // bucket ACL and cloud access policy.
+  enum View {
+    // No specified view. Treated as basic value.
+    VIEW_UNSPECIFIED = 0;
+    // Fetches basic information about bucket.
+    VIEW_BASIC = 1;
+    // Fetches basic information with acl.
+    VIEW_ACL = 2;
+    // Includes all available fields in a bucket.
+    VIEW_FULL = 3;
+  }
+
+  // Bucket's name.
+  string name = 1 [ (required) = true ];
+  // Defines properties that should be returned by a request.
+  View view = 2;
+}
+
+message ListBucketsRequest {
+  // Folder id for requested buckets.
+  string folder_id = 1 [ (required) = true ];
+}
+
+message ListBucketsResponse {
+  // list of buckets that satisfies request
+  repeated Bucket buckets = 1;
+}
+
+message CreateBucketMetadata {
+  // Bucket name that is going to be created
+  string name = 1;
+}
+
+message UpdateBucketMetadata {
+  // Bucket name that is going to be updated
+  string name = 1;
+}
+
+message DeleteBucketMetadata {
+  // Bucket name that is going to be deleted
+  string name = 1;
+}
+
+message SetBucketHTTPSConfigMetadata {
+  // Bucket name for which https config will be set
+  string name = 1;
+}
+
+message DeleteBucketHTTPSConfigMetadata {
+  // Bucket name for which https config will be deleted
+  string name = 1;
+}
+
+// CreateBucketRequest creates bucket for S3.
+message CreateBucketRequest {
+  // Unique name of the bucket.
+  // There's a few rules in bucket naming, for more details
+  // see: https://cloud.yandex.ru/docs/storage/concepts/bucket#naming.
+  string name = 1 [ (required) = true ];
+  string folder_id = 2 [ (required) = true, (length) = "<=50" ];
+  // Empty value treated as STORAGE_CLASS_STANDARD.
+  string default_storage_class = 4;
+  int64 max_size = 5;
+  AnonymousAccessFlags anonymous_access_flags = 6;
+  ACL acl = 7;
+}
+
+// UpdateBucketRequest works like patch method in HTTP world
+// N.B: For most of the fields separate permissions are
+// required in order to update this field.
+message UpdateBucketRequest {
+  // Unique name of the bucket.
+  string name = 1 [ (required) = true ];
+  google.protobuf.FieldMask field_mask = 2 [ (required) = true ];
+
+  // PATCH parameters. Each parameter should be set in field mask with
+  // corresponding field name in order to be updated.
+  //
+  // The required permissions to the groups of fields are separated
+  // by the comment.
+  //
+  // requires permission s3:PutBucketExternalSettings
+  AnonymousAccessFlags anonymous_access_flags = 3;
+  string default_storage_class = 4;
+  int64 max_size = 5;
+
+  // requires permission s3:PutBucketCORS
+  repeated CorsRule cors = 6;
+
+  // requires permission s3:PutBucketWebsite
+  WebsiteSettings website_settings = 7;
+
+  // requires permission s3:PutBucketVersioning
+  Versioning versioning = 8;
+
+  // requires permission s3:PutLifecycleConfiguration
+  repeated LifecycleRule lifecycle_rules = 9;
+
+  // requires permission s3:PutBucketPolicy
+  google.protobuf.Struct policy = 10;
+
+  // requires permission s3:PutBucketACL
+  ACL acl = 11;
+}
+
+message DeleteBucketRequest {
+  string name = 1 [ (required) = true ];
+}
+
+message GetBucketStatsRequest {
+  string name = 1 [ (required) = true ];
+}
+
+message GetBucketHTTPSConfigRequest {
+  string name = 1 [ (required) = true ];
+}
+
+message SelfManagedHTTPSConfigParams {
+    string certificate_pem = 1 [(length) = "<=3145728", (sensitive) = true, (sensitive_type) = SENSITIVE_CRC]; // 3 MiB
+    string private_key_pem = 2 [(length) = "<=3145728", (sensitive) = true, (sensitive_type) = SENSITIVE_CRC]; // 3 MiB
+}
+
+message CertificateManagerHTTPSConfigParams {
+    string certificate_id = 1;
+}
+
+message SetBucketHTTPSConfigRequest {
+  string name = 1 [ (required) = true ];
+
+  oneof params {
+    option (exactly_one) = true;
+
+    SelfManagedHTTPSConfigParams self_managed = 2;
+    CertificateManagerHTTPSConfigParams certificate_manager = 3;
+  }
+}
+
+message DeleteBucketHTTPSConfigRequest {
+  string name = 1 [ (required) = true ];
+}

@@ -1,0 +1,42 @@
+definitions:
+  - &alert_id "{{.ID}}_nbs_unified_agent_errors"
+  - &alert_name "{{.Name}} NBS Unified Agent Errors"
+  - &alert_annotations_host "{{`{{labels.host}}`}}.{{.HostDomain}}"
+  - &alert_annotations_service "solomon_alert_nbs_unified_agent_errors"
+  - &alert_description "(https://nda.ya.ru/t/msSefwH25FkcLu)"
+  - &alert_juggler_description |-
+      {{alert.name}} is in {{status.code}} state on host {{labels.host}}
+      {{alert.description}}
+  - &alert_window_secs 300
+  - &alert_delay_secs 0
+alerts:
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_description
+    group_by_labels:
+      - host
+    window_secs: *alert_window_secs
+    delay_secs: *alert_delay_secs
+    channels:
+      - id: juggler
+        notify_about_statuses:
+          - OK
+          - ERROR
+          - ALARM
+          - WARN
+    annotations:
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - prod_myt
+      - prod_sas
+      - prod_vla
+      - preprod
+      - testing
+    expression:
+      program: |-
+        let dropped = {project='{{.SolomonProjectID}}', cluster='{{.SolomonCluster}}', service='unified_agent', host='{{.Hosts}}', plugin_id='*blockstore*', sensor='DroppedBytes'};
+
+        no_data_if(count(group_lines('count', dropped)) == 0);
+        warn_if(sum(group_lines('sum', dropped)) > 0);

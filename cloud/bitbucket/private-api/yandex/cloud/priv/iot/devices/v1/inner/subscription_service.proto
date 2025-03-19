@@ -1,0 +1,161 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.iot.devices.v1.inner;
+
+import "yandex/cloud/priv/iot/devices/v1/inner/auth_service.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/iot/devices/v1/inner;inner";
+option java_outer_classname = "PITSS";
+
+service SubService {
+  rpc Session (stream SubRequest) returns (stream SubResponse);
+}
+
+message SubRequest {
+
+  // Sent by client as first message to create new or attach to existing session
+  message Init {
+    string session_id = 1;
+  }
+
+  // Like CommandsBatch, but have semantic difference:
+  // 1. snapshots sent only during handshake before ServeCommands sent by client
+  // 2. when server receives first snapshot - it clears current subscription state of this session before applying commands
+  // 3. commands in SubSnapshot doesn't have meaningful command ids, ids shouldn't be interpreted by server
+  message SubSnapshot {
+    repeated Command commands = 1;
+  }
+
+  // Required command that finishes handshake phase - after this message sent, client will start sending CommandsBatch
+  // messages
+  message ServeCommands {
+  }
+
+  // Client ready for this subscription server to start serving messages
+  message Serve {
+  }
+
+  // Batch of sub/unsub commands to be applied on subscriptions server
+  message CommandsBatch {
+    repeated Command commands = 1;
+  }
+
+  // Commit partition-offset state of messages, received by broker
+  message ReadState {
+    PartReadState read_state = 1;
+  }
+
+  oneof request {
+    CommandsBatch commands_batch = 1;
+    Init init = 2;
+    SubSnapshot sub_snapshot = 3;
+    ReadState read_state = 4;
+    ServeCommands serve_commands = 5;
+    Serve serve = 6;
+  }
+}
+
+message SubResponse {
+  // Sent by subscription server in response to client's init request
+  message Init {
+    // last known by server command id for this session
+    int64 last_cmd_id = 1;
+    // current serving state
+    ServingParts parts = 2;
+  }
+
+  // commit commands up to last_command_id
+  message CommitCommands {
+    int64 last_command_id = 1;
+  }
+
+  // used to send messages to broker
+  message MessageBatch {
+    repeated Message messages = 1;
+    // partition-offset mapping that can be used be client to commit this batch of messages.
+    // can contain offsets for messages that doesn't present in messages list - if this messages didn't match with
+    // subscription rules of this session
+    PartReadState state = 2;
+  }
+
+  // update for serving state of this server
+  message PartsUpdate {
+    ServingParts parts = 1;
+  }
+
+  oneof response {
+    CommitCommands commit_commands = 1;
+    Init init = 2;
+    MessageBatch message_batch = 3;
+    PartsUpdate parts_update = 4;
+  }
+}
+
+message Message {
+  bytes payload = 1;
+  int64 qos = 2;
+  bool dup = 3;
+  int64 part_id = 4;
+  int64 offset = 5;
+  int64 publish_time = 6;
+
+  repeated ChannelSubId subs = 7;
+}
+
+// Contains all required circumstances of message match
+message ChannelSubId {
+  int64 channel_id = 1;
+  int64 sub_id = 2;
+  string matched_topic = 3;
+}
+
+message Command {
+  message CreateChannel {
+  }
+
+  message CloseChannel {
+  }
+
+  message Subscribe {
+    message Clause {
+      string device_id = 1;
+      TopicEntity entity = 2;
+      TopicType topic_type = 5;
+    }
+    int64 subscription_id = 1;
+    string topic_filter = 2;
+    string registry_id = 3;
+    MQTTNamespace ns = 4;
+    repeated Clause dnf_clauses = 6;
+    bool to_device = 7;
+  }
+
+  message Unsubscribe {
+    int64 subscription_id = 1;
+  }
+  int64 command_id = 1;
+  int64 channel_id = 2;
+  oneof command {
+    Subscribe sub = 3;
+    Unsubscribe unsub = 4;
+    CreateChannel create_ch = 5;
+    CloseChannel close_ch = 6;
+  }
+}
+
+message InitResponse {
+  int64 last_command_id = 2;
+}
+
+message ServingParts {
+  bool serving = 1;
+  PartReadState parts = 2;
+  int64 version = 3;
+}
+
+// Common message used to somebody's partition-offset read state.
+// Important note: in this message offset is always "first uncommitted offset" - e.g. '{3: 1}' means that
+// offset 0 is committed, and offset 1 - is first uncommitted offset of partition 3
+message PartReadState {
+  map<int64, int64> partition_to_offset = 1;
+}

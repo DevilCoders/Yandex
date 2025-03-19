@@ -1,0 +1,249 @@
+---
+- hosts: localhost
+  gather_facts: false
+  pre_tasks:
+    - juggler_facts:  jserver_api={{ jserver_api }}
+      tags:
+        - always
+  vars:
+    - env: "israel"
+    - env_dns_zone: "yandexcloud.co.il"
+    - datacenters:
+      - il1-a
+    - availability_zones:
+      - il1-a
+
+  roles:
+    - role: compute
+      vars:
+        notification_methods: "{{ default_notification_methods + telegram_notification }}"
+        children:
+          - YC_DNS%compute-node*.infra.yandexcloud.co.il@tenant=israel
+        host: "yc_common_compute_{{ env }}"
+        unreachable_host: "yc_common_compute_{{ env }}"
+        notify_tag: "{{ notify_daytime_tag }}"
+
+    - role: core
+      vars:
+        notification_methods: "{{ default_notification_methods + telegram_notification }}"
+        children:
+          - YC_DNS%compute-node*.infra.yandexcloud.co.il@tenant=israel
+        host: "yc_core_compute_{{ env }}"
+        unreachable_host: "yc_common_compute_{{ env }}"
+        flap: { stable: 360, critical: 1080 }
+
+    - role: head
+      vars:
+        notification_methods: "{{ default_notification_methods + telegram_notification }}"
+        children:
+          - YC_DNS%head*.svc.yandexcloud.co.il@tenant=israel
+        host: "yc_common_head_{{ env }}"
+        unreachable_host: "yc_common_head_{{ env }}"
+        notify_tag: "{{ notify_daytime_tag }}"
+
+    - role: cloudgate
+      vars:
+        ignore_ongoing_deployment: false
+        children: []
+        role: ""
+        host: ""
+        unreachable_host: ""
+        telegram_chat_id: ""
+        notification_methods: "{{ default_notification_methods }}"
+        check_tags: ['cloudgate']
+        flap: { stable: 360, critical: 1080 }
+        default_limits: "{{ default_limits_0perc_crit }}"
+        notify_tag: "{{ notify_daytime_tag }}"
+
+    - role: hc-ctrl
+      vars:
+        ignore_ongoing_deployment: false
+        notification_methods: "{{ default_notification_methods }}"
+        children:
+          - YC_DNS%hc-ctrl*.svc.yandexcloud.co.il@tenant=israel
+        role: "yc_loadbalancer_hc-ctrl"
+        check_tags: ['visible', 'yc-loadbalancer']
+        default_limits: "{{ prod_limits }}"
+        unreachable_host: "{{ host }}"
+        flap: ""
+        host: "{{ role }}_{{ env }}{% if dc is defined %}_{{ dc }}{% endif %}"
+        notify_tag: "{{ notify_daytime_tag }}"
+
+    - role: hc-node
+      vars:
+        ignore_ongoing_deployment: false
+        notification_methods: "{{ default_notification_methods }}"
+        children:
+          - YC_DNS%hc-node*.svc.yandexcloud.co.il@tenant=israel
+        role: "yc_loadbalancer_hc-node"
+        check_tags: ['visible', 'yc-loadbalancer']
+        unreachable_host: "{{ host }}"
+        flap: ""
+        host: "{{ role }}_{{ env }}{% if dc is defined %}_{{ dc }}{% endif %}"
+        notify_tag: "{{ notify_daytime_tag }}"
+
+    - role: lb-ctrl
+      vars:
+        ignore_ongoing_deployment: false
+        notification_methods: "{{ default_notification_methods }}"
+        children:
+          - YC_DNS%lb-ctrl*.svc.yandexcloud.co.il@tenant=israel
+        role: "yc_loadbalancer_lb-ctrl"
+        check_tags: ['visible', 'yc-loadbalancer']
+        default_limits: "{{ prod_limits }}"
+        unreachable_host: "{{ host }}"
+        flap: ""
+        host: "{{ role }}_{{ env }}{% if dc is defined %}_{{ dc }}{% endif %}"
+        notify_tag: "{{ notify_daytime_tag }}"
+
+    - role: lb-node
+      vars:
+        ignore_ongoing_deployment: false
+        notification_methods: "{{ default_notification_methods }}"
+        children:
+          - YC_DNS%lb-node*.svc.yandexcloud.co.il@tenant=israel
+        role: "yc_loadbalancer_lb-node"
+        check_tags: ['visible', 'yc-loadbalancer', 'yc-cgw']
+        default_limits: "{{ prod_limits }}"
+        unreachable_host: "{{ host }}"
+        flap: ""
+        host: "{{ role }}_{{ env }}{% if dc is defined %}_{{ dc }}{% endif %}"
+        notify_tag: "{{ notify_daytime_tag }}"
+
+    - role: cgw
+      vars:
+        ignore_ongoing_deployment: false
+        children:
+          - YC_DNS%cgw-*.svc.yandexcloud.co.il@tenant=israel
+        role: "yc_network_cloudgate"
+        host: "yc_network_cloudgate{{ host_suffix }}"
+        default_limits: "{{ prod_limits }}"
+        unreachable_host: "yc_network_cloudgate{{ host_suffix }}"
+        telegram_chat_id: ""
+        notification_methods: "{{ default_notification_methods }}"
+        check_tags: ['visible', 'yc-network', 'yc-cgw', 'yc-cloudgate']
+        flap: ""
+        notify_tag: "{{ notify_daytime_tag }}"
+
+    - role: cgw-nat
+      vars:
+        ignore_ongoing_deployment: false
+        children:
+          - YC_DNS%cgw-nat-*.svc.yandexcloud.co.il@tenant=israel
+        role: "yc_network_cgw-nat"
+        host: "yc_network_cgw-nat{{ host_suffix }}"
+        default_limits: "{{ prod_limits }}"
+        unreachable_host: "yc_network_cgw-nat{{ host_suffix }}"
+        telegram_chat_id: ""
+        notification_methods: "{{ default_notification_methods }}"
+        check_tags: ['visible', 'yc-network', 'yc-cgw', 'yc-cgw-nat']
+        flap: ""
+        notify_tag: "{{ notify_daytime_tag }}"
+
+    - role: e2e-launcher
+      vars:
+        ignore_ongoing_deployment: true
+        notification_methods: "{{ default_notification_methods }}"
+        children:
+          - YC_DNS%e2e-launcher-*.svc.yandexcloud.co.il@tenant=israel
+        host: "yc_loadbalancer_e2e-launcher_{{ env }}"
+        default_limits: "{{ prod_limits }}"
+        unreachable_host: "yc_loadbalancer_e2e-launcher_{{ env }}"
+        telegram_chat_id: ""
+        notification_methods: "{{ default_notification_methods }}"
+        check_tags: ['yc-network', 'yc-loadbalancer', 'yc-cgw', 'yc-e2e-launcher', 'visible']
+        flap: ""
+        notify_tag: "{{ notify_daytime_tag }}"
+
+    - role: vpc-api
+      vars:
+        default_limits: "{{ default_limits_0perc_crit }}"
+        notification_methods: "{{ default_notification_methods }}"
+        children:
+          - YC_DNS%vpc*.svc.yandexcloud.co.il@tenant=israel
+        host: "yc_network_vpc_api_{{ env }}"
+        unreachable_host: "yc_network_vpc_api_{{ env }}"
+        check_tags: ['yc-vpc-api']
+        flap: null
+        e2e_behind_lock_limits:
+          - {crit: '0', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '99.99%'}
+        notify_tag: "{{ notify_daytime_tag }}"
+
+    - role: compute-node-overlay
+      vars:
+        children:
+          - YC_DNS%compute-node*.infra.yandexcloud.co.il@tenant=israel
+        host: "yc_network_compute_{{ env }}{% if dc is defined and 'omit_place_holder' not in dc %}_{{ dc }}{% endif %}"
+        unreachable_host: "yc_network_compute_{{ env }}{% if dc is defined and 'omit_place_holder' not in dc %}_{{ dc }}{% endif %}"
+        check_tags: ['yc-network', 'yc-overlay', 'yc-network-compute-node', 'yc-dc-{{ dc|default("unknown") }}']
+        flap: null
+        telegram_chat_id: ""
+        notify_tag: "yc-notify"
+        default_limits:
+          - {crit: '0', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '0'}
+        e2e_behind_lock_limits:
+            - {crit: '0', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '99.99%'}
+        vrouter_dropstats_limits: {warn_limit: 10, crit_limit: 20}
+        network_limits: "{{ default_limits }}"
+        notify_tag: "{{ notify_daytime_tag }}"
+
+    - role: oct-head
+      vars:
+        children:
+          - "YC_DNS%oct-*.svc.yandexcloud.co.il@tenant=israel"
+        host: "yc_network_oct_head_{{ env }}{% if dc is defined %}_{{ dc }}{% endif %}"
+        unreachable_host: "yc_network_oct_head_{{ env }}{% if dc is defined %}_{{ dc }}{% endif %}"
+        check_tags: ['yc-network', 'yc-overlay', 'yc-oct', 'yc-oct-head', 'yc-dc-{{ dc|default("unknown") }}']
+        flap: null
+        notify_tag: 'yc-notify'
+
+    - role: vpc-control
+      vars:
+        children:
+          - "YC_DNS%vpc-control-*.svc.yandexcloud.co.il@tenant=israel"
+        host: "yc_network_vpc_control_{{ env }}{% if dc is defined %}_{{ dc }}{% endif %}"
+        unreachable_host: "yc_network_vpc_control_{{ env }}{% if dc is defined %}_{{ dc }}{% endif %}"
+        check_tags: ['yc-network', 'yc-overlay', 'yc-vpc-control', 'yc-dc-{{ dc|default("unknown") }}']
+        flap: null
+        notify_tag: "{{ notify_daytime_tag }}"
+
+    - role: mr-prober
+      vars:
+        notification_methods: "{{ default_notification_methods + telegram_notification }}"
+        default_limits:
+          - {crit: '0', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '0'}
+        network_limits: "{{ default_limits }}"
+        # Recommendation for FLAPS stable = 3*TTL(120),critical = 3*stable
+        flap: { stable: 360, critical: 1080 }
+
+    - role: local-proxy
+      vars:
+        notification_methods: "{{ default_notification_methods }}"
+        children:
+          - "YC_DNS%local-proxy-*.svc.yandexcloud.co.il@tenant=israel"
+        host: "yc_selfhost_local_proxy_{{ env }}"
+        unreachable_host: "yc_selfhost_local_proxy_{{ env }}"
+        check_tags: ['local-proxy', 'bootstrap', 'selfhost']
+        flap: null
+        notify_tag: "{{ notify_daytime_tag }}"
+
+    - role: xds-provider
+      vars:
+        notification_methods: "{{ default_notification_methods }}"
+        children:
+          - "YC_DNS%xds-provider-*.svc.yandexcloud.co.il@tenant=israel"
+        host: "yc_selfhost_xds_provider_{{ env }}"
+        unreachable_host: "yc_selfhost_xds_provider_{{ env }}"
+        check_tags: ['xds-provider', 'bootstrap', 'selfhost']
+        flap: null
+        notify_tag: "{{ notify_daytime_tag }}"
+
+    - role: bootstrap
+      vars:
+        notification_methods: "{{ default_notification_methods }}"
+        children:
+          - "YC_DNS%bootstrap-il1-*.svc.yandexcloud.co.il@tenant=israel"
+        host: "yc_bootstrap_{{ env }}"
+        check_tags: ['yc-bootstrap', 'yc-{{ env }}']
+        unreachable_host: "yc_bootstrap_{{ env }}"
+        flap: null

@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+import argparse
+from collections import namedtuple
+from typing import List, Tuple,  Set
+
+from yc_contrail_monitoring import load_str, parse_xml, parse_object_list, IntrospectionPorts
+from yc_monitoring import report_status_and_exit, Status
+
+KFlowInfo = namedtuple("KFlowInfo", ["index", "vrf_id", "sip", "sport", "dip", "dport", "proto", "action", "bytes", "nhid"])
+KNHInfo = namedtuple("KNHInfo", ["id", "type", "vrf"])
+
+
+def load_flow_infos(start=None, dump: bool=False) -> Tuple[List[KFlowInfo], str]:
+    if start is None:
+        start = "0"
+    raw_str = load_str(IntrospectionPorts.VRouterAgent, "Snh_NextKFlowReq?x={}".format(start))
+    xml = parse_xml(raw_str)
+
+    flow_infos = parse_object_list(xml, KFlowInfo, ".//KFlowInfo")
+    if dump:
+        for flow_info in flow_infos:
+            print(flow_info)
+
+    new_start = xml.find(".//flow_handle").text
+
+    return flow_infos, new_start
+
+
+def load_knh_infos(nh_id=None) -> List[KNHInfo]:
+    path = "Snh_KNHReq"
+    if nh_id:
+        path += "?nh_id={}".format(nh_id)
+    raw_str = load_str(IntrospectionPorts.VRouterAgent, path)
+    xml = parse_xml(raw_str)
+    return parse_object_list(xml, KNHInfo, ".//KNHInfo")
+
+
+def get_existing_nh_ids(nh_id=None, dump: bool=False) -> Set[int]:
+    knh_infos = load_knh_infos(nh_id)
+    if dump:
+        for info in knh_infos:
+            print(info)
+    return {knh_info.id for knh_info in knh_infos}
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--list", action="store_true", help="list invalid flows")
+    parser.add_argument("--dump", action="store_true", help="dump all introspection data")
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+
+    existing_nh_ids = get_existing_nh_ids(dump=args.dump)
+
+    start_from = None
+    total_flow_count, invalid_flow_count = 0, 0
+    nh_retries_count, max_nh_retries = 0, 100  # Secure from DoS-ing API if many flows have invalid NH ID
+
+    while start_from != "0":
+        flow_info_list, start_from = load_flow_infos(start_from, args.dump)
+
+        for flow_info in flow_info_list:
+            if int(flow_info.bytes) == 0:  # this flow is not really in use, see https://nda.ya.ru/3UXu8N
+                continue
+            if flow_info.nhid not in existing_nh_ids:
+                if nh_retries_count < max_nh_retries:
+                    nh_retries_count += 1
+                    if get_existing_nh_ids(flow_info.nhid, dump=args.dump):
+                        existing_nh_ids.add(flow_info.nhid)
+                        continue
+
+                invalid_flow_count += 1
+                if args.list:
+                    print("Flow with invalid nexthop: {}".format(flow_info))
+            total_flow_count += 1
+
+    if invalid_flow_count == 0:
+        report_status_and_exit(Status.OK)
+    else:
+        message = "{} of {} flows have invalid nexthop. See CLOUD-15805".format(invalid_flow_count, total_flow_count)
+        report_status_and_exit(Status.WARN, message)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,88 @@
+{% set id = "cloud-" + env + "-tv" %}
+{% set name = (env | upper) + " TV compute dashboard" %}
+{% set description = "Most important compute graphs in one dashboard" %}
+
+{% set cluster_prefix = "cloud_" + env + "_head_" %}
+{% set any_az = zones_by_env[env] | first %}
+{% set any_cluster = cluster_prefix + any_az.prefix %}
+
+{% set service = "internals" %}
+
+{% extends "../../base/dashboard.j2" %}
+
+{% macro render_row_azs(title, graph, title2=None, graph2=None) %}
+    {% set colspan = 2 if title2 is none else 1 %}
+    { "panels": [
+    {% for az in zones_by_env[env] | reverse %}
+        {{ render_panel(title=title + " " + (az.prefix | upper),
+            cluster=cluster_prefix + az.prefix,
+            service="internals",
+            query="graph=" + graph,
+            colspan=colspan
+        ) }}
+        {% if title2 is not none %},
+        {{ render_panel(title=title2 + " " + (az.prefix | upper),
+            cluster=cluster_prefix + az.prefix,
+            service="internals",
+            query="graph=" + graph2,
+            colspan=colspan
+        ) }}
+        {% endif %}
+        {% if not loop.last %},{% endif %}
+    {% endfor %}
+    ] }
+{% endmacro %}
+
+{% macro render_timings() %}
+    {% set query = "bucket=%21-&metric=api_request_latency&host=cluster&graph=auto&l.path=external%2F%3Cany%28v1beta1%2Cv1%2Cstaging%29%3Aapi_version%3E%2Finstances&overLinesTransform=WEIGHTED_PERCENTILE&min=0&percentiles=50%2C70%2C90%2C95" %}
+    { "panels": [
+    {% for az in zones_by_env[env] | reverse %}
+        {{ render_panel(title="Timings GET /instances " + (az.prefix | upper),
+            subtitle="ms",
+            cluster=cluster_prefix + az.prefix,
+            service="internals",
+            query="method=GET&" + query
+        ) }},
+        {{ render_panel(title="Timings POST /instances " + (az.prefix | upper),
+            subtitle="ms",
+            cluster=cluster_prefix + az.prefix,
+            service="internals",
+            query="method=POST&" + query
+        ) }}
+        {% if not loop.last %},{% endif %}
+    {% endfor %}
+    ] }
+{% endmacro %}
+
+{% block rows %}
+[
+    { "panels": [
+        {{ render_panel("Instance launch time", any_cluster, service, colspan=2,
+            query="metric=task_exec_time&quantile=*&host=head*1&type=create-instance&status=done&graph=auto&stack=false",
+            subtitle="Гистограма времени запуска ВМок") }},
+
+        {{ render_panel("Instance delete time", any_cluster, service, colspan=1,
+            query="metric=task_exec_time&quantile=*&host=head*1&type=delete-instance&status=done&graph=auto&stack=false",
+            subtitle="Гистограмма времени удаления ВМок") }},
+
+        {{ render_panel("Instance deallocation time", any_cluster, service, colspan=1,
+            query="metric=task_exec_time&quantile=*&host=head*1&type=deallocate-instance&status=done&graph=auto&stack=false",
+            subtitle="Гистограмма времени деаллоцирования ВМок") }},
+
+        {% set except_types = "create-image|create-snapshot|disk-pool-healthcheck" %}
+        {{ render_panel("Hanging tasks", any_cluster, service, colspan=2,
+            query="metric=hanging_tasks&host=head*1&service_name=compute_worker&service_type=compute&type!=" + except_types + "&graph=auto",
+            subtitle="Кол-во зависших операций по типам (выполняются более 1 часа, без " + except_types + ")") }}
+    ] },
+
+    {{ render_row_azs("Failed tasks by type", "compute-failed-operations") }},
+    {{ render_row_azs("API Codes", "compute-api-calls", "API Codes", "compute-api-calls-wo-200") }},
+    {{ render_timings() }},
+    {{ render_row_azs("Ошибки 5xx", "compute-api-int-errors") }},
+    {{ render_row_azs("Время авторизации", "auto&l.host=cluster&l.metric=authz_request_latency&l.status=granted&l.bucket=!-&overLinesTransform=WEIGHTED_PERCENTILE&percentiles=50%2C70%2C90%2C95&downsamplingAggr=sum") }},
+    {{ render_row_azs("KiKiMR block errors", "compute-ydb-query-block-error-types") }},
+    {{ render_row_azs("Статистика по операциям (failed, done)", "compute-operation-stats") }},
+    {{ render_row_azs("NBS python client statistic", "compute-client-nbs") }},
+    {{ render_row_azs("Snapshot client statistic", "compute-client-snapshot") }}
+]
+{% endblock %}

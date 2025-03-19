@@ -1,0 +1,71 @@
+{% set default_port = 8080 %}
+{% set default_interval = 60 %}
+
+{% set sensors_ttl_days = ttl_days | default(180) %}
+{% set service = service | default(config_name) %}
+
+{% set id_prefix = "" if no_project_id_prefix else project_id + "_" %} {# Legacy, should not be used in new projects #}
+{% set service_id = id_override | default(id_prefix + config_name) %}
+
+{# IMPORTANT! Service is a multi-environment object,
+   you MUST NOT rely on {{ env }} here! #}
+
+{% if solomon == "preprod" %}
+  {# CLOUD PREPROD Solomon is used only for prototyping changes.
+     To prevent shards from hitting QUOTA_ERROR, reduce TTL. #}
+  {% set sensors_ttl_days = [3, sensors_ttl_days|int]|min  %}
+{% endif %}
+
+{
+    {# FIXME(simonov-d): project_id prefixes are legacy and should be removed in per-team splitting, CLOUD-68079 #}
+    "id": "{{ service_id }}",
+    "projectId": "{{ project_id }}",
+    "name": "{{ config_name }}",
+    {%- if push %}
+    "monitoringModel": "PUSH",
+    "protocol": "PULL_PROTOCOL_UNSPECIFIED",
+    "port": 0,
+    "path": "",
+    "addTsArgs": false,
+    {%- else %}
+    "monitoringModel": "PULL",
+    "port": {{ port or default_port }},
+    "path": "{{ path or "/storage/read?project=" + (solomon_agent_project_id or "yandexcloud") + "&service=" + service }}",
+    "addTsArgs": false,
+    "protocol": "{{ protocol|default("HTTP") }}",
+    {%- endif %}
+
+    "sensorsTtlDays": {{ sensors_ttl_days }},
+
+    {%- if aggrRules %}
+    "sensorConf": {
+      "aggrRules": [
+    {%- for rule in aggrRules %}
+        {
+          "cond": [
+            {%- for v in rule['cond'].split(',') %}
+            "{{ v }}"{%- if not loop.last %},{%- endif %}
+            {%- endfor %}
+          ],
+        {%- if 'function' in rule %}
+          "function": "{{ rule['function'] }}",
+        {%- endif  %}
+          "target": [
+            {%- for v in rule['target'].split(',') %}
+            "{{ v }}"{%- if not loop.last %},{%- endif %}
+            {%- endfor %}
+          ]
+        }{%- if not loop.last %},{%- endif %}
+    {%- endfor %}
+      ],
+      "priorityRules": [],
+      "rawDataMemOnly": false
+    },
+    {%- endif %}
+
+    "tvmDestId": "",
+
+    "gridSec": {{ grid_sec|default(0) }},
+    "interval": {{ interval or default_interval }}{% if self.main() %},{% endif %}
+    {% block main %}{% endblock %}
+}

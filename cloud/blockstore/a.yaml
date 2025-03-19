@@ -1,0 +1,68 @@
+service: ycnbs
+title: Network Block Store
+ci:
+  release-title-source: flow
+  secret: sec-01ekjvt2kbg4ag64z9z03jt0hp
+  runtime:
+    sandbox-owner: YC_NBS
+  autocheck:
+    fast-targets:
+      cloud/blockstore/tests/functional
+  releases:
+    create_tag_stable_21_4:
+      title: NBS 21-4
+      flow: create_stable_tag
+      auto: false
+      flow-vars:
+        branch: stable-21-4
+      stages:
+        create:
+          title: Create tag
+    create_tag_stable_22_2:
+      title: NBS 22-2
+      flow: create_stable_tag
+      auto: false
+      flow-vars:
+        branch: stable-22-2
+      stages:
+        create:
+          title: Create tag
+  flows:
+    create_stable_tag:
+      title: Create tag for current branch
+      jobs:
+        create:
+          title: Create tag for current branch
+          description: Runs
+          task: common/misc/run_command
+          stage: create
+          requirements:
+            cores: 4
+            ram: 16G
+            sandbox:
+              client_tags: GENERIC & LINUX & SSD
+          input:
+            config:
+              arc_mount_config:
+                enabled: true
+                revision_hash: trunk
+              environment_variables:
+                - key: YDB_RELEASER_BRANCH
+                  value: ${flow-vars.branch}
+                - key: YDB_RELEASER_DONT_PULL
+                  value: "1"
+              secret_environment_variables:
+                - key: YA_TOKEN
+                  secret_spec:
+                    uuid: sec-01ekjvt2kbg4ag64z9z03jt0hp
+                    key: ci.token
+                - key: YDB_RELEASER_OAUTH
+                  secret_spec:
+                    uuid: sec-01ekjvt2kbg4ag64z9z03jt0hp
+                    key: vault.token
+              cmd_line: |
+                pwd
+                $ARC_BIN status
+                $ARC_BIN info --json
+                ./ya make -r kikimr/tools/release --stat
+                ./kikimr/tools/release/release tag $YDB_RELEASER_BRANCH --project nbs

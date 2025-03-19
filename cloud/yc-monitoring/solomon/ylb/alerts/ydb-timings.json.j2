@@ -1,0 +1,38 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro svm_fqdn() -%}
+	[[labels.host]].{{ svm_domains[env] }}
+{%- endmacro %}
+
+{% macro prog() %}
+let errors = histogram_percentile(95, 'bin', group_by_labels({
+	cluster='cloud_{{ env }}_ylb',
+	service='{{ service }}',
+	env='{{ env }}',
+	name='ydb_total_requests',
+	host!='cluster',
+	bin='*'
+	}, 'bin', v -> group_lines('sum', v))) / 1000;
+
+let description = 'YDB timings are too high';
+
+let is_red = avg(errors) > {{ red_threshold }};
+alarm_if(is_red);
+
+let is_yellow = avg(errors) > {{ yellow_threshold }};
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+	"id": "{{ id }}",
+	"name": "{{ name }}",
+	"description": "",
+	"groupByLabels": ["host"],
+	"annotations": {
+		"details": "[[expression.description]]",
+		"host": "{{ svm_fqdn() }}",
+		"service": "{{ serviceName }}{{ service_suffix }}",
+		"wiki": "https://docs.yandex-team.ru/yc-monitoring/cgw/{{ serviceName }}"
+	},
+	"type": {{ type_expression() }}
+{% endblock %}

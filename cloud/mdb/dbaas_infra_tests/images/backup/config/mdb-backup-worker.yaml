@@ -1,0 +1,69 @@
+
+cycles:
+  planned:
+    enabled: true
+    queue_producer:
+      pending_interval: 3s
+  creating:
+    enabled: true
+    queue_producer:
+      pending_interval: 3s
+    fraction_delayer: {min_delay: 1s, fractions: {1: 1s}, default_delay: 1s}
+  obsolete:
+    enabled: true
+    queue_producer:
+      pending_interval: 3s
+  deleting:
+    enabled: true
+    queue_producer:
+      pending_interval: 3s
+    fraction_delayer: {min_delay: 1s, fractions: {1: 1s}, default_delay: 1s}
+
+s3:
+  host: 'minio01.{{conf.network_name}}'
+  access_key: '{{ conf.dynamic.s3.access_key_id }}'
+  secret_key: '{{ conf.dynamic.s3.access_secret_key }}'
+  force_path_style: true
+  region: "RU"
+  transport:
+    tls:
+      ca_file: '/opt/yandex/mdb-infra-test-allCAs.pem'
+app:
+  app_name: backup_worker
+  logging:
+    level: debug
+metadb:
+  addrs: ['metadb01.{{ conf.network_name }}:5432']
+  db: dbaas_metadb
+  user: backup_worker
+  password: '{{ conf.projects.metadb.db.users.backup_worker }}'
+  sslmode: 'allow'
+  sslrootcert: '/opt/yandex/mdb-infra-test-allCAs.pem'
+health:
+  host: 'fake_health01.{{ conf.network_name }}'
+  tls:
+    ca_file: '/opt/yandex/mdb-infra-test-allCAs.pem'
+deploy:
+  uri: 'https://mdb-deploy-api01.{{ conf.network_name }}'
+  token: '{{ conf.deploy.token }}'
+  transport:
+    logging:
+      enabled: true
+    tls:
+      ca_file: '/opt/yandex/mdb-infra-test-allCAs.pem'
+
+host_picker:
+    cluster_type_settings:
+        mysql_cluster:
+            config:
+                health_max_retries: 3
+                replication_health_service: "mysql"
+                host_health_statuses_order: ["Alive", "Degraged", "Unknown"]
+                priority_args: ["data", "mysql", "backup_priority"]
+            host_picker_type: "prefer_replica"
+    default_settings:
+        config:
+            health_max_retries: 3
+            host_health_statuses_order: ["Alive", "Degraged", "Unknown"]
+        host_picker_type: "healthy"
+

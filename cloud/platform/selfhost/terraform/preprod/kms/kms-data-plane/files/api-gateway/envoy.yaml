@@ -1,0 +1,186 @@
+node:
+  id: any
+  cluster: api_gateway
+  locality:
+    region: ru-central1
+    zone: any
+
+admin:
+  access_log_path: /var/log/api/envoy-admin_access.log
+  address:
+    socket_address: { address: 127.0.0.1, port_value: 9901 }
+
+# As recommended in https://www.envoyproxy.io/docs/envoy/latest/configuration/best_practices/edge
+overload_manager:
+  refresh_interval: 0.25s
+  resource_monitors:
+  - name: "envoy.resource_monitors.fixed_heap"
+    typed_config:
+      "@type": type.googleapis.com/envoy.config.resource_monitor.fixed_heap.v2alpha.FixedHeapConfig
+      max_heap_size_bytes: 268435456 # 256 Mb
+  actions:
+  - name: "envoy.overload_actions.shrink_heap"
+    triggers:
+    - name: "envoy.resource_monitors.fixed_heap"
+      threshold:
+        value: 0.95
+  - name: "envoy.overload_actions.stop_accepting_requests"
+    triggers:
+    - name: "envoy.resource_monitors.fixed_heap"
+      threshold:
+        value: 0.98
+
+stats_config:
+  use_all_default_tags: true
+
+dynamic_resources:
+  ads_config:
+    api_type: GRPC
+    grpc_services:
+      - envoy_grpc:
+          cluster_name: xds_cluster
+    rate_limit_settings: { }
+    transport_api_version: V3
+  cds_config:
+    ads: {}
+    resource_api_version: V3
+  lds_config:
+    ads: {}
+    resource_api_version: V3
+
+layered_runtime:
+  layers:
+    - name: static
+      static_layer:
+        tracing:
+          client_enabled: 0
+          global_enabled: 100
+          random_sampling: 0
+
+static_resources:
+  listeners:
+    - address:
+        socket_address: { address: "::", port_value: 444 }
+      filter_chains:
+        - filters:
+          - name: envoy.http_connection_manager
+            config:
+              stat_prefix: healthcheck
+              codec_type: AUTO
+              delayed_close_timeout: 0.1s
+              http_protocol_options:
+                accept_http_10: true
+              route_config:
+                name: healthcheck_route
+                virtual_hosts:
+                  - name: healthcheck_service
+                    domains: ["*"]
+                    routes:
+                      - match: { prefix: "/" }
+                        direct_response:
+                          status: 200
+              http_filters:
+                - name: envoy.health_check
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.config.filter.http.health_check.v2.HealthCheck
+                    pass_through_mode: false
+                    cluster_min_healthy_percentages:
+                      gateway_healthcheck: { value: 100 }
+                      private_envoy_healthcheck: { value: 100 }
+                - name: envoy.router
+
+    - address:
+        socket_address: { address: "0.0.0.0", port_value: 444 }
+      filter_chains:
+        - filters:
+          - name: envoy.http_connection_manager
+            config:
+              stat_prefix: healthcheck
+              codec_type: AUTO
+              delayed_close_timeout: 0.1s
+              http_protocol_options:
+                accept_http_10: true
+              route_config:
+                name: healthcheck_route
+                virtual_hosts:
+                  - name: healthcheck_service
+                    domains: ["*"]
+                    routes:
+                      - match: { prefix: "/" }
+                        direct_response:
+                          status: 200
+              http_filters:
+                - name: envoy.health_check
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.config.filter.http.health_check.v2.HealthCheck
+                    pass_through_mode: false
+                    cluster_min_healthy_percentages:
+                      gateway_healthcheck: { value: 100 }
+                      private_envoy_healthcheck: { value: 100 }
+                - name: envoy.router
+
+  clusters:
+    - name: xds_cluster
+      common_http_protocol_options:
+        idle_timeout: 45s
+      connect_timeout: 10s
+      http2_protocol_options: { }
+      load_assignment:
+        cluster_name: xds_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 4435
+      type: STATIC
+      upstream_connection_options:
+        tcp_keepalive:
+          keepalive_interval: 10
+          keepalive_probes: 1
+          keepalive_time: 10
+    - name: als
+      common_http_protocol_options:
+        idle_timeout: 45s
+      connect_timeout: 10s
+      http2_protocol_options: { }
+      load_assignment:
+        cluster_name: als
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 4436
+      type: STATIC
+      upstream_connection_options:
+        tcp_keepalive:
+          keepalive_interval: 10
+          keepalive_probes: 1
+          keepalive_time: 10
+    - name: private_envoy_healthcheck
+      connect_timeout: 0.25s
+      common_http_protocol_options:
+        idle_timeout: 60s
+      type: STATIC
+      lb_policy: ROUND_ROBIN
+      health_checks:
+        timeout: 0.5s
+        interval: 0.5s
+        no_traffic_interval: 0.5s
+        healthy_threshold: 2
+        unhealthy_threshold: 2
+        http_health_check:
+          path: "/"
+      # Private envoy listens only on IPv6
+      hosts: [{ socket_address: { address: ::1, port_value: 8444 }}]
+
+  secrets:
+    - name: frontend_certs
+      tls_certificate:
+        certificate_chain:
+          filename: /run/envoy/envoy.crt
+        private_key:
+          filename: /run/envoy/envoy.key

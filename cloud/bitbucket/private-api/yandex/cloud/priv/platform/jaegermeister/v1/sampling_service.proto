@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.platform.jaegermeister.v1;
+
+import "google/protobuf/empty.proto";
+
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/platform/jaegermeister/v1;jaegermeister";
+option java_outer_classname = "PJSS";
+
+service SamplingService {
+  rpc Get(GetSamplingStrategyRequest) returns (SamplingStrategy);
+  rpc List(ListSamplingStrategyRequest) returns (ListSamplingStrategyResponse);
+  // TODO(baranovich): operation?
+  rpc Put(PutSamplingStrategyRequest) returns (google.protobuf.Empty);
+  rpc Delete(DeleteSamplingStrategyRequest) returns (google.protobuf.Empty);
+}
+
+message SamplingStrategy {
+  string service = 1 [(required) = true];
+
+  oneof main_sampler {
+    option (exactly_one) = true;
+    ProbabilisticSamplingStrategy probabilistic_sampling = 2;
+    RateLimitingSamplingStrategy rate_limiting_sampling = 3;
+  }
+
+  PerOperationSamplingStrategies operation_sampling = 4;
+}
+
+message PerOperationSamplingStrategies {
+  double default_sampling_probability = 1 [(value) = "0-1"];
+  double default_lower_bound_traces_per_second = 2 [(value) = ">=0"];
+  repeated OperationSamplingStrategy per_operation_strategies = 3;
+}
+
+message OperationSamplingStrategy {
+  string operation = 1 [(required) = true];
+  ProbabilisticSamplingStrategy probabilistic_sampling = 2 [(required) = true];
+}
+
+message ProbabilisticSamplingStrategy {
+  double sampling_rate = 1 [(value) = "0-1"];
+}
+
+message RateLimitingSamplingStrategy {
+  int64 max_traces_per_second = 1 [(value) = "0-32768"];
+}
+
+message GetSamplingStrategyRequest {
+  string service = 1 [(required) = true];
+}
+
+message ListSamplingStrategyRequest {}
+
+message ListSamplingStrategyResponse {
+  repeated SamplingStrategy strategies = 1;
+}
+
+message PutSamplingStrategyRequest {
+  SamplingStrategy sampling_strategy = 2 [(required) = true];
+}
+
+message DeleteSamplingStrategyRequest {
+  string service = 1 [(required) = true];
+}

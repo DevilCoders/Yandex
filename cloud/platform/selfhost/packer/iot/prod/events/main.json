@@ -1,0 +1,122 @@
+{
+  "variables": {
+    "endpoint": "{{env `YC_ENDPOINT`}}",
+    "service_account_key_file": "{{env `YC_SA_KEY_FILE`}}",
+    "folder_id": "{{env `YC_FOLDER_ID`}}",
+    "subnet_id": "{{env `YC_SUBNET_ID`}}",
+    "source_folder_id": "{{env `YC_SOURCE_FOLDER_ID`}}",
+    "commit_revision": "{{env `COMMIT_REVISION`}}",
+    "commit_author": "{{env `COMMIT_AUTHOR`}}",
+    "commit_message": "{{env `COMMIT_MESSAGE`}}",
+    "yav_token": "{{env `IOT_DEPLOY_TOKEN`}}",
+    "token": "{{env `YC_TOKEN`}}",
+    "registry_yandex_net_token": "{{env `IOT_DEPLOY_TOKEN`}}",
+    "user": "{{env `USER`}}",
+    "application_version": "{{env `APPLICATION_VERSION`}}"
+  },
+  "builders": [
+    {
+      "type": "yandex",
+      "name": "events",
+      "endpoint": "{{user `endpoint`}}",
+      "token": "{{user `token`}}",
+      "folder_id": "{{user `folder_id`}}",
+      "subnet_id": "{{user `subnet_id`}}",
+      "zone": "ru-central1-c",
+      "labels": {
+        "skip_update_ssh_keys": "true",
+        "layer": "paas",
+        "abc_svc": "ycmqtt",
+        "env": "prod"
+      },
+      "metadata": {
+        "osquery_tag": "ycloud-svc-iot",
+        "serial_port_enabled": "1"
+      },
+      "use_ipv4_nat": false,
+      "use_ipv6": true,
+      "image_name": "events-{{user `application_version` | clean_resource_name}}-{{user `commit_revision` | clean_resource_name}}",
+      "image_description": "Build by {{user `user`}}",
+      "image_family": "iot-events",
+      "image_labels": {
+        "commit_revision": "{{user `commit_revision` | lower}}",
+        "commit_author": "{{user `commit_author` | lower}}",
+        "application_version": "{{user `application_version` | clean_resource_name}}"
+      },
+      "source_image_folder_id": "{{user `source_folder_id`}}",
+      "source_image_name": "paas-base-2020-01-17t15-52-52z",
+      "disk_type": "network-ssd",
+      "ssh_username": "ubuntu",
+      "ssh_bastion_host": "bastion.cloud.yandex.net",
+      "ssh_bastion_username": "{{user `user`}}",
+      "ssh_bastion_agent_auth": true
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'Purge Salt packages from g1-image before our salt scripts'",
+        "sudo rm /etc/apt/sources.list.d/saltstack.list",
+        "sudo apt-get -y purge salt-common salt-minion",
+        "sudo rm -rf /srv/salt",
+        "sudo rm -rf /var/cache/salt",
+        "sudo sync"
+      ]
+    },
+    {
+      "type": "file",
+      "source": "skm.yaml",
+      "destination": "/tmp/skm.yaml"
+    },
+    {
+      "type" : "shell",
+      "inline": [
+        "echo Prepare Salt grains",
+        "echo 'events_application_version: {{user `application_version`}}' | sudo tee /etc/salt/grains"
+      ]
+    },
+    {
+      "type": "salt-masterless",
+      "bootstrap_args": "stable 2019.2",
+      "local_state_tree": "{{template_dir}}/salt"
+    },
+    {
+      "type": "shell",
+      "environment_vars": [
+        "REGISTRY_YANDEX_NET_TOKEN={{user `registry_yandex_net_token`}}"
+      ],
+      "inline": [
+        "echo Download docker images",
+        "set -x",
+        "echo  \"${REGISTRY_YANDEX_NET_TOKEN}\" | sudo docker login --username robot-yc-api-viewer --password-stdin registry.yandex.net # add docker login creds",
+        "for i in /etc/kubelet.d/* ; do fgrep 'image: ' $i | awk '{print $NF}'; done | sort | uniq > /tmp/images_for_download",
+        "for i in $(cat /tmp/images_for_download); do sudo docker pull $i; done",
+        "sudo docker logout registry.yandex.net # remove docker login creds",
+        "sudo rm /etc/docker/* || echo 'nothing to remove in /etc/docker/'"
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'Purge Salt packages'",
+        "sudo rm /etc/apt/sources.list.d/saltstack.list",
+        "sudo apt-get -y purge salt-common salt-minion",
+        "sudo rm -rf /srv/salt",
+        "sudo rm -rf /var/cache/salt"
+      ]
+    },
+    {
+      "type": "shell",
+      "environment_vars": [
+        "YAV_TOKEN={{user `yav_token`}}",
+        "YC_TOKEN={{user `token`}}"
+      ],
+      "inline": [
+        "echo Set up skm",
+        "sudo mv /tmp/skm.yaml /etc/skm.yaml",
+        "sudo -E skm encrypt --verbose --config /etc/skm.yaml"
+      ]
+    }
+  ]
+}

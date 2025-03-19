@@ -1,0 +1,219 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.k8s.v1;
+
+import "google/protobuf/timestamp.proto";
+
+import "yandex/cloud/priv/validation.proto";
+import "yandex/cloud/priv/sensitive.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/k8s/v1;k8s";
+option java_outer_classname = "PMKN";
+
+message Node {
+  // Kubernetes node info 
+  message KubernetesStatus {
+    // Node id (and instance name)
+    string id                                = 1;
+    // Conditions is an array of current observed node conditions.
+    // More info: https://kubernetes.io/docs/concepts/nodes/node/#condition
+    repeated Condition conditions            = 2;
+    // If specified, the node's taints.
+    repeated Taint taints                    = 3;
+    // List of volumes that are attached to the node.
+    repeated AttachedVolume attached_volumes = 4;
+    // The node's labels
+    map<string, string> labels               = 5;
+  }
+
+  // Cloud instance info
+  message CloudStatus {
+    // Compute instance id
+    string id             = 1;
+    // IG instance status
+    string status         = 2;
+    // IG instance status message
+    string status_message = 3;
+  }
+
+  // Computed node status.
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    // Node instance is not yet created (e.g. in progress).
+    PROVISIONING       = 1;
+    // Node instance is created but not registered
+    // (e.g. is still initializing).
+    NOT_CONNECTED      = 2;
+    // Node has connected but is not ready for
+    // workload (see conditions for details).
+    NOT_READY          = 3;
+    // Node has connected and ready for workload.
+    READY              = 4;
+    // Node is still registered but its instance
+    // is deleted (this is our bug).
+    MISSING            = 5;
+  }
+
+  // Node specification.
+  message Spec {
+    // Node group specified resources.
+    ResourcesSpec resources = 1;
+    // Node group specified disk.
+    DiskSpec disk           = 2;
+  }
+
+  // Computed node status.
+  Status status                      = 1;
+
+  // Node specificaion.
+  Spec spec                          = 2;
+
+  // Cloud instance status.
+  // Not available in `MISSING` status.
+  CloudStatus cloud_status           = 3;
+
+  // Kubernetes node status.
+  // Not available in `PROVISIONING` and `NOT_CONNECTED` states.
+  KubernetesStatus kubernetes_status = 4;
+}
+
+message Condition {
+    // Type of node condition.
+    string type                                    = 1;
+    // Status is the status of the condition.
+    string status                                  = 2;
+    // Human-readable message indicating details about last transition.
+    string message                                 = 3;
+    // Last time we got an update on a given condition.
+    google.protobuf.Timestamp last_heartbeat_time  = 4;
+    // Last time the condition transit from one status to another.
+    google.protobuf.Timestamp last_transition_time = 5;
+}
+
+message Taint {
+  enum Effect {
+    EFFECT_UNSPECIFIED = 0;
+	// Do not allow new pods to schedule onto the node unless they tolerate the taint,
+	// but allow all pods submitted to Kubelet without going through the scheduler
+	// to start, and allow all already-running pods to continue running.
+    NO_SCHEDULE        = 1;
+	// Like NO_SCHEDULE, but the scheduler tries not to schedule
+	// new pods onto the node, rather than prohibiting new pods from scheduling
+	// onto the node entirely. Enforced by the scheduler.
+    PREFER_NO_SCHEDULE = 2;
+	// Evict any already-running pods that do not tolerate the taint.
+    NO_EXECUTE         = 3;
+  }
+
+  // The taint key to be applied to a node.
+  string key    = 1;
+  // The taint value corresponding to the taint key.
+  string value  = 2;
+  // The effect of the taint on pods that do not tolerate the taint.
+  Effect effect = 3;
+}
+
+// AttachedVolume describes a volume attached to a node
+message AttachedVolume {
+    // Name of the driver which has attached the volume
+    string driver_name   = 1;
+    // Volume handle (cloud disk id)
+    string volume_handle = 2;
+}
+
+message NodeTemplate {
+  string name = 13 [(length) = "<=128"];
+  // these labels will be assigned to compute nodes (instances), created by the nodegroup
+  map<string, string> labels = 15 [(priv.size) = "<=32", (length) = "<=128", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_./\\@0-9a-z]*"];
+  string platform_id = 1;
+  ResourcesSpec resources_spec = 2;
+  DiskSpec boot_disk_spec = 3;
+  map<string, string> metadata = 4 [(size) = "<=64", (length) = "<=131072", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_0-9a-z]*", (sensitive) = true];
+  NodeAddressSpec v4_address_spec = 5;
+  SchedulingPolicy scheduling_policy = 6;
+
+  repeated NetworkInterfaceSpec network_interface_specs = 7;
+
+  PlacementPolicy placement_policy = 10;
+
+  // declared inside to 1) keep naming similar to IG API 2) keep too common msg NetworkSettings in scope
+  message NetworkSettings {
+    enum Type {
+      TYPE_UNSPECIFIED = 0;
+      STANDARD = 1;
+      SOFTWARE_ACCELERATED = 2;
+      // unsupported yet, commented for possible future utilization.
+      //HARDWARE_ACCELERATED = 3;
+    }
+
+    Type type = 1 [(required) = true];
+  }
+  NetworkSettings network_settings = 11;
+
+
+  message ContainerRuntimeSettings {
+    enum Type {
+      TYPE_UNSPECIFIED = 0;
+      DOCKER = 1;
+      CONTAINERD = 2;
+    }
+
+    Type type = 1 [(required) = true];
+  }
+
+  ContainerRuntimeSettings container_runtime_settings = 12;
+}
+
+message NetworkInterfaceSpec {
+  // commented, for possible future use
+  //string network_id = 1;
+  repeated string subnet_ids = 2;
+
+  NodeAddressSpec primary_v4_address_spec = 3;
+  NodeAddressSpec primary_v6_address_spec = 4;
+
+  repeated string security_group_ids = 5;
+}
+
+message NodeAddressSpec {
+  OneToOneNatSpec one_to_one_nat_spec = 1;
+  repeated DnsRecordSpec dns_record_specs = 2;
+}
+
+message DnsRecordSpec {
+  string fqdn = 1 [(required) = true];
+  string dns_zone_id = 2;
+  int64 ttl = 3 [(value) = "0-86400"];
+  bool ptr = 4;
+}
+
+message OneToOneNatSpec {
+  IpVersion ip_version = 1;
+}
+
+enum IpVersion {
+  IP_VERSION_UNSPECIFIED = 0;
+  IPV4                   = 1;
+  IPV6                   = 2;
+}
+
+message ResourcesSpec {
+  int64 memory        = 1 [(value) = ">=0"];
+  int64 cores         = 2 [(value) = ">=0"];
+  int64 core_fraction = 3 [(value) = "0-100"];
+  int64 gpus          = 4 [(value) = ">=0"];
+}
+
+message DiskSpec {
+  string disk_type_id = 1 [(pattern) = "|network-ssd|network-nvme|network-hdd|network-ssd-nonreplicated"];
+  int64 disk_size     = 2 [(value) = "0-4398046511104"];
+}
+
+message SchedulingPolicy {
+  bool preemptible = 1;
+}
+
+message PlacementPolicy {
+  // Identifier of placement group
+  string placement_group_id = 1;
+}

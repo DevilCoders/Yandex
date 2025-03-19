@@ -1,0 +1,155 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.compute.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/field_mask.proto";
+import "yandex/cloud/api/operation.proto";
+import "yandex/cloud/priv/compute/v1/snapshot.proto";
+import "yandex/cloud/priv/compute/v1/validation.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+import "yandex/cloud/priv/reference/reference.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/compute/v1;compute";
+option java_outer_classname = "PSS";
+
+service SnapshotService {
+  rpc Get (GetSnapshotRequest) returns (Snapshot) {
+    option (google.api.http) = { get: "/compute/v1/snapshots/{snapshot_id}" };
+  }
+
+  rpc List (ListSnapshotsRequest) returns (ListSnapshotsResponse) {
+    option (google.api.http) = { get: "/compute/v1/snapshots" };
+  }
+
+  rpc Create (CreateSnapshotRequest) returns (operation.Operation) {
+    option (google.api.http) = { post: "/compute/v1/snapshots" body: "*" };
+    option (yandex.cloud.api.operation) = {
+      metadata: "CreateSnapshotMetadata"
+      response: "Snapshot"
+    };
+  }
+
+  rpc Update (UpdateSnapshotRequest) returns (operation.Operation) {
+    option (google.api.http) = { patch: "/compute/v1/snapshots/{snapshot_id}" body: "*" };
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateSnapshotMetadata"
+      response: "Snapshot"
+    };
+  }
+
+  rpc Delete (DeleteSnapshotRequest) returns (operation.Operation) {
+    option (google.api.http) = { delete: "/compute/v1/snapshots/{snapshot_id}" };
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeleteSnapshotMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+
+  rpc ListOperations (ListSnapshotOperationsRequest) returns (ListSnapshotOperationsResponse) {
+    option (google.api.http) = { get: "/compute/v1/snapshots/{snapshot_id}/operations" };
+  }
+
+  rpc UpdateReferences (UpdateSnapshotReferencesRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateSnapshotReferencesMetadata"
+      response: "UpdateSnapshotReferencesResponse"
+    };
+  }
+
+  rpc ListReferences (ListSnapshotReferencesRequest) returns (ListSnapshotReferencesResponse);
+}
+
+message GetSnapshotRequest {
+  string snapshot_id = 1 [(valid) = "resource_id", (required) = true];
+}
+
+message ListSnapshotsRequest {
+  string folder_id = 1 [(valid) = "resource_id", (required) = true];
+  int64 page_size = 2 [(valid) = "page_size"];
+  string page_token = 3 [(valid) = "page_token"];
+  string filter = 4;
+  string name = 5 [(valid) = "resource_name"];	// legacy, for backward compatibility
+
+  // By which column the listing should be ordered and in which direction,
+  // format is "createdAt desc". "id asc" if omitted.
+  string order_by = 6 [(valid) = "order_by"];
+}
+
+message ListSnapshotsResponse {
+  repeated Snapshot snapshots = 1;
+  string next_page_token = 2;
+}
+
+message CreateSnapshotRequest {
+  string folder_id = 1 [(valid) = "resource_id", (required) = true];
+  string disk_id = 2 [(valid) = "resource_id", (required) = true];
+  string name = 3 [(valid) = "resource_name"];
+  string description = 4 [(valid) = "description"];
+  map<string, string> labels = 6 [(valid) = "labels"];
+
+  // private fields
+  repeated reference.Reference references = 100 [(required) = true];
+}
+
+message CreateSnapshotMetadata {
+  string snapshot_id = 1;
+  string disk_id = 2;
+  double progress_percentage = 3;
+}
+
+message UpdateSnapshotRequest {
+  string snapshot_id = 1 [(valid) = "resource_id", (required) = true];
+  google.protobuf.FieldMask update_mask = 2;
+
+  string name = 3 [(valid) = "resource_name"];
+  string description = 4 [(valid) = "description"];
+  map<string, string> labels = 5 [(valid) = "labels"];
+}
+
+message UpdateSnapshotMetadata {
+  string snapshot_id = 1;
+}
+
+message DeleteSnapshotRequest {
+  string snapshot_id = 1 [(valid) = "resource_id", (required) = true];
+}
+
+message DeleteSnapshotMetadata {
+  string snapshot_id = 1;
+}
+
+message ListSnapshotOperationsRequest {
+  string snapshot_id = 1 [(valid) = "resource_id", (required) = true];
+  int64 page_size = 2 [(valid) = "page_size"];
+  string page_token = 3 [(valid) = "page_token"];
+}
+
+message ListSnapshotOperationsResponse {
+  repeated operation.Operation operations = 1;
+  string next_page_token = 2;
+}
+
+message UpdateSnapshotReferencesRequest {
+  string snapshot_id = 1 [ (valid) = "resource_id", (required) = true];
+  repeated reference.Reference reference_additions = 2 [(required) = true];
+  repeated reference.Reference reference_deletions = 3 [(required) = true];
+}
+
+message UpdateSnapshotReferencesMetadata {
+  string snapshot_id = 1;
+}
+
+message UpdateSnapshotReferencesResponse {
+}
+
+message ListSnapshotReferencesRequest {
+  string snapshot_id = 1 [(valid) = "resource_id", (required) = true];
+  int64 page_size = 2 [(valid) = "page_size"];
+  string page_token = 3 [(valid) = "page_token"];
+}
+
+message ListSnapshotReferencesResponse {
+  repeated reference.Reference references = 1;
+  string next_page_token = 2;
+}

@@ -1,0 +1,46 @@
+{% from "components/redis/walg/map.jinja" import walg, s3, shard_name with context %}
+
+{% set password = salt.pillar.get('data:redis:config:requirepass') %}
+
+{%- set walg_io_limit = salt.pillar.get('data:dbaas:flavor:io_limit', salt.pillar.get('data:walg:io_limit', 536870912)) // 2 -%}
+{% set walg_network_limit = salt.pillar.get('data:dbaas:flavor:network_limit', salt.pillar.get('data:walg:network_limit', 1073741824)) // 2 %}
+{% set def_walg_coroutines = salt.pillar.get('data:dbaas:flavor:cpu_guarantee', salt.pillar.get('data:walg:parallel_workers', 1)) %}
+{% if def_walg_coroutines < 4 %}
+{%    set walg_coroutines = 1 %}
+{% else %}
+{%    set walg_coroutines = def_walg_coroutines %}
+{% endif %}
+{% set compression = salt.pillar.get('data:walg:compression', 'brotli') %}
+{% set retain_period_hours = salt.pillar.get('data:backup:retain_period', 7) | int * 24 %}
+{% set password = salt.pillar.get('data:redis:config:requirepass') %}
+
+
+AWS_ACCESS_KEY_ID:           {{ s3.access_key_id }}
+AWS_SECRET_ACCESS_KEY:       {{ s3.access_secret_key }}
+AWS_ENDPOINT:                {{ s3.endpoint }}
+AWS_S3_FORCE_PATH_STYLE:     {{ (not salt.pillar.get('data:s3:virtual_addressing_style', False)) | json }}
+AWS_REGION:                  {{ s3.region }}
+WALG_GPG_KEY_ID:             {{ s3.gpg_key_id }}
+WALG_PGP_KEY_PATH:           {{ walg.confdir }}/PGP_KEY
+WALG_S3_PREFIX:              {{ s3.backup_path }}
+S3_MAX_PART_SIZE:            '{{s3.multipart_chunk_size}}'
+WALG_UPLOAD_CONCURRENCY:     1
+
+WALG_DISK_RATE_LIMIT:        {{ walg_io_limit | int }}
+WALG_NETWORK_RATE_LIMIT:     {{ walg_network_limit | int }}
+GOMAXPROCS:                  {{ (walg_coroutines + 1) | int }}
+
+WALG_LOG_LEVEL:             'DEVEL'
+WALG_COMPRESSION_METHOD:    '{{ compression }}'
+
+WALG_REDIS_PASSWORD:        {{ password | yaml_squote }}
+
+WALG_SENTINEL_USER_DATA:    '{"shard_name": "{{shard_name}}", "backup_id": "{{walg.backup_id}}"}'
+
+WALG_STREAM_CREATE_COMMAND:  {{salt.mdb_redis.walg_get_create_cmd() | yaml_squote}}
+
+WALG_STREAM_RESTORE_COMMAND: 'cat > {{salt.mdb_redis.get_rdb_fullpath()}}'
+
+HTTP_LISTEN:                '127.0.0.1:8090'
+HTTP_EXPOSE_PPROF:          'true'
+HTTP_EXPOSE_EXPVAR:         'true'

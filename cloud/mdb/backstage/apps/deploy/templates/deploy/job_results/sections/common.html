@@ -1,0 +1,148 @@
+{% extends "lib/ajax/object.html" %}
+{% load iam.templatetags %}
+{% load lib.templatetags %}
+{% load deploy.templatetags %}
+
+{% block object_data %}
+{% with salt_result=obj.parsed_result %}
+<div class="row">
+  <div class="col-lg-24 col-md-24 col-sm-24 col-xs-24">
+    <ul class="nav nav-tabs noodle-tabs">
+      <li class="active"><a href="#tab_common" data-toggle="tab">Common</a></li>
+    <li><a href="#tab_results" data-toggle="tab">Results <span class='badge noodle-tab-badge'>{% if not salt_result.error %}<span class='backstage-salt-ok'>{{ salt_result.states_count.ok }}</span> / <span class='backstage-salt-changed'>{{ salt_result.states_count.changed }}</span> / <span class='backstage-salt-error'>{{ salt_result.states_count.error }}</span>{% else %}<span class='backstage-salt-error'>Error</span>{% endif %} </a></li>
+    </ul>
+    <div class="tab-content">
+      <div class="tab-pane active" id="tab_common">
+        <div class="row">
+          <div class="col-lg-12">
+            <table class="table table-borderless noodle-details-table">
+              <tr>
+                <th>ID</th>
+                <td>{{ obj.job_result_id }}</td>
+              </tr>
+              <tr>
+                <th>Recorded at</th>
+                <td>{% dt_formatted obj.recorded_at %}
+              </tr>
+              <tr>
+                <th>Ext job ID</th>
+                <td>{{ obj.ext_job_id }}</td>
+              </tr>
+              <tr>
+                <th>FQDN</th>
+                <td>{{ obj.fqdn }}</td>
+              </tr>
+              <tr>
+                <th>Status</th>
+                <td>{{ obj|job_result_ui_status }}</td>
+              </tr>
+              <tr>
+                <th>Order ID</th>
+                <td>{{ obj.order_id }}</td>
+              </tr>
+            </table>
+          </div>
+          <div class="col-lg-12">
+            <label class="noodle-table-inc-label">Job</label><br>
+            {% obj_block_onload obj "job" %}
+          </div>
+        </div>
+      </div>
+      <div class="tab-pane" id="tab_results">
+        <div class="row">
+          <div class="col-lg-24 col-md-24 col-sm-24 col-xs-24 no-padding">
+            {% with user_can_read_changes=request.iam_user|has_perm:changes_read_permission %}
+            {% if salt_result.parsed %}
+            <div class="noodle-box" style="padding-left:30px">
+              <div class="btn-group" id="state_filters_buttons">
+                <button type="button" class="btn btn-sm btn-default btn-primary" data-states-filter='all' onClick="filter_state_table('all')">
+                  All
+                </button>
+                <button type="button" class="btn btn-sm btn-default" data-states-filter='with_changes' onClick="filter_state_table('with_changes')">
+                  With changes
+                </button>
+                <button type="button" class="btn btn-sm btn-default" data-states-filter='success' onClick="filter_state_table('success')">
+                  Success
+                </button>
+                <button type="button" class="btn btn-sm btn-default" data-states-filter='failed' onClick="filter_state_table('failed')">
+                  Failed
+                </button>
+                <button type="button" class="btn btn-sm btn-default" data-states-filter='failed_parents' onClick="filter_state_table('failed_parents')">
+                  Failed parents
+                </button>
+              </div>
+            </div>
+            {% include "deploy/job_results/includes/states_table.html" %}
+            {% else %}
+              {% if user_can_read_changes %}
+                {% if salt_result.error %}
+                <div class="noodle-box" style="padding-left: 15px">
+                  <span class="red noodle-mono"><strong>Salt result parser error: {{ salt_result.error }}</strong></span><br><br>
+                  {{ salt_result.raw|to_html_json }}
+                </div>
+                {% else %}
+                <table class="table table-borderless noodle-details-table">
+                  <tr>
+                    <th>ID</th>
+                    <td>{{ salt_result.raw.id }}&nbsp;{% simple_copy salt_result.raw.id %}</td>
+                  </tr>
+                  <tr>
+                    <th>JID</th>
+                    <td>{{ salt_result.raw.jid }}&nbsp;{% simple_copy salt_result.raw.id %}</td>
+                  </tr>
+                  <tr>
+                    <th>Fun</th>
+                    <td>{{ salt_result.raw.fun }}</td>
+                  </tr>
+                  <tr>
+                    <th>Fun args</th>
+                    <td>
+                    {% if salt_result.raw.fun_args %}
+                      {{ salt_result.raw.fun_args|to_html_json }}
+                    {% else %}
+                      &ndash;
+                    {% endif %}
+                    </td>
+                  </tr>
+                  <tr>
+                    <th>Success</th>
+                    <td>{{ salt_result.raw.success|bool_label }}</td>
+                  </tr>
+                  <tr>
+                    <th>Retcode</th>
+                    <td>{{ salt_result.raw.retcode }}</td>
+                  </tr>
+                  <tr>
+                    <th>Return</th>
+                    <td>
+                    {% if salt_result.raw.fun == "cmd.run" %}
+                      <pre class="noodle-pre">{{ salt_result.raw.return }}</pre>
+                    {% else %}
+                      {{ salt_result.raw.return|to_html_json }}
+                    {% endif %}
+                    </td>
+                  </tr>
+                </table>
+                {% endif %}
+              {% else %}
+              <div class="noodle-box" style="padding-left: 15px">
+                You have no permission to read changes
+              </div>
+              {% endif %}
+            {% endif %}
+            {% endwith %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+    let states_filter_params = (new URL(document.location)).searchParams;
+    let states_filter = states_filter_params.get('states_filter');
+    if (states_filter !== null) {
+        $(`button[data-states-filter="${states_filter}"`).click()
+    }
+</script>
+{% endwith %}
+{% endblock %}

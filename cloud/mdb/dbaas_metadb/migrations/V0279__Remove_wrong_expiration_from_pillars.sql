@@ -1,0 +1,1 @@
+-- https://st.yandex-team.ru/MDB-13487

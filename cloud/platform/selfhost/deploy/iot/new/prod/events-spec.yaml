@@ -1,0 +1,114 @@
+service_account_id: ajecqbab27og73umh5r9 # iot-deployer
+name: iot-events
+description: IG-managed IoT events backend
+scale_policy:
+  fixed_scale:
+    size: 3
+deploy_policy:
+  max_unavailable: 1
+  max_expansion: 0
+allocation_policy:
+  zones:
+    - zone_id: ru-central1-a
+    - zone_id: ru-central1-b
+    - zone_id: ru-central1-c
+health_checks_spec:
+  health_check_specs:
+    - http_options:
+        port: 443
+        path: /onlycode?labels=balancer_stopper
+      interval: 10s
+      timeout: 5s
+      unhealthy_threshold: 5
+      healthy_threshold: 2
+instance_template:
+  name: iot-events-{instance.index}-{instance.internal_dc}
+  hostname: iot-events-{instance.index}-{instance.internal_dc}
+  platform_id: standard-v2
+  service_account_id: ajeo7dqrvtlnic46fv8p # events
+  labels:
+    yandex-dns: ig
+    conductor-group: iot-events
+    layer: iaas
+    abc_svc: ycmqtt
+    env: prod
+    environment: prod
+  resources_spec:
+    memory: 2G
+    cores: 2
+    core_fraction: 100
+  boot_disk_spec:
+    mode: READ_WRITE
+    disk_spec:
+      image_id: ${IMAGE_ID}
+      type_id: network-ssd
+      size: 10g
+  secondary_disk_specs:
+    - mode: READ_WRITE
+      device_name: data
+      disk_spec:
+        type_id: network-hdd
+        size: 20g
+  network_interface_specs:
+    - subnet_ids: ['e9b9e47n23i7a9a6iha7', 'e2lt4ehf8hf49v67ubot', 'b0c7crr1buiddqjmuhn7']
+      primary_v4_address_spec: {}
+      primary_v6_address_spec: {}
+  metadata:
+    launch_index: "{instance.index}"
+    internal_dc: "{instance.internal_dc}"
+    osquery_tag: "ycloud-svc-iot"
+    shortname: "iot-events-{instance.index}-{instance.internal_dc}"
+    nsdomain: "{instance.internal_dc}.ycp.cloud.yandex.net"
+    skm: "${SKM_MD}"
+    k8s-runtime-bootstrap-yaml: " "
+    jaeger_endpoint: "jaeger-collector.private-api.ycp.cloud.yandex.net:443"
+    push_client_tvm_client_id: 2012310
+    push_client_tvm_server_id: 2001059
+    push_client_topic: "yc-iot/events-logs-prod"
+    tvmtool_local_authtoken: 764a5f28530362a00af4d459ea670e2a
+    solomon_cluster: "prod"
+    iot_events_production: "true"
+    iot_events_from_connection_address: "lb.etn03iai600jur7pipla.ydb.mdb.yandexcloud.net"
+    iot_events_from_consumer_clientid: "/b1g7usbinne7lipkpvc1/yc-iot/events"
+    iot_events_from_consumer_topics: "/b1g7usbinne7lipkpvc1/yc-iot/mqtt"
+    iot_events_from_consumer_topics_perm: "/b1g7usbinne7lipkpvc1/yc-iot/permanents"
+    iot_events_to_connection_topics: "lbkx.logbroker.yandex.net"
+    iot_events_to_topic: "/yc-iot/prodevents"
+    iot_events_tvm_auth_token: 764a5f28530362a00af4d459ea670e2a
+    iot_events_metrics_subsystem: "cloud_events_prod"
+    iot_events_selfping_registry_id: "arevhahjp4ho3up30oao"
+    iot_events_selfping_topicprefix: "$registries/arevhahjp4ho3up30oao/events"
+    iot_ev_log_level: info
+    iot_ev_database_endpoint: "ydb-iot-dpl.cloud.yandex.net:2136"
+    iot_ev_database_driver: "/global/iot-dpl"
+    iot_events_from_consumer_use_sa_auth: "true"
+    iot_events_to_topic_use_sa_auth: "false"
+    iot_events_from_consumer_database: "/global/b1gvcqr959dbmi1jltep/etn03iai600jur7pipla"
+    iot_events_to_topic_database: " "
+
+    user-data: |
+      #cloud-config
+      fs_setup:
+        - device: /dev/disk/by-id/virtio-logs
+          filesystem: ext4
+          overwrite: false
+          partition: auto
+      mounts:
+        - [ /dev/disk/by-id/virtio-logs, /data, auto, "defaults,errors=remount-ro", "0", "2" ]
+        - [ /data/fluent, /var/log/fluent, none, "defaults,bind", "0", "0" ]
+        - [ /data/yc-iot, /var/log/yc-iot, none, "defaults,bind", "0", "0" ]
+      runcmd:
+        - chmod 777 /data
+        - mkdir -p /data/fluent /data/yc-iot
+        - chown -R td-agent:td-agent /data/fluent
+        - chown -R td-agent:td-agent /data/yc-iot
+        - chmod 0755 /data/fluent
+        - chmod 0755 /data/yc-iot
+        - mount --make-rprivate /data
+        - mount -o bind /data/fluent /var/log/fluent
+        - mount -o bind /data/yc-iot /var/log/yc-iot
+      bootcmd:
+        - echo "[Journal]" > /etc/systemd/journald.conf
+        - echo "SystemMaxUse=500M" >> /etc/systemd/journald.conf
+
+

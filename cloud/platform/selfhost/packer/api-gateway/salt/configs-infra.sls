@@ -1,0 +1,27 @@
+config_infra_files:
+  file.managed:
+    - user: root
+    - group: root
+    - mode: '0644'
+    - makedirs: True
+    - names:
+      - /etc/api/configs/juggler-client/MANIFEST.json:
+        - source: salt://files/infra/MANIFEST.json
+      - /etc/api/configs/juggler-client/juggler-client.conf:
+        - source: salt://files/infra/juggler-client.conf
+      - /etc/api/configs/juggler-client/platform-http-check.json:
+        - source: salt://files/infra/platform-http-check.json
+      - /etc/fluent/config.d/containers.input.conf:
+        - source: salt://files/infra/containers.input.conf
+      - /etc/fluent/config.d/monitoring.conf:
+        - source: salt://files/infra/monitoring.conf
+      - /etc/fluent/config.d/output.conf:
+        - source: salt://files/infra/output.conf
+      - /etc/fluent/config.d/system.input.conf:
+        - source: salt://files/infra/system.input.conf
+      - /etc/fluent/fluent.conf:
+        - source: salt://files/infra/fluent.conf
+      - /etc/metricsagent/metricsagent.yaml:
+        - source: salt://files/infra/metricsagent.yaml
+      - /etc/yandex/statbox-push-client/push-client.yaml:
+        - source: salt://files/infra/push-client.yaml

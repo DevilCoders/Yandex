@@ -1,0 +1,237 @@
++/ filter_by_chunk_size = common.filtering.chunk_size (chunk_size)
++/ parse_json = common.parsing.json
++/ validate_tags = validate-tags
++/ validate_metrics = common.validating.validr
++/ filter_by_pricing_qty = filter-by-neg-quantity
++/ filter_by_message_wt = filter-by-write-time
++/ filter_by_grace_period = common.filtering.grace_period
+ filter_by_monthly_grace_period = common.filtering.grace_period (metric_lifetime)
++/ filter_by_migration_ts = common.filtering.migration_timestamp
++/ resolve_labels = set-labels
++/ resolve_sku = resolve-sku
++/ measure_processing_lag = common.measure_processing_lag(pipline, log_producer_lag)
++/ resolve_account = resolve-billing-accounts
++/ cumulative_quantity = counters.cumulative(realtime, prorated)
++/ grouby_storage = s3-requests-aggregate
++/ partitioning = common.sharding(routes.source_metrics:name,partitions,key[])
+
+errors_typecasting = common.utils.typecasting (schema.json.metric)
+
+++++++++++++
+storage-logbroker:
+type: logbroker
+metering: True
+transformers:
+    - filter_by_chunk_size
+    - parse_json
+    - validate_metrics
+    - validate_tags
+    - filter_by_message_wt
+    - filter_by_grace_period
+    - filter_by_migration_ts
+    - grouby_storage
+    - resolve_sku
+    - filter_by_pricing_qty
+    - resolve_account
+    - resolve_labels
+    - partitioning
+    - measure_processing_lag_storage
+parameters:
+    auth:
+    parameters:
+
+        type: "tvm"
+        client_id: 2000508
+        destination: 2001059
+
+    host: vla.logbroker.yandex.net
+    port: 2135
+
+
+    routes:
+    invalid_metrics:
+        skip_empty: True
+        topic: /yc/preprod/rt/billing-resharder-errors
+    source_metrics:
+        skip_empty: True
+        partitions: 10
+        topic: /yc/preprod/rt/billing-resharder-output
+    split_size: 52428800
+
+++++++++++++
+compute-logbroker:
+type: logbroker
+metering: True
+transformers:
+    - filter_by_chunk_size
+    - parse_json
+    - validate_metrics
+    - validate_tags
+    - filter_by_message_wt
+    - filter_by_grace_period
+    - filter_by_migration_ts
+    - resolve_sku
+    - filter_by_pricing_qty
+    - resolve_account
+    - resolve_labels
+    - cumulative_quantity
+    - partitioning
+    - measure_processing_lag_cumulative
+parameters:
+    auth:
+    parameters:
+
+        type: "tvm"
+        client_id: 2000508
+        destination: 2001059
+
+    host: vla.logbroker.yandex.net
+    port: 2135
+
+
+    routes:
+    invalid_metrics:
+        skip_empty: True
+        topic: /yc/preprod/rt/billing-resharder-errors
+    source_metrics:
+        skip_empty: True
+        partitions: 10
+        topic: /yc/preprod/rt/billing-resharder-output
+    split_size: 52428800
+
+++++++++++++
+ticker-logbroker:
+type: logbroker
+metering: True
+transformers:
+    - filter_by_chunk_size
+    - parse_json
+    - validate_metrics
+    - validate_tags
+    - filter_by_message_wt
+    - filter_by_monthly_grace_period
+    - filter_by_migration_ts
+    - resolve_sku
+    - filter_by_pricing_qty
+    - resolve_account
+    - resolve_labels
+    - partitioning
+    - measure_processing_lag_ticker
+parameters:
+    auth:
+    parameters:
+
+        type: "tvm"
+        client_id: 2000508
+        destination: 2001059
+
+    host: vla.logbroker.yandex.net
+    port: 2135
+
+
+    routes:
+    invalid_metrics:
+        skip_empty: True
+        topic: /yc/preprod/rt/billing-resharder-errors
+    source_metrics:
+        skip_empty: True
+        partitions: 10
+        topic: /yc/preprod/rt/billing-resharder-output
+    split_size: 52428800
+
+++++++++++++
+logbroker:
+type: logbroker
+metering: True
+transformers:
+    - filter_by_chunk_size
+    - parse_json
+    - validate_metrics
+    - validate_tags
+    - filter_by_message_wt
+    - filter_by_grace_period
+    - filter_by_migration_ts
+    - resolve_sku
+    - filter_by_pricing_qty
+    - resolve_account
+    - resolve_labels
+    - partitioning
+    - measure_processing_lag
+parameters:
+    auth:
+    parameters:
+
+        type: "tvm"
+        client_id: 2000508
+        destination: 2001059
+
+    host: vla.logbroker.yandex.net
+    port: 2135
+
+
+    routes:
+    invalid_metrics:
+        skip_empty: True
+        topic: /yc/preprod/rt/billing-resharder-errors
+    source_metrics:
+        skip_empty: True
+        partitions: 10
+        topic: /yc/preprod/rt/billing-resharder-output
+    split_size: 52428800
+
+++++++++++++
+resharder-errors-ch:
+    type: clickhouse
+    metering: True
+    transformers:
+      - parse_json
+      - errors_partitioning_ch
+    parameters:
+      host: ""
+      port: 9440
+      tls:
+        secure: True
+        ca_certs: "/etc/ssl/certs/ca-certificates.crt"
+      auth:
+        database: billing
+        user: billing
+      routes:
+        source_metrics:
+          partitions: {0: ['rc1a-rvwp0jt22z68ybre.mdb.cloud-preprod.yandex.net', 'rc1b-6kjlsmsl0l7u5308.mdb.cloud-preprod.yandex.net'], 1: ['rc1b-xtsv1236xrz6gd20.mdb.cloud-preprod.yandex.net', 'rc1c-ct03ung4
+rmxwqg7f.mdb.cloud-preprod.yandex.net']}
+          table: billing.invalid_metrics
+          schema:
+              - source_name
+              - uploaded_at
+              - reason
+              - metric_id
+              - hostname
+              - source_id
+              - reason_comment
+              - raw_metric
+              - metric
+              - metric_source_id
+              - metric_schema
+              - metric_resource_id
+
+++++++++++++
+resharder-errors-ydb:
+type: ydb-resharder-static
+metering: True
+transformers:
+    - parse_json
+    - errors_partitioning_ydb
+parameters:
+    route: source_metrics
+    partitions: 10
+    endpoint: "grpcs://ydb-billing.cloud-preprod.yandex.net:2136"
+    database: /pre-prod_global/billing
+    root: /pre-prod_global/billing/hardware/default/billing
+
+    root_ssl_cert_file: /etc/ssl/certs/ca-certificates.crt
+
+
+    auth:
+    parameters:
+        type: iam-metadata
+        metadata_url: default-url

@@ -1,0 +1,202 @@
+USE %YT_CLUSTER%;
+PRAGMA yt.InferSchema = '1';
+PRAGMA yt.Pool = "cloud_analytics_pool";
+PRAGMA File('libcrypta_identifier_udf.so', 'yt://hahn/home/crypta/public/udfs/stable/libcrypta_identifier_udf.so');
+PRAGMA Udf('libcrypta_identifier_udf.so');
+
+DEFINE SUBQUERY $last_non_empty_table($path) AS
+    $max_path = (
+        SELECT MAX(Path) AS Path
+        FROM FOLDER($path, 'row_count')
+        WHERE Type = 'table'
+            AND Yson::LookupInt64(Attributes, 'row_count') > 0
+    );
+    SELECT * FROM CONCAT($max_path);
+END DEFINE;
+
+$dwh_dyn_tbl = '//home/cloud_analytics/leads/dyn_table';
+$current_date = CurrentUtcDate();
+
+$email_to_canonical = ($email) -> {
+    RETURN Identifiers::NormalizeEmail($email);
+};
+
+$passport_uid_dup = (
+    SELECT COUNT(*) FROM (
+        SELECT
+            passport_uid,
+            COUNT(*) AS qty,
+            AGGREGATE_LIST(dwh_id) AS dwh_ids,
+            AGGREGATE_LIST(email) AS emails,
+        FROM $dwh_dyn_tbl
+        WHERE passport_uid IS NOT NULL AND passport_uid != 0
+        GROUP BY passport_uid
+    ) WHERE qty > 1
+);
+
+$broken_iam_email = (
+    SELECT COUNT(*) FROM $dwh_dyn_tbl
+    WHERE email != user_settings_email
+        AND user_settings_email != ""
+        AND user_settings_email IS NOT NULL
+);
+
+$crm_id_dup = (
+    SELECT COUNT(*) FROM (
+        SELECT
+            crm_id,
+            AGGREGATE_LIST(email) AS emails,
+            COUNT(*) AS qty,
+            AGGREGATE_LIST(dwh_id) AS dwh_ids,
+        FROM $dwh_dyn_tbl
+        WHERE crm_id IS NOT NULL AND crm_id != ""
+        GROUP BY crm_id
+    ) WHERE qty > 1
+);
+
+$broken_email_indx = (
+    SELECT COUNT(*) FROM `//home/cloud_analytics/leads/dyn_table` as d
+    LEFT ONLY JOIN `//home/cloud_analytics/leads/dyn_table_email_dwh_id` as e
+    ON d.email == e.email
+    WHERE d.email IS NOT NULL AND d.email != ""
+);
+
+$broken_crm_indx = (
+    SELECT COUNT(*) FROM `//home/cloud_analytics/leads/dyn_table` as d
+    LEFT ONLY JOIN `//home/cloud_analytics/leads/dyn_table_crm_id_dwh_id` as e
+    ON d.crm_id == e.crm_id
+    WHERE d.crm_id IS NOT NULL AND d.crm_id != ""
+);
+
+$broken_passport_indx = (
+    SELECT COUNT(*) FROM `//home/cloud_analytics/leads/dyn_table` as d
+    LEFT ONLY JOIN `//home/cloud_analytics/leads/dyn_table_passport_uid_dwh_id` as e
+    ON d.passport_uid == e.passport_uid
+    WHERE d.passport_uid IS NOT NULL AND d.passport_uid != 0
+);
+
+$passport_uid_ba_dedup = (
+    SELECT
+        email,
+        COUNT(1) as cnt,
+    FROM `//home/cloud_analytics/clients/passport_uid_ba`
+    GROUP BY $email_to_canonical(user_settings_email) AS email
+);
+
+$passport_uid_ba_canon = (
+    SELECT
+        billing_account_id,
+        $email_to_canonical(user_settings_email) AS email
+    FROM `//home/cloud_analytics/clients/passport_uid_ba` AS puid
+);
+
+$passport_uid_ba = (
+    SELECT DISTINCT
+        dedup.cnt AS cnt,
+        puid.email AS email,
+        puid.billing_account_id AS billing_account_id
+    FROM $passport_uid_ba_canon AS puid
+    JOIN $passport_uid_ba_dedup AS dedup
+    ON dedup.email = puid.email
+);
+
+$cdv_new_value = ($vl) -> {
+    RETURN IF(ListHasItems($vl), IF(ListHas($vl, "MQL"), "MQL", "NON_MQL"), NULL);
+};
+
+INSERT INTO @data
+SELECT
+    dt,
+    sl_ba_id, l_ba_id, dt_ba_id, mql_ba_id, hl_ba_id,
+    puid_email, cdv_email, mh_email,
+    puid_cnt, mkto_is_individual, iam_phone,
+    $cdv_new_value(AGGREGATE_LIST(cdv.new_value)) AS cdv_new_value,
+FROM `//home/cloud_analytics/scoring/leads/leads` AS sl
+LEFT JOIN $passport_uid_ba AS puid
+ON sl.billing_account_id = puid.billing_account_id
+LEFT JOIN `//home/cloud_analytics/leads/dyn_table` AS dt
+ON sl.billing_account_id = dt.ba_id
+LEFT JOIN `//home/cloud_analytics/export/marketo/lead` AS l
+ON sl.billing_account_id = l.billing_account_id
+LEFT JOIN `//home/cloud_analytics/export/crm_fake/mql_history` AS mh
+ON $email_to_canonical(mh.email) = $email_to_canonical(l.email)
+LEFT JOIN `//home/cloud_analytics/import/marketo/change_data_value` AS cdv
+ON $email_to_canonical(cdv.email) = $email_to_canonical(l.email)
+LEFT JOIN `//home/cloud_analytics/import/crm/leads/history/leads` AS hl
+ON hl.ba_id = sl.billing_account_id
+LEFT JOIN REGEXP(`//home/cloud_analytics/export/crm_fake/mql`, '.*') AS mql
+ON $email_to_canonical(mql.email) = $email_to_canonical(l.email)
+WHERE sl.score > 0.2 AND dt == $current_date
+GROUP BY
+    sl.billing_account_id as sl_ba_id,
+    l.billing_account_id AS l_ba_id,
+    dt.ba_id AS dt_ba_id,
+    mql.ba_id AS mql_ba_id,
+    hl.ba_id AS hl_ba_id,
+    puid.email AS puid_email,
+    cdv.email AS cdv_email,
+    mh.email AS mh_email,
+    puid.cnt AS puid_cnt,
+    dt.mkto_is_individual AS mkto_is_individual,
+    dt.mkto_phone AS iam_phone,
+    DateTime::MakeDate(DateTime::Parse("%Y-%m-%d")(sl.first_trial_consumption_date)) + DateTime::IntervalFromDays(15) as dt;
+
+COMMIT;
+
+INSERT INTO @funnel
+SELECT
+    sl_ba_id as scored_by_ktereshin,
+    ((dt_ba_id IS NULL) AND puid_email IS NULL) AS empty_email, -- empty_email and not in dyn_table
+    ((dt_ba_id IS NULL) AND (puid_email IS NOT NULL) AND puid_cnt > 1) AS ba_dup, -- many billing_accounts and not empty email and not in dyn_table
+    dt_ba_id IS NOT NULL AS dyn_table,
+    ((dt_ba_id IS NOT NULL) AND (l_ba_id IS NULL) AND (puid_cnt > 1)) AS ba_dup_in_dyn,
+    ((dt_ba_id IS NOT NULL) AND (l_ba_id IS NULL) AND (puid_cnt <= 1) AND mkto_is_individual IS NULL) AS empty_individual,
+    l_ba_id IS NOT NULL AS export_to_marketo,
+    cdv_email IS NOT NULL AS import_from_marketo,
+    (cdv_email IS NOT NULL AND cdv_new_value='MQL') AS mql_from_marketo,
+    (cdv_email IS NOT NULL AND cdv_new_value='MQL' AND iam_phone IS NULL) AS empty_phone,
+    mh_email IS NOT NULL AS export_to_crm_history,
+    mql_ba_id IS NOT NULL AS export_to_crm,
+    hl_ba_id IS NOT NULL AS import_from_crm,
+    dt
+FROM @data;
+
+COMMIT;
+
+INSERT INTO `%TMP_TABLE%` WITH TRUNCATE
+SELECT
+    scored_by_ktereshin - dyn_table - ba_dup - empty_email AS lost_in_dyn_table,
+    dyn_table - empty_individual - export_to_marketo - ba_dup_in_dyn AS lost_before_marketo,
+    export_to_marketo - import_from_marketo AS lost_in_marketo,
+    import_from_marketo - mql_from_marketo AS not_become_mql,
+    mql_from_marketo - export_to_crm_history AS lost_exported_leads,
+    mql_from_marketo - export_to_crm AS lost_before_crm,
+    empty_email, empty_individual, empty_phone,
+    export_to_marketo, import_from_marketo, mql_from_marketo, export_to_crm_history, export_to_crm,
+    crm_id_dup, broken_iam_email, passport_uid_dup, broken_email_indx, broken_crm_indx, broken_passport_indx,
+FROM (
+    SELECT
+        dt,
+        $crm_id_dup AS crm_id_dup,
+        $broken_iam_email AS broken_iam_email,
+        $passport_uid_dup AS passport_uid_dup,
+        $broken_email_indx AS broken_email_indx,
+        $broken_crm_indx AS broken_crm_indx,
+        $broken_passport_indx AS broken_passport_indx,
+        COUNT(scored_by_ktereshin) as scored_by_ktereshin,
+        SUM(CAST(ba_dup AS Int32)) AS ba_dup,
+        SUM(CAST(empty_email AS Int32)) AS empty_email,
+        SUM(CAST(dyn_table AS Int32)) AS dyn_table,
+        SUM(CAST(ba_dup_in_dyn AS Int32)) AS ba_dup_in_dyn,
+        SUM(CAST(empty_individual AS Int32)) AS empty_individual,
+        SUM(CAST(export_to_marketo AS Int32)) AS export_to_marketo,
+        SUM(CAST(import_from_marketo AS Int32)) AS import_from_marketo,
+        SUM(CAST(mql_from_marketo AS Int32)) AS mql_from_marketo,
+        SUM(CAST(empty_phone AS Int32)) AS empty_phone,
+        SUM(CAST(export_to_crm_history AS Int32)) AS export_to_crm_history,
+        SUM(CAST(export_to_crm AS Int32)) AS export_to_crm,
+        -- SUM(CAST(import_from_crm AS Int32)) AS import_from_crm,
+    FROM @funnel
+    GROUP BY CAST(dt AS Date) AS dt
+    ORDER BY dt DESC LIMIT 1000
+);

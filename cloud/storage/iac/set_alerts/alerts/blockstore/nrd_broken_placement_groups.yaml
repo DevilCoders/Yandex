@@ -1,0 +1,73 @@
+definitions:
+  - &alert_id "{{.ID}}_nbs_nrd_broken_placement_groups"
+  - &alert_name "{{.Name}} NBS NRD broken placement groups"
+  - &prod_alert_window_secs 300
+  - &preprod_alert_window_secs 28800
+  - &alert_delay_secs 0
+  - &alert_annotations_tag "yc-{{.Cluster}}-nbs-solomon"
+  - &alert_annotations_host "solomon-alert-cloud_{{.Cluster}}_nbs_{{.Zone}}"
+  - &alert_annotations_service "solomon_alert_nbs_nrd_broken_placement_groups"
+  - &alert_juggler_description "(doc: https://nda.ya.ru/t/1QCBzILc5FnGMY)"
+  - &prod_alert_program |-
+      let pg_with_broken_two_or_more_disks = {project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="disk_registry", host="cluster", sensor="PlacementGroupsWithRecentlyBrokenTwoOrMoreDisks"};
+
+      let pg_with_broken_single_disk = {project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="disk_registry", host="cluster", sensor="PlacementGroupsWithRecentlyBrokenSingleDisk"};
+
+      let pg1 = last(pg_with_broken_single_disk) - min(pg_with_broken_single_disk);
+      let pg2 = last(pg_with_broken_two_or_more_disks) - min(pg_with_broken_two_or_more_disks);
+
+      alarm_if(pg2 > 0);
+      warn_if(pg1 > 0);
+  - &preprod_alert_program |-
+      let pg_with_broken_two_or_more_disks = {project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="disk_registry", host="control-{{.Zone}}", sensor="PlacementGroupsWithRecentlyBrokenTwoOrMoreDisks"};
+
+      let pg_with_broken_single_disk = {project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="disk_registry", host="control-{{.Zone}}", sensor="PlacementGroupsWithRecentlyBrokenSingleDisk"};
+
+      let pg1 = last(pg_with_broken_single_disk);
+      let pg2 = last(pg_with_broken_two_or_more_disks);
+
+      alarm_if(pg2 > 0);
+      warn_if(pg1 > 0);
+  - &alert_debug "PGs with one broken disk: {{expression.pg1}}\nPGs with two or more broken disks: {{expression.pg2}}\n"
+
+alerts:
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_juggler_description
+    window_secs: *preprod_alert_window_secs
+    delay_secs: *alert_delay_secs
+    debug: *alert_debug
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - preprod_vla
+      - preprod_sas
+      - preprod_myt
+    expression:
+      program: *preprod_alert_program
+
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_juggler_description
+    window_secs: *prod_alert_window_secs
+    delay_secs: *alert_delay_secs
+    debug: *alert_debug
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - prod_vla
+      - prod_sas
+      - prod_myt
+      - israel
+    expression:
+      program: *prod_alert_program

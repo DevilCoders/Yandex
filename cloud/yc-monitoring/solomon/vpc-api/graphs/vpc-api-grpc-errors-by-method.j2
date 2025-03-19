@@ -1,0 +1,32 @@
+{% extends "vpc-api-base.j2" %}
+
+{% set id_suffix = 'grpc_errors_by_method' %}
+{% set name = 'vpc api grpc errors' %}
+{% set transform = 'NONE' %}
+
+{% macro prog() %}
+group_by_labels({
+    sensor='grpc_requests_with_status'
+    ,meter_type='m1_rate'
+    ,status='UNAVAILABLE|{{ statuses_internal_errors }}'
+}, 'method', v -> group_lines('sum', v))
+{% endmacro %}
+
+{% block additional_params %}
+    ,{
+        "name": "host",
+        "value": "*"
+    }
+    ,{
+        "name": "app",
+        "value": "*"
+    }
+    ,{
+        "name": "method",
+        "value": "*"
+    }
+{% endblock %}
+
+{% block elements %}
+    {{ render_element("[[method]]", prog() | to_prog, area="true") }}
+{% endblock %}

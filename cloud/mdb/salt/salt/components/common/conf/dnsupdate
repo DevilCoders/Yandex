@@ -1,0 +1,283 @@
+#!/bin/bash
+# This is ugly script to use Yandex DNS nameservers together with
+# Compute nameservers. Used via bind config.
+
+BIND_CONFIG="/etc/bind/named.conf.options"
+BIND_UPDATE=no
+ZONES="$(cat /etc/hostname | cut -d. -f2-)"
+if [ "$ZONES" = "" ]
+then
+    LB_ZONES="ydb.mdb.yandexcloud.net ydb.mdb.cloud-preprod.yandex.net"
+    DP_ZONES="mdb.yandexcloud.net mdb.cloud-preprod.yandex.net"
+    CP_ZONES="yandexcloud.net cloud-preprod.yandex.net"
+else
+    if echo "${ZONES}" | grep -q ^mdb
+    then
+        # We are in dataplane
+        LB_ZONES="ydb.${ZONES}"
+        DP_ZONES="${ZONES}"
+        CP_ZONES="$(echo ${ZONES} | cut -d. -f2-)"
+    else
+        # We are in controlplane
+        LB_ZONES="ydb.mdb.${ZONES}"
+        DP_ZONES="mdb.${ZONES}"
+        CP_ZONES="${ZONES}"
+    fi
+fi
+CP_ZONES="$CP_ZONES yandex.ru yandex-team.ru yandex.net"
+PTR_ZONES="10.in-addr.arpa 172.in-addr.arpa 168.192.in-addr.arpa ip6.arpa"
+
+make_resolv_conf() {
+    # Ignore non-user-facing interfaces
+    if [ "${interface}" != "eth0" ]
+    then
+        exit 0
+    fi
+    case $reason in
+        BOUND|BOUND6|RENEW|REBIND|REBOOT)
+        ;;
+        *)
+        exit 0
+        ;;
+    esac
+
+    IPV4_ON_ETH0="$(/sbin/ip -4 addr show dev eth0)"
+
+    local new_resolv_conf
+    tmp_bind_conf="$(mktemp dnsupdate.XXXXXXXX)"
+    chmod 644 "${tmp_bind_conf}"
+    # define our resolvers
+    read -r -d '' CUSTOM_NAMESERVERS << EOF
+nameserver ::1
+EOF
+    read -r -d '' YANDEX_NAMESERVERS << EOF
+options timeout:1 attempts:1
+EOF
+    echo "${CUSTOM_NAMESERVERS}" > /tmp/nameservers
+    # fill bind config
+    cat <<EOF > "${tmp_bind_conf}"
+options {
+    directory "/var/cache/bind";
+    query-source address * port 5301;
+    forward only;
+    auth-nxdomain no;    # conform to RFC1035
+    resolver-query-timeout 5;
+    max-ncache-ttl 0;
+    allow-query { any; };
+    listen-on-v6 { any; };
+    forwarders {
+EOF
+    # DHCPv4
+    if [ -n "$new_domain_name" ] || [ -n "$new_domain_name_servers" ]; then
+        resolv_conf=$(readlink -f "/etc/resolv.conf" 2>/dev/null) ||
+            resolv_conf="/etc/resolv.conf"
+
+        new_resolv_conf="${resolv_conf}.dhclient-new.$$"
+        wait_for_rw "$new_resolv_conf"
+        rm -f $new_resolv_conf
+
+        if [ -n "$new_domain_name" ]; then
+            echo "domain ${new_domain_name%% *}" >>"$new_resolv_conf"
+        fi
+
+        if [ -n "$new_domain_name_servers" ]; then
+            all_nameservers=""
+            overlay_nameservers=""
+            echo "${CUSTOM_NAMESERVERS}" >>$new_resolv_conf
+            for nameserver in $new_domain_name_servers; do
+                echo "        ${nameserver};" >>"${tmp_bind_conf}"
+                echo "nameserver $nameserver" >>"${new_resolv_conf}"
+                all_nameservers="$all_nameservers $nameserver"
+            done
+
+            # $new_next_server sometimes (!) contains address of Overlay DNS
+            if [ -n "$new_next_server" ] && [ "$new_domain_name_servers" != "$new_next_server" ]; then
+                echo "        ${new_next_server};" >>"${tmp_bind_conf}"
+                echo "nameserver $new_next_server" >>"${new_resolv_conf}"
+                all_nameservers="$all_nameservers $new_next_server"
+                overlay_nameservers="$new_next_server"
+            fi
+            echo "    };" >> "${tmp_bind_conf}"
+            echo "};" >> "${tmp_bind_conf}"
+
+            if [ "$overlay_nameservers" = "" ]; then
+                default_route=$(/sbin/ip route show default dev eth0 | grep -oP 'via \K\S+')
+                if [ "$default_route" = "" ]; then
+                    # We are in control plane
+                    overlay_nameservers="$all_nameservers"
+                else
+                    last_segment=$(echo "$default_route" | cut -d. -f4)
+                    dns_segment=$(( $last_segment + 1 ))
+                    overlay_nameservers="$(echo "$default_route" | cut -d. -f-3).$dns_segment"
+                fi
+            fi
+
+            if ! echo "${DP_ZONES}" | grep -q "${new_domain_name}"; then
+                echo "zone \"${new_domain_name}\" {" >> "${tmp_bind_conf}"
+                echo "    type forward;" >> "${tmp_bind_conf}"
+                echo "    forward only;" >> "${tmp_bind_conf}"
+                echo "    forwarders {" >> "${tmp_bind_conf}"
+                for nameserver in $new_domain_name_servers; do
+                    echo "        ${nameserver};" >>"${tmp_bind_conf}"
+                done
+                echo "    };" >> "${tmp_bind_conf}"
+                echo "};" >> "${tmp_bind_conf}"
+
+                if [ -n "$new_next_server" ] && [ "$new_domain_name_servers" != "$new_next_server" ]; then
+                    # If we are here that means that network has custom dns
+                    # We must resolve ptr in cloud dns to avoid client-side override for our ips
+                    for zone in $PTR_ZONES
+                    do
+                        echo "zone \"$zone\" {" >> "${tmp_bind_conf}"
+                        echo "    type forward;" >> "${tmp_bind_conf}"
+                        echo "    forward only;" >> "${tmp_bind_conf}"
+                        echo "    forwarders {" >> "${tmp_bind_conf}"
+                        echo "        ${new_next_server};" >>"${tmp_bind_conf}"
+                        echo "    };" >> "${tmp_bind_conf}"
+                        echo "};" >> "${tmp_bind_conf}"
+                    done
+                fi
+            fi
+
+            for zone in $LB_ZONES
+            do
+                echo "zone \"$zone\" {" >> "${tmp_bind_conf}"
+                echo "    type forward;" >> "${tmp_bind_conf}"
+                echo "    forward only;" >> "${tmp_bind_conf}"
+                echo "    forwarders {" >> "${tmp_bind_conf}"
+                for ip in $(cat /etc/dhcp/forwarders); do
+                    echo "        $ip;" >> "${tmp_bind_conf}"
+                done
+                echo "    };" >> "${tmp_bind_conf}"
+                echo "};" >> "${tmp_bind_conf}"
+            done
+
+            for zone in $DP_ZONES
+            do
+                echo "zone \"$zone\" {" >> "${tmp_bind_conf}"
+                echo "    type forward;" >> "${tmp_bind_conf}"
+                echo "    forward only;" >> "${tmp_bind_conf}"
+                echo "    forwarders {" >> "${tmp_bind_conf}"
+                for ip in $overlay_nameservers; do
+                    echo "        $ip;" >> "${tmp_bind_conf}"
+                done
+                echo "    };" >> "${tmp_bind_conf}"
+                echo "};" >> "${tmp_bind_conf}"
+            done
+
+            for zone in $CP_ZONES
+            do
+                echo "zone \"$zone\" {" >> "${tmp_bind_conf}"
+                echo "    type forward;" >> "${tmp_bind_conf}"
+                echo "    forward only;" >> "${tmp_bind_conf}"
+                echo "    forwarders {" >> "${tmp_bind_conf}"
+                for ip in $(cat /etc/dhcp/forwarders); do
+                    echo "        $ip;" >> "${tmp_bind_conf}"
+                done
+                echo "    };" >> "${tmp_bind_conf}"
+                echo "};" >> "${tmp_bind_conf}"
+            done
+
+            BIND_UPDATE=yes
+            echo "${YANDEX_NAMESERVERS}" >>$new_resolv_conf
+        else # keep 'old' nameservers
+            sed -n /^\w*[Nn][Aa][Mm][Ee][Ss][Ee][Rr][Vv][Ee][Rr]/p $resolv_conf >>$new_resolv_conf
+        fi
+
+        if [ -f $resolv_conf ]; then
+            chown --reference=$resolv_conf $new_resolv_conf
+            chmod --reference=$resolv_conf $new_resolv_conf
+        fi
+    # DHCPv6
+    elif [ -n "$new_dhcp6_name_servers" ] && [ "$IPV4_ON_ETH0" == "" ]; then
+        resolv_conf=$(readlink -f "/etc/resolv.conf" 2>/dev/null) ||
+            resolv_conf="/etc/resolv.conf"
+
+        new_resolv_conf="${resolv_conf}.dhclient-new.$$"
+        wait_for_rw "$new_resolv_conf"
+        rm -f $new_resolv_conf
+
+        if [ -n "$new_dhcp6_name_servers" ]; then
+            all_nameservers=""
+            echo "${CUSTOM_NAMESERVERS}" >>$new_resolv_conf
+            for nameserver in $new_dhcp6_name_servers; do
+                # append %interface to link-local-address nameservers
+                if [ "${nameserver##fe80::}" != "$nameserver" ] ||
+                   [ "${nameserver##FE80::}" != "$nameserver" ]; then
+                    nameserver="${nameserver}%${interface}"
+                fi
+                echo "nameserver $nameserver" >>"${new_resolv_conf}"
+                all_nameservers="$all_nameservers $nameserver"
+                echo "        ${nameserver};" >>"${tmp_bind_conf}"
+            done
+            echo "    };" >> "${tmp_bind_conf}"
+            echo "};" >> "${tmp_bind_conf}"
+
+            default_route=$(/sbin/ip route show default dev eth0 | grep -oP 'via \K\S+')
+            if [ "$default_route" = "" ]; then
+                # We are in control plane
+                overlay_nameservers="$all_nameservers"
+            else
+                last_segment=$(echo "$default_route" | cut -d. -f4)
+                dns_segment=$(( $last_segment + 1 ))
+                overlay_nameservers="$(echo "$default_route" | cut -d. -f-3).$dns_segment"
+            fi
+
+            for zone in $LB_ZONES
+            do
+                echo "zone \"$zone\" {" >> "${tmp_bind_conf}"
+                echo "    type forward;" >> "${tmp_bind_conf}"
+                echo "    forward only;" >> "${tmp_bind_conf}"
+                echo "    forwarders {" >> "${tmp_bind_conf}"
+                for ip in $(cat /etc/dhcp/forwarders); do
+                    echo "        $ip;" >> "${tmp_bind_conf}"
+                done
+                echo "    };" >> "${tmp_bind_conf}"
+                echo "};" >> "${tmp_bind_conf}"
+            done
+
+            for zone in $DP_ZONES
+            do
+                echo "zone \"$zone\" {" >> "${tmp_bind_conf}"
+                echo "    type forward;" >> "${tmp_bind_conf}"
+                echo "    forward only;" >> "${tmp_bind_conf}"
+                echo "    forwarders {" >> "${tmp_bind_conf}"
+                for ip in $overlay_nameservers; do
+                    echo "        $ip;" >> "${tmp_bind_conf}"
+                done
+                echo "    };" >> "${tmp_bind_conf}"
+                echo "};" >> "${tmp_bind_conf}"
+            done
+
+            for zone in $CP_ZONES
+            do
+                echo "zone \"$zone\" {" >> "${tmp_bind_conf}"
+                echo "    type forward;" >> "${tmp_bind_conf}"
+                echo "    forward only;" >> "${tmp_bind_conf}"
+                echo "    forwarders {" >> "${tmp_bind_conf}"
+                for ip in $(cat /etc/dhcp/forwarders); do
+                    echo "        $ip;" >> "${tmp_bind_conf}"
+                done
+                echo "    };" >> "${tmp_bind_conf}"
+                echo "};" >> "${tmp_bind_conf}"
+            done
+
+            BIND_UPDATE=yes
+            echo "${YANDEX_NAMESERVERS}" >>$new_resolv_conf
+        else # keep 'old' nameservers
+            sed -n /^\w*[Nn][Aa][Mm][Ee][Ss][Ee][Rr][Vv][Ee][Rr]/p $resolv_conf >>$new_resolv_conf
+        fi
+
+        if [ -f $resolv_conf ]; then
+                chown --reference=$resolv_conf $new_resolv_conf
+                chmod --reference=$resolv_conf $new_resolv_conf
+        fi
+    fi
+if [ "$BIND_UPDATE" = "yes" ]
+then
+    mv -f "${tmp_bind_conf}" "${BIND_CONFIG}"
+    mv -f "${new_resolv_conf}" "${resolv_conf}"
+else
+    rm -f "${tmp_bind_conf}" "${new_resolv_conf}"
+fi
+}

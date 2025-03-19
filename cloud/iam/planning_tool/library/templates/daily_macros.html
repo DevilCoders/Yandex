@@ -1,0 +1,84 @@
+{% from 'common_macros.html' import ticket with context %}
+
+{#  Даты  #}
+{% macro dates(daily_person, normalize_time) %}
+  {% set days = norm_days if normalize_time else raw_days %}
+  {% set this_day = norm_this_day if normalize_time else raw_this_day %}
+  {% for day in days %}
+    <th class='{{ 'absence-' + daily_person.absences.get(day, '') }} {{ 'this-day' if day == this_day else 'other-day' }} {{ 'normalized-time' if normalize_time else 'raw-time' }}'>
+      {{ day }}
+    </th>
+  {% endfor %}
+{% endmacro %}
+
+{#  Задачи с указанным временем  #}
+{% macro worklog_issue(issue, days, this_day, normalize_time) %}
+  {% set issue_data = issue.issue_data %}
+  <tr class='{{ 'normalized-time' if normalize_time else 'raw-time' }}'>
+    <td>
+      <div class='issue' style='display: inline-block;'>
+        {{ ticket(issue) }}
+        {% if not issue.in_sprint %}
+          <i class='fas fa-running not-in-sprint'></i>
+        {% endif %}
+      </div>
+    </td>
+
+    {% for day in days %}
+      <td class='time {{ 'this-day' if day == this_day else 'other-day' }}'>
+        {{ format_hours(issue.time_spent[day]) }}
+      </td>
+    {% endfor %}
+  </tr>
+{% endmacro %}
+
+{% macro worklog_issues(issues, normalize_time) %}
+  {% set days = norm_days if normalize_time else raw_days %}
+  {% set this_day = norm_this_day if normalize_time else raw_this_day %}
+  {% for issue in issues %}
+    {% if issue.has_worklog %}
+      {{ worklog_issue(issue, days, this_day, normalize_time) }}
+    {% endif %}
+  {% endfor %}
+{% endmacro %}
+
+{#  Задачи без указанного времени  #}
+{% macro item_issue(issue, days, this_day, count, normalize_time) %}
+  {% set count.item = count.item + 1 %}
+  {% set issue_data = issue.issue_data %}
+  <tr class='d-none {{ 'normalized-time' if normalize_time else 'raw-time' }}' tree-path='{{ count.node }} {{ count.item }}'>
+    <td>
+      <span style='display: inline-block; margin-left: 30px;'></span>
+      <div class='issue' style='display: inline-block;'>
+        {{ ticket(issue) }}
+        {% if not issue.in_sprint %}
+          <i class='fas fa-running not-in-sprint'></i>
+        {% endif %}
+      </div>
+    </td>
+    {% for day in days %}
+      <td class='time {{ 'this-day' if day == this_day else 'other-day' }}'>
+      </td>
+    {% endfor %}
+  </tr>
+{% endmacro %}
+
+{% macro node_issues(issues, title, count, normalize_time) %}
+  {% set count.node = count.node + 1 %}
+  {% set days = norm_days if normalize_time else raw_days %}
+  {% set this_day = norm_this_day if normalize_time else raw_this_day %}
+  <tr class='{{ 'normalized-time' if normalize_time else 'raw-time' }}'>
+    <td>
+      <span class='group-indent'></span>
+      <i class='fas fa-chevron-right tree-button tree-button-collapsed' tree-path='{{ count.node }}'></i>
+      <span class='group'>{{ title }} ({{ issues|length }})</span>
+    </td>
+    {% for day in days %}
+      <th class='time {{ 'this-day' if day == this_day else 'other-day' }}'></th>
+    {% endfor %}
+  </tr>
+  {% set count.item = -1 %}
+  {% for issue in issues %}
+    {{ item_issue(issue, days, this_day, count, normalize_time) }}
+  {% endfor %}
+{% endmacro %}

@@ -1,0 +1,69 @@
+#cloud-config
+datasource:
+  Ec2:
+    strict_id: false
+
+users:
+- name: test
+
+write_files:
+- path: /usr/bin/docker_run_with_secrets
+  permissions: 0755
+  owner: root
+  content: ${yamlencode("${docker_run_with_secrets_script}")}
+  
+- path: /etc/systemd/system/test.service
+  permissions: 0644
+  owner: root
+  content: |
+    [Unit]
+    Description=Start a simple docker container
+
+    [Service]
+    Restart=on-failure
+    ExecStartPre=/root/yandex-cloud/bin/yc --profile gore-sa container registry configure-docker
+    ExecStart=/usr/bin/docker_run_with_secrets --name test ubuntu /bin/bash -c "env; sleep 60"
+    ExecStop=/usr/bin/docker stop test
+    ExecStopPost=/usr/bin/docker rm test
+
+- path: /etc/systemd/system/test.timer
+  permissions: 0644
+  owner: root
+  content: |
+    [Unit]
+    Description=Run test every 10 minutes
+
+    [Timer]
+    OnCalendar=*:0/1
+    Persistent=true
+
+    [Install]
+    WantedBy=timers.target
+
+runcmd:
+  # Set the hostname
+  - hostname -b ${hostname}
+  # Install yc cli (https://cloud.yandex.ru/docs/cli/operations/install-cli)
+  - curl https://storage.yandexcloud.net/yandexcloud-yc/install.sh > /run/install_yc.sh
+  - /bin/bash -c "HOME=/root /bin/bash /run/install_yc.sh"
+  - /root/yandex-cloud/bin/yc config profile create gore-sa
+  # Configure Docker Credential helper (https://cloud.yandex.ru/docs/container-registry/operations/authentication)
+  - /root/yandex-cloud/bin/yc --profile gore-sa container registry configure-docker
+  # Decrypt secrets
+  - mkdir /run/secrets
+  - chmod 700 /run/secrets
+%{ for secret_name, encrypted_secret in encrypted_secrets ~}
+  - echo -n ${encrypted_secret} | base64 -di > /run/secrets/${secret_name}.encrypted
+  - /root/yandex-cloud/bin/yc --profile gore-sa kms symmetric-crypto decrypt --id ${secret_encryptor_key_id} --ciphertext-file /run/secrets/${secret_name}.encrypted --plaintext-file /run/secrets/${secret_name} 
+%{ endfor ~}
+  # Use selfdns token
+  - sed -i.bak -e "s/token\s*=\s*\(.*\)$/token = $(cat /run/secrets/selfdns_token)/" /etc/yandex/selfdns-client/default.conf
+  # Run selfdns-client
+  - selfdns-client --terminal --debug | tee -a /var/log/selfdns.from.cloud_init.log
+  # Explicitly run cauth agent
+  - agent.sh
+
+  # Run service
+  - systemctl daemon-reload
+  - systemctl enable test.timer
+  - systemctl start test.timer

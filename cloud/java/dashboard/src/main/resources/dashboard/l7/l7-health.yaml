@@ -1,0 +1,213 @@
+# Link: https://grafana.yandex-team.ru/d/cloud-l7-node/cloud-l7-node-health
+#
+# How to update:
+#
+# Get token from https://oauth.yandex-team.ru/authorize?response_type=token&client_id=12225edea41e4add87aaa4c4896431f1
+#
+# $ export GRAFANA_OAUTH_TOKEN=...
+#
+# $ cd ~/arcadia/cloud/java/dashboard/src/main/resources/dashboard
+# $ sudo docker run --rm -it -v `pwd`:/data/ -e GRAFANA_OAUTH_TOKEN="$GRAFANA_OAUTH_TOKEN" registry.yandex.net/cloud/platform/dashboard:latest java -jar build/java-dashboard.jar upload /data/l7/l7-health.yaml
+#
+
+uid: cloud-l7-node
+title: Cloud L7 node health
+refresh: 1m
+tags: [ycp, ycp-router, l7, alb]
+
+variables:
+  ui:
+    project:
+      values:
+        - platform
+        - yc-mk8s-masters
+        - aoem2v5as6lv1ebgg1cu
+        - b1grffd2lfm69s7koc4t
+    env:
+      values:
+        - prod
+        - preprod
+        - gpn
+  uiQuery:
+    cluster:
+      datasource: 'Solomon Cloud'
+      labels: 'project="$project", cluster="l7-*|cloud_${env}_*"'
+      inheritLabels: false
+    host:
+      datasource: 'Solomon Cloud'
+      labels: 'project="$project", cluster="$cluster", service="node-exporter_ma", host="*"'
+      inheritLabels: false
+
+graphDefaults:
+  datasource: 'Solomon Cloud'
+  width: 12
+  height: 8
+
+queryDefaults:
+  dropNan: true
+  labels: >-
+    project=${project},
+    cluster=${cluster},
+    service=node-exporter_ma,
+    host=${host}
+
+rows:
+- title: CPU
+  panels:
+  - type: graph
+    title: 'CPU #0'
+    queries:
+    - params: { labels: 'name=node_cpu_seconds_total, cpu=0' }
+      groupByTime: { max: default }
+      select: { non_negative_derivative: [] }
+  - type: graph
+    title: 'CPU #1'
+    queries:
+    - params: { labels: 'name=node_cpu_seconds_total, cpu=1' }
+      groupByTime: { max: default }
+      select: { non_negative_derivative: [] }
+  - type: graph
+    title: Context switches
+    queries:
+    - params: { labels: 'name=node_context_switches_total' }
+      groupByTime: { max: default }
+      select: { non_negative_derivative: [] }
+
+- title: Memory
+  panels:
+  - type: graph
+    title: Slab Memory
+    yAxes: [{format: bytes}]
+    queries:
+    - params: { labels: 'name=node_memory_Slab_bytes' }
+      groupByTime: { max: default }
+      select: { alias: "slab" }
+  - type: graph
+    title: Cached
+    yAxes: [{format: bytes}]
+    queries:
+    - params: { labels: 'name=node_memory_Cached_bytes' }
+      groupByTime: { max: default }
+      select: { alias: "slab" }
+  - type: graph
+    title: MemAvailable
+    yAxes: [{format: bytes}]
+    queries:
+    - params: { labels: 'name=node_memory_MemAvailable_bytes' }
+      groupByTime: { max: default }
+      select: { alias: "available" }
+  - type: graph
+    title: Major page faults
+    queries:
+    - params: { labels: 'name=node_vmstat_pgmajfault' }
+      groupByTime: { max: default }
+      select: { non_negative_derivative: [] }
+
+- title: Network
+  panels:
+  - type: graph
+    title: traffic receive
+    yAxes: [{format: binBps}]
+    queries:
+    - params: { labels: 'name=node_network_receive_bytes_total' }
+      groupByTime: { max: default }
+      select: { non_negative_derivative: [] }
+  - type: graph
+    title: traffic transmit
+    yAxes: [{format: binBps}]
+    queries:
+    - params: { labels: 'name=node_network_transmit_bytes_total' }
+      groupByTime: { max: default }
+      select: { non_negative_derivative: [] }
+
+
+- title: Disks
+  panels:
+  - type: graph
+    title: Boot disk ops
+    queries:
+    - params: { labels: 'name=node_disk_reads_completed_total, device=vda' }
+      groupByTime: { max: default }
+      select: { non_negative_derivative: [], alias: read }
+    - params: { labels: 'name=node_disk_writes_completed_total, device=vda' }
+      groupByTime: { max: default }
+      select: { non_negative_derivative: [], alias: write }
+  - type: graph
+    title: 2nd disk ops
+    queries:
+    - params: { labels: 'name=node_disk_reads_completed_total, device=vdb' }
+      groupByTime: { max: default }
+      select: { non_negative_derivative: [], alias: read }
+    - params: { labels: 'name=node_disk_writes_completed_total, device=vdb' }
+      groupByTime: { max: default }
+      select: { non_negative_derivative: [], alias: write }
+
+  - type: graph
+    title: Boot disk IO time
+    queries:
+    - params: { labels: 'name=node_disk_io_time_seconds_total, device=vda' }
+      groupByTime: { max: default }
+      select: { non_negative_derivative: [] }
+  - type: graph
+    title: 2nd disk IO time
+    queries:
+    - params: { labels: 'name=node_disk_io_time_seconds_total, device=vdb' }
+      groupByTime: { max: default }
+      select: { non_negative_derivative: [] }
+
+
+  - type: graph
+    title: Boot disk written bytes vda
+    yAxes: [{format: binBps}]
+    queries:
+    - params: { labels: 'name=node_disk_written_bytes_total, device=vda' }
+      groupByTime: { max: default }
+      select: { non_negative_derivative: [], alias: write }
+  - type: graph
+    title: 2nd disk written bytes vda
+    yAxes: [{format: binBps}]
+    queries:
+    - params: { labels: 'name=node_disk_written_bytes_total, device=vdb' }
+      groupByTime: { max: default }
+      select: { non_negative_derivative: [], alias: write }
+
+  - type: graph
+    title: Boot disk bytes available
+    yAxes: [{ format: bytes }]
+    queries:
+    - params: { labels: 'name=node_filesystem_avail_bytes, mountpoint=/' }
+      groupByTime: { max: default }
+
+  - type: graph
+    title: /var/log/fluent bytes available
+    yAxes: [{ format: bytes }]
+    queries:
+    - params: { labels: 'name=node_filesystem_avail_bytes, mountpoint=/var/log/fluent' }
+      groupByTime: { max: default }
+
+
+  - type: graph
+    title: File descriptors
+    queries:
+    - params: { labels: 'name=node_filefd_allocated' }
+      groupByTime: { max: default }
+
+
+
+- title: Envoy
+  panels:
+  - type: graph
+    title: Downstream RPS
+    yAxes: [{ decimals: 0, format: short, min: 0 }]
+    queries:
+    - params: { labels: 'service=api_envoy_tags_ma, name=alb_http_downstream_rq_total' }
+      groupByTime: { max: default }
+      select: { non_negative_derivative: [] }
+
+  - type: graph
+    title: Active HC network failure
+    queries:
+    - params: { labels: 'service=api_envoy_tags_ma, name=alb_network_failure' }
+      groupByTime: { max: default }
+      select: { diff: [] }
+

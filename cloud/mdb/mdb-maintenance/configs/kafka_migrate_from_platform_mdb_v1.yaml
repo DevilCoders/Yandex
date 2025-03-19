@@ -1,0 +1,35 @@
+info: Migrate Kafka hosts from deprecated platform Intel Broadwell
+supports_offline: true
+clusters_selection:
+  db: >-
+    SELECT cid
+      FROM dbaas.hosts h
+        JOIN dbaas.subclusters sc USING (subcid)
+        JOIN dbaas.clusters c USING (cid)
+        JOIN dbaas.flavors f ON h.flavor=f.id
+      WHERE c.type='kafka_cluster' AND status IN ('RUNNING', 'STOPPED')
+      AND f.platform_id='mdb-v1'
+pillar_change: >-
+  UPDATE dbaas.hosts h SET flavor = v2_flavors.id
+  FROM (
+    SELECT id FROM dbaas.flavors
+      WHERE name IN
+        (
+          SELECT DISTINCT 's2.' || SPLIT_PART(f.name, 's1.', 2) AS name
+          FROM dbaas.hosts h
+          JOIN dbaas.subclusters sc USING (subcid)
+          JOIN dbaas.clusters c USING (cid)
+          JOIN dbaas.flavors f ON h.flavor=f.id
+          WHERE c.cid=:cid AND sc.name='kafka_subcluster'
+        )
+  ) as v2_flavors
+  WHERE h.subcid IN (SELECT subcid FROM dbaas.subclusters WHERE cid=:cid AND name='kafka_subcluster')
+worker:
+  operation_type: kafka_cluster_modify
+  task_type: kafka_cluster_modify
+  task_args:
+    restart: true
+    run_highstate: true
+  timeout: 4h
+max_delay_days: 14
+min_days: 7

@@ -1,0 +1,124 @@
+[[tests]]
+name = "ClickHouse happy path"
+
+[[tests.outputs]]
+extract_from = "clickhouse_parsed"
+
+[[tests.outputs.conditions]]
+type = "vrl"
+source = """
+assert!(.timestamp == to_timestamp!(\"2021-11-22T16:11:00.005152Z\"))
+assert!(.thread == \"4506\")
+assert!(.query_id == \"5ed78cfc-cc9b-4d94-b30d-99eedffd9622\")
+assert!(.severity == \"Debug\")
+assert!(.component == \"executeQuery\")
+assert!(.message == \"[ 4506 ] {5ed78cfc-cc9b-4d94-b30d-99eedffd9622} <Debug> executeQuery: (from [::ffff:127.0.0.1]:50094) SELECT metric, value FROM system.metrics\")
+assert!(!exists(.context.unparsed))
+assert!(!exists(.file))
+assert!(.context.file == \"test-file\")
+assert!(!exists(.host))
+assert!(.context.host == \"test-host\")
+"""
+
+[[tests.inputs]]
+type = "log"
+insert_at = "clickhouse_parsed"
+
+[tests.inputs.log_fields]
+message = "2021.11.22 16:11:00.005152 [ 4506 ] {5ed78cfc-cc9b-4d94-b30d-99eedffd9622} <Debug> executeQuery: (from [::ffff:127.0.0.1]:50094) SELECT metric, value FROM system.metrics"
+file = "test-file"
+host = "test-host"
+
+[[tests]]
+name = "ClickHouse timestamp now() fallback"
+
+[[tests.outputs]]
+extract_from = "clickhouse_parsed"
+
+[[tests.outputs.conditions]]
+type = "vrl"
+source = """
+assert!(.thread == \"4506\")
+assert!(.query_id == \"5ed78cfc-cc9b-4d94-b30d-99eedffd9622\")
+assert!(.severity == \"Debug\")
+assert!(.component == \"executeQuery\")
+assert!(.message == \"[ 4506 ] {5ed78cfc-cc9b-4d94-b30d-99eedffd9622} <Debug> executeQuery: (from [::ffff:127.0.0.1]:50094) SELECT metric, value FROM system.metrics\")
+assert!(!exists(.context.unparsed))
+assert!(!exists(.file))
+assert!(.context.file == \"test-file\")
+assert!(!exists(.host))
+assert!(.context.host == \"test-host\")
+"""
+
+[[tests.inputs]]
+type = "log"
+insert_at = "clickhouse_parsed"
+
+[tests.inputs.log_fields]
+message = "3021.11.22 16:11:00.005152 [ 4506 ] {5ed78cfc-cc9b-4d94-b30d-99eedffd9622} <Debug> executeQuery: (from [::ffff:127.0.0.1]:50094) SELECT metric, value FROM system.metrics"
+file = "test-file"
+host = "test-host"
+
+[[tests]]
+name = "ClickHouse parse error"
+
+[[tests.outputs]]
+extract_from = "clickhouse_parsed"
+
+[[tests.outputs.conditions]]
+type = "vrl"
+source = """
+assert!(.message == \"20221.11.22 16:11:00.005152 [ 4506 ] {5ed78cfc-cc9b-4d94-b30d-99eedffd9622} <Debug> executeQuery: (from [::ffff:127.0.0.1]:50094) SELECT metric, value FROM system.metrics\")
+assert!(.severity == \"Error\")
+assert!(exists(.context.unparsed))
+assert!(.context.unparsed)
+"""
+
+[[tests.inputs]]
+type = "log"
+insert_at = "clickhouse_parsed"
+
+[tests.inputs.log_fields]
+message = "20221.11.22 16:11:00.005152 [ 4506 ] {5ed78cfc-cc9b-4d94-b30d-99eedffd9622} <Debug> executeQuery: (from [::ffff:127.0.0.1]:50094) SELECT metric, value FROM system.metrics"
+
+[[tests]]
+name = "clickhouse_presink_hook happy path"
+
+[[tests.outputs]]
+extract_from = "clickhouse_presink_hook"
+
+[[tests.outputs.conditions]]
+type = "vrl"
+source = """
+assert!(.message == \"test message\")
+assert!(exists(.context.region))
+assert!(exists(.context.cid))
+"""
+
+[[tests.inputs]]
+type = "log"
+insert_at = "clickhouse_presink_hook"
+
+[tests.inputs.log_fields]
+message = "test message"
+
+[[tests]]
+name = "ClickHouse map log level"
+
+[[tests.outputs]]
+extract_from = "clickhouse_parsed"
+
+[[tests.outputs.conditions]]
+type = "vrl"
+source = """
+assert!(.severity == \"Info\")
+"""
+
+[[tests.inputs]]
+type = "log"
+insert_at = "clickhouse_parsed"
+
+[tests.inputs.log_fields]
+message = "2021.11.22 16:11:00.005152 [ 4506 ] {5ed78cfc-cc9b-4d94-b30d-99eedffd9622} <Information> comp: msg"
+file = "test-file"
+host = "test-host"

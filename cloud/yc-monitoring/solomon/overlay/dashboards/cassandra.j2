@@ -1,0 +1,35 @@
+{% extends "../../base/dashboard.j2" %}
+
+{% set cluster = "cloud_" + env + "_oct" %}
+
+{% macro render_row_azs(title, query, service="oct_cassandra") %}
+{ "panels": [
+    {% for az in zones_by_env[env] %}
+        {{ render_panel(title + " @ " + az.prefix|upper, cluster, service, query + "&host=" + oct_head_selector(az.prefix)) }}
+        {% if not loop.last %},{% endif %}
+    {% endfor %}
+]}
+{% endmacro %}
+
+{% block rows %}
+[
+    {{ render_row_azs(title="Scanned Tombstones (Max)", query="l.keyspace=config_db_uuid&l.metric=ScannedTombstones&l.param=Max&graph=auto&e=&stack=false&min=0") }},
+    {{ render_row_azs(title="Objects Count", service="oct_confdb_objects", query="l.metric=*&graph=auto&stack=false&downsampling=byInterval&grid=30m") }},
+    {{ render_row_azs(title="Dropped Messages", query="l.metric=DroppedMessages&l.type=*&graph=auto&stack=false&transform=differentiate") }},
+    {{ render_row_azs(title="Memory Usage", query="metric=Memory&param=used&type=*&graph=auto&stack=false") }},
+
+    {{ render_row_azs(title="Read Rate", query="keyspace=config_db_uuid&metric=Latency&param=ReadLatency_OneMinuteRate&graph=auto&stack=false") }},
+    {{ render_row_azs(title="Read Latency (Max)", query="l.keyspace=config_db_uuid&l.metric=Latency&l.param=ReadLatency_Max&graph=auto&stack=false") }},
+    {{ render_row_azs(title="Read Latency (99.9 percentile)", query="keyspace=config_db_uuid&metric=Latency&param=ReadLatency_999thPercentile&graph=auto&stack=false") }},
+    {{ render_row_azs(title="Read Latency (99 percentile)", query="keyspace=config_db_uuid&metric=Latency&param=ReadLatency_99thPercentile&graph=auto&stack=false") }},
+
+    {{ render_row_azs(title="Write Rate", query="keyspace=config_db_uuid&metric=Latency&param=WriteLatency_OneMinuteRate&graph=auto&stack=false") }},
+    {{ render_row_azs(title="Write Latency (Max)", query="l.keyspace=config_db_uuid&l.metric=Latency&l.param=WriteLatency_Max&graph=auto&stack=false") }},
+    {{ render_row_azs(title="Write Latency (99.9 percentile)", query="keyspace=config_db_uuid&metric=Latency&param=WriteLatency_999thPercentile&graph=auto&stack=false") }},
+    {{ render_row_azs(title="Write Latency (99 percentile)", query="keyspace=config_db_uuid&metric=Latency&param=WriteLatency_99thPercentile&graph=auto&stack=false") }},
+
+    {{ render_row_azs(title="Coordinator Read Latency (99 percentile)", query="metric=read_latency_p99&graph=auto&stack=false&min=0") }},
+    {{ render_row_azs(title="Coordinator Write Latency (99 percentile)", query="metric=write_latency_p99&graph=auto&stack=false&min=0") }},
+    {{ render_row_azs(title="Coordinator Range scan Latency (99 percentile)", query="metric=range_latency_p99&graph=auto&stack=false&min=0") }}
+]
+{% endblock %}

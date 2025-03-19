@@ -1,0 +1,21 @@
+SELECT
+    dom0,
+    fqdn,
+    cluster_name,
+    cpu_guarantee,
+    cpu_limit,
+    memory_guarantee,
+    memory_limit,
+    hugetlb_limit,
+    net_guarantee,
+    net_limit,
+    io_limit,
+    extra_properties,
+    bootstrap_cmd,
+    generation,
+    project_id,
+    managing_project_id
+FROM
+    mdb.containers
+WHERE
+    fqdn = %(fqdn)s

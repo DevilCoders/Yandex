@@ -1,0 +1,12 @@
+GRANT USAGE ON SCHEMA dbaas TO mdb_report;
+GRANT SELECT ON TABLE dbaas.clusters TO mdb_report;
+GRANT SELECT ON TABLE dbaas.subclusters TO mdb_report;
+GRANT SELECT ON TABLE dbaas.hosts TO mdb_report;
+GRANT SELECT ON TABLE dbaas.pillar TO mdb_report;
+GRANT SELECT ON TABLE dbaas.flavors TO mdb_report;
+GRANT SELECT ON TABLE dbaas.disk_type TO mdb_report;
+GRANT SELECT ON TABLE dbaas.folders TO mdb_report;
+GRANT SELECT ON TABLE dbaas.clouds TO mdb_report;
+GRANT SELECT ON TABLE dbaas.worker_queue TO mdb_report;
+GRANT USAGE ON SCHEMA code TO mdb_report;
+GRANT EXECUTE ON FUNCTION code.managed(dbaas.clusters) TO mdb_report;

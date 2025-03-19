@@ -1,0 +1,212 @@
+solomon:
+  endpoints:
+    main: https://solomon.yandex-team.ru                      # Обще-Яндексовая инсталляция
+    prod: https://solomon.cloud.yandex-team.ru                # Инсталляция в Облаке PROD
+    preprod: https://solomon.cloud-preprod.yandex-team.ru     # Инсталляция в Облаке PRE-PROD
+    israel: https://solomon.yandexcloud.co.il                 # Инсталляция в Облаке ISRAEL
+
+  # Если инсталляция соломона не была указана с помощью опции -s / --solomon,
+  # то работа будет происходить с этой инсталляцией Solomon.
+  default: main
+
+  api_path: "/api/v2/projects"
+  admin_path: "/admin/projects/{{ project_id }}/{objects_type}/{entity_id}"
+
+  # Список полей, которые не надо учитывать для вычисления диффа
+  # между новым состоянием конфига, который вы хотите применить,
+  # и тем, что уже применен в соломоне.
+  dynamic_fields:
+    - createdBy
+    - createdAt
+    - version
+    - updatedAt
+    - updatedBy
+    - hosts
+    - sensorNameLabel
+    - numId
+    - generatedId
+    - quotas
+    - hostGroupsCount
+    - severity
+    - monitoringModel
+
+# Инсталляции (стенды) Яндекс.Облака.
+#
+# Параметр allowed_solomons нужен для того, чтобы случайно не создать "мусор"
+# в неподходящем Solomon-е (конфигурацию, которая не будет работать).
+#
+# Метрики Solomon не попадают под PCI DSS и могут загружаться из PROD Облака в MAIN Solomon (обще-Яндексовый)
+# https://wiki.yandex-team.ru/cloud/security/compliance/pci-dss/datatypes/
+#
+# Удобно придерживаться следующей концепции:
+#   PROD, PRE-PROD, TESTING, HW-LABs  => MAIN Solomon (основное место хранения) + PROD Solomon (как бэкап, опционально)
+#
+# Есть исключения, например,
+# - kikimr метрики собираются в MAIN Solomon, в VPC-API их используют на дэшбордах, получается не удобно
+# - l7 метрики собираются в PROD Solomon (с PROD, PRE-PROD), в VPC-API есть алерты на них, могут работать только в PROD
+env:
+  - { name: prod,            allowed_solomons: [main, prod] }
+  - { name: preprod,         allowed_solomons: [main, prod, preprod] }
+  - { name: testing,         allowed_solomons: [main, preprod] }
+  - { name: israel,          allowed_solomons: [israel] }
+    # Второстепенные окружения, по которым обновляем конфигурацию время от времени
+  - { name: hw-cgw-ci-lab,   allowed_solomons: [main, preprod] }
+  - { name: hw-cgw-dev-lab,  allowed_solomons: [main, preprod] }
+  - { name: hw-load-lab,     allowed_solomons: [main, preprod] }
+  - { name: hw-mellanox-lab, allowed_solomons: [main, preprod] }
+  - { name: hw-6dxlx-lab,    allowed_solomons: [main, preprod] }
+  - { name: hw3-lab,         allowed_solomons: [main, preprod] }
+  - { name: hw4-lab,         allowed_solomons: [main, preprod] }
+  - { name: hw6-lab,         allowed_solomons: [main, preprod] }
+  - { name: hw7-lab,         allowed_solomons: [main, preprod] }
+  - { name: hw9-lab,         allowed_solomons: [main, preprod] }
+  - { name: hw10-lab,        allowed_solomons: [main, preprod] }
+  - { name: hw11-lab,        allowed_solomons: [main, preprod] }
+
+# Переменные глобального контекста можно использовать во всех Jinja-шаблонах
+# (и в yaml-конфигах, и в j2-шаблонах Solomon-объектов).
+global_context:
+  project_id: "{% if solomon == 'israel' %}yc.yandexcloud.serviceCloud{% else %}yandexcloud{% endif %}"
+  no_project_id_prefix: {{ solomon in ('israel', ) }} # Please use short IDs for all new clusters
+  # We use solomon's project for building alerts i.e. about solomon quotas
+  solomon_project_id: "{% if solomon == 'israel' %}yc.monitoring.cloud{% else %}solomon{% endif %}"
+  # Критерии для фильтрации метрик по AZ (см. base_dashboard.j2)
+  # FIXME:
+  #   CLOUD-26685: Common SVM naming on HW-LABs
+  #   CLOUD-27374: send zone name as label for all metrics
+  # Note 1 (@xelez):
+  # prefix - это префикс используемый в именах железных машин и виртуалок
+  # Непосредственно имя дц почти нигде не используется кроме пары исключений с prod/preprod
+  # Note 2 (@xelez):
+  # Скорее всего в будущем стоит отдельно добавить vm_prefix и hw_prefix либо всё же прийти к единой схеме наименования машин
+  zones_by_env:
+    prod: &ru-central1-3az
+      - {zone: ru-central1-a, prefix: vla}
+      - {zone: ru-central1-b, prefix: sas}
+      - {zone: ru-central1-c, prefix: myt}
+    preprod: *ru-central1-3az
+    testing: *ru-central1-3az
+    israel:
+      - {zone: il1-a, prefix: il1-a}
+    hw-cgw-ci-lab:
+      - {zone: ru-central1-c, prefix: ""}
+    hw-cgw-dev-lab:
+      - {zone: ru-central1-b, prefix: ""}
+    hw-load-lab:
+      - {zone: ru-central1-a, prefix: vla}
+    hw-mellanox-lab:
+      - {zone: ru-central1-c, prefix: ""}
+    hw-6dxlx-lab:
+      - {zone: ru-central1-a, prefix: ""}
+    #hw1-lab, hw2-lab don't exist anymore
+    hw3-lab:
+      - {zone: ru-central1-b, prefix: ""}
+    hw4-lab:
+      - {zone: ru-central1-a, prefix: ""}
+    #hw5-lab doesn't exist anymore
+    hw6-lab: # 3 железных машины в разных дц, но одна зона
+      - {zone: ru-central1-a, prefix: ""}
+    hw7-lab:
+      - {zone: ru-central1-c, prefix: ""}
+    #hw8-lab doesn't exist anymore
+    hw9-lab:
+      - {zone: ru-central1-a, prefix: ""}
+    hw10-lab:
+      - {zone: ru-lab1-a, prefix: "hw10a-"}
+      - {zone: ru-lab1-b, prefix: "hw10b-"}
+      - {zone: ru-lab1-c, prefix: "hw10c-"}
+    hw11-lab:
+      - {zone: ru-lab1-a, prefix: vla}
+      - {zone: ru-lab1-b, prefix: sas}
+      - {zone: ru-lab1-c, prefix: myt}
+  # используется только для e2e-ylb, в качестве ключа используется prefix выше
+  dc_zone_map:
+    vla: a
+    sas: b
+    myt: c
+
+  salt_by_bootstrap_role:
+    cgw: cloudgate
+    cgw-ipv4: cloudgate
+    cgw-ipv6: cloudgate
+    cgw-dc: cgw-dc
+    cgw-nat: cgw-nat
+    loadbalancer-node: loadbalancer-node
+    loadbalancer-ctrl: cgw_highstate
+    healthcheck-node: cgw_highstate
+    healthcheck-ctrl: cgw_highstate
+    e2e-launcher: cgw_highstate
+
+  # Суффиксы для формирования полного FQDN (см. base_alert.j2)
+  # FIXME:  CLOUD-27191: Use FQDN in 'host' Solomon label
+  svm_domains:
+    prod: "svc.cloud.yandex.net"
+    preprod: "svc.cloud-preprod.yandex.net"
+    testing: "svc.cloud-testing.yandex.net"
+    israel: "svc.yandexcloud.co.il"
+    hw-cgw-ci-lab: "svc.hw-cgw-ci.cloud-lab.yandex.net"
+    hw-cgw-dev-lab: "svc.hw-cgw-dev.cloud-lab.yandex.net"
+    hw-load-lab: "svc.hw-load.cloud-lab.yandex.net"
+    hw-mellanox-lab: "svc.mellanox.cloud-lab.yandex.net"
+    hw-6dxlx-lab: "svc.6dxlx.cloud-lab.yandex.net"
+    hw3-lab: "svc.hw3.cloud-lab.yandex.net"
+    hw4-lab: "svc.hw4.cloud-lab.yandex.net"
+    hw6-lab: "svc.hw6.cloud-lab.yandex.net"
+    hw7-lab: "svc.hw7.cloud-lab.yandex.net"
+    hw9-lab: "svc.hw9.cloud-lab.yandex.net"
+    hw10-lab: "svc.hw10.cloud-lab.yandex.net"
+    hw11-lab: "svc.hw11.cloud-lab.yandex.net"
+  # Суффиксы для форматирования полного FQDN железных машин
+  hw_domains:
+    default: "cloud.yandex.net"
+    israel: "infra.yandexcloud.co.il"
+
+  # Переопределение имен для окружений ylb
+  ylb_name_overrides:
+    hw-cgw-ci-lab: "cgw-ci"
+    hw-cgw-dev-lab: "cgw-dev"
+    hw-6dxlx-lab: "6dxlx"
+
+  conductor_group_prefix_overrides: {}
+
+  kubelet_services:
+    - yc-k8s-metadata-plugin
+    - kubelet
+
+  kubelet_clusters:
+    - bootstrap-hw
+    - head
+    - vpc-api-k8s
+    - nbs-control-k8s
+    - ylb
+
+  kubelet_hw_services:
+    - yc-k8s-ta-plugin
+    - kubelet
+
+  kubelet_hw_clusters:
+    - compute
+
+  locallb_clusters:
+    - local-proxy
+    - bootstrap
+    - head
+    - compute
+
+  cloud_dns_env_names:
+    prod: "PROD"
+    preprod: "PREPROD"
+    testing: "TESTING"
+    israel: "ISRAEL"
+    hw-cgw-ci-lab: "HWLAB"
+    hw-cgw-dev-lab: "HWLAB"
+    hw-load-lab: "HWLAB"
+    hw-mellanox-lab: "HWLAB"
+    hw-6dxlx-lab: "HWLAB"
+    hw3-lab: "HWLAB"
+    hw4-lab: "HWLAB"
+    hw6-lab: "HWLAB"
+    hw7-lab: "HWLAB"
+    hw9-lab: "HWLAB"
+    hw10-lab: "HWLAB"
+    hw11-lab: "HWLAB"

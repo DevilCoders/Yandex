@@ -1,0 +1,238 @@
+uid: ycm-basics
+refresh: 1m
+title: YC Certificate Manager
+
+tags: [ 'yc-cert-manager' ]
+
+variables:
+  ui:
+    !include include/_datasources.yaml
+    !include include/_projects.yaml
+    !include include/_clusters.yaml
+    aggregation: { values: [15s, 1m, 5m, 10m, 15m, 30m, 1h, 24h] }
+  replacement:
+    !include ../include/errors.yaml
+
+links:
+  - { title: 'Dashboards', tags: ['yc-cert-manager'] }
+
+graphDefaults:
+  datasource: '${datasource}'
+  width: 8
+  height: 8
+
+queryDefaults: { labels: 'project=${project}, cluster=${cluster}, service=core', defaultTimeWindow: '${aggregation}' }
+
+rows:
+  - title: 'Certificates Usage'
+    panels:
+      - type: graph
+        title: Certificates Count
+        display: { decimals: 0, stack: true, nulls: connected }
+        yAxes: [{ decimals: 0, min: 0 }]
+        queries:
+          - params: { labels: 'name=certificates_count' }
+            groupByTime: { max: default }
+            select: { alias: 'certificates count' }
+      - type: graph
+        title: Clouds Count
+        display: { decimals: 0, stack: true, nulls: connected }
+        yAxes: [{ decimals: 0, min: 0 }]
+        queries:
+          - params: { labels: 'name=certificates_clouds_count' }
+            groupByTime: { max: default }
+            select: { alias: 'clouds count' }
+      - type: graph
+        title: 'Used in S3 buckets'
+        display: { decimals: 0, stack: true, nulls: connected }
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=certificates_count_used_by_s3_bucket' }
+            groupByTime: { max: default }
+            select: { alias: 'certificates count' }
+
+  - title: 'Domains Usage'
+    panels:
+      - type: graph
+        title: Domains Count
+        display: { decimals: 0, stack: true, nulls: connected }
+        yAxes: [{ decimals: 0, min: 0 }]
+        queries:
+          - params: { labels: 'name=domains_count' }
+            groupByTime: { max: default }
+            select: { alias: 'domains count' }
+      - type: graph
+        title: Clouds Count
+        display: { decimals: 0, stack: true, nulls: connected }
+        yAxes: [{ decimals: 0, min: 0 }]
+        queries:
+          - params: { labels: 'name=domains_clouds_count' }
+            groupByTime: { max: default }
+            select: { alias: 'clouds count' }
+      - type: graph
+        title: 'Used in API Gateway'
+        display: { decimals: 0, stack: true, nulls: connected }
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=domains_count_used_by_api_gateway' }
+            groupByTime: { max: default }
+            select: { alias: 'domains count' }
+
+  - title: Certificates Operations
+    queryDefaults: { labels: 'host=cluster' }
+    panels:
+      - type: graph
+        title: Certificates Create Operations Count
+        display: { decimals: 0, lineModes: bars, legend: false }
+        yAxes: [{ decimals: 0, min: 0 }]
+        queries:
+          - params: { labels: 'name=certificates_create_operations' }
+            groupByTime: { max: default }
+            select: { diff: [], drop_below: '0', alias: 'op count' }
+
+      - type: graph
+        title: Certificates Update Operations Count
+        display: { decimals: 0, lineModes: bars, legend: false }
+        yAxes: [{ decimals: 0, min: 0 }]
+        queries:
+          - params: { labels: 'name=certificates_update_operations' }
+            groupByTime: { max: default }
+            select: { diff: [], drop_below: '0', alias: 'op count' }
+
+      - type: graph
+        title: Certificates Delete Operations Count
+        display: { decimals: 0, lineModes: bars, legend: false }
+        yAxes: [{ decimals: 0, min: 0 }]
+        queries:
+          - params: { labels: 'name=certificates_delete_operations' }
+            groupByTime: { max: default }
+            select: { diff: [], drop_below: '0', alias: 'op count' }
+
+  - title: Domains Operations
+    queryDefaults: { labels: 'host=cluster' }
+    panels:
+      - type: graph
+        title: Domains Create Operations Count
+        display: { decimals: 0, lineModes: bars, legend: false }
+        yAxes: [{ decimals: 0, min: 0 }]
+        queries:
+          - params: { labels: 'name=domains_create_operations' }
+            groupByTime: { max: default }
+            select: { diff: [], drop_below: '0', alias: 'op count' }
+
+      - type: graph
+        title: Domains Update Operations Count
+        display: { decimals: 0, lineModes: bars, legend: false }
+        yAxes: [{ decimals: 0, min: 0 }]
+        queries:
+          - params: { labels: 'name=domains_update_operations' }
+            groupByTime: { max: default }
+            select: { diff: [], drop_below: '0', alias: 'op count' }
+
+      - type: graph
+        title: Domains Delete Operations Count
+        display: { decimals: 0, lineModes: bars, legend: false }
+        yAxes: [{ decimals: 0, min: 0 }]
+        queries:
+          - params: { labels: 'name=domains_delete_operations' }
+            groupByTime: { max: default }
+            select: { diff: [], drop_below: '0', alias: 'op count' }
+
+  - title: Data Plane API
+    drilldowns:
+      - uid: yc-cert-manager-host-dpl
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'dpl-myt-1',
+              'dpl-sas-1',
+              'dpl-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+
+    queryDefaults: { labels: 'host=cluster-dpl, app=certificate-manager-data-plane_server' }
+    panels:
+      - type: graph
+        templates: { name: rps, rate: rps }
+        title: 'API rps ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_requests, meter_type=count' }
+
+      - type: graph
+        templates: { name: errors }
+        title: 'API 4xx errors ($cluster)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, status=@4xx' }
+        draw: [{ alias: '4xx', color: '#147' }]
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        templates: { name: errors }
+        title: 'API 5xx errors ($cluster)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, status=@503' }
+          - params: { labels: 'name=grpc_statuses, status=@5xx' }
+        draw: [{ alias: '503', color: '#da7' }, { alias: '5xx', color: '#b20' }]
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        templates: { name: percentile, format: solomon, groupLines: true }
+        title: 'API response duration ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_durations' }
+        yAxes: [{ min: 0 }]
+
+  - title: Control Plane API
+    drilldowns:
+      - uid: yc-cert-manager-host-cpl
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'cpl-myt-1',
+              'cpl-sas-1',
+              'cpl-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+
+    queryDefaults: { labels: 'host=cluster-cpl, app=certificate-manager-control-plane_server' }
+    panels:
+      - type: graph
+        templates: { name: rps, rate: rps }
+        title: 'API rps ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_requests, meter_type=count' }
+
+      - type: graph
+        templates: { name: errors }
+        title: 'API 4xx errors ($cluster)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, status=@4xx' }
+        draw: [{ alias: '4xx', color: '#147', at: right }]
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        templates: { name: errors }
+        title: 'API 5xx errors ($cluster)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, status=@503' }
+          - params: { labels: 'name=grpc_statuses, status=@5xx' }
+        draw: [{ alias: '503', color: '#da7' }, { alias: '5xx', color: '#b20' }]
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        templates: { name: percentile, format: solomon, groupLines: true }
+        title: 'API response duration ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_durations' }
+        yAxes: [{ min: 0 }]
+

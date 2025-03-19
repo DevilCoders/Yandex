@@ -1,0 +1,74 @@
+{% extends "../../base/dashboard.j2" %}
+
+{% macro cgw_selector(az) -%}
+    cgw*{{ az }}*
+{%- endmacro %}
+
+{% macro cgw_nat_selector(az) -%}
+    cgw*nat*{{ az }}*
+{%- endmacro %}
+
+{% macro render_row_for_cluster_per_az(title, cluster, service, query, type) %}
+{ "panels": [
+    {% for az in zones_by_env[env] %}
+        {%- if type == "nat" -%}
+            {%- set host = cgw_nat_selector(az.prefix) -%}
+        {%- else -%}
+            {%- set host = cgw_selector(az.prefix) -%}
+        {%- endif -%}
+        {{ render_panel(title=title + " @ " + az.prefix|upper, cluster=cluster, service=service, query=query + "&l.host=" + host) }}
+        {% if not loop.last %},{% endif %}
+    {% endfor %}
+]}
+{% endmacro %}
+
+{% block rows %}
+[
+    {% set cloudgate_cluster = "cloud_" + env + "_cloudgate" %}
+    {{ render_row_for_cluster_per_az(title="Drops interface ipv4", cluster=cloudgate_cluster, service="interfaces",
+    query="node=*&name=drops_rate&stack=false&graph=auto") }},
+    {{ render_row_for_cluster_per_az(title="Drops interface ipv6", cluster=cloudgate_cluster, service="interfaces",
+    query="node=*&name=drops_rate&stack=false&graph=auto") }},
+
+    {% set ifaces = [("upstream", "EthernetUpstream*"), ("downstream", "EthernetDownstream*")] %}
+    {% for name, iface in ifaces %}
+        {{ render_row_for_cluster_per_az(title="Rx Packets interface " + name, cluster=cloudgate_cluster, service="interfaces",
+        query="node=*&l.name=rx_packets_rate&l.iface=" + iface + "hideNoData=true&l.worker=-&graph=auto") }},
+        {{ render_row_for_cluster_per_az(title="Tx Packets interface " + name, cluster=cloudgate_cluster, service="interfaces",
+        query="node=*&l.name=tx_packets_rate&l.iface=" + iface + "&hideNoData=true&l.worker=-&graph=auto") }},
+        {{ render_row_for_cluster_per_az(title="Out of buffer interface " + name, cluster=cloudgate_cluster, service="interfaces",
+        query="node=*&l.name=rx_miss&l.iface=" + iface + "&transform=differentiate&hideNoData=true&graph=auto") }},
+    {% endfor %}
+
+    {% for family in [
+        "IPv4",
+        "IPv4_MPLS",
+        "IPv4_VPN",
+        "IPv6",
+        "IPv6_MPLS",
+        "IPv6_VPN"
+    ] %}
+
+        {{ render_row_for_cluster_per_az(title="GRT for " + family, cluster=cloudgate_cluster, service="cloudgate",
+        query="l.plane=controlplane&l.metric=paths&l.family=" + family +"&l.table=GRT&stack=false&graph=auto") }},
+        {{ render_row_for_cluster_per_az(title="Bgp routes for " + family, cluster=cloudgate_cluster, service="cloudgate",
+        query="l.plane=controlplane&l.metric=paths&l.family=" + family +"&stack=false&graph=auto") }},
+    {% endfor %}
+
+    {% for value in [
+        {'title': 'Rtt reflector', 'peer': '37.140.141.*'},
+        {'title': 'Rtt direct connect reflector', 'peer': '172.16.*'},
+        {'title': 'Rtt downstream', 'peer': '10.0.*'},
+        {'title': 'Rtt border', 'peer': '10.255.254.1'}] %}
+
+        {{ render_row_for_cluster_per_az(title=value["title"], cluster=cloudgate_cluster, service="cloudgate",
+        query="l.plane=controlplane&l.metric=rtt&l.host=*&l.peer=" + value["peer"] + "&stack=false&graph=auto") }},
+    {% endfor %}
+
+    {# For nat only #}
+    {{ render_row_for_cluster_per_az("Egress NAT sessions", "cloud_" + env + "_cloudgate", "vsop",
+    "name=dynamic-sessions&graph=" + project_id + "-vpc-" + env + "-egress-nat-sessions") }},
+    {{ render_row_for_cluster_per_az("Created egress NAT sessions", "cloud_" + env + "_cloudgate", "vsop",
+    "name=dynamic-created&graph=" + project_id + "-vpc-" + env + "-egress-nat-sessions") }}
+]
+{% endblock %}

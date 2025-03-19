@@ -1,0 +1,28 @@
+info: Update Clickhouse cluster to 19.14.7.15
+disabled: true
+clusters_selection:
+  db: >-
+    SELECT cid
+      FROM (
+      SELECT sc.cid,
+             CAST(string_to_array(p.value #>> '{data,clickhouse,ch_version}', '.') AS int[]) AS version_nums
+        FROM dbaas.subclusters sc
+        JOIN dbaas.pillar p USING(subcid)
+       WHERE sc.roles && '{clickhouse_cluster}') x
+    WHERE version_nums > ARRAY[19, 14]
+      AND version_nums < ARRAY[19, 14, 7, 15]
+pillar_change: >-
+  UPDATE dbaas.pillar p
+     SET value = jsonb_set(value, '{data,clickhouse,ch_version}', to_jsonb(CAST('19.14.7.15' AS text)))
+    FROM dbaas.subclusters sc
+   WHERE p.subcid=sc.subcid
+     AND sc.cid=:cid
+     AND sc.roles && '{clickhouse_cluster}'
+worker:
+  operation_type: clickhouse_cluster_modify
+  task_type: clickhouse_cluster_maintenance
+  task_args:
+    restart: true
+  timeout: 4h
+max_delay_days: 21
+min_days: 7

@@ -1,0 +1,51 @@
+{% extends "base_alert.j2" %}
+
+{% set service = "hc-failures" %}
+
+
+{% set hc_failures = 'envoy_cluster_*_health_check_failure'%}
+{% set hc_success = 'envoy_cluster_*_health_check_success' %}
+
+{% macro prog() %}
+let ts_fails = series_sum({
+    cluster='cloud_{{env}}_{{ bootstrap_base_role }}_{{ az }}'
+    ,sensor='{{ hc_failures }}'
+    ,bootstrap_base_role='{{ bootstrap_base_role }}'
+    ,host='*'
+});
+let ts_success = series_sum({
+    cluster='cloud_{{env}}_{{ bootstrap_base_role }}_{{ az }}'
+    ,sensor='{{ hc_success }}'
+    ,bootstrap_base_role='{{ bootstrap_base_role }}'
+    ,host='*'
+});
+
+// It's ok, just no errors for current host for a while
+ok_if(count(ts_fails) == 0);
+alarm_if(count(ts_success) == 0);
+
+let error_rate = max(moving_avg(ts_fails/ts_success, 5m));
+let is_red = error_rate >= 0.5;
+let error_rate_str = to_fixed(error_rate, 1);
+alarm_if(is_red);
+let is_yellow = error_rate > 0.2;
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+    "name": "LocalLb {{ bootstrap_base_role }} HC failures {{env}}@{{az}}",
+    "annotations": {
+        "error_rate": "[[ expression.error_rate_str ]]",
+        "description": "LocalLB HC errors: [[ expression.error_rate_str ]]",
+        "host": "{{ svm_fqdn() }}",
+        "service": "{{ service }}-[[ labels.envoy_cluster_name ]]",
+        "dashboard": "{{ local_lb_dashboard(bootstrap_base_role) }}",
+        "wiki": "{{ wiki_url(service) }}" 
+    },
+    "type": {{ type_expression() }},
+    "description": "",
+    "groupByLabels": [
+        "host",
+        "envoy_cluster_name"
+    ]
+{% endblock %}

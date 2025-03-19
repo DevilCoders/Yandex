@@ -1,0 +1,451 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.mdb.clickhouse.v1.config;
+
+import "google/protobuf/wrappers.proto";
+import "yandex/cloud/priv/validation.proto";
+import "yandex/cloud/priv/sensitive.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/mdb/clickhouse/v1/config;clickhouse";
+
+// Configuration options of ClickHouse DBMS. The options and its structure reflects
+// ClickHouse configuration files which detailed description is available in
+// [ClickHouse documentation](https://clickhouse.yandex/docs/ru/operations/server_settings/settings/).
+message ClickhouseConfig {
+  enum LogLevel {
+    LOG_LEVEL_UNSPECIFIED = 0;
+    TRACE = 1;
+    DEBUG = 2;
+    INFORMATION = 3;
+    WARNING = 4;
+    ERROR = 5;
+  }
+
+  message MergeTree {
+    google.protobuf.Int64Value replicated_deduplication_window = 1;
+
+    google.protobuf.Int64Value replicated_deduplication_window_seconds = 2;
+
+    google.protobuf.Int64Value parts_to_delay_insert = 3;
+
+    google.protobuf.Int64Value parts_to_throw_insert = 4;
+
+    google.protobuf.Int64Value max_replicated_merges_in_queue = 5;
+
+    google.protobuf.Int64Value number_of_free_entries_in_pool_to_lower_max_size_of_merge = 6;
+
+    google.protobuf.Int64Value max_bytes_to_merge_at_min_space_in_pool = 7;
+
+    google.protobuf.Int64Value max_bytes_to_merge_at_max_space_in_pool = 8;
+
+    // Private fields.
+    google.protobuf.BoolValue enable_mixed_granularity_parts = 1000;
+  }
+
+  message Kafka {
+    enum SecurityProtocol {
+      SECURITY_PROTOCOL_UNSPECIFIED = 0;
+      SECURITY_PROTOCOL_PLAINTEXT = 1;
+      SECURITY_PROTOCOL_SSL = 2;
+      SECURITY_PROTOCOL_SASL_PLAINTEXT = 3;
+      SECURITY_PROTOCOL_SASL_SSL = 4;
+    }
+
+    enum SaslMechanism {
+      SASL_MECHANISM_UNSPECIFIED = 0;
+      SASL_MECHANISM_GSSAPI = 1;
+      SASL_MECHANISM_PLAIN = 2;
+      SASL_MECHANISM_SCRAM_SHA_256 = 3;
+      SASL_MECHANISM_SCRAM_SHA_512 = 4;
+    }
+
+    SecurityProtocol security_protocol = 1;
+    SaslMechanism sasl_mechanism = 2;
+    string sasl_username = 3;
+    string sasl_password = 4 [(sensitive) = true];
+  }
+
+  message KafkaTopic {
+    string name = 1 [(required) = true];
+    Kafka settings = 2 [(required) = true];
+  }
+
+  message Rabbitmq {
+    string username = 1;
+    string password = 2 [(sensitive) = true];
+  }
+
+  message Compression {
+    enum Method {
+      METHOD_UNSPECIFIED = 0;
+      LZ4 = 1;
+      ZSTD = 2;
+    }
+
+    Method method = 1;
+
+    int64 min_part_size = 2 [(value) = ">=1"];
+
+    double min_part_size_ratio = 3;
+  }
+
+  message ExternalDictionary {
+    message HttpSource {
+      // Required. The source URL.
+      string url = 1 [(required) = true];
+
+      // Required. The data format. Valid values are all formats [supported by ClickHouse SQL dialect](https://clickhouse.yandex/docs/en/interfaces/formats/).
+      string format = 2 [(required) = true];
+    }
+
+    message MysqlSource {
+      message Replica {
+        // Required.
+        string host = 1 [(required) = true, (length) = "<=253"];
+
+        int64 priority = 2 [(value) = ">0"];
+
+        int64 port = 3 [(value) = "0-65535"];
+
+        string user = 4;
+
+        string password = 5 [(sensitive) = true];
+      }
+
+      // Required. Database name.
+      string db = 1 [(required) = true];
+
+      // Required. Table name.
+      string table = 2 [(required) = true];
+
+      int64 port = 3 [(value) = "0-65535"];
+
+      string user = 4;
+
+      string password = 5 [(sensitive) = true];
+
+      // Required.
+      repeated Replica replicas = 6 [(size) = ">0"];
+
+      string where = 7;
+
+      // Query for checking the dictionary status.
+      string invalidate_query = 8;
+    }
+
+    message ClickhouseSource {
+      // Required. Database name.
+      string db = 1 [(required) = true];
+
+      // Required. Table name.
+      string table = 2 [(required) = true];
+
+      // Required.
+      string host = 3 [(required) = true, (length) = "<=253"];
+
+      int64 port = 4 [(value) = "0-65535"];
+
+      string user = 5 [(required) = true];
+
+      string password = 6 [(sensitive) = true];
+
+      string where = 7;
+    }
+
+    message MongodbSource {
+      // Required. Database name.
+      string db = 1 [(required) = true];
+
+      // Required. Collection name.
+      string collection = 2 [(required) = true];
+
+      // Required.
+      string host = 3 [(required) = true, (length) = "<=253"];
+
+      int64 port = 4 [(value) = "0-65535"];
+
+      string user = 5 [(required) = true];
+
+      string password = 6 [(sensitive) = true];
+    }
+
+    message PostgresqlSource {
+      enum SslMode {
+        SSL_MODE_UNSPECIFIED = 0;
+        DISABLE = 1;
+        ALLOW = 2;
+        PREFER = 3;
+        VERIFY_CA = 4;
+        VERIFY_FULL = 5;
+      }
+
+      // Required. Database name.
+      string db = 1 [(required) = true];
+
+      // Required. Table name.
+      string table = 2 [(required) = true];
+
+      // Required. odbc lets specify only hostnames for replicas. The other connection params are unified
+      repeated string hosts = 3 [(size) = ">0"];
+
+      int64 port = 4 [(value) = "0-65535"];
+
+      // Required.
+      string user = 5 [(required) = true];
+
+      string password = 6 [(sensitive) = true];
+
+      // Query for checking the dictionary status.
+      string invalidate_query = 7;
+
+      SslMode ssl_mode = 8;
+    }
+
+    message YtSource {
+      enum ClusterSelection {
+        CLUSTER_SELECTION_UNSPECIFIED = 0;
+        ORDERED = 1;
+        RANDOM = 2;
+      }
+
+      repeated string clusters = 1 [(size) = ">0"];
+      string table = 2 [(required) = true];
+      repeated string keys = 3;
+      repeated string fields = 4;
+      repeated string date_fields = 5;
+      repeated string datetime_fields = 6;
+      string query = 7;
+      string user = 8;
+      string token = 9 [(sensitive) = true];
+      ClusterSelection cluster_selection = 10;
+      google.protobuf.BoolValue use_query_for_cache = 11;
+      google.protobuf.BoolValue force_read_table = 12;
+      google.protobuf.Int64Value range_expansion_limit = 13;
+      google.protobuf.Int64Value input_row_limit = 14;
+      google.protobuf.Int64Value output_row_limit = 15;
+      google.protobuf.Int64Value yt_socket_timeout = 16;
+      google.protobuf.Int64Value yt_connection_timeout = 17;
+      google.protobuf.Int64Value yt_lookup_timeout = 18;
+      google.protobuf.Int64Value yt_select_timeout = 19;
+      google.protobuf.Int64Value yt_retry_count = 20;
+    }
+
+    message Structure {
+      message Attribute {
+        // Name of the column.
+        string name = 1 [(required) = true];
+
+        // Type of the column.
+        string type = 2 [(required) = true];
+
+        // Default value for an element without data (for example, an empty string).
+        string null_value = 3;
+
+        // Expression, describing the attribute, if applicable.
+        string expression = 4;
+
+        // Indication of hierarchy support.
+        // Default value: `false`.
+        bool hierarchical = 5;
+
+        // Indication of injective mapping "id -> attribute".
+        // Default value: `false`.
+        bool injective = 6;
+      }
+
+      // Numeric key.
+      message Id {
+        // Name of the numeric key.
+        string name = 1 [(required) = true];
+      }
+
+      // Complex key.
+      message Key {
+        // Attributes of a complex key.
+        repeated Attribute attributes = 1 [(size) = ">0"];
+      }
+
+      // Single numeric key column for the dictionary.
+      Id id = 1;
+
+      // Composite key for the dictionary, containing of one or more key columns.
+      // For details, see [ClickHouse documentation](https://clickhouse.yandex/docs/en/query_language/dicts/external_dicts_dict_structure/#composite-key).
+      Key key = 3;
+
+      // Field holding the beginning of the range for dictionaries with `RANGE_HASHED` layout.
+      // For details, see [ClickHouse documentation](https://clickhouse.yandex/docs/en/query_language/dicts/external_dicts_dict_layout/#range-hashed).
+      Attribute range_min = 4;
+
+      // Field holding the end of the range for dictionaries with `RANGE_HASHED` layout.
+      // For details, see [ClickHouse documentation](https://clickhouse.yandex/docs/en/query_language/dicts/external_dicts_dict_layout/#range-hashed).
+      Attribute range_max = 5;
+
+      // Description of the fields available for database queries.
+      // For details, see [ClickHouse documentation](https://clickhouse.yandex/docs/en/query_language/dicts/external_dicts_dict_structure/#attributes).
+      repeated Attribute attributes = 2 [(size) = ">0"];
+    }
+
+    // Layout determining how to store the dictionary in memory.
+    message Layout {
+      // Layout type.
+      enum Type {
+        TYPE_UNSPECIFIED = 0;
+        FLAT = 1;
+        HASHED = 2;
+        COMPLEX_KEY_HASHED = 3;
+        RANGE_HASHED = 4;
+        CACHE = 5;
+        COMPLEX_KEY_CACHE = 6;
+      }
+
+      Type type = 1 [(required) = true];
+
+      // Applicable only for COMPLEX_KEY_HASHED and COMPLEX_KEY_CACHE layout types.
+      int64 size_in_cells = 2;
+    }
+
+    message Range {
+      int64 min = 1;
+
+      int64 max = 2;
+    }
+
+    // Required. Name of the external dictionary.
+    string name = 1 [(required) = true];
+
+    // Required.
+    Structure structure = 2 [(required) = true];
+
+    // Required.
+    Layout layout = 3 [(required) = true];
+
+    oneof lifetime {
+      option (exactly_one) = true;
+
+      int64 fixed_lifetime = 4;
+
+      Range lifetime_range = 5;
+    }
+
+    oneof source {
+      option (exactly_one) = true;
+
+      HttpSource http_source = 6;
+
+      MysqlSource mysql_source = 7;
+
+      ClickhouseSource clickhouse_source = 8;
+
+      MongodbSource mongodb_source = 9;
+
+      PostgresqlSource postgresql_source = 10;
+
+      YtSource yt_source = 11;
+    }
+  }
+
+  // Rollup settings for the GraphiteMergeTree table engine.
+  message GraphiteRollup {
+    message Pattern {
+      message Retention {
+        int64 age = 1 [(value) = ">0"];
+
+        int64 precision = 2 [(value) = ">0"];
+      }
+
+      string regexp = 1;
+
+      string function = 2 [(required) = true];
+
+      repeated Retention retention = 3 [(size) = ">0"];
+    }
+
+    // Required.
+    string name = 1 [(required) = true];
+
+    // Required.
+    repeated Pattern patterns = 2 [(size) = ">0"];
+  }
+
+  LogLevel log_level = 1;
+
+  MergeTree merge_tree = 2;
+
+  repeated Compression compression = 3;
+
+  repeated ExternalDictionary dictionaries = 4;
+
+  repeated GraphiteRollup graphite_rollup = 5;
+
+  Kafka kafka = 35;
+
+  repeated KafkaTopic kafka_topics = 36;
+
+  Rabbitmq rabbitmq = 37;
+
+  google.protobuf.Int64Value max_connections = 6 [(value) = ">=10"];
+
+  google.protobuf.Int64Value max_concurrent_queries = 7 [(value) = ">=10"];
+
+  google.protobuf.Int64Value keep_alive_timeout = 8;
+
+  google.protobuf.Int64Value uncompressed_cache_size = 9;
+
+  google.protobuf.Int64Value mark_cache_size = 10;
+
+  google.protobuf.Int64Value max_table_size_to_drop = 11;
+
+  google.protobuf.Int64Value max_partition_size_to_drop = 13;
+
+  google.protobuf.Int64Value builtin_dictionaries_reload_interval = 12 [deprecated = true];
+
+  string timezone = 14;
+
+  string geobase_uri = 15;
+
+  google.protobuf.Int64Value query_log_retention_size = 16;
+
+  google.protobuf.Int64Value query_log_retention_time = 17;
+
+  google.protobuf.BoolValue query_thread_log_enabled = 18;
+
+  google.protobuf.Int64Value query_thread_log_retention_size = 19;
+
+  google.protobuf.Int64Value query_thread_log_retention_time = 20;
+
+  google.protobuf.Int64Value part_log_retention_size = 21;
+
+  google.protobuf.Int64Value part_log_retention_time = 22;
+
+  google.protobuf.BoolValue metric_log_enabled = 23;
+
+  google.protobuf.Int64Value metric_log_retention_size = 24;
+
+  google.protobuf.Int64Value metric_log_retention_time = 25;
+
+  google.protobuf.BoolValue trace_log_enabled = 26;
+
+  google.protobuf.Int64Value trace_log_retention_size = 27;
+
+  google.protobuf.Int64Value trace_log_retention_time = 28;
+
+  google.protobuf.BoolValue text_log_enabled = 29;
+
+  google.protobuf.Int64Value text_log_retention_size = 30;
+
+  google.protobuf.Int64Value text_log_retention_time = 31;
+
+  LogLevel text_log_level = 32;
+
+  google.protobuf.Int64Value background_pool_size = 33 [(value) = ">0"];
+
+  google.protobuf.Int64Value background_schedule_pool_size = 34 [(value) = ">0"];
+}
+
+message ClickhouseConfigSet {
+  ClickhouseConfig effective_config = 1 [(required) = true];
+
+  ClickhouseConfig user_config = 2;
+
+  ClickhouseConfig default_config = 3;
+}

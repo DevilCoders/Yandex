@@ -1,0 +1,18 @@
+let clients = {cluster='<< health_cluster_name >>', service='<< health_service_id >>', project='<< project_id >>', dc='by_node', name='mdb_*_api_requests_total_code_2??_method_put_ammv_rate'};
+let clients_by_dc = {cluster='<< health_cluster_name >>', service='<< health_service_id >>', project='<< project_id >>', dc='???', name='mdb_*_api_requests_total_code_2??_method_put_ammv_rate'};
+
+let avg_clients_by_dc = map(clients_by_dc, x -> avg(x));
+let avg_diff_clients = map(diff(clients), x -> avg(x));
+
+let allow_percent_loss = 0.1;
+let min_clients_lost = 3;
+
+let total_clients = sum(avg_clients_by_dc);
+let min_diff = min(avg_diff_clients);
+let current_percent_change = min_diff/total_clients;
+
+let is_yellow = min_diff < -min_clients_lost && (current_percent_change < -allow_percent_loss || min(avg_clients_by_dc) < 0.1);
+let is_red = min_diff < -min_clients_lost && (current_percent_change < -3 * allow_percent_loss);
+
+alarm_if(is_red);
+warn_if(is_yellow);

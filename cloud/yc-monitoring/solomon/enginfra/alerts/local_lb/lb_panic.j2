@@ -1,0 +1,36 @@
+{% extends "base_alert.j2" %}
+
+{% set service = "locallb-panic-mode" %}
+
+{% set lb_panic = 'envoy_cluster_*_lb_healthy_panic' %}
+
+{% macro prog() %}
+let ts_panic = series_sum({
+    cluster='cloud_{{env}}_{{ bootstrap_base_role }}_{{ az }}'
+    ,sensor='{{ lb_panic }}'
+    ,bootstrap_base_role='{{ bootstrap_base_role }}'
+    ,host='*'
+});
+let error_rate = max(moving_avg(ts_panic, 5m));
+let is_red = error_rate > 0;
+let error_rate_str = to_fixed(error_rate, 1);
+alarm_if(is_red);
+{% endmacro %}
+
+{% block main %}
+    "name": "LocalLb {{ bootstrap_base_role }} in panic mode {{env}}@{{az}}",
+    "annotations": {
+        "error_rate": "[[ expression.error_rate_str ]]",
+        "description": "LocalLB service [[ labels.envoy_cluster_name ]] in panic mode",
+        "host": "{{ svm_fqdn() }}",
+        "service": "{{ service }}-[[ labels.envoy_cluster_name ]]",
+        "dashboard": "{{ local_lb_dashboard(bootstrap_base_role) }}",
+        "wiki": "{{ wiki_url(service) }}" 
+    },
+    "type": {{ type_expression() }},
+    "description": "",
+    "groupByLabels": [
+        "host",
+        "envoy_cluster_name"
+    ]
+{% endblock %}

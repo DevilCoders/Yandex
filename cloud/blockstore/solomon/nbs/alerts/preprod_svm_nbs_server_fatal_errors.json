@@ -1,0 +1,41 @@
+{
+    "annotations": {
+        "host": "{{labels.host}}.svc.cloud-preprod.yandex.net", 
+        "service": "solomon_alert_nbs_server_fatal_errors", 
+        "tags": "yc-preprod-nbs-solomon"
+    }, 
+    "channels": [
+        {
+            "config": {}, 
+            "id": "juggler"
+        }
+    ], 
+    "createdAt": "2019-11-12T14:39:25Z", 
+    "createdBy": "haposik", 
+    "delaySeconds": 30, 
+    "delaySecs": 30, 
+    "description": "", 
+    "groupByLabels": [
+        "host"
+    ], 
+    "id": "preprod_svm_nbs_server_fatal_errors", 
+    "name": "[PRE-PROD][SVM] NBS Server Fatal Errors", 
+    "noPointsPolicy": "NO_POINTS_DEFAULT", 
+    "notificationChannels": [
+        "juggler"
+    ], 
+    "periodMillis": 600000, 
+    "projectId": "nbs", 
+    "resolvedEmptyPolicy": "RESOLVED_EMPTY_DEFAULT", 
+    "state": "ACTIVE", 
+    "type": {
+        "expression": {
+            "checkExpression": "", 
+            "program": "let io_requests='ReadBlocks|WriteBlocks|ZeroBlocks';\nlet not_so_fatal_error_list='MountVolume|AlterVolume|DescribeVolume';\nlet ignore_errors='AssignVolume';\n\nlet io_fatal_errors = integrate_fn(group_lines('sum', {\n\tproject='nbs',\n\tcluster='yandexcloud_preprod',\n\tservice='server',\n\thost='nbs-control-*1|nbs-control-*2|nbs-control-*3',\n\trequest='{{io_requests}}',\n\tsensor='Errors/Fatal',\n\ttype= 'ssd|hdd'\n}));\n\nlet ctrl_fatal_errors = integrate_fn(group_lines('sum', {\n\tproject='nbs',\n\tcluster='yandexcloud_preprod',\n\tservice='server',\n\thost='nbs-control-*1|nbs-control-*2|nbs-control-*3',\n\trequest!='{{io_requests}}|{{not_so_fatal_error_list}}|{{ignore_errors}}',\n\tsensor='Errors/Fatal'\n}));\n\nlet not_so_fatal_errors = integrate_fn(group_lines('sum', {\n\tproject='nbs',\n\tcluster='yandexcloud_preprod',\n\tservice='server',\n\thost='nbs-control-*1|nbs-control-*2|nbs-control-*3',\n\trequest='{{not_so_fatal_error_list}}',\n\tsensor='Errors/Fatal'\n}));\n\nno_data_if(count(ctrl_fatal_errors) == 0);\nno_data_if(count(io_fatal_errors) == 0);\n\n// temp thresholds (see https://st.yandex-team.ru/NBS-1808)\nwarn_if(max(ctrl_fatal_errors) > 2);\nalarm_if(max(ctrl_fatal_errors) > 5);\n\nwarn_if(max(io_fatal_errors) == 1);\nalarm_if(max(io_fatal_errors) > 1);\n\nwarn_if(max(not_so_fatal_errors) > 10);\nalarm_if(max(not_so_fatal_errors) > 20);\n"
+        }
+    }, 
+    "updatedAt": "2021-03-12T13:11:12Z", 
+    "updatedBy": "yegorskii", 
+    "version": 20, 
+    "windowSecs": 600
+}

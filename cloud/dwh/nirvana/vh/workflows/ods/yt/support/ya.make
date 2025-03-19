@@ -1,0 +1,4 @@
+RECURSE(
+  comments
+  issues
+)

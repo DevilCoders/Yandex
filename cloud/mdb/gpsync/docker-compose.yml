@@ -1,0 +1,133 @@
+x-base-config: &base-config
+  privileged: true
+  domainname: gpsync.gpsync.net
+  init: true
+  extra_hosts:
+    - "gpsync-zookeeper1.gpsync.gpsync.net:192.168.234.10"
+    - "gpsync-zookeeper2.gpsync.gpsync.net:192.168.234.11"
+    - "gpsync-zookeeper3.gpsync.gpsync.net:192.168.234.12"
+    - "gpsync-backup1.gpsync.gpsync.net:192.168.234.13"
+    - "gpsync-greenplum-master1.gpsync.gpsync.net:192.168.234.14"
+    - "gpsync-greenplum-master2.gpsync.gpsync.net:192.168.234.15"
+    - "gpsync-greenplum-segment1.gpsync.gpsync.net:192.168.234.16"
+    - "gpsync-greenplum-segment2.gpsync.gpsync.net:192.168.234.17"
+  healthcheck:
+    test: /usr/local/bin/supervisorctl status sshd
+    interval: 1s
+    timeout: 30s
+    start_period: 1s
+
+x-host-common-config: &host-common-config
+  <<: *base-config
+  depends_on:
+    - base
+
+x-zookeeper-common-config: &zookeeper-common-config
+  <<: *host-common-config
+  build:
+    context: .
+    dockerfile: ./docker/zookeeper/Dockerfile
+    args:
+      - VERSION=${ZK_VERSION}
+
+x-greenplum-common-config: &greenplum-common-config
+  <<: *host-common-config
+  build:
+    context: .
+    dockerfile: ./docker/greenplum/Dockerfile
+    args:
+      - GP_MAJOR=${GP_MAJOR}
+      - GP_VERSION=${GP_VERSION}
+
+x-gpsync-common-config: &gpsync-common-config
+  <<: *greenplum-common-config
+  build:
+    context: .
+    dockerfile: ./docker/gpsync/Dockerfile
+  depends_on:
+    - greenplum
+
+services:
+  base:
+    <<: *base-config
+    build:
+      context: .
+      dockerfile: ./docker/base/Dockerfile
+    image: gpsyncbase
+    command: /bin/true
+  greenplum:
+    <<: *greenplum-common-config
+    image: greenplum
+    command: /bin/true
+  zookeeper1:
+    <<: *zookeeper-common-config
+    hostname: gpsync-zookeeper1.gpsync.gpsync.net
+    networks:
+      gpsync_net:
+        ipv4_address: 192.168.234.10
+  zookeeper2:
+    <<: *zookeeper-common-config
+    hostname: gpsync-zookeeper2.gpsync.gpsync.net
+    networks:
+      gpsync_net:
+        ipv4_address: 192.168.234.11
+  zookeeper3:
+    <<: *zookeeper-common-config
+    hostname: gpsync-zookeeper3.gpsync.gpsync.net
+    networks:
+      gpsync_net:
+        ipv4_address: 192.168.234.12
+  backup1:
+    <<: *host-common-config
+    build: ./docker/backup
+    hostname: gpsync-backup1.gpsync.gpsync.net
+    networks:
+      gpsync_net:
+        ipv4_address: 192.168.234.13
+  greenplum_master1:
+    <<: *gpsync-common-config
+    hostname: gpsync-greenplum-master1.gpsync.gpsync.net
+    networks:
+      gpsync_net:
+        ipv4_address: 192.168.234.14
+  greenplum_master2:
+    <<: *gpsync-common-config
+    hostname: gpsync-greenplum-master2.gpsync.gpsync.net
+    networks:
+      gpsync_net:
+        ipv4_address: 192.168.234.15
+  greenplum_segment1:
+    <<: *greenplum-common-config
+    hostname: gpsync-greenplum-segment1.gpsync.gpsync.net
+    networks:
+      gpsync_net:
+        ipv4_address: 192.168.234.16
+  greenplum_segment2:
+    <<: *greenplum-common-config
+    hostname: gpsync-greenplum-segment2.gpsync.gpsync.net
+    networks:
+      gpsync_net:
+        ipv4_address: 192.168.234.17
+
+  # workaround from https://github.com/docker/compose/issues/8351
+  wait:
+    image: gpsyncbase
+    command: /bin/true
+    depends_on:
+      greenplum_master1:
+        condition: service_healthy
+      greenplum_master2:
+        condition: service_healthy
+      greenplum_segment1:
+        condition: service_healthy
+      greenplum_segment2:
+        condition: service_healthy
+
+networks:
+  gpsync_net:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.234.0/24
+          gateway: 192.168.234.1

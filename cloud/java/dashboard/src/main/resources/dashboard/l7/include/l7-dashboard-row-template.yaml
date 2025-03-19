@@ -1,0 +1,35 @@
+# Variables:
+# @1 - row title
+# @2 - backend_group_id
+# @3 - Solomon cluster, e.g. 'cloud_prod_cpl'
+# (@4, @5) - ('ui', '$rateUnit') for selectable rate, or (rps, rps), (rpm, rpm) for hardcoded rate
+
+- title: "@1"
+  queryDefaults: { dropNan: true, labels: 'project=platform, service=api_envoy_tags_ma, cluster=@3, cluster_name=*, backend_group_id=@2, host!=cluster' }
+
+  panels:
+    - type: graph
+      templates: { name: rps, rate: @4, sumLines: [name] }
+      title: 'Backend @5 (@2)'
+      display: { legend: false, fill: 0 }
+      yAxes: [ { min: 0, decimals: 1 } ]
+      queries:
+        - params: { labels: 'name=alb_upstream_rq_total' }
+
+    - type: graph
+      templates: { name: errors }
+      title: 'Backend errors, 5xx and 503 (@2)'
+      queries:
+        - params: { labels: 'name=alb_upstream_rq_xx, alb_response_code_class=5' }
+        - params: { labels: 'name=alb_upstream_rq, alb_response_code=503' }
+      draw:
+        - { alias: '5xx', color: '#147', at: right }
+        - { alias: '503', color: '#da7', at: left }
+
+    - type: graph
+      templates: { name: percentile, groupLines: true, format: solomon }
+      title: 'Request time histogram (@2)'
+      display: { legend: false, fill: 0 }
+      yAxes: [ { format: ms, min: 0, decimals: 1 } ]
+      queries:
+        - params: { labels: 'name=alb_upstream_rq_time' }

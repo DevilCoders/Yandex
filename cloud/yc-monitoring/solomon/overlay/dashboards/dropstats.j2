@@ -1,0 +1,88 @@
+{% set menu = "VRouter Dropstats" %}
+
+{% extends "../../base/dashboard.j2" %}
+{% from "../common/dropstats.j2" import dropstats %}
+
+{#
+CLOUD-50583: Drop Reasons grouped by category and reason.
+    title, cause (subtitle), threshold multiplier, drop reason list
+
+TODO: split ds_flow_action_drop_per_second and move some to a new flow column
+#}
+{% set drop_categories_route = [
+    dropstats.l3_route_errors,
+    dropstats.l2_l3_minor_route_errors,
+    dropstats.route_inconsistency
+] %}
+{% set drop_categories_flow = [
+    dropstats.drop_new_flows,
+    dropstats.flow_establish_errors,
+    dropstats.flaky_flow_establish_errors,
+    dropstats.flow_drop_evict
+] %}
+{% set drop_categories_misc = [
+    dropstats.bad_packets,
+    dropstats.clone_resize_failure,
+    dropstats.internal_bugs,
+    dropstats.cloned_drops
+] %}
+
+{% macro render_drops_heatmap(panel) %}
+    {%- set colspan = panel.colspan|default(1) %}
+    {%- set limit = 22 if colspan == 1 else 48 %}
+    {%- set thresholds = (0, 0.1 * panel.multiplier, 1 * panel.multiplier, 10 * panel.multiplier) %}
+
+    {%- set colors = "&greenValue=%.3f&yellowValue=%.3f&redValue=%.3f&violetValue=%.3f" % thresholds %}
+    {%- set filter = "&filter=top&filterBy=[[aggregation]]&filterLimit=" ~ limit %}
+    {%- set params = "&graph=auto&graphMode=heatmap&asc=false&downsamplingAggr=[[aggregation]]" %}
+    {%- set query = "&l.host=[[host]]&l.name=drop.packets_per_second&l.reason=" ~ (panel.snh_reasons|join('|')) ~
+                        params ~ filter ~ colors -%}
+
+    {{ render_panel(title=panel.title, subtitle=panel.cause, colspan=colspan,
+                    cluster="cloud_" + env + "_compute", service="oct_vrouter_snh", query=query) }}
+{% endmacro %}
+
+{% macro render_drops_row(row) %}
+{
+    "panels": [
+    {% for panel in row -%}
+        {{ render_drops_heatmap(panel) }}
+        {%- if not loop.last %},{% endif -%}
+    {%- endfor %}
+    ]
+}
+{% endmacro %}
+
+{% macro render_drop_links(az) %}
+{% for aggregation in ["avg", "max"] %}
+* [{{ aggregation|upper }}](/?project={{ project_id }}&cluster={{ cluster }}&service=oct_vrouter&dashboard=oct_vrouter_dropstats_{{ env }}&host={{ az or "" }}*&aggregation={{ aggregation }})    \n
+{% endfor %}
+{% endmacro %}
+
+{% block parameters %}
+    {
+        "name": "host",
+        "value": "*"
+    },
+    {
+        "name": "downsamplingAggr",
+        "value": "max"
+    }
+{% endblock %}
+
+{% block rows %}
+    [
+        {{ render_drops_row(drop_categories_route) }},
+        {{ render_drops_row(drop_categories_flow) }},
+        {{ render_drops_row(drop_categories_misc) }},
+        {
+            "panels": [
+                {% for az in [{"prefix": none}] + zones_by_env[env] %}
+                    {{ render_markdown(title="VRouter Dropstats @ " + (az.prefix or "all")|upper,
+                                       markdown=render_drop_links(az.prefix).replace("\n", "")) }}
+                    {%- if not loop.last %},{% endif -%}
+                {% endfor %}
+            ]
+        }
+    ]
+{% endblock %}

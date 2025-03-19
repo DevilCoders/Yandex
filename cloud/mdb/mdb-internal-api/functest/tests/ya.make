@@ -1,0 +1,19 @@
+OWNER(g:mdb)
+
+RECURSE(
+    airflow
+    clickhouse
+    common
+    datacloud
+    elasticsearch
+    greenplum
+    hadoop
+    kafka
+    metastore
+    mongodb
+    mysql
+    opensearch
+    postgresql
+    redis
+    sqlserver
+)

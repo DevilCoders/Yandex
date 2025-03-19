@@ -1,0 +1,534 @@
+prononce:
+  dc:
+    vla: "во Владимире"
+    sas: "в Сасове"
+    myt: "в Мытищах"
+  env:
+    prod: "на пр+оде"
+    preprod: "на препр+оде"
+    testing: "на тестинге"
+  role_where:
+    hc-node: "Хэ-Ч+е ноде"
+    hc-ctrl: "Хэ-Ч+е контроллере"
+    lb-ctrl: "лб контроллере"
+    lb-node: "лб ноде"
+    lb-seed: "лб сиде"
+    cgw: "цгэвэ"
+    cgw-dc: "цгэвэ диси"
+    cgw-nat: "цгэвэ нат"
+
+short_role: "{{ {
+    'yc_loadbalancer_seed': 'lb-seed',
+    'yc_loadbalancer_duty': 'lb-duty',
+    'yc_loadbalancer_hc-ctrl': 'hc-ctrl',
+    'yc_loadbalancer_hc-node': 'hc-node',
+    'yc_loadbalancer_lb-ctrl': 'lb-ctrl',
+    'yc_loadbalancer_lb-node': 'lb-node',
+    'yc_network_cgw-dc': 'cgw-dc',
+    'yc_network_cgw-nat': 'cgw-nat',
+    'yc_network_cloudgate': 'cgw',
+}.get(role) or role }}"
+ongoing_deployment_check_unreach: "{%-if (ignore_ongoing_deployment is defined and ignore_ongoing_deployment)-%}META{%-else-%}ongoing-deployment{%-endif-%}"
+old_dc_suffix: "{% if dc is defined %}@{{ dc }}{% endif %}"
+dc_suffix: "{% if dc is defined %}_{{ dc }}{% endif %}"
+env_dc_suffix: "{{ env }}{{ dc_suffix }}"
+juggler_env_to_salt_env_correction_mapping:
+    preprod: pre-prod
+pronounce_suffix: "{{ prononce.env[env] | default(env) }} {{ prononce.dc[dc] | default(dc) }}."
+pronounce_role_where: "{{ prononce.role_where[short_role] | default(short_role) }}"
+pronounce_location: "на {{ pronounce_role_where }} {{ pronounce_suffix }}"
+flap: ""
+host: "{{ role }}_{{ env }}{% if dc is defined %}_{{ dc }}{% endif %}"
+host_suffix: "_{{ env }}{{ dc_suffix }}"
+namespace: "ycloud"
+notify_tag_name: 'yc-notify'
+notify_tag: '{{ notify_tag_name }}'
+notify_daytime_tag: '{{ notify_tag_name }}-daytime'
+notify_delay1_tag: '{{ notify_tag_name }}-delay-1m'
+notify_delay5_tag: '{{ notify_tag_name }}-delay-5m'
+notify_delay10_tag: '{{ notify_tag_name }}-delay-10m'
+notify_delay20_tag: '{{ notify_tag_name }}-delay-20m'
+notify_delay30_tag: '{{ notify_tag_name }}-delay-30m'
+known_bugs_tag: 'known-bugs'
+disaster_tag: 'yc-disaster'
+dc_tag: "{% if dc is defined %}['yc-{{ dc }}']{% else %}[]{% endif %}"
+default_tags: "{{ check_tags }} + {{ dc_tag }} + ['yc', 'yc-{{ env }}', '{{ notify_tag }}']"
+common_tags: "{{ default_tags }} + ['yc-common', 'yc-{{ env }}-common', '{{ notify_delay5_tag }}']"
+jserver_api: http://juggler-api.search.yandex.net
+default_telegram_statuses: "{{ telegram_statuses | default(['CRIT']) }}"
+default_telegram_notification:
+  - template: on_status_change
+    status: "{{ default_telegram_statuses }}"
+    login: ["{{ telegram_chat_id | default('') }}"]
+    method: [telegram]
+    delay: "{{ telegram_notification_delay | default(0) }}"
+default_notification_methods: [{"template": "phone_escalation", logins: ['robot-zoidberg'] }]
+telegram_notification: "{{ default_telegram_notification if telegram_chat_id is defined and telegram_chat_id|length else [] }}"
+notification_methods: "{{ default_notification_methods }}"
+disable_notifications: []
+
+default_check:
+  host: "{{ host }}"
+  namespace: "{{ namespace }}"
+  notifications: "{{ notification_methods }}"
+  flap: "{{ flap | default(omit) }}"
+  meta: "{{ meta | default({}) }}"
+  tags: "{{ default_tags }} + ['{{ notify_delay5_tag }}']" #yc-notify tag for checks with notification
+  children: "{{ children }}"
+  ttl: "{{ttl | default(600)}}"
+  refresh_time: "{{refresh_time | default(120) }}"
+  __force__: true
+
+default_check_kb_tag: "{{ default_check | combine({'tags': default_tags + [known_bugs_tag] }) }}"
+default_check_delay_10_tag: "{{ default_check | combine({'tags': default_tags + [notify_delay10_tag] }) }}"
+default_check_delay_20_tag: "{{ default_check | combine({'tags': default_tags + [notify_delay20_tag] }) }}"
+default_check_delay_30_tag: "{{ default_check | combine({'tags': default_tags + [notify_delay30_tag] }) }}"
+default_check_delay_20_kb_tag: "{{ default_check | combine({'tags': default_tags + [notify_delay20_tag, known_bugs_tag] }) }}"
+default_check_cross_az: "{{ default_check | combine({'tags': default_tags | difference([notify_tag]) + ['yc-cross-az'], 'notifications': [] }) }}"
+
+silent_check_kb_tag: "{{ silent_check | combine({'tags': default_tags | difference([notify_tag]) + [known_bugs_tag] }) }}"
+silent_check_delay_10_tag: "{{ silent_check | combine({'tags': default_tags | difference([notify_tag]) + [notify_delay10_tag] }) }}"
+silent_check_delay_20_kb_tag: "{{ silent_check | combine({'tags': default_tags | difference([notify_tag]) + [notify_delay20_tag, known_bugs_tag] }) }}"
+
+common_check: "{{ default_check | combine({'tags': common_tags }) }}"
+
+silent_check: "{{ default_check | combine({'tags': default_tags | difference([notify_tag]) + ['yc-temporary'], 'notifications': [] }) }}"
+silent_check_az: "{{ default_check | combine({'tags': default_tags | difference([notify_tag]) + ['yc-temporary', 'yc-az'], 'notifications': [] }) }}"
+silent_check_cross_az: "{{ default_check | combine({'tags': default_tags | difference([notify_tag]) + ['yc-temporary', 'yc-cross-az'], 'notifications': [] }) }}"
+
+disaster_check: "{{ default_check | combine({'tags': default_tags + [disaster_tag]}) }}"
+
+# tags for common checks without phone notification
+common_silent_check: "{{ default_check | combine({'tags': common_tags | difference([notify_tag]) if silent_checks is defined and service in silent_checks else common_tags }) }}"
+
+default_check_with_only_telegram_notification:  "{{ default_check | combine({'notifications': telegram_notification, 'tags': default_tags | difference([notify_tag]) }) }}"
+
+default_check_notify_daytime:  "{{ default_check | combine({'tags': default_tags | difference([notify_tag]) + [notify_daytime_tag, notify_delay5_tag] }) }}"
+
+# YC Infra has it's own check cause of different default namespace (ycloud.infra instead of )
+infra_namespace: "ycloud.infra"
+infra_check: "{{ default_check | combine({'tags': common_tags, 'namespace': infra_namespace}) }}"
+infra_silent_check: "{{ infra_check | combine({'tags': common_tags | difference([notify_tag]), 'notifications': []}) }}"
+infra_check_with_only_tg_notify: "{{ infra_check | combine({'notifications': telegram_notification, 'tags': default_tags | difference([notify_tag]) }) }}"
+infra_check_daytime_notify: "{{ infra_check | combine({'tags': default_tags | difference([notify_tag]) + [notify_daytime_tag, notify_delay5_tag] }) }}"
+
+default_limits:
+  - {crit: '0', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '0'}
+default_limits_0perc_crit:
+  - {crit: '0', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '0'}
+prod_limits:
+  - {crit: '0', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '0'}
+default_limits_20perc_crit:
+  - {crit: '20%', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '0'}
+default_limits_40perc_crit_99perc_warn:
+  - {crit: '40%', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '99%'}
+default_limits_50perc_crit:
+  - {crit: '50%', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '0'}
+default_limits_99perc_crit:
+  - {crit: '99%', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '0'}
+default_limits_always_warn:
+  - {crit: '100%', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '0'}
+default_limits_99perc_warn:
+  - {crit: '0', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '99%'}
+default_limits_logic_and:
+  - {day_end: 7, day_start: 1, time_end: 23, time_start: 0, aggregator: 'logic_and'}
+default_limits_one_down:
+  - {day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '0', crit: '1' }
+default_limits_workday:
+  - {crit: '0', day_end: 5, day_start: 1, time_end: 22, time_start: 8, warn: '0'}
+  - {crit: '100%', day_end: 5, day_start: 1, time_end: 8, time_start: 22, warn: '0'}
+  - {crit: '100%', day_end: 7, day_start: 1, time_end: 22, time_start: 0, warn: '0'}
+notify_only_in_the_day_time_limits:
+  - {crit: '0', day_end: 7, day_start: 1, time_end: 22, time_start: 12, warn: '0'}
+  - {crit: '99', day_end: 7, day_start: 1, time_end: 12, time_start: 22, warn: '0'}
+notify_only_in_the_day_time_starts_10_limits:
+  - {crit: '0', day_end: 7, day_start: 1, time_end: 20, time_start: 10, warn: '0'}
+  - {crit: '99', day_end: 7, day_start: 1, time_end: 10, time_start: 20, warn: '0'}
+
+off_check_limits:
+  - {crit: "100%", day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: "0"}
+
+logic_and_for_500s:
+  logic_and:
+  refresh_time: 500
+
+logic_and_for_60s:
+  logic_and:
+  refresh_time: 60
+
+default_timed_limits:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+
+default_timed_limits_nodata_skip:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+    nodata_mode: skip
+
+default_timed_limits_nodata_ok:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+    nodata_mode: force_ok
+
+default_timed_limits_unreach_skip_hold_crit:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+    hold_crit: 1800
+    unreach_mode: skip
+    unreach_service:
+      - "check": "{{ unreachable_host | default(host) }}:UNREACHABLE"
+      - "check": "{{ unreachable_host | default(host) }}:META"
+
+notify_only_in_the_day_time_timed_limits:
+  timed_more_than_limit_is_problem:
+    limits: "{{ notify_only_in_the_day_time_limits }}"
+
+notify_only_in_the_day_time_starts_10_timed_limits:
+  timed_more_than_limit_is_problem:
+    limits: "{{ notify_only_in_the_day_time_starts_10_limits }}"
+
+default_timed_limits_only_unreach_skip_workday:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits_workday }}"
+    unreach_mode: skip
+    unreach_service:
+      - "check": "{{ unreachable_host }}:UNREACHABLE"
+
+default_timed_limits_unreach_skip:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+    unreach_mode: skip
+    unreach_service:
+      - "check": "{{ unreachable_host | default(host) }}:UNREACHABLE"
+      - "check": "{{ unreachable_host | default(host) }}:META"
+
+default_timed_limits_unreach_skip_nodata_ok:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+    nodata_mode: force_ok
+    unreach_mode: skip
+    unreach_service:
+      - "check": "{{ unreachable_host | default(host) }}:UNREACHABLE"
+      - "check": "{{ unreachable_host | default(host) }}:META"
+
+default_timed_limits_unreach_force_ok:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+    unreach_mode: force_ok
+    unreach_service:
+      - "check": "{{ unreachable_host }}:UNREACHABLE"
+      - "check": "{{ unreachable_host }}:META"
+
+default_timed_limits_one_down_unreach_force_ok:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits_one_down }}"
+    unreach_mode: force_ok
+    unreach_service:
+      - "check": "{{ unreachable_host }}:UNREACHABLE"
+      - "check": "{{ unreachable_host }}:META"
+
+default_timed_limits_unreach_skip_nodata_force_ok:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+    nodata_mode: force_ok
+    unreach_mode: skip
+    unreach_service:
+      - "check": "{{ unreachable_host | default(host) }}:UNREACHABLE"
+      - "check": "{{ unreachable_host | default(host) }}:META"
+
+default_timed_limits_nodata_unreach_skip:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+    nodata_mode: skip
+    unreach_mode: skip
+    unreach_service:
+      - "check": "{{ unreachable_host }}:UNREACHABLE"
+      - "check": "{{ unreachable_host }}:META"
+
+infra_raid_default_timed_limits_unreach_force_ok:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+    unreach_mode: force_ok
+    unreach_service:
+      - "check": "{{ unreachable_host }}:UNREACHABLE"
+      - "check": "{{ unreachable_host }}:META"
+      - "check": "{{ unreachable_host }}:walle_disk"
+
+infra_memory_default_timed_limits_unreach_force_ok:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+    unreach_mode: force_ok
+    unreach_service:
+      - "check": "{{ unreachable_host }}:UNREACHABLE"
+      - "check": "{{ unreachable_host }}:META"
+      - "check": "{{ unreachable_host }}:walle_memory"
+
+default_timed_limits_unreach_skip_workday:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits_workday }}"
+    unreach_mode: skip
+    unreach_service:
+      - "check": "{{ unreachable_host | default(host) }}:UNREACHABLE"
+      - "check": "{{ unreachable_host| default(host) }}:META"
+
+default_timed_limits_workday:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits_workday }}"
+
+off_timed_limits:
+  timed_more_than_limit_is_problem:
+    limits: "{{ off_check_limits }}"
+
+off_timed_limits_with_unreach:
+  timed_more_than_limit_is_problem:
+    limits: "{{ off_check_limits }}"
+    unreach_mode: skip
+    unreach_service:
+      - "check": "{{ unreachable_host | default(host) }}:UNREACHABLE"
+      - "check": "{{ unreachable_host | default(host) }}:META"
+
+default_timed_limits_unreach_vpp_skip:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+    unreach_mode: skip
+    unreach_service:
+      - "check": "{{ unreachable_host | default(host) }}:UNREACHABLE"
+      - "check": "{{ unreachable_host | default(host) }}:META"
+      - "check": "{{ unreachable_host | default(host) }}:cgw-daemons"
+      - "check": "{{ unreachable_host | default(host) }}:{{ongoing_deployment_check_unreach}}"
+
+default_timed_limits_unreach_cgw_known_bugs_skip:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+    nodata_mode: skip
+    unreach_mode: force_ok
+    unreach_service:
+      - "check": "{{ unreachable_host | default(host) }}:UNREACHABLE"
+      - "check": "{{ unreachable_host | default(host) }}:META"
+      - "check": "{{ unreachable_host | default(host) }}:cgw-known-bugs"
+      - "check": "{{ unreachable_host | default(host) }}:{{ongoing_deployment_check_unreach}}"
+
+
+
+default_timed_limits_unreach_skip_with_deployment:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+    unreach_mode: skip
+    unreach_service:
+      - "check": "{{ unreachable_host | default(host) }}:UNREACHABLE"
+      - "check": "{{ unreachable_host | default(host) }}:META"
+      - "check": "{{ unreachable_host | default(host) }}:{{ongoing_deployment_check_unreach}}"
+
+
+default_timed_limits_unreach_skip_nodata_force_ok_with_deployment:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+    nodata_mode: force_ok
+    unreach_mode: skip
+    unreach_service:
+      - "check": "{{ unreachable_host | default(host) }}:UNREACHABLE"
+      - "check": "{{ unreachable_host | default(host) }}:META"
+      - "check": "{{ unreachable_host | default(host) }}:{{ongoing_deployment_check_unreach}}"
+
+timed_limits_20perc_crit:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits_20perc_crit }}"
+
+timed_limits_40perc_crit_99perc_warn:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits_40perc_crit_99perc_warn }}"
+
+timed_limits_50perc_crit:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits_50perc_crit }}"
+
+timed_limits_99perc_crit:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits_99perc_crit }}"
+
+timed_limits_always_warn:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits_always_warn }}"
+timed_limits_99perc_warn:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits_99perc_warn }}"
+
+default_timed_limits_logic_and:
+  timed:
+    times: "{{ default_limits_logic_and }}"
+
+default_timed_limits_logic_and_nodata_skip_dt_skip:
+  timed:
+    times: "{{ default_limits_logic_and }}"
+    nodata_mode: skip
+    downtimes_mode: skip
+
+e2e_behind_lock:
+  timed_more_than_limit_is_problem:
+    limits: "{{ e2e_behind_lock_limits }}"
+    hold_crit: 300
+    unreach_mode: skip
+    unreach_service:
+      - "check": "{{ unreachable_host }}:UNREACHABLE"
+      - "check": "{{ unreachable_host }}:META"
+
+# NOTE: Use these limits for e2e-permnet that turn WARN when tests are in maintenance.
+e2e_permnet_warn_tolerant_limits:
+  timed_more_than_limit_is_problem:
+    limits:
+      - {day_start: 1, day_end: 7, time_start: 0, time_end: 23, warn: '30%', crit: '0'}
+    unreach_mode: skip
+    unreach_service:
+      - "check": "{{ unreachable_host }}:UNREACHABLE"
+      - "check": "{{ unreachable_host }}:META"
+
+# NOTE: Use these limits for disaster variant of e2e-permnet which turns CRIT
+# only when significant number of hosts is affected.
+e2e_permnet_disaster_limits:
+  timed_more_than_limit_is_problem:
+    limits:
+      - {day_start: 1, day_end: 7, time_start: 0, time_end: 23, warn: '30%', crit: '30%'}
+    unreach_mode: skip
+    unreach_service:
+      - "check": "{{ unreachable_host }}:UNREACHABLE"
+      - "check": "{{ unreachable_host }}:META"
+
+# NOTE: there are no crit_limit/warn_limit are here. Use dictionaries from
+# below
+percent:
+  more_than_limit_is_problem:
+    mode: "percent"
+    hold_crit: 300
+    unreach_mode: skip
+    unreach_service:
+      - "check": "{{ unreachable_host }}:UNREACHABLE"
+      - "check": "{{ unreachable_host }}:META"
+
+dns_latency_limits_percent:
+  more_than_limit_is_problem: {warn_limit: 5, crit_limit: 5}
+
+vrouter_dropstats_limits_percent:
+  more_than_limit_is_problem: "{{ vrouter_dropstats_limits | default(default_vrouter_dropstats_limits) }}"
+
+default_vrouter_dropstats_limits: {warn_limit: 2, crit_limit: 2}
+
+vrouter_dropstats_noisy_limits_percent:
+  more_than_limit_is_problem: "{{ vrouter_dropstats_limits | default(default_vrouter_dropstats_noisy_limits) }}"
+
+default_vrouter_dropstats_noisy_limits: {warn_limit: 4, crit_limit: 8}
+
+# NOTE(k-zaitsev): CLOUD-11194 used by network checks on compute hosts
+# We need this so as not to meddle with compute's default checks
+default_network_limits_unreach_skip:
+  timed_more_than_limit_is_problem:
+    limits: "{{ network_limits }}"
+    unreach_mode: skip
+    unreach_service:
+      - "check": "{{ unreachable_host }}:UNREACHABLE"
+      - "check": "{{ unreachable_host }}:META"
+
+default_network_limits_unreach_skip_nodata_skip:
+  timed_more_than_limit_is_problem:
+    limits: "{{ network_limits }}"
+    nodata_mode: skip
+    unreach_mode: skip
+    unreach_service:
+      - "check": "{{ unreachable_host }}:UNREACHABLE"
+      - "check": "{{ unreachable_host }}:META"
+
+default_network_limits_unreach_skip_nodata_force_ok:
+  timed_more_than_limit_is_problem:
+    limits: "{{ network_limits }}"
+    nodata_mode: force_ok
+    unreach_mode: skip
+    unreach_service:
+      - "check": "{{ unreachable_host | default(host) }}:UNREACHABLE"
+      - "check": "{{ unreachable_host | default(host) }}:META"
+
+default_time_limits_unreach_vpp_related:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+    unreach_mode: force_ok
+    unreach_service:
+      - "check": "{{ unreachable_host | default(host) }}:UNREACHABLE"
+      - "check": "{{ unreachable_host | default(host) }}:META"
+      - "check": "{{ unreachable_host | default(host) }}:cgw-daemons"
+      - "check": "{{ unreachable_host | default(host) }}:{{ongoing_deployment_check_unreach}}"
+
+default_time_limits_unreach_vpp_related_no_data_skip:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+    unreach_mode: force_ok
+    nodata_mode: skip
+    unreach_service:
+      - "check": "{{ unreachable_host | default(host) }}:UNREACHABLE"
+      - "check": "{{ unreachable_host | default(host) }}:META"
+      - "check": "{{ unreachable_host | default(host) }}:cgw-daemons"
+      - "check": "{{ unreachable_host | default(host) }}:{{ongoing_deployment_check_unreach}}"
+
+default_network_limits_unreach_skip_nodata_force_ok_with_deployment:
+  timed_more_than_limit_is_problem:
+    limits: "{{ network_limits }}"
+    nodata_mode: force_ok
+    unreach_mode: skip
+    unreach_service:
+      - "check": "{{ unreachable_host | default(host) }}:UNREACHABLE"
+      - "check": "{{ unreachable_host | default(host) }}:META"
+      - "check": "{{ unreachable_host | default(host) }}:{{ongoing_deployment_check_unreach}}"
+
+default_network_limits_unreach_skip_nodata_skip_with_deployment:
+  timed_more_than_limit_is_problem:
+    limits: "{{ network_limits }}"
+    nodata_mode: skip
+    unreach_mode: skip
+    unreach_service:
+      - "check": "{{ unreachable_host }}:UNREACHABLE"
+      - "check": "{{ unreachable_host }}:META"
+      - "check": "{{ unreachable_host | default(host) }}:{{ongoing_deployment_check_unreach}}"
+
+kubelet_checks:
+  # Dict[salt_role, Dict[]]
+  compute:
+    unreachable_host: "yc_infra_compute_{{ env }}"
+    hw: true
+  bootstrap:
+    host: "{{ 'cloud_bootstrap' if env == 'prod' else 'cloud_bootstrap_' + env }}"
+    unreachable_host: "yc_bootstrap_{{ env }}"
+  bootstrap-hw:
+    unreachable_host: "yc_bootstrap-hw_{{ env }}"
+  head:
+    unreachable_host: "yc_common_head_{{ env }}"
+  vpc-api-k8s:
+    unreachable_host: "yc_network_vpc_api_{{ env }}"
+  nbs-control-k8s: {}
+
+locallb_services:
+  # Dict[base_role, List[locallb_endpoint]]
+  local-proxy:
+    - compute-api
+    - "{{ 'cic-api' if env in ['testing', 'preprod', 'prod'] else '' }}"
+    - as
+    - "{{ 'as-s3' if env in ['testing', 'prod'] else '' }}"
+    - "{{ 'as-monitoring' if env in ['prod'] else '' }}"
+    - compute-api
+    - disk-manager
+    - snapshot
+    - "{{ 'hc-ctrl' if env in ['testing', 'israel'] else 'hc' }}"
+    - "{{ 'hc-ctrl-proxy' if env in ['testing', 'israel'] else 'hc-proxy' }}"
+    - "{{ 'lb-ctrl' if env in ['testing', 'israel'] else 'lb' }}"
+    - iam
+    - "{{ 'iam-proxy' if env in ['preprod'] else '' }}"
+    - "{{ 'iam-takeout-agent' if env in ['testing', 'preprod', 'prod'] else '' }}"
+    - identity
+    - mfa
+    - "{{ 'oauth' if env in ['testing', 'preprod', 'prod'] else '' }}"
+    - oct-introspect
+    - org
+    - "{{ 'qm' if env in ['testing', 'preprod', 'prod'] else '' }}"
+    - reaper
+    - rm
+    - "{{ 'rm-takeout-agent' if env in ['testing', 'preprod', 'prod'] else '' }}"
+    - ss
+    - ts
+    - vpc-api
+    - "{{ 'vpc-control' if env in ['testing'] else '' }}"

@@ -1,0 +1,9 @@
+RECURSE(
+    clickhouse
+    iam
+    lockbox
+    logbroker
+    team_integration
+    unified_agent
+    ydb
+)

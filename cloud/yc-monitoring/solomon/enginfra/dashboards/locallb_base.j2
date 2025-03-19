@@ -1,0 +1,38 @@
+{% extends "../../base/dashboard.j2" %}
+{% from "../alerts/local_lb/map.jinja" import locallb_alerts %}
+{% from "../graphs/local_lb/map.jinja" import locallb_graphs %}
+{% block parameters %}
+{
+    "name": "bootstrap_base_role",
+    "value": "{{ bootstrap_base_role }}"
+}
+{% endblock %}
+{% block rows %}
+{% if service_name is not defined %}
+{% set service_name = "[[bootstrap_base_role]]" %}
+{% endif %}
+[
+{# alerts #}
+  {%- for alert in locallb_alerts %}
+{ "panels": [
+    {%- for az in zones_by_env[env] %}
+        {%- set alert_id = ["local_lb", alert['id'], service_name, az.prefix, env] | join("_") %}
+        {%- set alert_title = alert['id'] | replace('_', ' ') %}
+        {{ render_panel_raw(alert_title + " " + az.prefix|upper, "/admin/projects/yandexcloud/alerts/" ~ alert_id ~ "/subAlerts/fullscreen?view=tiles&filterByEvalStatus=WARN%2CALARM%2CNO_DATA%2CERROR&annotationKeys=error_rate") }}
+        {%- if not loop.last -%},{%- endif -%}
+    {% endfor %}
+]
+},
+{% endfor %}
+{%-   for graph in locallb_graphs -%}
+{ "panels": [
+  {%- for az in zones_by_env[env] %}
+    {%- set cluster = ['&cluster=cloud', env, service_name , az.prefix] | join('_') %}
+    {%- set params_args = '&host=*&bootstrap_base_role={{bootstrap_base_role}}' ~ cluster %}
+    {{ render_panel(graph["name"] + " " + az.prefix|upper, cluster, "locallb", "graph=" + graph["id"] + params_args, colspan=graph.get("colspan", 1)) }}{%- if not loop.last -%},{%- endif -%}
+  {%- endfor %}
+]
+}{%- if not loop.last -%},{%- endif -%}
+{%-   endfor -%}
+]
+{% endblock %}

@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.cic.v1.inner.agent;
+
+import "google/protobuf/empty.proto";
+import "yandex/cloud/priv/cic/v1/inner/agent/device/cluster_config.proto";
+import "yandex/cloud/priv/cic/v1/inner/agent/secrets/encrypted_data.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/cic/v1/inner/agent;cic";
+option java_outer_classname = "PCIAS";
+
+service AgentApi {
+  rpc GetAgentFlags(GetAgentFlagsRequest)
+      returns (GetAgentFlagsResponse);
+
+  /**
+  return NOT_FOUND Error if there is no config at all.
+  return GetClusterConfigVersionsResponse otherwise.
+   */
+  rpc GetClusterConfigVersions(GetClusterConfigVersionsRequest)
+      returns (GetClusterConfigVersionsResponse);
+
+  rpc GetClusterConfig(GetClusterConfigRequest)
+      returns (GetClusterConfigResponse);
+
+  rpc UpdateClusterConfigState(UpdateClusterConfigStateRequest)
+      returns (google.protobuf.Empty);
+
+  rpc DecryptSecrets(DecryptSecretsRequest)
+      returns (DecryptSecretsResponse);
+}
+
+message GetAgentFlagsRequest {
+}
+
+message GetAgentFlagsResponse {
+  bool stop_deploy = 1;
+}
+
+message GetClusterConfigVersionsRequest {
+  string cluster_id = 1;
+}
+
+message GetClusterConfigVersionsResponse {
+  // The last deployed version. Will be used in the configuration drift checks
+  // is unset initially when config had been built but was deployed never.
+  oneof last_deployed_version_optional {
+    int64 last_deployed_version = 1;
+  }
+  // Either a partially deployed "dirty" version or a fresh pending version to be deployed
+  int64 next_version = 2;
+  // The last prepared config version available for fetching. Convenient for testing.
+  int64 last_new_version = 3;
+}
+
+message GetClusterConfigRequest {
+  string cluster_id = 1;
+  int64 version = 2;
+}
+
+message GetClusterConfigResponse {
+  yandex.cloud.priv.cic.v1.inner.agent.device.ClusterConfig config = 1;
+}
+
+message UpdateClusterConfigStateRequest {
+  string cluster_id = 1;
+  int64 version = 2;
+  State state = 3;
+
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    DIRTY = 1;
+    DEPLOYED = 2;
+  }
+}
+
+message DecryptSecretsRequest {
+  string cluster_id = 1;
+  repeated agent.secrets.EncryptedData encrypted_values = 2;
+}
+
+//order of elements in DecryptSecretsResponse.decrypted_values are consistent with order of DecryptSecretsRequest.encrypted_values
+message DecryptSecretsResponse {
+  //decrypted_values is a list of raw utf-8 secrets
+  repeated string decrypted_values = 1;
+}

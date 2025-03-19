@@ -1,0 +1,135 @@
+{
+    "appConfig": {},
+    "application": "compute-gpu-base-role",
+    "id": "85549e52-4c32-4c0e-b6fc-3058ba9b10b1",
+    "index": 7,
+    "keepWaitingPipelines": false,
+    "limitConcurrent": true,
+    "name": "get-gpu-version-from-teamcity",
+    "parameterConfig": [
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "Use existing GPU version",
+            "name": "gpuVersion",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": true,
+            "required": false
+        }
+    ],
+    "spelEvaluator": "v4",
+    "stages": [
+        {
+            "buildConfigurationId": "Compute_Packages_Gpu_Packages",
+            "failOnFailedExpressions": false,
+            "name": "[get-gpu-version-from-teamcity] Get Latest GPU Version",
+            "parseArtifacts": [
+                {
+                    "artifactPath": "version.json",
+                    "outputVariable": "gpuVersionArtifactFromTC"
+                }
+            ],
+            "queueAtTop": true,
+            "refId": "2",
+            "requisiteStageRefIds": [],
+            "stageEnabled": {
+                "expression": "parameters.gpuVersion == \"\"",
+                "type": "expression"
+            },
+            "tcProfile": "aw",
+            "type": "teamcityBuild"
+        },
+        {
+            "failOnFailedExpressions": false,
+            "name": "[get-gpu-version-from-teamcity] Parse lastGpuVersion from json",
+            "refId": "3",
+            "requisiteStageRefIds": [
+                "2"
+            ],
+            "stageEnabled": {
+                "expression": "${ parameters.gpuVersion == \"\" }",
+                "type": "expression"
+            },
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "lastGpuVersion",
+                    "value": "${gpuVersionArtifactFromTC[\"version\"]}"
+                }
+            ]
+        },
+        {
+            "application": "compute-gpu-base-role",
+            "failPipeline": true,
+            "name": "[get-gpu-version-from-teamcity] Get Current GPU Version",
+            "pipeline": "96a4f8e0-324d-43f7-9288-8cc19c6e50be",
+            "pipelineParameters": {},
+            "refId": "11",
+            "requisiteStageRefIds": [
+                "14"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "name": "[get-gpu-version-from-teamcity] Check currGPUVersion is empty",
+            "preconditions": [
+                {
+                    "context": {
+                        "expression": "currGPUVersion != \"\"",
+                        "failureMessage": "Failed to get current GPU version"
+                    },
+                    "failPipeline": true,
+                    "type": "expression"
+                }
+            ],
+            "refId": "13",
+            "requisiteStageRefIds": [
+                "11"
+            ],
+            "type": "checkPreconditions"
+        },
+        {
+            "name": "[get-gpu-version-from-teamcity] Check lastGpuVersion is empty",
+            "preconditions": [
+                {
+                    "context": {
+                        "expression": "lastGpuVersion != \"\"",
+                        "failureMessage": "Failed to get new GPU version"
+                    },
+                    "failPipeline": true,
+                    "type": "expression"
+                }
+            ],
+            "refId": "14",
+            "requisiteStageRefIds": [
+                "3",
+                "15"
+            ],
+            "type": "checkPreconditions"
+        },
+        {
+            "failOnFailedExpressions": false,
+            "name": "[get-gpu-version-from-teamcity] Set lastGpuVersion",
+            "refId": "15",
+            "requisiteStageRefIds": [],
+            "stageEnabled": {
+                "expression": "parameters.gpuVersion != \"\"",
+                "type": "expression"
+            },
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "lastGpuVersion",
+                    "value": "${parameters.gpuVersion}"
+                }
+            ]
+        }
+    ],
+    "triggers": []
+}

@@ -1,0 +1,2 @@
+salt-minion:
+    pkg.installed

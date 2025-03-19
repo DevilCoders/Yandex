@@ -1,0 +1,23 @@
+{% set data = {'out': 'eth0'} %}
+{% for interface in salt.grains.get('ip6_interfaces') %}
+{%     if not interface.startswith('eth') %}
+{%         continue %}
+{%     endif %}
+{%     for address in salt.grains.get('ip6_interfaces:' + interface, []) %}
+{%         if address.startswith('2a02') %}
+{%             do data.update({'out': interface}) %}
+{%         endif %}
+{%     endfor %}
+{% endfor %}
+*filter
+# Yandex-HBF-Agent: protected
+:MANUAL -
+-A INPUT -j MANUAL
+COMMIT
+*nat
+:INPUT ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+:PREROUTING ACCEPT [0:0]
+-A POSTROUTING --out-interface {{ data['out'] }} --jump MASQUERADE
+COMMIT

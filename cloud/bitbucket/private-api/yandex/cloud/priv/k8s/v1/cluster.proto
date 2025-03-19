@@ -1,0 +1,170 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.k8s.v1;
+
+import "google/protobuf/timestamp.proto";
+
+import "yandex/cloud/priv/k8s/v1/maintenance.proto";
+import "yandex/cloud/priv/k8s/v1/version.proto";
+import "yandex/cloud/priv/validation.proto";
+import "yandex/cloud/priv/sensitive.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/k8s/v1;k8s";
+option java_outer_classname = "PMKC";
+
+message Cluster {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    PROVISIONING = 1;
+    RUNNING = 2;
+    RECONCILING = 3;
+    STOPPING = 4;
+    STOPPED = 5;
+    DELETING = 6;
+    STARTING = 7;
+  }
+
+  enum Health {
+    HEALTH_UNSPECIFIED = 0;
+    HEALTHY = 1;
+    UNHEALTHY = 2;
+  }
+
+  string id = 1;
+  string folder_id = 2;
+  google.protobuf.Timestamp created_at = 3;
+  string name = 4;
+  string description = 5;
+  map<string, string> labels = 6;
+
+  Status status = 7;
+  Health health = 8;
+
+  string network_id = 9;
+
+  Master master = 10;
+
+  IPAllocationPolicy ip_allocation_policy = 11;
+
+  oneof internet_gateway {
+    string gateway_ipv4_address = 12;
+  }
+
+  // Service account to be used for provisioning compute/vpc resources for kubernetes cluster.
+  string service_account_id = 13;
+  // Service account to be used by the worker nodes of the cluster to access container
+  // registry or to push node logs/metrics.
+  string node_service_account_id = 14;
+
+  ReleaseChannel release_channel = 15;
+
+  NetworkPolicy network_policy = 16;
+
+  KMSProvider kms_provider = 17;
+
+  string log_group_id = 18;
+
+  oneof network_implementation {
+    Cilium cilium = 19;
+  }
+}
+
+enum ReleaseChannel {
+  RELEASE_CHANNEL_UNSPECIFIED = 0;
+  RAPID = 1;
+  REGULAR = 2;
+  STABLE = 3;
+}
+
+message Master {
+  oneof master_type {
+    ZonalMaster zonal_master = 1;
+    RegionalMaster regional_master = 8;
+  }
+
+  // Kubernetes components' version run on the master.
+  // Deprecated, use version_info.current_version.
+  string version = 2;
+  MasterEndpoints endpoints = 3;
+
+  MasterAuth master_auth = 4;
+
+  VersionInfo version_info = 5;
+
+  MasterMaintenancePolicy maintenance_policy = 6;
+  repeated string security_group_ids = 7;
+}
+
+message MasterAuth {
+  // Base64-encoded public certificate that is the root of trust for the cluster.
+  string cluster_ca_certificate = 1 [(sensitive) = true];
+}
+
+message ZonalMaster {
+  string zone_id = 1;
+
+  string internal_v4_address = 2;
+  string external_v4_address = 3;
+  string service_v6_address = 4;
+  string external_v6_address = 5;
+}
+
+message RegionalMaster {
+  string region_id = 1;
+
+  string internal_v4_address = 2;
+  string external_v4_address = 3;
+  string service_v6_address = 4;
+  string external_v6_address = 5;
+}
+
+message MasterEndpoints {
+  string internal_v4_endpoint = 1;
+  string external_v4_endpoint = 2;
+  string service_v6_endpoint = 3;
+  string external_v6_endpoint = 4;
+}
+
+message IPAllocationPolicy {
+  // IP range pod ip addresses will be allocated from. It should not overlap with
+  // any subnet in the network the cluster located in, static routes will be
+  // set up for this CIDR blocks in node subnets.
+  string cluster_ipv4_cidr_block = 1;
+  // string cluster_subnet_id = 2; // TODO: use as user-friendly alternative to cidr_block
+
+  // Mask size for a node CIDR in the cluster. If not specified, 24 is used.
+  int64 node_ipv4_cidr_mask_size = 5 [(value) = "0,24,25,26,27,28"];
+
+  string service_ipv4_cidr_block = 3;
+  // string service_subnet_id = 4; // TODO: use as user-friendly alternative to cidr_block
+
+  string cluster_ipv6_cidr_block = 6;
+  string service_ipv6_cidr_block = 7;
+}
+
+message MasterMaintenancePolicy {
+  bool auto_upgrade = 1;
+
+  MaintenanceWindow maintenance_window = 2;
+}
+
+message NetworkPolicy {
+  enum Provider {
+    PROVIDER_UNSPECIFIED = 0;
+    CALICO = 1;
+  }
+  Provider provider = 1;
+}
+
+message KMSProvider {
+  string key_id = 1;
+}
+
+message Cilium {
+  enum RoutingMode {
+    ROUTING_MODE_UNSPECIFIED = 0;
+    TUNNEL = 1;
+  }
+
+  RoutingMode routing_mode = 1;
+}

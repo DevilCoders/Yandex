@@ -1,0 +1,15 @@
+RECURSE(
+    aggregate_balance_reports
+    aggregate_billing_export_table
+    aggregate_billing_records
+    aggregate_revenue_reports
+    apply_query_to_table
+    calculate_analytics_cube_total_sum
+    run_query
+    enrich_sales_name_table
+    group_max_table_raws_by_date
+    rank_marketplace_products
+    table_from_yt_to_s3
+    tests
+    upload_test_data_to_yt
+)

@@ -1,0 +1,67 @@
+use hahn;
+
+PRAGMA yt.InferSchema = '100';
+PRAGMA File('libcrypta_identifier_udf.so', 'yt://hahn/home/crypta/public/udfs/stable/libcrypta_identifier_udf.so');
+PRAGMA Udf('libcrypta_identifier_udf.so');
+
+$email_to_canonical = ($email) -> {
+    RETURN Identifiers::Email($email).Normalize;
+};
+
+INSERT INTO `//home/cloud_analytics/export/marketo/ya_attend_event`
+    SELECT
+      unwrap(cast(cast(CurrentUtcTimestamp() as uint64) / 1e6 as uint64)) AS dwh_created_at,
+      reg.needs_call as needs_call,
+      unwrap(reg.event_type) as event_type,
+      reg.event_type <> "webinar" as event_offline,
+      reg.has_cloud_account as has_cloud_account,
+       if(reg.cloud_interest_reason = "nan", null, reg.cloud_interest_reason)  as cloud_interest_reason,
+      reg.forms_created_time as registration_date,
+      unwrap(DateTime::GetHour(DateTime::FromSeconds(reg.event_start_time))) as event_start_time,
+      CAST(reg.form_id as string) as form_id,
+      reg.event_city as event_city,
+      reg.audience_type as audience_type,
+      reg.dwh_id as lead_dwh_id,
+      cast(reg.event_id as string) as event_id,
+      if(reg.grant_request_reason = "nan", null, reg.grant_request_reason)  as grant_request_reason,
+      unwrap(DateTime::GetHour(DateTime::FromSeconds(reg.event_end_time))) as event_end_time,
+      reg.product,
+      Unwrap(Digest::Md5Hex(
+            $email_to_canonical(reg.forms_email) ||
+            CAST(reg.event_start_time AS String) ||
+            CAST(reg.event_end_time AS String) ||
+            reg.event_type ||
+            cast(reg.event_id as string)
+        )) AS activity_id,
+        unwrap($email_to_canonical(reg.forms_email)) as email,
+        reg.event_name as event_name,
+        unwrap(reg.attendee_status) as attendee_status,
+        reg.event_link as event_link,
+        cast(event_start_time as uint64) as event_date
+    from (
+          select
+            e.event_start_time as event_start_time,
+            e.event_end_time as event_end_time,
+            e.event_name as event_name,
+            e.event_type as event_type,
+            e.event_link as event_link,
+            e.form_id as form_id,
+            e.event_id as event_id,
+            e.event_city as event_city,
+            e.attendee_status as attendee_status,
+            d.dwh_id as dwh_id,
+            e.has_cloud_account as has_cloud_account,
+            e.cloud_interest_reason as cloud_interest_reason,
+            e.needs_call as needs_call,
+            e.grant_request_reason as grant_request_reason,
+            e.product as product,
+            e.audience_type as audience_type,
+            e.forms_created_time as forms_created_time,
+            e.forms_email as forms_email
+          from `//home/cloud_analytics/export/marketo/ya_attend_event_raw_new` as e
+          join `//home/cloud_analytics/leads/dyn_table` as d
+            on $email_to_canonical(e.forms_email) == $email_to_canonical(d.email)
+         where d.dwh_updated_at > cast(cast(CurrentUtcTimestamp() as uint64) / 1e6 as uint64) - 60 * 60 * 12
+    ) as reg
+order by dwh_created_at
+

@@ -1,0 +1,1 @@
+DROP VIEW dbaas.placement_groups;

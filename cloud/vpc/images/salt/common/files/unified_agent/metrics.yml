@@ -1,0 +1,40 @@
+{%- set unified_agent = pillar["unified-agent"] %}
+
+channels:
+  - name: metrics_pull_channel
+    channel:
+      output: { plugin: metrics_pull, config: { port: {{ unified_agent.get("pull_channel_port", 8080) }} } }
+
+storages:
+{%- for metric, value in unified_agent["metrics"].items() %}
+  - name: {{ metric }}-storage
+    plugin: fs
+    config:
+      directory: /var/lib/yandex/unified_agent/storage/{{ metric }}-storage
+      max_partition_size: {{ value.get("size_mb", 500) }}mb
+{%- endfor %}
+
+routes:
+{%- for metric, value in unified_agent["metrics"].items() %}
+  # {{ metric }}
+  - input:
+      plugin: {{ value["plugin"] }}
+      flow_control:
+        inflight:
+          limit: {{ value.get("input_inflight_limit_mb", 100) }}mb
+      config: {{ value["config"] | yaml }}
+    channel:
+      pipe:
+        - storage_ref:
+            name: {{ metric }}-storage
+            flow_control:
+              inflight:
+                limit: {{ value.get("storage_inflight_limit_mb", 100) }}mb
+      {% if value.get("output") %}
+      output: {{ value["output"] | yaml }}
+      {% else %}
+      channel_ref:
+        # Expose metrics on http://[::]:8080/read
+        name: metrics_pull_channel
+      {% endif %}
+{%- endfor %}

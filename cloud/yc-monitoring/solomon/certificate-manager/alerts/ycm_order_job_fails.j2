@@ -1,0 +1,31 @@
+{% extends "./base_alert.j2" %}
+
+{% set checkExpression = "diff > " + diff_limit %}
+{% set description = "YCM " + env | upper + " Order Job Fails" %}
+{% set windowSecs = 300 %}
+
+{% macro prog() %}
+let predata = group_lines('sum', {
+    project='{{ project_id }}',
+    service='{{ solomon_service }}',
+    cluster='cloud_{{ env }}_ycm_cluster',
+    host='dpl*|cpl*|validation*',
+    {{ sensor_label }}='orderJobFails'
+});
+let data = group_by_time(1m, 'max', predata);
+let derivative = non_negative_derivative(data);
+let diff = sum(derivative);
+let value = max(data);
+{% endmacro %}
+
+{% block main %}
+  "name": "YCM {{ env | upper }} Order Job Fails",
+  "groupByLabels": ["cluster"],
+  "annotations": {
+    "jugglerService": "[[labels.cluster]]--orders-failed",
+    "description": "[[expression.value]] orders failed on [[labels.cluster]]",
+    "wikiUrl": "https://nda.ya.ru/t/EphpYNPm5BBK5Q",
+    "jugglerTags" : "{{ jugglerTags }}"
+  },
+  "type": {{ type_expression() }}
+{% endblock %}

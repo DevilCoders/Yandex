@@ -1,0 +1,26 @@
+$format_date = DateTime::Format("%Y-%m-%d");
+$format_datetime = DateTime::Format("%Y-%m-%d %H:%M:%S");
+
+$get_date_by_timestamp = ($timestamp) -> { RETURN $format_date(AddTimezone(DateTime::FromSeconds(CAST($timestamp AS Uint32)), 'Europe/Moscow')); };
+
+$get_datetime_by_timestamp = ($timestamp) -> { RETURN $format_datetime(AddTimezone(DateTime::FromSeconds(CAST($timestamp AS Uint32)), 'Europe/Moscow')); };
+
+
+$result = (SELECT
+	693 									AS service_id,
+	$get_date_by_timestamp(created_at)		AS withdrawal_date,
+	balance_client_id						AS client_id,
+	"payment"								AS transaction_type,
+	"yacloud"								AS paysys_type_cc,
+	"reward"								AS payment_type,
+	"main"									AS product,
+ 	amount									AS value_amount,
+	"RUB"									AS value_currency,
+	withdrawal_id							AS withdrawal_id,
+	$get_datetime_by_timestamp(created_at)	AS dt,
+	ROW_NUMBER() OVER w 					AS transaction_id,
+	ROW_NUMBER() OVER w 					AS payment_id
+
+	FROM $referrer_rewards_balance_withdrawals_table
+	WINDOW w AS (ORDER BY created_at)
+);

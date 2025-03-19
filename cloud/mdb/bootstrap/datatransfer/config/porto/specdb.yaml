@@ -1,0 +1,207 @@
+---
+{% set mdb_logsdb_consumer_porto_test_user_password = yav('ver-01e61vbfqkm5c10ncgms3xjxgn', 'mdb-logsdb-consumer-porto-test-user-password') %}
+{% set mdb_logsdb_consumer_porto_prod_user_password = yav('ver-01e61vbfqkm5c10ncgms3xjxgn', 'mdb-logsdb-consumer-porto-prod-user-password') %}
+# Token can be obtained here:
+# https://wiki.yandex-team.ru/transfer-manager/replication/quickstart/
+token: {{ env.get('TOKEN') }}
+# endpoint should be https://cdc.n.yandex-team.ru
+endpoint: https://cdc.n.yandex-team.ru
+# Folder ID of MDB sink Clickhouse cluster
+folder_id: fooi5vu9rdejqc3p4b60  # mdb-internal
+transfers:
+  # Clickhouse
+  # Porto-Test
+  - service: clickhouse
+    src:
+      consumer: mdb/porto/test/logsdb-consumer
+      topic: mdb/porto/test/clickhouse-logs
+      fields: &clickhouse-fields
+        - name: datetime
+          type: DATETIME
+        - name: log_format
+          type: STRING
+        - name: timestamp
+          type: DATETIME
+        - name: origin
+          type: STRING
+        - name: message
+          type: STRING
+        - name: cluster
+          type: STRING
+        - name: hostname
+          type: STRING
+        - name: component
+          type: STRING
+        - name: thread
+          type: UINT32
+        - name: severity
+          type: STRING
+        - name: query_id
+          type: STRING
+        - name: ms
+          type: UINT16
+    dst: &dst-porto-test
+      database: mdb
+      mdb_cluster_id: mdbnq9ar9md7hmkg2kju
+      user: tm_writer
+      password:
+        raw: {{ mdb_logsdb_consumer_porto_test_user_password }}
+
+  # Porto-Prod
+  - service: clickhouse
+    src:
+      consumer: mdb/porto/prod/logsdb-consumer
+      topic: mdb/porto/prod/clickhouse-logs
+      fields: *clickhouse-fields
+    dst: &dst-porto-prod
+      database: mdb
+      mdb_cluster_id: mdbmas2jjul3ct5q39sm
+      user: tm_writer
+      password:
+        raw: {{ mdb_logsdb_consumer_porto_prod_user_password }}
+
+  # Mongodb
+  # porto-prod
+  - service: mongodb
+    src:
+      consumer: mdb/porto/prod/logsdb-consumer
+      topic: mdb/porto/prod/mongodb-logs
+      fields: &mongodb-fields
+        - name: datetime
+          type: DATETIME
+        - name: log_format
+          type: STRING
+        - name: timestamp
+          type: DATETIME
+        - name: message
+          type: STRING
+        - name: origin
+          type: STRING
+        - name: severity
+          type: STRING
+        - name: cluster
+          type: STRING
+        - name: hostname
+          type: STRING
+        - name: component
+          type: STRING
+        - name: context
+          type: STRING
+        - name: ms
+          type: UINT16
+    dst: *dst-porto-prod
+  # porto-test
+  - service: mongodb
+    src:
+      consumer: mdb/porto/test/logsdb-consumer
+      topic: mdb/porto/test/mongodb-logs
+      fields: *mongodb-fields
+    dst: *dst-porto-test
+
+  # Redis
+  # porto-prod
+  - service: redis
+    src:
+      consumer: mdb/porto/prod/logsdb-consumer
+      topic: mdb/porto/prod/redis-logs
+      fields: &redis-fields
+        - name: datetime
+          type: DATETIME
+        - name: log_format
+          type: STRING
+        - name: timestamp
+          type: DATETIME
+        - name: origin
+          type: STRING
+        - name: message
+          type: STRING
+        - name: cluster
+          type: STRING
+        - name: hostname
+          type: STRING
+        - name: role
+          type: STRING
+        - name: pid
+          type: UINT32
+        - name: ms
+          type: UINT16
+    dst: *dst-porto-prod
+  # porto-test
+  - service: redis
+    src:
+      consumer: mdb/porto/test/logsdb-consumer
+      topic: mdb/porto/test/redis-logs
+      fields: *redis-fields
+    dst: *dst-porto-test
+
+  # Elasticsearch
+  # porto-prod
+  - service: elasticsearch
+    src:
+      consumer: mdb/porto/prod/logsdb-consumer
+      topic: mdb/porto/prod/elasticsearch-logs
+      fields: &elasticsearch-fields
+        - name: datetime
+          type: DATETIME
+        - name: log_format
+          type: STRING
+        - name: origin
+          type: STRING
+        - name: timestamp
+          type: DATETIME
+        - name: ms
+          type: UINT16
+        - name: cluster
+          type: STRING
+        - name: hostname
+          type: STRING
+        - name: level
+          type: STRING
+        - name: component
+          type: STRING
+        - name: message
+          type: STRING
+        - name: stacktrace
+          type: STRING
+    dst: *dst-porto-prod
+  # porto-test
+  - service: elasticsearch
+    src:
+      consumer: mdb/porto/test/logsdb-consumer
+      topic: mdb/porto/test/elasticsearch-logs
+      fields: *elasticsearch-fields
+    dst: *dst-porto-test
+
+  # Kibana
+  # porto-prod
+  - service: kibana
+    src:
+      consumer: mdb/porto/prod/logsdb-consumer
+      topic: mdb/porto/prod/kibana-logs
+      fields: &kibana-fields
+        - name: datetime
+          type: DATETIME
+        - name: log_format
+          type: STRING
+        - name: origin
+          type: STRING
+        - name: timestamp
+          type: DATETIME
+        - name: ms
+          type: UINT16
+        - name: cluster
+          type: STRING
+        - name: hostname
+          type: STRING
+        - name: type
+          type: STRING
+        - name: message
+          type: STRING
+    dst: *dst-porto-prod
+  # porto-test
+  - service: kibana
+    src:
+      consumer: mdb/porto/test/logsdb-consumer
+      topic: mdb/porto/test/kibana-logs
+      fields: *kibana-fields
+    dst: *dst-porto-test

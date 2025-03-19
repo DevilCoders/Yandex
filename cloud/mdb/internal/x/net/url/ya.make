@@ -1,0 +1,11 @@
+GO_LIBRARY()
+
+OWNER(g:mdb)
+
+SRCS(addr.go)
+
+GO_TEST_SRCS(addr_test.go)
+
+END()
+
+RECURSE(gotest)

@@ -1,0 +1,21 @@
+{% extends "../../base/dashboard.j2" %}
+
+{% set oct_cluster = "cloud_" + env + "_oct" %}
+
+{% macro render_row_for_azs(title, query, single_host="") %}
+{ "panels": [
+    {% for az in zones_by_env[env] %}
+        {{ render_panel(title=title + " @ " + az.prefix|upper, cluster=oct_cluster, service="oct_rabbitmq", query=query + "&host=" + oct_head_selector(az.prefix) + single_host) }}
+        {% if not loop.last %},{% endif %}
+    {% endfor %}
+]}
+{% endmacro %}
+
+{% block rows %}
+[
+    {{ render_row_for_azs(single_host="1", title="Exchanges: publish_in", query="l.metric_group=Exchanges&l.metric_type=rate&l.host=oct*1&l.metric=publish_in&graph=auto&checks=-publish_out") }},
+    {{ render_row_for_azs(single_host="1", title="Queues: vnc_config", query="l.metric_group=Queues&l.metric_type=gauge&l.host=oct*1&l.metric=messages&graph=auto&checks=-publish_out&stack=false&l.queue=vnc_config.*") }},
+    {{ render_row_for_azs(single_host="1", title="Queues: schema_transformer", query="l.metric_group=Queues&l.metric_type=gauge&l.host=oct*1&l.metric=messages&graph=auto&checks=-publish_out&stack=false&l.queue=schema_transformer.*") }},
+    {{ render_row_for_azs(title="Memory", query="l.metric_type=gauge&l.metric_group=NodeUtilization&l.metric=mem_used&graph=auto&checks=-&stack=false&min=0") }}
+]
+{% endblock %}

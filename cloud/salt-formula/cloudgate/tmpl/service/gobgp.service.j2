@@ -1,0 +1,31 @@
+{#-
+  `gobgp --cpus 0` causes gobgp to set GOMAXPROCS to number of CPU cores.
+  This is probably not what we want on a CPU-starved small VM.
+
+  See https://github.com/osrg/gobgp/blob/master/cmd/gobgpd/main.go#L139 -#}
+{%- if gobgp_cores_qty == 0 -%}
+  {%- set gobgp_cores_qty = 1 -%}
+{%- endif -%}
+{%- set hostname = grains['nodename'] %}
+{%- set host_tags = salt['grains.get']('cluster_map:hosts:%s:tags' % hostname) %}
+[Unit]
+Description='Cloud Gate GoBGP daemon'
+After=vpp.service yavpp-configured.service
+{%-if 'bgp2vpp' in host_tags %}
+BindsTo=vpp.service bgp2vpp.service
+{% else %}
+BindsTo=vpp.service go2vpp.service
+{% endif %}
+Wants=yavpp-gobgp-stats.service yavpp-gobgp-rtt.service
+ConditionPathExists=/etc/gobgp/gobgpd.conf
+StartLimitInterval=15min
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/gobgpd -t yaml -f /etc/gobgp/gobgpd.conf --cpus {{ gobgp_cores_qty }}
+CPUAffinity={{ gobgp_cores }}
+Restart=always
+RestartSec=80
+LimitCORE=infinity
+ExecReload=/bin/kill -HUP $MAINPID

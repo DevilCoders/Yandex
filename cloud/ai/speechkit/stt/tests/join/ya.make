@@ -1,0 +1,4 @@
+RECURSE(
+    pytest
+    ut
+)

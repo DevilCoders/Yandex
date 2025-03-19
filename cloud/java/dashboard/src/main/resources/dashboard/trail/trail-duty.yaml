@@ -1,0 +1,518 @@
+uid: trail-duty
+refresh: 1m
+title: Audit Trails Duty
+
+tags:
+  - yc-trails
+  - yc-audit-trails
+links:
+  - { title: 'Logbroker', url: 'https://grafana.yandex-team.ru/d/trail-logbroker' }
+  - { title: 'Preparer', url: 'https://grafana.yandex-team.ru/d/trail-preparer' }
+  - { title: 'Exporter', url: 'https://grafana.yandex-team.ru/d/trail-exporter' }
+  - { title: 'Control-Plane', url: 'https://grafana.yandex-team.ru/d/trail-cpl' }
+  - { title: 'Compute', url: 'https://grafana.yandex-team.ru/d/trail-compute' }
+  - { title: 'DB', url: 'https://grafana.yandex-team.ru/d/trail-db' }
+  - { title: 'Dashboards', tags: [ yc-trails ] }
+
+variables:
+  ui:
+    !include include/_datasources.yaml
+    !include include/_projects.yaml
+    lb_project:
+      values:
+        - b1gvcqr959dbmi1jltep
+        - aoeb66ftj1tbt1b2eimn
+      titles:
+        - prod
+        - preprod
+    lb_account:
+      values:
+        - b1gm277magvimb2gv0ld
+        - aoedsmvctptsmbkj4g90
+      titles:
+        - prod
+        - preprod
+    lb_quoter:
+      values:
+        - /global/b1gvcqr959dbmi1jltep/etn03iai600jur7pipla/PersQueue/System/Quoters/b1gm277magvimb2gv0ld
+        - /pre-prod_global/aoeb66ftj1tbt1b2eimn/cc8035oc71oh9um52mv3/PersQueue/System/Quoters/aoedsmvctptsmbkj4g90
+      titles:
+        - prod
+        - preprod
+  replacement:
+    !include ../include/errors.yaml
+
+
+graphDefaults:
+  datasource: ${datasource}
+  width: 4
+  height: 5
+
+queryDefaults:
+  dropNan: false
+  labels: ''
+  defaultTimeWindow: $__interval
+
+rows:
+  - title: 'Common'
+    queryDefaults: { labels: 'project=${project}, cluster=trail, service=core' }
+    panels:
+      - type: graph
+        title: Instances count
+        queries:
+          - params: { labels: 'name=jvm_info, host=cluster-*' }
+            select: { group_by_labels: [ sum, host ], replace_nan: [ 0 ], alias: '{{host}}' }
+        display: { empty: false, stack: false }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: Critical Failures
+        queries:
+          - params: { labels: 'name=*CriticalFailures, host=cpl-*|prp-*|exp-*' }
+            select: { group_by_labels: [ sum, name ], diff: [ ], drop_below: '0', alias: '{{name}}' }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: Not registered Events
+        queries:
+          - params: { labels: 'name=eventDistributorUnparsed, validationErrorType=NOT_REGISTERED, host=prp-*' }
+            select: { group_by_labels: [ sum, eventType ], diff: [ ], drop_below: '0', alias: '{{eventType}}' }
+        display: { stack: false }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: 'CPL API RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=grpc_requests, app=cloud-trail-control-plane_server, method=*, meter_type=count, host=cpl-*' }
+
+      - type: graph
+        title: 'CPL API Errors (by type)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, app=cloud-trail-control-plane_server, method=*, status!=OK, host=cpl-*' }
+            groupByTime: { max: 'default' }
+            select: { diff: [ ], drop_below: '0', group_by_labels: [ 'sum', 'status' ], alias: '{{status}}' }
+        display: { decimals: 0, empty: false }
+
+      - type: graph
+        title: 'CPL API Durations'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=grpc_durations, app=cloud-trail-control-plane_server, method=*, host=cpl-*' }
+
+      - type: graph
+        title: 'Common Errors'
+        queries:
+          - params: { labels: 'name=removeProductMetricsServiceMetricsFails, host=cpl-*|prp-*|exp-*' }
+            select: { group_by_labels: [ sum, name ], diff: [ ], drop_below: '0', alias: '{{name}}' }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: 'Complete Metrics Remove'
+        queries:
+          - params: { labels: 'name=removeProductMetricsServiceMetricsCompletions, host=cpl-*|prp-*|exp-*' }
+            select: { diff: [ ], drop_below: '0' }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: 'Last Run Metrics Remove'
+        queries:
+          - params: { labels: 'name=removeProductMetricsServiceLastRefreshTime, host=cpl-*|prp-*|exp-*' }
+            select: { drop_below: '1600000000', math: [ '* 1000' ] }
+        display: { stack: false }
+        yAxes: [ { format: dateTimeAsIsoNoDateIfToday } ]
+
+      - type: graph
+        title: Trail Corner Cases
+        queries:
+          - params: { labels: 'name=trailCornerCaseDetected, host=cpl-*' }
+            select: { group_by_labels: [ sum, trail ], diff: [ ], drop_below: '0', alias: '{{trail}}' }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: Deduplicated events
+        queries:
+          - params: { labels: 'name=exporterJobDeduplicatedRows, host=exp-*' }
+            select: { group_lines: [ sum ], diff: [ ], drop_below: '0', alias: 'events' }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: Event id duplicates
+        queries:
+          - params: { labels: 'name=exporterJobDuplicateEventIds, host=exp-*' }
+            select: { group_lines: [ sum ], diff: [ ], drop_below: '0', alias: 'duplicates' }
+        yAxes: [ { min: 0 } ]
+
+  - title: 'Logbroker'
+    queryDefaults: { labels: 'project=${lb_project}, cluster=global-data-plane, Account=${lb_account}' }
+    panels:
+      - type: graph
+        title: Bytes written to yc-events
+        queries:
+          - params: { labels: 'TopicPath=${lb_account}/yc-events, sensor=BytesWrittenOriginal, service=pqproxy_writeSession, host=cluster, OriginDC=cluster' }
+            select: { alias: 'yc-events' }
+          - params: { labels: 'TopicPath=${lb_account}/services/yc-organizationmanager, sensor=BytesWrittenOriginal, service=pqproxy_writeSession, host=cluster, OriginDC=cluster' }
+            select: { alias: 'yc-organizationmanager' }
+          - params: { labels: 'TopicPath=${lb_account}/services/yc-storage, sensor=BytesWrittenOriginal, service=pqproxy_writeSession, host=cluster, OriginDC=cluster' }
+            select: { alias: 'yc-storage' }
+          - params: { labels: 'TopicPath=${lb_account}/services/yc-lockbox-data, sensor=BytesWrittenOriginal, service=pqproxy_writeSession, host=cluster, OriginDC=cluster' }
+            select: { alias: 'yc-lockbox-data' }
+          - params: { labels: 'TopicPath=${lb_account}/e2e/yc-events-e2e, sensor=BytesWrittenOriginal, service=pqproxy_writeSession, host=cluster, OriginDC=cluster' }
+            select: { alias: 'yc-events-e2e' }
+        display: { stack: false }
+        yAxes: [ { min: 0, format: decbytes } ]
+
+      - type: graph
+        title: Bytes read from yc-events
+        queries:
+          - params: { labels: 'TopicPath=${lb_account}/yc-events, ConsumerPath=${lb_account}/yc-trail-preparer,  sensor=BytesRead, service=pqproxy_readSession, host=cluster, OriginDC=cluster' }
+            select: { alias: 'yc-events' }
+          - params: { labels: 'TopicPath=${lb_account}/services/yc-organizationmanager, ConsumerPath=${lb_account}/yc-trail-preparer,  sensor=BytesRead, service=pqproxy_readSession, host=cluster, OriginDC=cluster' }
+            select: { alias: 'yc-organizationmanager' }
+          - params: { labels: 'TopicPath=${lb_account}/services/yc-storage, ConsumerPath=${lb_account}/yc-trail-preparer,  sensor=BytesRead, service=pqproxy_readSession, host=cluster, OriginDC=cluster' }
+            select: { alias: 'yc-storage' }
+          - params: { labels: 'TopicPath=${lb_account}/services/yc-lockbox-data, ConsumerPath=${lb_account}/yc-trail-preparer,  sensor=BytesRead, service=pqproxy_readSession, host=cluster, OriginDC=cluster' }
+            select: { alias: 'yc-lockbox-data' }
+          - params: { labels: 'TopicPath=${lb_account}/e2e/yc-events-e2e, ConsumerPath=${lb_account}/yc-trail-preparer,  sensor=BytesRead, service=pqproxy_readSession, host=cluster, OriginDC=cluster' }
+            select: { alias: 'yc-events-e2e' }
+        display: { stack: false }
+        yAxes: [ { min: 0, format: decbytes } ]
+
+      - type: graph
+        title: Time since last read in yc-events
+        queries:
+          - params: { labels: 'TopicPath=${lb_account}/yc-events, ConsumerPath=${lb_account}/yc-trail-preparer, sensor=TimeSinceLastReadMs, service=pqtabletAggregatedCounters' }
+            select: { alias: 'yc-events' }
+          - params: { labels: 'TopicPath=${lb_account}/services/yc-organizationmanager, ConsumerPath=${lb_account}/yc-trail-preparer, sensor=TimeSinceLastReadMs, service=pqtabletAggregatedCounters' }
+            select: { alias: 'yc-organizationmanager' }
+          - params: { labels: 'TopicPath=${lb_account}/services/yc-storage, ConsumerPath=${lb_account}/yc-trail-preparer, sensor=TimeSinceLastReadMs, service=pqtabletAggregatedCounters' }
+            select: { alias: 'yc-storage' }
+          - params: { labels: 'TopicPath=${lb_account}/services/yc-lockbox-data, ConsumerPath=${lb_account}/yc-trail-preparer, sensor=TimeSinceLastReadMs, service=pqtabletAggregatedCounters' }
+            select: { alias: 'yc-lockbox-data' }
+          - params: { labels: 'TopicPath=${lb_account}/e2e/yc-events-e2e, ConsumerPath=${lb_account}/yc-trail-preparer, sensor=TimeSinceLastReadMs, service=pqtabletAggregatedCounters' }
+            select: { alias: 'yc-events-e2e' }
+        display: { stack: false }
+        yAxes: [ { min: 0, format: ms } ]
+
+      - type: graph
+        title: Read lag in yc-events
+        queries:
+          - params: { labels: 'TopicPath=${lb_account}/yc-events, ConsumerPath=${lb_account}/yc-trail-preparer, sensor=ReadTimeLagMs, service=pqtabletAggregatedCounters' }
+            select: { alias: 'yc-events' }
+          - params: { labels: 'TopicPath=${lb_account}/services/yc-organizationmanager, ConsumerPath=${lb_account}/yc-trail-preparer, sensor=ReadTimeLagMs, service=pqtabletAggregatedCounters' }
+            select: { alias: 'yc-organizationmanager' }
+          - params: { labels: 'TopicPath=${lb_account}/services/yc-storage, ConsumerPath=${lb_account}/yc-trail-preparer, sensor=ReadTimeLagMs, service=pqtabletAggregatedCounters' }
+            select: { alias: 'yc-storage' }
+          - params: { labels: 'TopicPath=${lb_account}/services/yc-lockbox-data, ConsumerPath=${lb_account}/yc-trail-preparer, sensor=ReadTimeLagMs, service=pqtabletAggregatedCounters' }
+            select: { alias: 'yc-lockbox-data' }
+          - params: { labels: 'TopicPath=${lb_account}/e2e/yc-events-e2e, ConsumerPath=${lb_account}/yc-trail-preparer, sensor=ReadTimeLagMs, service=pqtabletAggregatedCounters' }
+            select: { alias: 'yc-events-e2e' }
+        display: { stack: false }
+        yAxes: [ { min: 0, format: ms } ]
+
+      - type: graph
+        title: Bytes written to yc-trail
+        queries:
+          - params: { labels: 'TopicPath=${lb_account}/yc-trail, sensor=BytesWrittenOriginal, service=pqproxy_writeSession, host=cluster, OriginDC=cluster' }
+            select: { alias: 'bytes' }
+        draw: [ { color: '#d3a', alias: 'bytes' } ]
+        display: { stack: false }
+        yAxes: [ { min: 0, format: decbytes } ]
+
+      - type: graph
+        title: Quota Wait
+        templates: [ { name: percentile, format: Interval, sensor: raw } ]
+        queries:
+          - params: { labels: 'Account=${lb_account}, sensor=TopicWriteQuotaWaitOriginal, service=pqproxy_topicWriteQuotaWait, host=cluster, OriginDC=cluster, TopicPath=${lb_account}/*' }
+            select: { alias: '{{Interval}} {{host}}' }
+        display: { stack: true, empty: false, sort: decreasing }
+        yAxes: [ { min: 0 } ]
+
+  - title: 'Preparer'
+    queryDefaults: { labels: 'project=${project}, cluster=trail, service=core, host=prp-*' }
+    panels:
+      - type: graph
+        title: Errors
+        queries:
+          - params: { labels: 'name=preparerJobFails|logbrokerTopicReaderInitFails|eventConverterFails|localCacheRefreshFails|localCacheExpireFails|cacheCleanupJobFails|namesResolverIamFails|namesResolverRmFails|eventParserFails|eventFilterFails|statisticsCollectorFails|validationFails|concealServiceFails|trailsCacheRefreshFails' }
+            select: { group_by_labels: [ sum, name ], diff: [ ], drop_below: '0', alias: '{{name}}' }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: Incoming Bytes
+        templates: { name: errors, sumLines: true }
+        queries:
+          - params: { labels: 'name=preparerIncomingBytes_sum' }
+            select: { alias: incoming }
+        draw:
+          - { alias: incoming }
+        yAxes: [ { min: 0, format: decbytes } ]
+
+      - type: graph
+        title: Outgoing Bytes by Target
+        queries:
+          - params: { labels: 'name=preparerOutgoingBytes_sum' }
+            select: { group_by_labels: [ sum, target ], diff: [ ], drop_below: '0', alias: '{{target}}' }
+        yAxes: [ { min: 0, format: decbytes } ]
+        display: { empty: false, sort: decreasing }
+
+      - type: graph
+        title: Processing Delay p99
+        queries:
+          - params: { labels: 'name=preparerProcessingDelay, topic=rt3.global--b1gm277magvimb2gv0ld--yc-events' }
+            select: { group_by_labels: [ sum, bin ], non_negative_derivative: [ ], drop_below: '0', histogram_percentile: [ 99, bin ], alias: 'yc-events' }
+          - params: { labels: 'name=preparerProcessingDelay, topic=rt3.global--b1gm277magvimb2gv0ld@e2e--yc-events-e2e' }
+            select: { group_by_labels: [ sum, bin ], non_negative_derivative: [ ], drop_below: '0', histogram_percentile: [ 99, bin ], alias: 'yc-events-e2e' }
+          - params: { labels: 'name=preparerProcessingDelay, topic=rt3.global--b1gm277magvimb2gv0ld@ingest--yc-events-ingest' }
+            select: { group_by_labels: [ sum, bin ], non_negative_derivative: [ ], drop_below: '0', histogram_percentile: [ 99, bin ], alias: 'yc-events-ingest' }
+          - params: { labels: 'name=preparerProcessingDelay, topic=rt3.global--b1gm277magvimb2gv0ld@services--yc-lockbox-data' }
+            select: { group_by_labels: [ sum, bin ], non_negative_derivative: [ ], drop_below: '0', histogram_percentile: [ 99, bin ], alias: 'yc-lockbox-data' }
+          - params: { labels: 'name=preparerProcessingDelay, topic=rt3.global--b1gm277magvimb2gv0ld@services--yc-organizationmanager' }
+            select: { group_by_labels: [ sum, bin ], non_negative_derivative: [ ], drop_below: '0', histogram_percentile: [ 99, bin ], alias: 'yc-organizationmanager' }
+          - params: { labels: 'name=preparerProcessingDelay, topic=rt3.global--b1gm277magvimb2gv0ld@services--yc-storage' }
+            select: { group_by_labels: [ sum, bin ], non_negative_derivative: [ ], drop_below: '0', histogram_percentile: [ 99, bin ], alias: 'yc-storage' }
+
+        yAxes: [ { min: 0, format: s } ]
+
+      - type: graph
+        title: Elapsed process batch time
+        templates: [ { name: percentile, groupLines: true, format: solomon } ]
+        queries:
+          - params: { labels: 'name=preparerJobElapsed' }
+        yAxes: [ { min: 0, format: s } ]
+
+      - type: graph
+        title: 'Last Trails Cache Refresh'
+        queries:
+          - params: { labels: 'name=trailsCacheLastRefreshTime, host=prp-*' }
+            select: { drop_below: '1600000000', math: [ '* 1000' ] }
+        display: { stack: false }
+        yAxes: [ { format: dateTimeAsIsoNoDateIfToday } ]
+
+      - type: graph
+        title: Errors process batch
+        queries:
+          - params: { labels: 'name=preparerJobFails' }
+            select: { diff: [ ], drop_below: '0' }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: Local Cache Hit/miss by Type
+        queries:
+          - params: { labels: 'name=localCacheHits' }
+            select: { group_by_labels: [ sum, type ], diff: [ ], drop_below: '0', alias: 'hits {{type}}' }
+          - params: { labels: 'name=localCacheMisses' }
+            select: { group_by_labels: [ sum, type ], diff: [ ], drop_below: '0', alias: 'misses {{type}}' }
+        display: { stack: false }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: Persistent Cache Hit/miss by Type
+        queries:
+          - params: { labels: 'name=distributedCacheHits' }
+            select: { group_by_labels: [ sum, type ], diff: [ ], drop_below: '0', alias: 'hits {{type}}' }
+          - params: { labels: 'name=distributedCacheMisses' }
+            select: { group_by_labels: [ sum, type ], diff: [ ], drop_below: '0', alias: 'misses {{type}}' }
+        display: { stack: false }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: Names Resolver Throttled calls
+        queries:
+          - params: { labels: 'name=namesResolverRmThrottled' }
+            select: { diff: [ ], drop_below: '0', alias: 'rm' }
+          - params: { labels: 'name=namesResolverIamThrottled' }
+            select: { diff: [ ], drop_below: '0', alias: 'iam' }
+        display: { stack: false }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: Names Resolver Not Found
+        queries:
+          - params: { labels: 'name=namesResolverNotFound' }
+            select: { group_by_labels: [ sum, resourceType ], diff: [ ], drop_below: '0', alias: '{{resourceType}}' }
+        display: { stack: false }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: Elapsed IAM calls
+        templates: [ { name: percentile, groupLines: true, format: solomon } ]
+        queries:
+          - params: { labels: 'name=namesResolverIamElapsed' }
+        yAxes: [ { min: 0, format: s } ]
+
+      - type: graph
+        title: Elapsed RM calls
+        templates: [ { name: percentile, groupLines: true, format: solomon } ]
+        queries:
+          - params: { labels: 'name=namesResolverRmElapsed' }
+        yAxes: [ { min: 0, format: s } ]
+
+      - type: graph
+        title: Unknown fields
+        queries:
+          - params: { labels: 'name=eventParserUnknownFields' }
+            select: { group_by_labels: [ sum, eventType ], diff: [ ], drop_below: '0', alias: 'cloud {{eventType}}' }
+          - params: { labels: 'name=commonEventDetailsFillerUnknownFields' }
+            select: { group_by_labels: [ sum, type ], diff: [ ], drop_below: '0', alias: 'audit {{type}}' }
+        display: { empty: false, sort: decreasing }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: Events Size Compute
+        templates: [ { name: percentile, groupLines: true, format: solomon, sensor: raw } ]
+        queries:
+          - params: { labels: 'name=eventsSize, eventService=compute' }
+        yAxes: [ { min: 0, format: decbytes } ]
+
+      - type: graph
+        title: Events Size Storage
+        templates: [ { name: percentile, groupLines: true, format: solomon, sensor: raw } ]
+        queries:
+          - params: { labels: 'name=eventsSize, eventService=storage' }
+        yAxes: [ { min: 0, format: decbytes } ]
+
+      - type: graph
+        title: Events Size Others
+        templates: [ { name: percentile, groupLines: true, format: solomon, sensor: raw } ]
+        queries:
+          - params: { labels: 'name=eventsSize, eventService!=compute|storage' }
+        yAxes: [ { min: 0, format: decbytes } ]
+
+      - type: graph
+        title: Events Size Too Big
+        queries:
+          - params: { labels: 'name=eventDistributorUnparsed, validationErrorType=BAD_EVENT_SIZE' }
+            select: { group_by_labels: [ sum, eventService ], diff: [ ], drop_below: '0', alias: '{{eventService}}' }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: Wrong Trail Filter
+        queries:
+          - params: { labels: 'name=trailsCacheWrongFilterRoot' }
+            select: { group_by_labels: [ sum, type ], diff: [ ], drop_below: '0', alias: '{{type}}' }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: 'Ingest API RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=grpc_requests, app=cloud-trail-preparer_server, method=*, meter_type=count, host=prp-*' }
+
+      - type: graph
+        title: 'Ingest API Errors (by type)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, app=cloud-trail-preparer_server, method=*, status!=OK, host=prp-*' }
+            groupByTime: { max: 'default' }
+            select: { diff: [ ], drop_below: '0', group_by_labels: [ 'sum', 'status' ], alias: '{{status}}' }
+        display: { decimals: 0, empty: false }
+
+      - type: graph
+        title: 'Ingest API Durations'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=grpc_durations, app=cloud-trail-preparer_server, method=*, host=prp-*' }
+
+
+  - title: 'Exporter'
+    queryDefaults: { labels: 'project=${project}, cluster=trail, service=core, host=exp-*' }
+    panels:
+      - type: graph
+        title: Errors
+        queries:
+          - params: { labels: 'name=preparerJobFails|exporterJobFails|moveJobPrepareFails|moveJobRunFails|moveJobDoneFails|objectStorageUploaderFails|deleteJobFails' }
+            select: { group_by_labels: [ sum, name ], diff: [ ], drop_below: '0', alias: '{{name}}' }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: Corner Case Happens
+        queries:
+          - params: { labels: 'name=moveTaskServiceFailures' }
+            select: { group_by_labels: [ sum, trail ], diff: [ ], drop_below: '0', alias: '{{trail}}' }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: Elapsed S3 Upload Time
+        templates: [ { name: percentile, groupLines: true, format: solomon } ]
+        queries:
+          - params: { labels: 'name=objectStorageUploaderElapsed' }
+        yAxes: [ { min: 0, format: s } ]
+
+      - type: graph
+        title: S3 Upload Completions
+        queries:
+          - params: { labels: 'name=objectStorageUploaderCompletions' }
+            select: { group_lines: [ sum ], diff: [ ], drop_below: '0', alias: 'completions' }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: Data stream Upload Time
+        templates: [ { name: percentile, groupLines: true, format: solomon } ]
+        queries:
+          - params: { labels: 'name=dataStreamUploaderElapsed' }
+        yAxes: [ { min: 0, format: s } ]
+
+      - type: graph
+        title: Data stream Completions
+        queries:
+          - params: { labels: 'name=dataStreamUploaderCompletions' }
+            select: { group_lines: [ sum ], diff: [ ], drop_below: '0', alias: 'completions' }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: Elapsed ExporterJob Time
+        templates: [ { name: percentile, groupLines: true, format: solomon } ]
+        queries:
+          - params: { labels: 'name=objectStorageDestinationExporterServiceElapsed' }
+        yAxes: [ { min: 0, format: s } ]
+
+      - type: graph
+        title: ExporterJob Completions
+        queries:
+          - params: { labels: 'name=exporterJobCompletions' }
+            select: { group_lines: [ sum ], diff: [ ], drop_below: '0', alias: 'completions' }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: MoveJob Prepare Time
+        templates: [ { name: percentile, groupLines: true, format: solomon } ]
+        queries:
+          - params: { labels: 'name=moveJobPrepareElapsed' }
+        yAxes: [ { min: 0, format: s } ]
+
+      - type: graph
+        title: MoveJob Run Time
+        templates: [ { name: percentile, groupLines: true, format: solomon } ]
+        queries:
+          - params: { labels: 'name=moveJobRunElapsed' }
+        yAxes: [ { min: 0, format: s } ]
+
+      - type: graph
+        title: MoveJob Done Time
+        templates: [ { name: percentile, groupLines: true, format: solomon } ]
+        queries:
+          - params: { labels: 'name=moveJobDoneElapsed' }
+        yAxes: [ { min: 0, format: s } ]
+
+      - type: graph
+        title: Move Job Prepare Completions
+        queries:
+          - params: { labels: 'name=moveJobPrepareCompletions' }
+            select: { group_lines: [ sum ], diff: [ ], drop_below: '0', alias: 'completions' }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: Move Job Run Completions
+        queries:
+          - params: { labels: 'name=moveJobRunCompletions' }
+            select: { group_lines: [ sum ], diff: [ ], drop_below: '0', alias: 'completions' }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: Move Job Done Completions
+        queries:
+          - params: { labels: 'name=moveJobDoneCompletions' }
+            select: { group_lines: [ sum ], diff: [ ], drop_below: '0', alias: 'completions' }
+        yAxes: [ { min: 0 } ]

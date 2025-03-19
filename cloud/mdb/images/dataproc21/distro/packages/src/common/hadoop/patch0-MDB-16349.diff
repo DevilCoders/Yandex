@@ -1,0 +1,600 @@
+From f0653df2edb4bd043b93881570d8c769ac78b1ce Mon Sep 17 00:00:00 2001
+From: Epikhin Mikhail <schizophrenia@yandex-team.ru>
+Date: Thu, 27 Jan 2022 12:39:51 +0300
+Subject: [PATCH] MDB-16349: support Yandex.Cloud IAM token for signing
+ requests
+
+---
+ .../dataproc/s3/ExponentialRetryPolicy.java   |  37 ++++
+ .../cloud/dataproc/s3/IAMCredentials.java     |  38 ++++
+ .../dataproc/s3/IAMCredentialsException.java  |  15 ++
+ .../dataproc/s3/IAMCredentialsFetcher.java    | 179 ++++++++++++++++++
+ .../cloud/dataproc/s3/YandexIAMSigner.java    | 152 +++++++++++++++
+ .../s3/YandexMetadataCredentialsProvider.java | 113 +++++++++++
+ 6 files changed, 534 insertions(+)
+ create mode 100644 hadoop-tools/hadoop-aws/src/main/java/ru/yandex/cloud/dataproc/s3/ExponentialRetryPolicy.java
+ create mode 100644 hadoop-tools/hadoop-aws/src/main/java/ru/yandex/cloud/dataproc/s3/IAMCredentials.java
+ create mode 100644 hadoop-tools/hadoop-aws/src/main/java/ru/yandex/cloud/dataproc/s3/IAMCredentialsException.java
+ create mode 100644 hadoop-tools/hadoop-aws/src/main/java/ru/yandex/cloud/dataproc/s3/IAMCredentialsFetcher.java
+ create mode 100644 hadoop-tools/hadoop-aws/src/main/java/ru/yandex/cloud/dataproc/s3/YandexIAMSigner.java
+ create mode 100644 hadoop-tools/hadoop-aws/src/main/java/ru/yandex/cloud/dataproc/s3/YandexMetadataCredentialsProvider.java
+
+diff --git a/hadoop-tools/hadoop-aws/src/main/java/ru/yandex/cloud/dataproc/s3/ExponentialRetryPolicy.java b/hadoop-tools/hadoop-aws/src/main/java/ru/yandex/cloud/dataproc/s3/ExponentialRetryPolicy.java
+new file mode 100644
+index 00000000000..6b38dd87bc5
+--- /dev/null
++++ b/hadoop-tools/hadoop-aws/src/main/java/ru/yandex/cloud/dataproc/s3/ExponentialRetryPolicy.java
+@@ -0,0 +1,37 @@
++package ru.yandex.cloud.dataproc.s3;
++
++import java.util.Random;
++
++/**
++ * Helper class that implements Exponential Backoff, because sometimes
++ * service could not return response due network issues, or something else.
++ * We should retry insteadof fail entire user job.
++ */
++
++public class ExponentialRetryPolicy {
++    protected volatile int jitter;
++    protected volatile int maximumBackoff;
++    protected volatile int maximumRetries;
++    protected Random random;
++
++    public ExponentialRetryPolicy(int maximumBackoff, int jitter, int maximumRetries) {
++        this.maximumBackoff = maximumBackoff;
++        this.jitter = jitter;
++        this.maximumRetries = maximumRetries;
++        this.random = new Random();
++    }
++
++    public boolean retryRequest(int attempt) {
++        if(attempt >= this.maximumRetries) {
++            return false;
++        }
++        try{
++            int jitterOffset = this.random.nextInt(this.jitter);
++            int sleepTime = Math.min(2^attempt + jitterOffset, this.maximumBackoff);
++            Thread.sleep(sleepTime * 1000);
++        } catch (InterruptedException ie) {
++            // Do nothing
++        }
++        return true;
++    }
++}
+\ No newline at end of file
+diff --git a/hadoop-tools/hadoop-aws/src/main/java/ru/yandex/cloud/dataproc/s3/IAMCredentials.java b/hadoop-tools/hadoop-aws/src/main/java/ru/yandex/cloud/dataproc/s3/IAMCredentials.java
+new file mode 100644
+index 00000000000..f92d3837cad
+--- /dev/null
++++ b/hadoop-tools/hadoop-aws/src/main/java/ru/yandex/cloud/dataproc/s3/IAMCredentials.java
+@@ -0,0 +1,38 @@
++package ru.yandex.cloud.dataproc.s3;
++
++import com.amazonaws.auth.AWSCredentials;
++
++/**
++ * Implementation of the AWSCredentials interface that allows callers to
++ * pass IAM token in the constructor.
++ * Actually, access and secret keys have faked values.
++ */
++public class IAMCredentials implements AWSCredentials {
++    private static final String accessKey = "YANDEX_CLOUD_DATAPROC_FAKE_ACCESS_KEY";
++    private static final String secretKey = "YANDEX_CLOUD_DATAPROC_FAKE_SECRET_KEY";
++    private final String iamToken;
++
++    /**
++     * Constructs a new IAMCredentials object, with the specified IAM token.
++     * @param iamToken
++     *            The IAM token.
++     */
++    public IAMCredentials(String iamToken) {
++        if (iamToken == null) {
++            throw new IllegalArgumentException("IAM token cannot be null.");
++        }
++        this.iamToken = iamToken;
++    }
++
++    public String getAWSAccessKeyId() {
++        return accessKey;
++    }
++
++    public String getAWSSecretKey() {
++        return secretKey;
++    }
++
++    public String getIamToken() {
++        return iamToken;
++    }
++}
+\ No newline at end of file
+diff --git a/hadoop-tools/hadoop-aws/src/main/java/ru/yandex/cloud/dataproc/s3/IAMCredentialsException.java b/hadoop-tools/hadoop-aws/src/main/java/ru/yandex/cloud/dataproc/s3/IAMCredentialsException.java
+new file mode 100644
+index 00000000000..1a68d069604
+--- /dev/null
++++ b/hadoop-tools/hadoop-aws/src/main/java/ru/yandex/cloud/dataproc/s3/IAMCredentialsException.java
+@@ -0,0 +1,15 @@
++package ru.yandex.cloud.dataproc.s3;
++
++/**
++ * Helper class that wraps exceptions.
++ */
++
++public class IAMCredentialsException extends Exception {
++    public IAMCredentialsException(String message) {
++        super(message);
++    }
++
++    public IAMCredentialsException(String errorMessage, Exception e) {
++        super(errorMessage, e);
++    }
++}
+\ No newline at end of file
+diff --git a/hadoop-tools/hadoop-aws/src/main/java/ru/yandex/cloud/dataproc/s3/IAMCredentialsFetcher.java b/hadoop-tools/hadoop-aws/src/main/java/ru/yandex/cloud/dataproc/s3/IAMCredentialsFetcher.java
+new file mode 100644
+index 00000000000..5a1e13da057
+--- /dev/null
++++ b/hadoop-tools/hadoop-aws/src/main/java/ru/yandex/cloud/dataproc/s3/IAMCredentialsFetcher.java
+@@ -0,0 +1,179 @@
++package ru.yandex.cloud.dataproc.s3;
++
++import java.io.IOException;
++import java.time.Instant;
++
++import com.amazonaws.auth.AWSCredentials;
++import org.apache.commons.logging.Log;
++import org.apache.commons.logging.LogFactory;
++
++import com.fasterxml.jackson.databind.ObjectMapper;
++import com.fasterxml.jackson.databind.JsonNode;
++import org.apache.http.HttpHost;
++import org.apache.http.client.HttpRequestRetryHandler;
++import org.apache.http.client.methods.CloseableHttpResponse;
++import org.apache.http.client.methods.HttpUriRequest;
++import org.apache.http.client.methods.RequestBuilder;
++import org.apache.http.impl.client.CloseableHttpClient;
++import org.apache.http.impl.client.DefaultHttpRequestRetryHandler;
++import org.apache.http.impl.client.HttpClients;
++
++/**
++ * Helper class that contains the common behavior of the
++ * CredentialsProviders that loads the credentials from a
++ * local endpoint on an Compute instance
++ */
++
++public class IAMCredentialsFetcher {
++    private static final Log LOG = LogFactory.getLog(IAMCredentialsFetcher.class);
++
++    /**
++     * The threshold after the last attempt to load credentials (in
++     * milliseconds) at which credentials are attempted to be refreshed.
++     */
++    private static final int REFRESH_THRESHOLD = 1000 * 60 * 60;
++
++    /**
++     * The threshold before credentials expire (in milliseconds) at which
++     * this class will attempt to load new credentials.
++     */
++    private static final int EXPIRATION_THRESHOLD = 1000 * 60 * 15;
++
++    /**
++     * The attempts count before failing fetchCredentials method
++     */
++    private static final int MAX_RETRIES = 8;
++
++    /**
++     * Maximum backoff of delay between multiple attempts for fetchCredentials
++     */
++    private static final int MAX_BACKOFF_DELAY = 64;
++
++    /**
++     * Jitter, random delay for spread attempts between many instances
++     */
++    private static final int JITTER = 10;
++
++    /** The host of metadata service. */
++    private static final HttpHost HOST = new HttpHost("169.254.169.254");
++
++    /** The URI of IAM token.*/
++    private static final String TOKEN_URI = "/computeMetadata/v1/instance/service-accounts/default/token";
++
++    /** The current instance profile credentials */
++    private volatile IAMCredentials credentials;
++
++    /** The expiration for the current instance profile credentials */
++    private volatile Instant credentialsExpiration;
++
++    /** The time of the last attempt to check for new credentials */
++    protected volatile Instant lastInstanceProfileCheck;
++
++    public AWSCredentials getCredentials() throws IAMCredentialsException {
++        if (needsToLoadCredentials())
++            fetchCredentials();
++            if (expired()) {
++                throw new IAMCredentialsException("The credentials received have been expired");
++            }
++        return credentials;
++    }
++
++    /**
++     * Returns true if credentials are null, credentials are within expiration or
++     * if the last attempt to refresh credentials is beyond the refresh threshold.
++     */
++    protected boolean needsToLoadCredentials() {
++        if (credentials == null) return true;
++        if (credentialsExpiration != null) {
++            if (isWithinExpirationThreshold()) return true;
++        }
++        if (lastInstanceProfileCheck != null) {
++            if (isPastRefreshThreshold()) return true;
++        }
++        return false;
++    }
++
++    private void parseCredentials(CloseableHttpResponse response) throws IOException, IAMCredentialsException {
++        /** Example of response
++         * https://cloud.yandex.ru/docs/compute/operations/vm-connect/auth-inside-vm#auth-inside-vm
++         * {"access_token":"...","expires_in":42653,"token_type":"Bearer"
++         * */
++        ObjectMapper mapper = new ObjectMapper();
++        JsonNode node = mapper.readTree(response.getEntity().getContent());
++        JsonNode token = node.get("access_token");
++        if (token == null) {
++            throw new IAMCredentialsException("response does not contain token");
++        }
++        credentials = new IAMCredentials(token.asText());
++        JsonNode expires_in = node.get("expires_in");
++        if (expires_in != null) {
++            credentialsExpiration = Instant.now().plusSeconds(expires_in.asLong());
++        }
++    }
++
++    /**
++     * Fetches the credentials from the endpoint.
++     */
++    private synchronized void fetchCredentials() throws IAMCredentialsException {
++        if (!needsToLoadCredentials()) return;
++        lastInstanceProfileCheck = Instant.now();
++
++        ExponentialRetryPolicy retryHandler = new ExponentialRetryPolicy(MAX_BACKOFF_DELAY, JITTER, MAX_RETRIES);
++        HttpRequestRetryHandler noRetry = new DefaultHttpRequestRetryHandler(0, true);
++        CloseableHttpClient client = HttpClients
++                .custom()
++                .setRetryHandler(noRetry) // We will be use retry policy on higher level
++                .build();
++
++        for (int attempts = 0; ; attempts++) {
++            try {
++                HttpUriRequest request = RequestBuilder.get()
++                        .addHeader("Metadata-Flavor", "Google")
++                        .setUri(TOKEN_URI)
++                        .build();
++
++                CloseableHttpResponse response = client.execute(HOST, request);
++                parseCredentials(response);
++                return;
++            } catch (Exception exception) {
++                LOG.debug("Unable to load credentials from metadata server, attempt#" + attempts, exception);
++                if (!retryHandler.retryRequest(attempts)) {
++                    throw new IAMCredentialsException("Failed to get IAM-token with retries", exception);
++                }
++            }
++        }
++    }
++
++    public void refresh() {
++        credentials = null;
++    }
++
++    /**
++     * Returns true if the current credentials are within the expiration
++     * threshold, and therefore, should be refreshed.
++     */
++    private boolean isWithinExpirationThreshold() {
++        return credentialsExpiration.minusSeconds(EXPIRATION_THRESHOLD).isBefore(Instant.now());
++    }
++
++    /**
++     * Returns true if the last attempt to refresh credentials is beyond the
++     * refresh threshold, and therefore the credentials should attempt to be
++     * refreshed.
++     */
++    private boolean isPastRefreshThreshold() {
++        return Instant.now().minusSeconds(REFRESH_THRESHOLD).isAfter(lastInstanceProfileCheck);
++    }
++
++    private boolean expired() {
++        if (credentialsExpiration != null) {
++            if(credentialsExpiration.isBefore(Instant.now()))
++                return true;
++        }
++        return false;
++    }
++    @Override
++    public String toString() {
++        return getClass().getSimpleName();
++    }
++}
+\ No newline at end of file
+diff --git a/hadoop-tools/hadoop-aws/src/main/java/ru/yandex/cloud/dataproc/s3/YandexIAMSigner.java b/hadoop-tools/hadoop-aws/src/main/java/ru/yandex/cloud/dataproc/s3/YandexIAMSigner.java
+new file mode 100644
+index 00000000000..2a72d3d2cac
+--- /dev/null
++++ b/hadoop-tools/hadoop-aws/src/main/java/ru/yandex/cloud/dataproc/s3/YandexIAMSigner.java
+@@ -0,0 +1,152 @@
++package ru.yandex.cloud.dataproc.s3;
++
++import java.util.Collection;
++import java.util.Collections;
++import java.util.Date;
++import java.util.HashSet;
++import java.util.Set;
++
++import com.amazonaws.auth.*;
++import com.amazonaws.services.s3.internal.ServiceUtils;
++import org.apache.commons.logging.Log;
++import org.apache.commons.logging.LogFactory;
++
++import com.amazonaws.SignableRequest;
++import com.amazonaws.services.s3.Headers;
++
++/**
++ * Implementation of the {@linkplain Signer} interface specific to S3's signing
++ * algorithm.
++ */
++public class YandexIAMSigner extends AbstractAWSSigner {
++
++    /** Shared log for signing debug output */
++    private static final Log log = LogFactory.getLog(YandexIAMSigner.class);
++
++    /**
++     * The HTTP verb (GET, PUT, HEAD, DELETE) the request to sign is using.
++     *
++     * TODO: We need to know the HTTP verb in order to create the authentication
++     * signature, but we don't have easy access to it through the request
++     * object.
++     *
++     * Maybe it'd be better for the S3 signer (or all signers?) to work directly
++     * off of the HttpRequest instead of the Request object?
++     */
++    private final String httpVerb;
++
++    /**
++     * The canonical resource path portion of the S3 string to sign. Examples:
++     * "/", "/<bucket name>/", or "/<bucket name>/<key>"
++     *
++     * TODO: We don't want to hold the resource path as member data in the S3
++     * signer, but we need access to it and can't get it through the request
++     * yet.
++     */
++    private final String resourcePath;
++
++    /**
++     * The names of all the user-specified query parameters that should be
++     * included in the canonical request, in addition to those default
++     * parameters that are always signed.
++     *
++     */
++    private final Set<String> additionalQueryParamsToSign;
++
++    public YandexIAMSigner() {
++      /*
++       * NOTE: don't delegate to the other ctors, otherwise an IAE will be
++       * thrown since the resourcePath is lazily initialized to null.
++       */
++        this.httpVerb = null;
++        this.resourcePath = null;
++        this.additionalQueryParamsToSign = null;
++    }
++
++    /**
++     * Constructs a new S3Signer to sign requests based on the AWS credentials,
++     * HTTP method and canonical S3 resource path.
++     *
++     * @param httpVerb
++     *            The HTTP verb (GET, PUT, POST, HEAD, DELETE) the request is
++     *            using.
++     * @param resourcePath
++     *            The canonical S3 resource path (ex: "/", "/<bucket name>/", or
++     *            "/<bucket name>/<key>".
++     */
++     public YandexIAMSigner(String httpVerb, String resourcePath) {
++        this(httpVerb, resourcePath, null);
++     }
++
++     /**
++      * Constructs a new S3Signer to sign requests based on the AWS credentials,
++      * HTTP method and canonical S3 resource path.
++      *
++      * @param httpVerb
++      *            The HTTP verb (GET, PUT, POST, HEAD, DELETE) the request is
++      *            using.
++      * @param resourcePath
++      *            The canonical S3 resource path (ex: "/", "/<bucket name>/", or
++      *            "/<bucket name>/<key>".
++      * @param additionalQueryParamsToSign
++      *            A collection of user-specified query parameters that should be
++      *            included in the canonical request, in addition to those
++      *            default parameters that are always signed.
++      *
++      */
++     public YandexIAMSigner(String httpVerb, String resourcePath,
++                            Collection<String> additionalQueryParamsToSign) {
++         if (resourcePath == null)
++             throw new IllegalArgumentException(
++                     "Parameter resourcePath is empty");
++
++         this.httpVerb = httpVerb;
++         this.resourcePath = resourcePath;
++         this.additionalQueryParamsToSign = additionalQueryParamsToSign == null
++                 ? null
++                 : Collections.unmodifiableSet(new HashSet<String>(
++                         additionalQueryParamsToSign));
++     }
++
++    @Override
++    protected AWSCredentials sanitizeCredentials(AWSCredentials credentials) {
++         if(credentials instanceof IAMCredentials) {
++             IAMCredentials iamCredentials = (IAMCredentials) credentials;
++             String iamToken = iamCredentials.getIamToken();
++             if (iamToken != null) iamToken = iamToken.trim();
++             return new IAMCredentials(iamToken);
++         }
++         return super.sanitizeCredentials(credentials);
++    }
++
++    public void sign(SignableRequest<?> request, AWSCredentials credentials) {
++        if (credentials == null) {
++            log.debug("Credentials are empty");
++            return;
++        }
++        if (! (credentials instanceof IAMCredentials)) {
++            log.debug("Canonical string will not be signed, as no IAM Token was provided");
++            return;
++        }
++        IAMCredentials iamCredentials = (IAMCredentials)credentials;
++        if(iamCredentials.getIamToken() == null) {
++            log.debug("Canonical string will not be signed, as no IAM Token was provided");
++            return;
++        }
++
++        AWSCredentials sanitizedCredentials = sanitizeCredentials(credentials);
++        iamCredentials = (IAMCredentials)credentials;
++
++        int timeOffset = request.getTimeOffset();
++        Date date = getSignatureDate(timeOffset);
++        request.addHeader(Headers.DATE, ServiceUtils.formatRfc822Date(date));
++        request.addHeader("X-YaCloud-SubjectToken", iamCredentials.getIamToken());
++    }
++
++    @Override
++    protected void addSessionCredentials(SignableRequest<?> request,
++                                         AWSSessionCredentials credentials) {
++        log.debug("Yandex Cloud Object Storage doesn't support session tokens.");
++        return;
++    }
++}
+\ No newline at end of file
+diff --git a/hadoop-tools/hadoop-aws/src/main/java/ru/yandex/cloud/dataproc/s3/YandexMetadataCredentialsProvider.java b/hadoop-tools/hadoop-aws/src/main/java/ru/yandex/cloud/dataproc/s3/YandexMetadataCredentialsProvider.java
+new file mode 100644
+index 00000000000..bde87995ecd
+--- /dev/null
++++ b/hadoop-tools/hadoop-aws/src/main/java/ru/yandex/cloud/dataproc/s3/YandexMetadataCredentialsProvider.java
+@@ -0,0 +1,113 @@
++package ru.yandex.cloud.dataproc.s3;
++
++import com.amazonaws.auth.AWSCredentials;
++import com.amazonaws.auth.AWSCredentialsProvider;
++import org.apache.commons.logging.Log;
++import org.apache.commons.logging.LogFactory;
++
++import java.util.concurrent.Executors;
++import java.util.concurrent.ScheduledExecutorService;
++import java.util.concurrent.TimeUnit;
++
++/**
++ * Credentials provider implementation that loads credentials from the Yandex Cloud
++ * Compute Instance Metadata Service within GCP-like API.
++ */
++public class YandexMetadataCredentialsProvider implements AWSCredentialsProvider {
++    private static final Log LOG = LogFactory.getLog(YandexMetadataCredentialsProvider.class);
++
++    /**
++     * The wait time, after which the background thread initiates a refresh to
++     * load latest credentials if needed.
++     */
++    private static final int ASYNC_REFRESH_INTERVAL_TIME_MINUTES = 1;
++
++    /**
++     * The default YandexMetadataCredentialsProvider that can be shared by
++     * multiple CredentialsProvider instance threads to shrink the amount of
++     * requests to Compute metadata service.
++     */
++    private IAMCredentialsFetcher credentialsFetcher;
++
++    /**
++     * The executor service used for refreshing the credentials in the
++     * background.
++     */
++    private volatile ScheduledExecutorService executor;
++
++    private volatile boolean shouldRefresh;
++
++    public YandexMetadataCredentialsProvider() {
++        this(false);
++    }
++
++    /**
++     * Spins up a new thread to refresh the credentials asynchronously if
++     * refreshCredentialsAsync is set to true, otherwise the credentials will be
++     * refreshed from the instance metadata service synchronously,
++     *
++     * @param refreshCredentialsAsync
++     *            true if credentials needs to be refreshed asynchronously else
++     *            false.
++     */
++    public YandexMetadataCredentialsProvider(boolean refreshCredentialsAsync) { this(refreshCredentialsAsync, true); }
++
++    /**
++     * Spins up a new thread to refresh the credentials asynchronously.
++     * @param eagerlyRefreshCredentialsAsync
++     *            when set to false will not attempt to refresh credentials asynchronously
++     *            until after a call has been made to {@link #getCredentials()} - ensures that
++     *            {@link YandexMetadataCredentialsProvider#getCredentials()} is only hit when this CredentialProvider is actually required
++     */
++    public static YandexMetadataCredentialsProvider createAsyncRefreshingProvider(final boolean eagerlyRefreshCredentialsAsync) {
++        return new YandexMetadataCredentialsProvider(true, eagerlyRefreshCredentialsAsync);
++    }
++
++    private YandexMetadataCredentialsProvider(boolean refreshCredentialsAsync, final boolean eagerlyRefreshCredentialsAsync) {
++        credentialsFetcher = new IAMCredentialsFetcher();
++        shouldRefresh = eagerlyRefreshCredentialsAsync;
++        if (refreshCredentialsAsync) {
++            executor = Executors.newScheduledThreadPool(1);
++            executor.scheduleWithFixedDelay(new Runnable() {
++                public void run() {
++                    try {
++                        if (shouldRefresh) credentialsFetcher.getCredentials();
++                    } catch (IAMCredentialsException ace) {
++                        YandexMetadataCredentialsProvider.this.handleError(ace);
++                    } catch (RuntimeException re) {
++                        YandexMetadataCredentialsProvider.this.handleError(re);
++                    } catch (Error e) {
++                        YandexMetadataCredentialsProvider.this.handleError(e);
++                    }
++                }
++            }, 0, ASYNC_REFRESH_INTERVAL_TIME_MINUTES, TimeUnit.MINUTES);
++        }
++    }
++
++    private void handleError(Throwable t) {
++        refresh();
++        LOG.error(t.getMessage(), t);
++    }
++
++    @Override
++    protected void finalize() throws Throwable {
++        if (executor != null) {
++            executor.shutdownNow();
++        }
++    }
++
++    public AWSCredentials getCredentials() {
++        AWSCredentials creds = null;
++        try {
++            creds = credentialsFetcher.getCredentials();
++        } catch (IAMCredentialsException e) {
++            e.printStackTrace();
++        }
++        shouldRefresh = true;
++        return creds;
++    }
++
++    public void refresh() {
++        credentialsFetcher.refresh();
++    }
++}
+\ No newline at end of file
+-- 
+2.30.1 (Apple Git-130)
+

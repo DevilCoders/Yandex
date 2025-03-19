@@ -1,0 +1,25 @@
+{%- set java_opts = [] -%}
+{% if salt.dbaas.is_aws() %}
+    {% do java_opts.append('-Djava.net.preferIPv6Addresses=true -Djava.net.preferIPv4Stack=false') %}
+{% endif %}
+[Unit]
+Description=AdminAPI gateway for py4j client
+Requires=network.target remote-fs.target
+After=network.target remote-fs.target kafka.service
+
+[Service]
+Type=simple
+User=monitor
+Group=monitor
+{% if salt.pillar.get('data:kafka:old_jmx_user', False) %}
+Environment=JMX_AUTH='monitorRole {{ salt['mdb_kafka.jmx_password']() }}'
+{% else %}
+Environment=JMX_AUTH='monitorJmx {{ salt['mdb_kafka.monitor_password']() }}'
+{% endif %}
+ExecStart=/usr/bin/java {{java_opts | join(' ')}} -jar /opt/kafka-adminapi-gateway/kafka-adminapi-gateway.jar
+ExecStop=/bin/kill $MAINPID
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

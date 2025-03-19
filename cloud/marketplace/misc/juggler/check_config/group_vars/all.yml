@@ -1,0 +1,83 @@
+namespace: "ycloud"
+children: "CGROUP%{{ cgroup }}"
+common_tag: 'yc-marketplace'
+jserver_api: http://juggler-api.search.yandex.net:80/api
+responsibles: [ "robot-zoidberg" ]
+
+default_check:
+  host: "{{ host }}"
+  namespace: "{{ namespace }}"
+  notifications: [{"template": "phone_escalation", logins: ['robot-zoidberg'] }]
+  meta: {}
+  responsible: "{{ service_responsibles | default(responsibles) }}"
+  tags: "{{ tags }}"
+  children: "{{ children }}"
+  ttl: "{{ttl | default(600)}}"
+  refresh_time: "{{refresh_time | default(120) }}"
+  __force__: true
+
+
+off_check_limits:
+  - {crit: '99%', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '0'}
+
+telegram_template:
+  - template: on_status_change
+    status: [OK, WARN, CRIT]
+    method: [telegram]
+    login: ["{{ telegramLogin }}"]
+
+api_timed_limits:
+  aggregator: timed_more_than_limit_is_problem
+  aggregator_kwargs:
+    limits: "{{ api_limits }}"
+  notifications:
+  - template: on_status_change
+    status: [OK, WARN, CRIT]
+    method: [telegram]
+    login: ["{{ telegramLogin }}"]
+  - template: on_status_change
+    status: [CRIT]
+    method: [phone]
+    login: "{{ responsibles }}"
+
+queue_timed_limits:
+  aggregator: timed_more_than_limit_is_problem
+  aggregator_kwargs:
+    limits: "{{ queue_limits }}"
+  notifications:
+  - template: on_status_change
+    status: [OK, WARN, CRIT]
+    method: [telegram]
+    login: ["{{ telegramLogin }}"]
+  - template: on_status_change
+    status: [CRIT]
+    method: [phone]
+    login: "{{ responsibles }}"
+
+default_timed_limits:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+
+default_timed_limits_with_unreach:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+    unreach_mode: skip
+    unreach_service: { "check": ":UNREACHABLE" }
+
+off_timed_limits:
+  timed_more_than_limit_is_problem:
+    limits: "{{ off_check_limits }}"
+
+off_timed_limits_with_unreach:
+  timed_more_than_limit_is_problem:
+    limits: "{{ off_check_limits }}"
+    unreach_mode: skip
+    unreach_service: { "check": ":UNREACHABLE" }
+
+timed_limits_99perc_crit:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits_99perc_crit }}"
+
+default_timed_limits_logic_and:
+  timed:
+    times: "{{ default_limits_logic_and }}"

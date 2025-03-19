@@ -1,0 +1,243 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.compute.v1;
+
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/duration.proto";
+import "yandex/cloud/api/operation.proto";
+import "yandex/cloud/priv/compute/v1/snapshot.proto";
+import "yandex/cloud/priv/compute/v1/disk.proto";
+import "yandex/cloud/priv/compute/v1/snapshot_schedule.proto";
+import "yandex/cloud/priv/compute/v1/validation.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/compute/v1;compute";
+option java_outer_classname = "PSPS";
+
+service SnapshotScheduleService {
+  rpc Get (GetSnapshotScheduleRequest) returns (SnapshotSchedule) ;
+
+  rpc Create (CreateSnapshotScheduleRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "CreateSnapshotScheduleMetadata"
+      response: "SnapshotSchedule"
+    };
+  }
+
+  rpc Update (UpdateSnapshotScheduleRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateSnapshotScheduleMetadata"
+      response: "SnapshotSchedule"
+    };
+  }
+
+  rpc Delete (DeleteSnapshotScheduleRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeleteSnapshotScheduleMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+
+  // UpdateDisks of schedule
+  rpc UpdateDisks (UpdateSnapshotScheduleDisksRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateSnapshotScheduleDisksMetadata"
+      response: "SnapshotSchedule"
+    };
+  }
+
+  // AddDisk to schedule
+  rpc AddDisk(AddDiskSnapshotScheduleRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "AddDiskSnapshotScheduleMetadata"
+      response: "SnapshotSchedule"
+    };
+  }
+
+  // RemoveDisk from schedule
+  rpc RemoveDisk(RemoveDiskSnapshotScheduleRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "RemoveDiskSnapshotScheduleMetadata"
+      response: "SnapshotSchedule"
+    };
+  }
+
+  // Disable schedule
+  rpc Disable(DisableSnapshotScheduleRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "DisableSnapshotScheduleMetadata"
+      response: "SnapshotSchedule"
+    };
+  }
+  
+  // Enable schedule
+  rpc Enable(EnableSnapshotScheduleRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "EnableSnapshotScheduleMetadata"
+      response: "SnapshotSchedule"
+    };
+  }
+
+  // List all snapshot schedules
+  rpc List (ListSnapshotSchedulesRequest) returns (ListSnapshotSchedulesResponse) ;  
+
+  rpc ListOperations (ListSnapshotScheduleOperationsRequest) returns (ListSnapshotScheduleOperationsResponse) ;
+
+  // List snapshot created by schedule
+  rpc ListSnapshots (ListSnapshotScheduleSnapshotsRequest) returns (ListSnapshotScheduleSnapshotsResponse);
+
+  // List disks that belong to schedule
+  rpc ListDisks (ListSnapshotScheduleDisksRequest) returns (ListSnapshotScheduleDisksResponse);
+
+}
+
+message GetSnapshotScheduleRequest {
+  string snapshot_schedule_id = 1 [(valid) = "resource_id", (required) = true];
+}
+
+message ListSnapshotSchedulesRequest {
+  string folder_id = 1 [(valid) = "resource_id", (required) = true];
+  int64 page_size = 2 [(valid) = "page_size"];
+  string page_token = 3 [(valid) = "page_token"];
+  string filter = 4;
+  // By which column the listing should be ordered and in which direction,
+  // format is "createdAt desc". "id asc" if omitted.
+  string order_by = 5 [(valid) = "order_by"];
+
+  // Private fields
+  google.protobuf.FieldMask field_mask = 100;
+}
+
+message ListSnapshotSchedulesResponse {
+  repeated SnapshotSchedule snapshot_schedules = 1;
+  string next_page_token = 2;
+}
+
+message CreateSnapshotScheduleRequest {
+  string folder_id = 1 [(valid) = "resource_id", (required) = true];
+  string name = 2 [(valid) = "resource_name"];
+  string description = 3 [(valid) = "description"];
+  map<string, string> labels = 4 [(valid) = "labels"];
+    
+  // schedule properties
+  SchedulePolicy schedule_policy = 5 [(required) = true];
+  oneof retention_policy {
+    google.protobuf.Duration retention_period = 6;
+    int64 snapshot_count = 7 [(value) = ">=0"];
+  }
+  SnapshotSpec snapshot_spec = 8;
+
+  repeated string disk_ids = 9 [(valid) = "resource_id", (length) = "<=1000"];
+}
+
+message CreateSnapshotScheduleMetadata {
+  string snapshot_schedule_id = 1;
+}
+
+// TODO: add schedule policy and snapshot spec
+message UpdateSnapshotScheduleRequest {
+  string snapshot_schedule_id = 1 [(valid) = "resource_id", (required) = true];
+  google.protobuf.FieldMask update_mask = 2;
+
+  string name = 3 [(valid) = "resource_name"];
+  string description = 4 [(valid) = "description"];
+  map<string, string> labels = 5 [(valid) = "labels"];
+
+  SchedulePolicy schedule_policy = 6;
+  oneof retention_policy {
+    google.protobuf.Duration retention_period = 7;
+    int64 snapshot_count = 8 [(value) = ">=0"];
+  }
+  SnapshotSpec snapshot_spec = 9;
+}
+
+message UpdateSnapshotScheduleMetadata {
+  string snapshot_schedule_id = 1;
+}
+
+message DeleteSnapshotScheduleRequest {
+  string snapshot_schedule_id = 1 [(valid) = "resource_id", (required) = true];
+}
+
+message DeleteSnapshotScheduleMetadata {
+  string snapshot_schedule_id = 1;
+}
+
+message AddDiskSnapshotScheduleRequest {
+  string snapshot_schedule_id = 1 [(valid) = "resource_id", (required) = true];
+  string disk_id = 2 [(valid) = "resource_id", (required) = true];
+}
+
+message AddDiskSnapshotScheduleMetadata {
+  string snapshot_schedule_id = 1;
+  string disk_id = 2;
+}
+
+message RemoveDiskSnapshotScheduleRequest {
+  string snapshot_schedule_id = 1 [(valid) = "resource_id", (required) = true];
+  string disk_id = 2 [(valid) = "resource_id", (required) = true];
+}
+
+message RemoveDiskSnapshotScheduleMetadata {
+  string snapshot_schedule_id = 1;
+  string disk_id = 2;
+}
+
+message DisableSnapshotScheduleRequest {
+  string snapshot_schedule_id = 1 [(valid) = "resource_id", (required) = true];
+}
+
+message DisableSnapshotScheduleMetadata {
+  string snapshot_schedule_id = 1;
+}
+
+message EnableSnapshotScheduleRequest {
+  string snapshot_schedule_id = 1 [(valid) = "resource_id", (required) = true];
+}
+
+message EnableSnapshotScheduleMetadata {
+  string snapshot_schedule_id = 1;
+}
+
+message ListSnapshotScheduleOperationsRequest {
+  string snapshot_schedule_id = 1 [(valid) = "resource_id", (required) = true];
+  int64 page_size = 2 [(valid) = "page_size"];
+  string page_token = 3 [(valid) = "page_token"];
+}
+
+message ListSnapshotScheduleOperationsResponse {
+  repeated operation.Operation operations = 1;
+  string next_page_token = 2;
+}
+
+message ListSnapshotScheduleSnapshotsRequest {
+  string snapshot_schedule_id = 1 [(valid) = "resource_id", (required) = true];
+  int64 page_size = 2 [(valid) = "page_size"];
+  string page_token = 3 [(valid) = "page_token"];
+}
+
+message ListSnapshotScheduleSnapshotsResponse {
+  repeated Snapshot snapshots = 1;
+  string next_page_token = 2;
+}
+
+message ListSnapshotScheduleDisksRequest {
+  string snapshot_schedule_id = 1 [(valid) = "resource_id", (required) = true];
+  int64 page_size = 2 [(valid) = "page_size"];
+  string page_token = 3 [(valid) = "page_token"];
+}
+
+message ListSnapshotScheduleDisksResponse {
+  repeated Disk disks = 1;
+  string next_page_token = 2;
+}
+
+message UpdateSnapshotScheduleDisksRequest {
+  string snapshot_schedule_id = 1 [(valid) = "resource_id", (required) = true];
+  repeated string remove = 2 [(valid) = "resource_id", (length) = "<=1000"];
+  repeated string add = 3 [(valid) = "resource_id", (length) = "<=1000"];
+}
+
+message UpdateSnapshotScheduleDisksMetadata {
+  string snapshot_schedule_id = 1;
+}

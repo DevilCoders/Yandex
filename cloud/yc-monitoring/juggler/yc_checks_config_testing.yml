@@ -1,0 +1,335 @@
+---
+- hosts: localhost
+  gather_facts: false
+  pre_tasks:
+    - juggler_facts:  jserver_api={{ jserver_api }}
+      tags:
+        - always
+
+  vars:
+    - env: "testing"
+    - env_dns_zone: "cloud-testing.yandex.net"
+    - default_notification_methods: []
+    - telegram_notification: []
+    - default_tags: "{{ check_tags }} + {{ dc_tag }} + ['yc', 'yc-{{ env }}']"
+    - datacenters:
+      - vla
+      - sas
+      - myt
+    - availability_zones:
+      - ru-central1-a
+      - ru-central1-b
+      - ru-central1-c
+    - network_limits: "{{ default_limits }}"
+
+  roles:
+    - role: head
+      vars:
+        children:
+          - CGROUP%cloud_{{ env }}_head
+        flap: { stable: 360, critical: 1080 }
+
+    - role: compute
+      vars:
+        children:
+          - "CGROUP%cloud_{{ env }}_compute{% if dc is defined %}_{{ dc }}{% endif %}"
+        host: "yc_common_compute_{{ env }}"
+        unreachable_host: "yc_infra_compute_{{ env }}"
+        flap: { stable: 360, critical: 1080 }
+
+    - role: core
+      vars:
+        children:
+          - "CGROUP%cloud_{{ env }}_compute{% if dc is defined %}_{{ dc }}{% endif %}"
+        host: "yc_core_compute_{{ env }}"
+        unreachable_host: "yc_infra_compute_{{ env }}"
+        flap: { stable: 360, critical: 1080 }
+
+    - role: serialssh
+      vars:
+        children:
+          - CGROUP%cloud_{{ env }}_serialssh
+        host: "yc_common_serialssh_{{ env }}"
+        unreachable_host: "{{ host }}"
+        flap: { stable: 360, critical: 1080 }
+
+    - role: scheduler
+      vars:
+        children:
+          - CGROUP%cloud_{{ env }}_scheduler
+        flap: { stable: 360, critical: 1080 }
+
+    - role: cloudgate
+      vars:
+        ignore_ongoing_deployment: false
+        children: []
+        role: ""
+        host: ""
+        unreachable_host: ""
+        telegram_chat_id: ""
+        notification_methods: "{{ default_notification_methods }}"
+        check_tags: ['cloudgate']
+        flap: { stable: 360, critical: 1080 }
+        default_limits: "{{ default_limits_0perc_crit }}"
+
+    - role: hc-ctrl
+      vars:
+        ignore_ongoing_deployment: false
+        children:
+          - "CGROUP%cloud_{{ env }}_healthcheck-ctrl{{ dc_suffix }}"
+        role: "yc_loadbalancer_hc-ctrl"
+        check_tags: ['visible', 'yc-loadbalancer', 'yc-cgw']
+        default_limits: "{{ default_limits_workday }}"
+        unreachable_host: "{{ host }}"
+        flap: ""
+        host: "{{ role }}_{{ env }}{% if dc is defined %}_{{ dc }}{% endif %}"
+        notify_tag: 'yc-temporary'
+
+    - role: hc-node
+      vars:
+        ignore_ongoing_deployment: false
+        children:
+          - "CGROUP%cloud_{{ env }}_healthcheck-node{{ dc_suffix }}"
+        role: "yc_loadbalancer_hc-node"
+        check_tags: ['visible', 'yc-loadbalancer', 'yc-cgw']
+        default_limits: "{{ default_limits_workday }}"
+        unreachable_host: "{{ host }}"
+        flap: ""
+        host: "{{ role }}_{{ env }}{% if dc is defined %}_{{ dc }}{% endif %}"
+        notify_tag: 'yc-temporary'
+
+    - role: lb-ctrl
+      vars:
+        ignore_ongoing_deployment: false
+        children:
+          - "CGROUP%cloud_{{ env }}_loadbalancer-ctrl{{ dc_suffix }}"
+        role: "yc_loadbalancer_lb-ctrl"
+        check_tags: ['visible', 'yc-loadbalancer', 'yc-cgw']
+        default_limits: "{{ default_limits_workday }}"
+        unreachable_host: "{{ host }}"
+        flap: ""
+        host: "{{ role }}_{{ env }}{% if dc is defined %}_{{ dc }}{% endif %}"
+        notify_tag: 'yc-temporary'
+
+    - role: lb-node
+      vars:
+        ignore_ongoing_deployment: false
+        children:
+          - "CGROUP%cloud_{{ env }}_loadbalancer-node{{ dc_suffix }}"
+        role: "yc_loadbalancer_lb-node"
+        check_tags: ['visible', 'yc-loadbalancer', 'yc-cgw']
+        default_limits: "{{ default_limits_workday }}"
+        unreachable_host: "{{ host }}"
+        flap: ""
+        host: "{{ role }}_{{ env }}{% if dc is defined %}_{{ dc }}{% endif %}"
+        notify_tag: 'yc-temporary'
+
+    - role: lb-duty
+      vars:
+        ignore_ongoing_deployment: true
+        children:
+          - "CGROUP%cloud_{{ env }}_loadbalancer-duty-k8s{{ dc_suffix }}"
+        role: "yc_loadbalancer_duty"
+        check_tags: ['visible', 'yc-loadbalancer', 'yc-cgw', 'yc-duty']
+        default_limits: "{{ default_limits_workday }}"
+        unreachable_host: "{{ host }}"
+        flap: ""
+        host: "{{ role }}_{{ env }}{% if dc is defined %}_{{ dc }}{% endif %}"
+
+    - role: cgw
+      vars:
+        ignore_ongoing_deployment: false
+        children:
+          - CGROUP%cloud_testing_cloudgate{{ dc_suffix }}
+          - CGROUP%cloud_testing_cgw-ipv4{{ dc_suffix }}
+          - CGROUP%cloud_testing_cgw-ipv6{{ dc_suffix }}
+        role: "yc_network_cloudgate"
+        host: "yc_network_cloudgate{{ host_suffix }}"
+        unreachable_host: "yc_network_cloudgate{{ host_suffix }}"
+        telegram_chat_id: ""
+        notification_methods: "{{ default_notification_methods }}"
+        check_tags: ['visible', 'yc-network', 'yc-cgw', 'yc-cloudgate']
+        flap: { stable: 360, critical: 1080 }
+        default_limits: "{{ default_limits_0perc_crit }}"
+
+    - role: cgw-nat
+      vars:
+        ignore_ongoing_deployment: false
+        children:
+          - CGROUP%cloud_testing_cgw-nat{{ dc_suffix }}
+        role: "yc_network_cgw-nat"
+        host: "yc_network_cgw-nat{{ host_suffix }}"
+        unreachable_host: "yc_network_cgw-nat{{ host_suffix }}"
+        telegram_chat_id: ""
+        notification_methods: "{{ default_notification_methods }}"
+        check_tags: ['visible', 'yc-network', 'yc-cgw', 'yc-cgw-nat']
+        flap: { stable: 360, critical: 1080 }
+        default_limits: "{{ default_limits_0perc_crit }}"
+
+    - role: cgw-dc
+      vars:
+        ignore_ongoing_deployment: false
+        children:
+          - CGROUP%cloud_testing_cgw-dc{{ dc_suffix }}
+        role: "yc_network_cgw-dc"
+        host: "yc_network_cgw-dc{{ host_suffix }}"
+        unreachable_host: "yc_network_cgw-dc{{ host_suffix }}"
+        telegram_chat_id: ""
+        notification_methods: "{{ default_notification_methods }}"
+        check_tags: ['visible', 'yc-network', 'yc-cgw', 'yc-cgw-dc']
+        flap: { stable: 360, critical: 1080 }
+        default_limits: "{{ default_limits_0perc_crit }}"
+
+    - role: e2e-launcher
+      vars:
+        ignore_ongoing_deployment: true
+        children:
+          - CGROUP%cloud_{{ env }}_e2e-launcher
+        host: "yc_loadbalancer_e2e-launcher_{{ env }}"
+        unreachable_host: "yc_loadbalancer_e2e-launcher_{{ env }}"
+        check_tags: ['visible', 'yc-loadbalancer', 'yc-cgw']
+        default_limits: "{{ default_limits_0perc_crit }}"
+
+    - role: vpc-api
+      vars:
+        children:
+          - CGROUP%cloud_{{ env }}_vpc-api
+          - CGROUP%cloud_{{ env }}_vpc-api-k8s
+        host: "yc_network_vpc_api_{{ env }}"
+        unreachable_host: "yc_network_vpc_api_{{ env }}"
+        check_tags: ['yc-vpc-api']
+        flap: { stable: 360, critical: 1080 }
+        l3tt_name: 'network-api-internal.private-api.cloud-testing.yandex.net'
+        e2e_behind_lock_limits:
+          - {crit: '0', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '99.99%'}
+
+    - role: cic-api
+      vars:
+        default_limits: "{{ default_limits_0perc_crit }}"
+        notification_methods: "{{ default_notification_methods }}"
+        children:
+          - CGROUP%cloud_{{ env }}_cic-api-k8s
+        host: "yc_cic_api_{{ env }}"
+        unreachable_host: "yc_cic_api_{{ env }}"
+        check_tags: ['yc-cic-api']
+        flap: null
+
+    - role: cic-agent
+      vars:
+        default_limits: "{{ default_limits_0perc_crit }}"
+        notification_methods: "{{ default_notification_methods }}"
+        children:
+          - CGROUP%cloud_{{ env }}_cic-agent-k8s
+        host: "yc_cic_agent_{{ env }}"
+        unreachable_host: "yc_cic_agent_{{ env }}"
+        check_tags: ['yc-cic-agent-svm']
+        flap: null
+
+    - role: compute-node-overlay
+      vars:
+        children:
+          - "CGROUP%cloud_{{ env }}_compute{% if dc is defined %}_{{ dc }}{% endif %}"
+        host: "yc_network_compute_{{ env }}{% if dc is defined and 'omit_place_holder' not in dc %}_{{ dc }}{% endif %}"
+        unreachable_host: "yc_network_compute_{{ env }}{% if dc is defined and 'omit_place_holder' not in dc %}_{{ dc }}{% endif %}"
+        check_tags: ['yc-network', 'yc-overlay', 'yc-network-compute-node', 'yc-dc-{{ dc|default("unknown") }}']
+        flap: null
+        telegram_chat_id: ""
+        notify_tag: "yc-notify"
+        e2e_behind_lock_limits:
+            - {crit: '0', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '99.99%'}
+
+    - role: oct-head
+      vars:
+        children:
+          - "CGROUP%cloud_{{ env }}_oct_head{% if dc is defined %}_{{ dc }}{% endif %}"
+        host: "yc_network_oct_head_{{ env }}{% if dc is defined %}_{{ dc }}{% endif %}"
+        unreachable_host: "yc_network_oct_head_{{ env }}{% if dc is defined %}_{{ dc }}{% endif %}"
+        check_tags: ['yc-network', 'yc-overlay', 'yc-oct', 'yc-oct-head', 'yc-dc-{{ dc|default("unknown") }}']
+        flap: { stable: 360, critical: 1080 }
+        notify_tag: "yc-notify"
+
+    - role: oct-control
+      vars:
+        children:
+          - "CGROUP%cloud_{{ env }}_oct_control{% if dc is defined %}_{{ dc }}{% endif %}"
+        host: "yc_network_oct_control_{{ env }}{% if dc is defined %}_{{ dc }}{% endif %}"
+        unreachable_host: "yc_network_oct_control_{{ env }}{% if dc is defined %}_{{ dc }}{% endif %}"
+        check_tags: ['yc-network', 'yc-overlay', 'yc-oct', 'yc-oct-control', 'yc-dc-{{ dc|default("unknown") }}']
+        flap: { stable: 360, critical: 1080 }
+        notify_tag: "yc-notify"
+
+    - role: vpc-control
+      vars:
+        children:
+          - "CGROUP%cloud_{{ env }}_vpc-control{% if dc is defined %}_{{ dc }}{% endif %}"
+        host: "yc_network_vpc_control_{{ env }}{% if dc is defined %}_{{ dc }}{% endif %}"
+        unreachable_host: "yc_network_vpc_control_{{ env }}{% if dc is defined %}_{{ dc }}{% endif %}"
+        check_tags: ['yc-network', 'yc-overlay', 'yc-vpc-control', 'yc-dc-{{ dc|default("unknown") }}']
+        flap: { stable: 360, critical: 1080 }
+
+    - role: mr-prober
+      vars:
+        notification_methods: "{{ default_notification_methods + telegram_notification }}"
+        default_limits:
+          - {crit: '0', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '0'}
+        network_limits: "{{ default_limits }}"
+        # Recommendation for FLAPS stable = 3*TTL(120),critical = 3*stable
+        flap: { stable: 360, critical: 1080 }
+        mr_prober_control_plane_dns_zone: "testing.prober.cloud.yandex.net"
+        mr_prober_control_plane_environment: "prod"
+
+    - role: local-proxy
+      vars:
+        default_limits: "{{ prod_limits }}"
+        notification_methods: "{{ default_notification_methods }}"
+        telegram_chat_id: ""
+        children:
+          - CGROUP%cloud_{{ env }}_local-proxy
+        host: "yc_selfhost_local_proxy_{{ env }}"
+        unreachable_host: "yc_selfhost_local_proxy_{{ env }}"
+        check_tags: ['local-proxy', 'bootstrap', 'selfhost']
+        flap: null
+
+    - role: xds-provider
+      vars:
+        default_limits: "{{ prod_limits }}"
+        notification_methods: "{{ default_notification_methods }}"
+        telegram_chat_id: ""
+        children:
+          - CGROUP%cloud_{{ env }}_xds-provider
+        host: "yc_selfhost_xds_provider_{{ env }}"
+        unreachable_host: "yc_selfhost_xds_provider_{{ env }}"
+        check_tags: ['xds-provider', 'bootstrap', 'selfhost']
+        flap: null
+
+    - role: bootstrap-hw
+      vars:
+        children:
+          - CGROUP%cloud_testing_bootstrap-hw
+        host: "yc_bootstrap-hw_{{ env }}"
+        check_tags: [ 'yc-bootstrap-hw' ]
+        unreachable_host: "yc_bootstrap-hw_{{ env }}"
+
+    - role: eds-operator
+      vars:
+        conductor_group: cloud_bootstrap_{{ env }}
+        host: "yc_eds-operator_{{ env }}"
+        check_tags: ["yc-eds-operator"]
+        unreachable_host: "yc_bootstrap_{{ env }}"
+        dcs: ["vla", "sas", "myt"]
+
+    - role: eds-operator
+      vars:
+        conductor_group: cloud_{{ env }}_bootstrap-hw
+        host: "yc_eds-operator-hw_{{ env }}"
+        check_tags: ["yc-eds-operator"]
+        unreachable_host: "yc_bootstrap-hw_{{ env }}"
+        dcs: [ "vla", "sas", "myt" ]
+
+    - role: kubelet
+
+    - role: k-rail
+      vars:
+        children:
+          - CGROUP%cloud_bootstrap_testing
+        host: "yc_bootstrap_{{ env }}"

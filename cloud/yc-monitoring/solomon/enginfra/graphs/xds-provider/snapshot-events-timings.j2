@@ -1,0 +1,32 @@
+{% extends "../../../base/graph.j2" %}
+{% set transform = 'NONE' %}
+{% set snapshot_timing_sensors = ['generate_snapshots_event_duration_seconds', 'get_snapshot_event_duration_seconds', 'set_snapshot_event_duration_seconds'] %}
+{% block parameters %}
+    {
+        "name": "project",
+        "value": "{{ project_id }}"
+    },
+    {
+        "name": "service",
+        "value": "xds-provider"
+    },
+    {
+        "name": "cluster",
+        "value": "*"
+    },
+    {
+        "name": "host",
+        "value": "*"
+    }
+{% endblock %}
+{% macro prog(sensor, perc) %}
+histogram_percentile({{ perc }}, 'bin', group_by_labels({sensor='{{sensor}}'}, 'bin', v -> group_lines('sum', v)))
+{% endmacro %}
+{% block elements %}
+{% for sensor in snapshot_timing_sensors %}
+{{ render_element(sensor ~ " 99", prog(sensor, 99) | to_prog, area="true", stack="true") }},
+{{ render_element(sensor ~ " 95", prog(sensor, 95) | to_prog, area="true", stack="true") }}{% if not loop.last %},{% endif %}
+{%- endfor %}
+{% endblock %}
+
+

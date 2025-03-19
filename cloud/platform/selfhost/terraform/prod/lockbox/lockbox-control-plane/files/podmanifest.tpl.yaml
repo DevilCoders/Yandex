@@ -1,0 +1,314 @@
+apiVersion: v1
+kind: PodList
+items:
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: api-infrastructure
+    namespace: kube-system
+    annotations:
+      config_digest: ${infra_config_digest}
+      scheduler.alpha.kubernetes.io/critical-pod: ""
+    labels:
+      role: api
+  spec:
+    priority: 2000000001
+    hostNetwork: true
+    hostPID: true
+    priorityClassName: system-cluster-critical
+    initContainers:
+    - name: deploy-infra-configs
+      image: cr.yandex/crp7nvlkttssi7kapoho/infra/metadata:${metadata_version}
+      command:
+      - /usr/bin/metadata
+      - --attribute-name
+      - infra-configs
+      imagePullPolicy: Always
+      volumeMounts:
+      - name: all-configs
+        mountPath: /etc
+        terminationGracePeriodSeconds: 30
+      - name: run
+        mountPath: /run
+        terminationGracePeriodSeconds: 30
+    containers:
+    - name: solomon-agent
+      image: cr.yandex/crpr3khkepsccf25vvt6/solomon-agent:${solomon_version}
+      resources:
+        requests:
+          memory: "192Mi"
+        limits:
+          memory: "192Mi"
+      volumeMounts:
+      - name: solomon-agent-config
+        mountPath: /etc/solomon-agent/
+        readOnly: true
+    - name: push-client-yc-logbroker
+      image: cr.yandex/crpr3khkepsccf25vvt6/push-client:${push_client_version}
+      command: ["/usr/bin/push-client", "-f", "-c", "/etc/yandex/statbox-push-client/push-client-yc-logbroker.yaml"]
+      resources:
+        requests:
+          memory: "512Mi"
+        limits:
+          memory: "512Mi"
+      volumeMounts:
+        - name: var-log
+          mountPath: /var/log
+          terminationGracePeriodSeconds: 30
+        - name: var-spool
+          mountPath: /var/spool
+          terminationGracePeriodSeconds: 30
+        - name: push-client-config
+          mountPath: /etc/yandex/statbox-push-client
+          readOnly: true
+        - name: run-push-client
+          mountPath: /run/push-client
+          readOnly: true
+    volumes:
+    - name: all-configs
+      hostPath:
+        path: /etc
+        type: DirectoryOrCreate
+    - name: run
+      hostPath:
+        path: /run
+        type: DirectoryOrCreate
+    - name: var-log
+      hostPath:
+        path: /var/log
+    - name: var-spool
+      hostPath:
+        path: /var/spool
+    - name: var-spool-push-client
+      hostPath:
+        path: /var/spool/push-client
+    - name: push-client-config
+      hostPath:
+        path: /etc/yandex/statbox-push-client
+    - name: solomon-agent-config
+      hostPath:
+        path: /etc/solomon-agent
+    - name: run-push-client
+      hostPath:
+        path: /run/push-client
+
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: api-static
+    namespace: kube-system
+    labels:
+      role: api
+    annotations:
+      config_digest: ${config_digest}
+      scheduler.alpha.kubernetes.io/critical-pod: ""
+  spec:
+    priority: 2000000001
+    priorityClassName: system-cluster-critical
+    hostNetwork: true
+    initContainers:
+    - name: deploy-configs
+      image: cr.yandex/crp7nvlkttssi7kapoho/infra/metadata:${metadata_version}
+      volumeMounts:
+      - name: all-configs
+        mountPath: /etc
+        terminationGracePeriodSeconds: 30
+    containers:
+    - name: lockbox-control-plane
+      image: cr.yandex/crp42udbmne4hv742g3l/lockbox-control-plane:${application_version}
+      resources:
+        requests:
+          memory: "12000Mi"
+        limits:
+          memory: "12000Mi"
+      env:
+      - name: APPLICATION_YAML
+        value: /etc/lockbox/application.yaml
+      - name: APPLICATION_LOG_DIR
+        value: /var/log/lockbox
+      - name: APPLICATION_LOG_FILE_MAX_FILES
+        value: "3"
+      - name: APPLICATION_ACCESS_LOG_FILE_MAX_FILES
+        value: "3"
+      - name: APPLICATION_AUDIT_LOG_FILE_MAX_FILES
+        value: "3"
+      - name: YANDEX_CLOUD_LOG_LEVEL
+        value: debug
+      - name: JAVA_TOOL_OPTIONS
+        value: "-Xmx5312m -XX:-UseContainerSupport -Djava.net.preferIPv6Addresses=true -Dfile.encoding=UTF-8 -Xlog:gc*:file=/var/log/lockbox/gc.log:time,uptime:filecount=10,filesize=100M"
+      # - name: YANDEX_CLOUD_ACCESS_LOG_LEVEL
+      #   value: info
+      volumeMounts:
+      - name: lockbox-configs
+        mountPath: /etc/lockbox
+        readOnly: true
+      - name: var-lockbox
+        mountPath: /var/lockbox
+        terminationGracePeriodSeconds: 30
+      - name: var-log-lockbox
+        mountPath: /var/log/lockbox
+    volumes:
+    - name: all-configs
+      hostPath:
+        path: /etc
+        type: DirectoryOrCreate
+    - name: lockbox-configs
+      hostPath:
+        path: /etc/lockbox
+        type: DirectoryOrCreate
+    - name: var-lockbox
+      hostPath:
+        path: /var/lockbox
+        type: DirectoryOrCreate
+    - name: var-log-lockbox
+      hostPath:
+        path: /var/log/lockbox
+        type: DirectoryOrCreate
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: api-gateway
+    namespace: kube-system
+    labels:
+      role: api
+    annotations:
+      config_digest: ${api_gateway_config_digest}
+      scheduler.alpha.kubernetes.io/critical-pod: ""
+  spec:
+    priority: 2000000001
+    priorityClassName: system-cluster-critical
+    hostNetwork: true
+    hostPID: true
+    initContainers:
+      - name: deploy-api-gateway-configs
+        image: cr.yandex/crp7nvlkttssi7kapoho/infra/metadata:${metadata_version}
+        command:
+          - /usr/bin/metadata
+          - --attribute-name
+          - api-gateway-configs
+        volumeMounts:
+          - name: all-configs
+            mountPath: /etc
+            terminationGracePeriodSeconds: 30
+    containers:
+      - name: api-configserver
+        image: cr.yandex/crp7nvlkttssi7kapoho/api/configserver:${config_server_version}
+        resources:
+          requests:
+            memory: "128Mi"
+          limits:
+            memory: "128Mi"
+        volumeMounts:
+          - name: configserver-logs
+            mountPath: /var/log/configserver
+            terminationGracePeriodSeconds: 30
+          - name: configserver-configs
+            mountPath: /etc/configserver
+            readOnly: true
+          - name: etc-passwd
+            mountPath: /etc/passwd
+            readOnly: true
+      - name: api-gateway
+        image: cr.yandex/crp7nvlkttssi7kapoho/api/gateway:${api_gateway_version}
+        resources:
+          requests:
+            memory: "128Mi"
+          limits:
+            memory: "128Mi"
+        volumeMounts:
+          - name: gateway-logs
+            mountPath: /var/log/gateway
+            terminationGracePeriodSeconds: 30
+          - name: gateway-configs
+            mountPath: /etc/gateway
+            readOnly: true
+          - name: etc-passwd
+            mountPath: /etc/passwd
+            readOnly: true
+      - name: api-envoy
+        image: cr.yandex/crp7nvlkttssi7kapoho/envoy:${envoy_version}
+        resources:
+          requests:
+            memory: "320Mi"
+          limits:
+            memory: "320Mi"
+        volumeMounts:
+          - name: envoy-logs
+            mountPath: /var/log/envoy
+            terminationGracePeriodSeconds: 30
+          - name: envoy-configs
+            mountPath: /etc/envoy
+            readOnly: true
+          - name: run-envoy
+            mountPath: /run/envoy
+            readOnly: true
+      - name: private-envoy
+        image: cr.yandex/crp7nvlkttssi7kapoho/envoy:${envoy_version}
+        command: ["/usr/bin/envoy", "-c", "/etc/envoy/private-envoy.yaml", "--base-id", "1"]
+        resources:
+          requests:
+            memory: "320Mi"
+          limits:
+            memory: "320Mi"
+        volumeMounts:
+          - name: private-envoy-logs
+            mountPath: /var/log/private-envoy
+            terminationGracePeriodSeconds: 30
+          - name: private-envoy-configs
+            mountPath: /etc/envoy
+            readOnly: true
+          - name: run-private-envoy
+            mountPath: /run/private-envoy
+            readOnly: true
+    volumes:
+      - name: configserver-logs
+        hostPath:
+          path: /var/log/configserver
+          type: DirectoryOrCreate
+      - name: configserver-configs
+        hostPath:
+          path: /etc/api/configs/configserver
+          type: DirectoryOrCreate
+      - name: envoy-logs
+        hostPath:
+          path: /var/log/envoy
+          type: DirectoryOrCreate
+      - name: envoy-configs
+        hostPath:
+          path: /etc/api/configs/envoy
+          type: DirectoryOrCreate
+      - name: private-envoy-logs
+        hostPath:
+          path: /var/log/private-envoy
+          type: DirectoryOrCreate
+      - name: private-envoy-configs
+        hostPath:
+          path: /etc/api/configs/private-envoy
+          type: DirectoryOrCreate
+      - name: gateway-logs
+        hostPath:
+          path: /var/log/gateway
+          type: DirectoryOrCreate
+      - name: gateway-configs
+        hostPath:
+          path: /etc/api/configs/gateway
+          type: DirectoryOrCreate
+      - name: all-configs
+        hostPath:
+          path: /etc
+          type: DirectoryOrCreate
+      - name: etc-passwd
+        hostPath:
+          path: /etc/passwd
+      - name: envoy-certs
+        hostPath:
+          path: /etc/api/configs/envoy/ssl/certs/
+          type: DirectoryOrCreate
+      - name: run-envoy
+        hostPath:
+          type: DirectoryOrCreate
+          path: /run/envoy
+      - name: run-private-envoy
+        hostPath:
+          type: DirectoryOrCreate
+          path: /run/private-envoy

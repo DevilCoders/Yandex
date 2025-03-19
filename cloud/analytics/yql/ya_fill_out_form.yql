@@ -1,0 +1,144 @@
+USE hahn;
+PRAGMA yt.InferSchema = '1';
+
+$export_table_with_dwh_id = '//home/cloud_analytics/export/marketo/ya_fill_out_form';
+$leads_table = '//home/cloud_analytics/export/marketo/lead';
+$leads_email_table = '//home/cloud_analytics/leads/dyn_table_email_dwh_id';
+$leads_puid_table = '//home/cloud_analytics/leads/dyn_table_passport_uid_dwh_id';
+
+$change_data_value = '//home/cloud_analytics/import/marketo/change_data_value';
+$new_lead = '//home/cloud_analytics/import/marketo/new_lead';
+
+$tables = AsList(%FORMS_TABLES%);
+
+$leads_puid = (
+    SELECT puid.* FROM $leads_puid_table AS puid
+    LEFT JOIN $leads_table AS leads
+    ON leads.dwh_id = puid.dwh_id
+    WHERE leads.email IS NOT NULL
+);
+
+$leads_email = (
+    SELECT email.* FROM $leads_email_table AS email
+    LEFT JOIN $leads_table AS leads
+    ON leads.dwh_id = email.dwh_id
+    WHERE leads.email IS NOT NULL
+);
+
+$marketo_lead = (
+    SELECT
+        lead_id,
+        MAX_BY(lead_dwh_id, created) AS dwh_id,
+        MAX_BY(email, created) AS email
+    FROM CONCAT($change_data_value, $new_lead)
+    GROUP BY lead_id
+);
+
+$forms = (
+    SELECT
+        String::ReplaceAll(TableName(), '_history', '') AS type_name,
+        email,
+        form_id,
+        created_time,
+        marketo_lead_id,
+        yandex_puid,
+        specialQuestion AS scenario,
+    FROM EACH($tables)
+);
+
+/* Waiting for getting data about marketo leads */
+$forms_with_mkto_id = (
+    SELECT
+        type_name,
+        src.email ?? ml.email AS email,
+        form_id,
+        created_time,
+        scenario ?? "" AS scenario,
+        yandex_puid,
+        ml.dwh_id AS dwh_id
+    FROM $forms AS src
+    LEFT JOIN $marketo_lead AS ml
+    ON src.marketo_lead_id = CAST(ml.lead_id AS String)
+    WHERE ml.dwh_id IS NOT NULL AND src.marketo_lead_id IS NOT NULL
+);
+
+$forms_without_mkto_id = (
+    SELECT
+        type_name,
+        email,
+        form_id,
+        created_time,
+        scenario ?? "" AS scenario,
+        yandex_puid,
+        NULL AS dwh_id
+    FROM $forms AS src
+    WHERE src.marketo_lead_id IS NULL
+);
+
+$all_forms = (
+    SELECT * FROM $forms_with_mkto_id
+    UNION ALL
+    SELECT * FROM $forms_without_mkto_id
+);
+
+$export_diff_with_dwh_id = $export_table_with_dwh_id || '_diff';
+
+$export_data_with_dwh_id = (
+    SELECT
+        CAST(Unwrap(DateTime::ToSeconds(CurrentUtcTimestamp())) AS Uint64) AS dwh_created_at,
+        Unwrap(forms.email) AS email,
+        ListExtend(
+            AggregateList(forms.dwh_id),
+            AggregateList(leads_email.dwh_id),
+            AggregateList(leads_puid.dwh_id)
+        )[0] AS lead_dwh_id,
+        '' AS form_json,
+        Unwrap(MAX(forms.created_time)) AS `datetime`,
+        Unwrap(MAX(forms.created_time)) AS ya_activity_time,
+        forms.scenario AS scenario,
+        forms.type_name AS type_name,
+        '' AS product,
+        '' AS ya_campaign_id,
+        CAST(forms.form_id AS String) AS webform_id,
+        '' AS url,
+        Unwrap(Digest::Md5Hex(ListExtend(AggregateList(forms.dwh_id), AggregateList(leads_email.dwh_id), AggregateList(leads_puid.dwh_id))[0] || forms.form_id || forms.email || CAST(forms.created_time AS String))) AS ya_activity_id
+    FROM $all_forms AS forms
+    LEFT JOIN $leads_email AS leads_email
+        ON forms.email = leads_email.email
+    LEFT JOIN $leads_puid AS leads_puid
+        ON forms.yandex_puid = CAST(leads_puid.passport_uid AS String)
+    WHERE forms.email IS NOT NULL AND forms.email != ""
+    GROUP BY
+        forms.email,
+        forms.form_id,
+        forms.dwh_id,
+        forms.created_time,
+        forms.type_name,
+        forms.scenario,
+        forms.yandex_puid
+);
+
+INSERT INTO $export_diff_with_dwh_id WITH TRUNCATE
+    SELECT
+        dwh_created_at,
+        email,
+        Unwrap(lead_dwh_id) AS lead_dwh_id,
+        form_json,
+        ya_activity_id,
+        `datetime`,
+        ya_activity_time,
+        scenario,
+        type_name,
+        product,
+        ya_campaign_id,
+        webform_id,
+        url
+    FROM $export_data_with_dwh_id AS current_data
+    LEFT ONLY JOIN $export_table_with_dwh_id AS exp
+        ON current_data.ya_activity_id = exp.ya_activity_id
+    WHERE lead_dwh_id IS NOT NULL
+ORDER BY dwh_created_at;
+
+COMMIT;
+INSERT INTO $export_table_with_dwh_id SELECT * FROM $export_diff_with_dwh_id ORDER BY dwh_created_at;
+DROP TABLE $export_diff_with_dwh_id;

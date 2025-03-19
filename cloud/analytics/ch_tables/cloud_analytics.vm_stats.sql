@@ -1,0 +1,21 @@
+CREATE TABLE cloud_analytics.vm_stats(
+	date DateTime, 
+	cores_bucket String,
+    cores Float32,
+    memory Float32,
+    folder_id String, 
+    service_folder UInt8,
+    preemptible UInt8,
+    c2_m1 Float32,
+    c1_m1 Float32, 
+    c2_m3 Float32,
+    c1_m2 Float32,
+    c1_m3 Float32, 
+    c1_m4 Float32, 
+    c1_m5 Float32, 
+    c1_m6 Float32, 
+    c1_m7 Float32, 
+    c1_m8 Float32,
+    c1_m16 Float32,
+    c1_m32 Float32 
+) ENGINE = MergeTree() ORDER BY(date, cores_bucket, folder_id)

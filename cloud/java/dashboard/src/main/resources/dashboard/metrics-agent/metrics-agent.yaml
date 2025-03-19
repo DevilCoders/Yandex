@@ -1,0 +1,165 @@
+uid: ycpMetricsAgent
+refresh: 5m
+title: Metrics Agent
+
+tags: [ 'ycp', 'ycp-top' ]
+links:
+  - { title: 'Source spec', url: 'https://a.yandex-team.ru/arc/trunk/arcadia/cloud/java/dashboard/src/main/resources/dashboard/metrics-agent/metrics-agent.yaml' }
+
+variables:
+  ui:
+    project: { values: [ 'api-adapter', 'instance-group', 'dns' ] }
+    service: { values: [ 'metricsagent_ma', 'dns-cache-ma' ], hidden: false } # obsolete: metricsagent
+  uiQuery:
+    cluster:
+      labels: 'project=$project, cluster=*, service=$service'
+      inheritLabels: false
+    scrape_url:
+      label: url
+      labels: 'url=*, name=ma_scrapes_missed'
+      multi: true
+    push_url:
+      label: url
+      labels: 'url=*, name=ma_push_requests'
+      multi: true
+
+graphDefaults:
+  datasource: 'Solomon Cloud'
+  width: 6
+  height: 6
+
+queryDefaults:
+  dropNan: true
+  labels: 'project=$project, cluster=$cluster, service=$service, host=*'
+
+rows:
+  - title: General
+    panels:
+      - type: graph
+        templates: { name: errors }
+        title: Log Errors
+        queries:
+          - params: { labels: 'name=ma_log_messages_count, level=error' }
+        draw: [{ alias: errors }]
+
+  - title: Scrape
+    queryDefaults: { labels: 'url=${scrape_url:pipe}' }
+    panels:
+      - type: graph
+        templates: { name: errors }
+        title: Scrapes Missed
+        queries:
+          - params: { labels: 'name=ma_scrapes_missed' }
+        draw: [{ alias: misses }]
+
+      - type: graph
+        title: Scrape Duration
+        queryDefaults: { labels: 'name=ma_scrape_duration_ms_summary' }
+        queries:
+          - params: { labels: 'quantile=0.5' }
+            groupByTime: { avg: default }
+            select: { group_by_labels: [avg, quantile], alias: p50 }
+          - params: { labels: 'quantile=0.9' }
+            groupByTime: { max: default }
+            select: { group_by_labels: [max, quantile], alias: p90 }
+          - params: { labels: 'quantile=0.99' }
+            groupByTime: { max: default }
+            select: { group_by_labels: [max, quantile], alias: p99 }
+        yAxes: [{ format: ms }]
+
+      - type: graph
+        title: Scrape Bytes
+        queryDefaults: { labels: 'name=ma_scrape_bytes_summary' }
+        queries:
+          - params: { labels: 'quantile=0.5' }
+            groupByTime: { avg: default }
+            select: { group_by_labels: [avg, quantile], alias: p50 }
+          - params: { labels: 'quantile=0.9' }
+            groupByTime: { max: default }
+            select: { group_by_labels: [max, quantile], alias: p90 }
+          - params: { labels: 'quantile=0.99' }
+            groupByTime: { max: default }
+            select: { group_by_labels: [max, quantile], alias: p99 }
+        yAxes: [{ format: bytes }]
+
+      - type: graph
+        title: Scrape Sensors Count
+        queryDefaults: { labels: 'name=ma_scrape_sensors_count_summary' }
+        queries:
+          - params: { labels: 'quantile=0.5' }
+            groupByTime: { avg: default }
+            select: { group_by_labels: [avg, quantile], alias: p50 }
+          - params: { labels: 'quantile=0.9' }
+            groupByTime: { max: default }
+            select: { group_by_labels: [max, quantile], alias: p90 }
+          - params: { labels: 'quantile=0.99' }
+            groupByTime: { max: default }
+            select: { group_by_labels: [max, quantile], alias: p99 }
+
+  - title: Push
+    queryDefaults: { labels: 'url=${push_url:pipe}' }
+    panels:
+      - type: graph
+        templates: { name: errors }
+        title: Push Errors
+        queries:
+          - params: { labels: 'name=ma_push_errors' }
+        draw: [{ alias: errors }]
+
+      - type: graph
+        templates: { name: errors }
+        title: Push Queue Evictions
+        queries:
+          - params: { labels: 'name=ma_push_queue_evictions' }
+        draw: [{ alias: evictions }]
+
+      - type: graph
+        title: Push Queue Size
+        queryDefaults: { labels: 'name=ma_push_queue_size' }
+        queries:
+          - params: { labels: 'quantile=0.5' }
+            groupByTime: { max: default }
+            select: { group_by_labels: [max, quantile], alias: p50 }
+          - params: { labels: 'quantile=0.9' }
+            groupByTime: { max: default }
+            select: { group_by_labels: [max, quantile], alias: p90 }
+          - params: { labels: 'quantile=0.99' }
+            groupByTime: { max: default }
+            select: { group_by_labels: [max, quantile], alias: p99 }
+        yAxes: [{ format: short, min: 0 }]
+
+      - type: graph
+        title: Push Durations
+        queryDefaults: { labels: 'name=ma_push_duration_ms_summary' }
+        queries:
+          - params: { labels: 'quantile=0.5' }
+            groupByTime: { max: default }
+            select: { group_by_labels: [max, quantile], alias: p50 }
+          - params: { labels: 'quantile=0.9' }
+            groupByTime: { max: default }
+            select: { group_by_labels: [max, quantile], alias: p90 }
+          - params: { labels: 'quantile=0.99' }
+            groupByTime: { max: default }
+            select: { group_by_labels: [max, quantile], alias: p99 }
+        yAxes: [{ format: ms }]
+
+      - type: graph
+        templates: { name: rps }
+        title: Push Request Rate
+        queries:
+          - params: { labels: 'name=ma_push_requests' }
+
+      - type: graph
+        title: Push Bytes
+        queryDefaults: { labels: 'name=ma_push_bytes_summary' }
+        queries:
+          - params: { labels: 'quantile=0.5' }
+            groupByTime: { avg: default }
+            select: { group_by_labels: [avg, quantile], alias: p50 }
+          - params: { labels: 'quantile=0.9' }
+            groupByTime: { max: default }
+            select: { group_by_labels: [max, quantile], alias: p90 }
+          - params: { labels: 'quantile=0.99' }
+            groupByTime: { max: default }
+            select: { group_by_labels: [max, quantile], alias: p99 }
+        yAxes: [{ format: bytes }]

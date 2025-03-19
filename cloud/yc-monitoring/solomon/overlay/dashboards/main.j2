@@ -1,0 +1,50 @@
+{% extends "../../base/dashboard.j2" %}
+
+{% set oct_cluster = "cloud_" + env + "_oct|cloud_" + env %}
+{# cloud_{env} shard keeps "sys" history before 6 Jul 2021 (CLOUD-74308).
+   Remove if that history is not needed any more. #}
+
+{% macro render_row_azs(title, service, query, single_host="") %}
+{
+    "panels": [
+        {% for az in zones_by_env[env] %}
+            {{ render_panel(
+                    title + " @ " + az.prefix|upper,
+                    oct_cluster,
+                    service,
+                    "l.host=" + oct_head_selector(az.prefix) + single_host + "&min=0&" + query) }}
+            {% if not loop.last %},{% endif %}
+        {% endfor %}
+    ]
+}
+{% endmacro %}
+
+{% macro render_markdown_node(az, number) %}
+* [oct-{{ az }}{{ number }}](/?project={{ project_id }}&cluster={{ sys_cluster }}&service=sys&dashboard=oct_resource_and_bind_metrics_{{ env }}&l.host=oct-{{ az }}{{ number }})    \n
+{% endmacro %}
+
+{% macro render_markdown_contents(az) %}
+{{ render_markdown_node(az, 1) }}
+{{ render_markdown_node(az, 2) }}
+{{ render_markdown_node(az, 3) }}
+{{ render_markdown_node(az, 4) }}
+{{ render_markdown_node(az, 5) }}
+{% endmacro %}
+
+{% block rows %}
+[
+    {{ render_row_azs("Objects Count",    "oct_confdb_objects", "l.metric=*&graph=auto&stack=false&e=", single_host="1") }},
+    {{ render_row_azs("Load Average",     "sys",                "graph=auto&secondaryGraphMode=none&l.path=/Proc/La&stack=false") }},
+    {{ render_row_azs("CPU idletime",     "sys",                "graph=auto&l.path=/System/IdleTime&stack=false&l.cpu=-") }},
+    {{ render_row_azs("Free Memory",      "sys",                "l.path=/Memory/Cached|/Memory/MemFree&graph=auto&secondaryGraphMode=none&e=&stack=false") }},
+    {{ render_row_azs("Virtual Networks", "oct_confdb_objects", "l.metric=*&graph=auto&stack=false&e=&checks=%2Bvirtual-network%3Bvirtual-networks&max=50000", single_host="1") }},
+    {
+        "panels": [
+            {% for az in zones_by_env[env] %}
+                {{ render_markdown(title="Resource and BIND Metrics @ " + az.prefix|upper, markdown=render_markdown_contents(az.prefix).replace("\n", "")) }}
+                {% if not loop.last %},{% endif %}
+            {% endfor %}
+        ]
+    }
+]
+{% endblock %}

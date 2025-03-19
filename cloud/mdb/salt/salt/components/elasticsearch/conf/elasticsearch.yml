@@ -1,0 +1,148 @@
+
+# ---------------------------------- Cluster -----------------------------------
+#
+# Use a descriptive name for your cluster:
+#
+cluster.name: {{ salt.mdb_elasticsearch.cluster_name() }}
+#
+# ------------------------------------ Node ------------------------------------
+#
+# Use a descriptive name for the node:
+#
+node.name: {{ salt.mdb_elasticsearch.fqdn() }}
+
+{% if salt.mdb_elasticsearch.version_ge('7.9') %}
+node.roles: {{ salt.mdb_elasticsearch.node_roles() | yaml }}
+{% else %}
+node.master: {{ salt.mdb_elasticsearch.is_master_node() }}
+node.data: {{ salt.mdb_elasticsearch.is_data_node() }}
+node.ingest: {{ salt.mdb_elasticsearch.is_data_node() }}
+{% endif %}
+
+# Add custom attributes to the node:
+node.attr.geo: {{ salt.mdb_elasticsearch.geo() }}
+
+# ----------------------------------- Paths ------------------------------------
+#
+# Path to directory where to store the data (separate multiple locations by comma):
+#
+path.data: /var/lib/elasticsearch
+#
+# Path to log files:
+#
+path.logs: /var/log/elasticsearch
+#
+# ----------------------------------- Memory -----------------------------------
+#
+# Lock the memory on startup:
+#
+#bootstrap.memory_lock: true
+#
+# Make sure that the heap size is set to about half the memory available
+# on the system and that the owner of the process is allowed to use this
+# limit.
+#
+# Elasticsearch performs poorly when the system is swapping the memory.
+#
+# ---------------------------------- Network -----------------------------------
+#
+# Set the bind address to a specific IP (IPv4 or IPv6):
+#
+network.host: [{{ salt.mdb_elasticsearch.fqdn() }}, localhost]
+network.publish_host: {{ salt.mdb_elasticsearch.fqdn() }}
+#
+# Set a custom port for HTTP:
+#
+http.port: 9201
+http.publish_port: 9200  # what is returned by _nodes/_all/http api call
+#
+# For more information, consult the network module documentation.
+#
+# --------------------------------- Discovery ----------------------------------
+#
+# Pass an initial list of hosts to perform discovery when this node is started:
+# The default list of hosts is ["127.0.0.1", "[::1]"]
+#
+discovery.seed_hosts: {{ salt.mdb_elasticsearch.seed_peers() | yaml }}
+#
+# Bootstrap the cluster using an initial set of master-eligible nodes:
+#
+cluster.initial_master_nodes: {{ salt.mdb_elasticsearch.initial_master_nodes() | yaml }}
+
+{% if salt.mdb_elasticsearch.is_master_node()  %}
+
+cluster.routing.allocation.awareness.attributes: geo
+
+{% endif %}
+
+# For more information, consult the discovery and cluster formation module documentation.
+#
+# ---------------------------------- Gateway -----------------------------------
+#
+# Block initial recovery after a full cluster restart until N nodes are started:
+#
+#gateway.recover_after_nodes: 3
+#
+# For more information, consult the gateway module documentation.
+#
+
+{% if salt.mdb_elasticsearch.s3client_settings() %}
+{{ salt.mdb_elasticsearch.s3client_settings() | yaml(False) }}
+{% endif %}
+
+#
+# ---------------------------------- Hunspell -----------------------------------
+#
+# Set the hunspell token filter settings
+indices.analysis.hunspell.dictionary.ignore_case: true
+indices.analysis.hunspell.dictionary.lazy: true
+
+#
+# ---------------------------------- Various -----------------------------------
+#
+{% if salt.mdb_elasticsearch.licensed_for('trial') %}
+xpack.license.self_generated.type: trial
+
+{% endif %}
+{% if salt.mdb_elasticsearch.licensed_for('basic') %}
+{% if salt.mdb_elasticsearch.version_ge('7.11') %}
+xpack.security.operator_privileges.enabled: true
+
+{% endif %}
+xpack.security.http.ssl.enabled: true
+xpack.security.http.ssl.key: /etc/elasticsearch/certs/server.key
+xpack.security.http.ssl.certificate: /etc/elasticsearch/certs/server.crt
+xpack.security.http.ssl.certificate_authorities: [ "/etc/elasticsearch/certs/ca.pem" ]
+
+xpack.security.transport.ssl.enabled: true
+xpack.security.transport.ssl.key: /etc/elasticsearch/certs/server.key
+xpack.security.transport.ssl.certificate: /etc/elasticsearch/certs/server.crt
+xpack.security.transport.ssl.certificate_authorities: [ "/etc/elasticsearch/certs/ca.pem" ]
+
+xpack.security.enabled: true
+xpack.security.authc.api_key.enabled: true
+
+{% if salt.mdb_elasticsearch.licensed_for('gold') %}
+xpack.security.authc.token.enabled: true
+
+{% endif %}
+{{ salt.mdb_elasticsearch.auth_chain_elastic() | yaml(False) }}
+
+{% endif %} {# end basic config #}
+
+{% if salt.mdb_elasticsearch.version_ge('7.10') %}
+cluster.routing.allocation.disk.watermark.enable_for_single_data_node: true
+{% endif %}
+
+{% if salt.mdb_elasticsearch.version_lt('7.13.1') and salt.mdb_elasticsearch.version_ge('7.10') %}
+# Known issue, see https://www.elastic.co/guide/en/elasticsearch/reference/current/release-notes-7.12.0.html
+# fixed in https://github.com/elastic/elasticsearch/pull/73456
+snapshot.max_concurrent_operations: 1
+{% endif %}
+
+
+{% set data_node_settings = salt.mdb_elasticsearch.data_node_settings() %}
+{% if salt.mdb_elasticsearch.is_data_node() and data_node_settings %}{{ data_node_settings | yaml(False) }}{% endif %}
+
+{% set settings = salt.pillar.get('data:elasticsearch:config:common', {}) %}
+{% if settings %}{{ settings | yaml(False) }}{% endif %}

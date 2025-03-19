@@ -1,0 +1,74 @@
+definitions:
+  - &alert_id "{{.ID}}_svm_nbs_server_restarts"
+  - &alert_name "{{.Name}}[SVM] NBS Server Restarts"
+  - &alert_annotations_tag "yc-{{.Cluster}}-nbs-solomon"
+  - &alert_juggler_host "{{`{{labels.host}}`}}.svc.{{.SvmDomain}}"
+  - &alert_annotations_service "solomon_alert_nbs_server_restarts"
+  - &alert_juggler_description "(doc: https://nda.ya.ru/t/NhzjAokf5Fnq2J)"
+alerts:
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_juggler_description
+    group_by_labels:
+      - host
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_juggler_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - preprod
+    expression:
+      program: |-
+        let restarts = {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='utils',
+        host='nbs-control-*1|nbs-control-*2|nbs-control-*3',
+        sensor='RestartsCount',
+        slot='static'
+        };
+
+        no_data_if(count(restarts) == 0);
+
+        let restarts_diff = max(restarts) - min(restarts);
+
+        alarm_if(restarts_diff > 1);
+        warn_if(restarts_diff == 1);
+
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_juggler_description
+    group_by_labels:
+      - host
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_juggler_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - prod_vla
+      - prod_sas
+      - prod_myt
+      - israel
+    expression:
+      program: |-
+        let restarts = {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='utils',
+        host='nbs-control-*',
+        sensor='RestartsCount',
+        slot='static'
+        };
+
+        no_data_if(count(restarts) == 0);
+
+        let restarts_diff = max(restarts) - min(restarts);
+
+        alarm_if(restarts_diff > 1);
+        warn_if(restarts_diff == 1);

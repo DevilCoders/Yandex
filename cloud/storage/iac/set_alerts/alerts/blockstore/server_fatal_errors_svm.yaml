@@ -1,0 +1,161 @@
+definitions:
+  - &alert_id "{{.ID}}_svm_nbs_server_fatal_errors"
+  - &alert_name "{{.Name}}[SVM] NBS Server Fatal Errors"
+  - &alert_annotations_tag "yc-{{.Cluster}}-nbs-solomon"
+  - &alert_juggler_host "{{`{{labels.host}}`}}.svc.{{.SvmDomain}}"
+  - &alert_annotations_service "solomon_alert_nbs_server_fatal_errors"
+  - &alert_juggler_description "(doc: https://nda.ya.ru/t/PVMaYtmr5FmRJp)"
+alerts:
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_juggler_description
+    group_by_labels:
+      - host
+    channels:
+      - id: juggler
+        notify_about_statuses:
+          - OK
+          - ERROR
+          - ALARM
+          - NO_DATA
+          - WARN
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_juggler_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - testing
+    expression:
+      program: |-
+        let io_requests='ReadBlocks|WriteBlocks|ZeroBlocks';
+        let not_so_fatal_error_list='MountVolume|AlterVolume|AssignVolume|DescribeVolume|AlterPlacementGroupMembership|DeleteCheckpoint';
+
+        let io_fatal_errors = integrate_fn(group_lines('sum', {project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="server", host="nbs-control-*1|nbs-control-*2|nbs-control-*3", request="{{`{{io_requests}}`}}", sensor="Errors/Fatal", type="ssd|hdd"}));
+
+        let ctrl_fatal_errors = integrate_fn(group_lines('sum', {project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="server", host="nbs-control-*1|nbs-control-*2|nbs-control-*3", request!="{{`{{io_requests}}`}}|{{`{{not_so_fatal_error_list}}`}}", sensor="Errors/Fatal"}));
+
+        let not_so_fatal_errors = integrate_fn(group_lines('sum', {project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="server", host="nbs-control-*1|nbs-control-*2|nbs-control-*3", request="{{`{{not_so_fatal_error_list}}`}}", sensor="Errors/Fatal"}));
+
+        no_data_if(count(ctrl_fatal_errors) == 0);
+        no_data_if(count(io_fatal_errors) == 0);
+
+        // temp thresholds (see https://st.yandex-team.ru/NBS-1808)
+        alarm_if(max(ctrl_fatal_errors) > 5);
+        warn_if(max(ctrl_fatal_errors) > 2);
+
+        alarm_if(max(io_fatal_errors) > 1);
+        warn_if(max(io_fatal_errors) == 1);
+
+        alarm_if(max(not_so_fatal_errors) > 10);
+        warn_if(max(not_so_fatal_errors) > 6);
+
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_juggler_description
+    group_by_labels:
+      - host
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_juggler_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - preprod
+    expression:
+      program: |-
+        let io_requests='ReadBlocks|WriteBlocks|ZeroBlocks';
+        let not_so_fatal_error_list='MountVolume|AlterVolume|DescribeVolume|AlterPlacementGroupMembership|DeleteCheckpoint';
+        let ignore_errors='AssignVolume';
+
+        let io_fatal_errors = integrate_fn(group_lines('sum', {
+          project='{{.SolomonProjectID}}',
+          cluster='{{.SolomonCluster}}',
+          service='server',
+          host='nbs-control-*1|nbs-control-*2|nbs-control-*3',
+          request='{{`{{io_requests}}`}}',
+          sensor='Errors/Fatal',
+          type= 'ssd|hdd'
+        }));
+
+        let ctrl_fatal_errors = integrate_fn(group_lines('sum', {
+          project='{{.SolomonProjectID}}',
+          cluster='{{.SolomonCluster}}',
+          service='server',
+          host='nbs-control-*1|nbs-control-*2|nbs-control-*3',
+          request!='{{`{{io_requests}}`}}|{{`{{not_so_fatal_error_list}}`}}|{{`{{ignore_errors}}`}}',
+          sensor='Errors/Fatal'
+        }));
+
+        let not_so_fatal_errors = integrate_fn(group_lines('sum', {
+          project='{{.SolomonProjectID}}',
+          cluster='{{.SolomonCluster}}',
+          service='server',
+          host='nbs-control-*1|nbs-control-*2|nbs-control-*3',
+          request='{{`{{not_so_fatal_error_list}}`}}',
+          sensor='Errors/Fatal'
+        }));
+
+        no_data_if(count(ctrl_fatal_errors) == 0);
+        no_data_if(count(io_fatal_errors) == 0);
+
+        // temp thresholds (see https://st.yandex-team.ru/NBS-1808)
+        alarm_if(max(ctrl_fatal_errors) > 5);
+        warn_if(max(ctrl_fatal_errors) > 2);
+
+        alarm_if(max(io_fatal_errors) > 1);
+        warn_if(max(io_fatal_errors) == 1);
+
+        alarm_if(max(not_so_fatal_errors) > 10);
+        warn_if(max(not_so_fatal_errors) > 6);
+
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_juggler_description
+    group_by_labels:
+      - host
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_juggler_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - prod_vla
+      - prod_sas
+      - prod_myt
+      - israel
+    expression:
+      program: |-
+        let all_fatal_errors = integrate_fn(group_lines('sum', {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        host='nbs-control-*',
+        request='*',
+        sensor='Errors/Fatal',
+        type= '-'
+        }));
+
+        let not_so_fatal_errors = integrate_fn(group_lines('sum', {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        host='nbs-control-*',
+        request='MountVolume|AlterVolume|AssignVolume|DescribeVolume|ReadBlocks|ExecuteAction|AlterPlacementGroupMembership|DeleteCheckpoint',
+        sensor='Errors/Fatal',
+        type= '-'
+        }));
+
+        let fatal_errors = all_fatal_errors - not_so_fatal_errors;
+
+        no_data_if(count(fatal_errors) == 0);
+
+        alarm_if(max(fatal_errors) > 1);
+        warn_if(max(fatal_errors) == 1);
+
+        alarm_if(max(not_so_fatal_errors) > 16);
+        warn_if(max(not_so_fatal_errors) > 12);

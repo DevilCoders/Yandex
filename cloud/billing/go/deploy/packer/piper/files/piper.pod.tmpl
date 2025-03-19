@@ -1,0 +1,131 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: yc-billing-piper-pod
+spec:
+  hostNetwork: true
+  hostPID: true
+  terminationGracePeriodSeconds: 60
+  initContainers:
+    - name: piper-config
+      image: ${ config_image }
+      imagePullPolicy: Never
+      tty: true
+      volumeMounts:
+        - mountPath: /installation
+          name: installation
+        - mountPath: /usr/bin/skm
+          name: skm
+          readOnly: true
+        - mountPath: /config
+          name: configs
+        - mountPath: /etc/ssl/certs/
+          name: etc-certs
+          readOnly: true
+        - mountPath: /usr/local/share/ca-certificates
+          name: usr-local-certs
+          readOnly: true
+  containers:
+    - name: jaeger-agent
+      image: ${ tools_image }
+      args:
+        - jaeger
+      imagePullPolicy: Never
+      tty: true
+      volumeMounts:
+        - mountPath: /config
+          name: configs
+        - mountPath: /etc/ssl/certs/
+          name: etc-certs
+          readOnly: true
+        - mountPath: /usr/local/share/ca-certificates
+          name: usr-local-certs
+          readOnly: true
+    - name: unified-agent
+      image: ${ tools_image }
+      args:
+        - unified-agent
+      imagePullPolicy: Never
+      tty: true
+      volumeMounts:
+        - mountPath: /config
+          name: configs
+        - mountPath: /etc/ssl/certs/
+          name: etc-certs
+          readOnly: true
+        - mountPath: /usr/local/share/ca-certificates
+          name: usr-local-certs
+          readOnly: true
+    - name: tvmtool
+      image: ${ tools_image }
+      args:
+        - tvm
+      imagePullPolicy: Never
+      tty: true
+      volumeMounts:
+        - mountPath: /config/tvm
+          name: configs
+          subPath: tvm
+        - mountPath: /etc/ssl/certs/
+          name: etc-certs
+          readOnly: true
+        - mountPath: /usr/local/share/ca-certificates
+          name: usr-local-certs
+          readOnly: true
+    - name: piper
+      image: ${ piper_image }
+      env:
+        - name: GODEBUG
+          value: madvdontneed=1
+      resources:
+        limits:
+          memory: "${ mem_limit }"
+      livenessProbe:
+        failureThreshold: 10
+        httpGet:
+          host: localhost
+          port: 9741
+          path: /ping
+# FOR DEBUG COMMENT ARGS AND UNCOMMENT COMMAND
+      # command: ["bash", "-c", "sleep 1000000"]
+      args:
+        - -c
+        - /local-config/*.yaml
+      imagePullPolicy: Never
+      tty: true
+      volumeMounts:
+        - mountPath: /config
+          name: configs
+        - mountPath: /local-config
+          name: local-config
+        - mountPath: /etc/ssl/certs/
+          name: etc-certs
+          readOnly: true
+        - mountPath: /usr/local/share/ca-certificates
+          name: usr-local-certs
+          readOnly: true
+        - mountPath: /run/systemd/journal/
+          name: journald-dir
+  volumes:
+    - name: installation
+      hostPath:
+        path: /etc/yc/installation
+        type: File
+    - name: configs
+      emptyDir: {}
+    - name: local-config
+      hostPath:
+        path: /etc/yc/billing/local-config
+    - name: etc-certs
+      hostPath:
+        path: /etc/ssl/certs/
+    - name: usr-local-certs
+      hostPath:
+        path: /usr/local/share/ca-certificates
+    - name: journald-dir
+      hostPath:
+        path: /run/systemd/journal/
+    - name: skm
+      hostPath:
+        path: /usr/bin/skm
+        type: File

@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: PodList
+items:
+${infra_pod_spec}
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: events-broker
+    annotations:
+      config_digest: ${config_digest}
+  spec:
+    initContainers:
+      - name: deploy-configs
+        image: registry.yandex.net/cloud/api/metadata:6c1bc05bc
+        volumeMounts:
+          - name: config-dir
+            mountPath: /etc
+            terminationGracePeriodSeconds: 30
+    containers:
+      - name: tvmtool
+        image: registry.yandex.net/cloud/tvm_tool:1.2.19
+        env:
+          - name: TVMTOOl_LOCAL_AUTHTOKEN
+            value: ${tvmtool_auth_token}
+        volumeMounts:
+          - mountPath: /etc/tvmtool/tvmtool.conf
+            name: tvmtool-config
+            readOnly: true
+      - name: push-client
+        image: registry.yandex.net/cloud/platform/push-client:${push_client_version}
+        volumeMounts:
+          - name: all-logs
+            mountPath: /var/log
+            terminationGracePeriodSeconds: 30
+          - name: var-spool
+            mountPath: /var/spool
+            terminationGracePeriodSeconds: 30
+          - name: push-client-config
+            mountPath: /etc/yandex/statbox-push-client
+            readOnly: true
+      - name: events
+        image: registry.yandex.net/cloud/cloud-go/iot/events-broker:v5292-8c7a1d9
+        volumeMounts:
+          - mountPath: /etc/yc-iot/events_broker.yaml
+            name: eventsconfig
+            readOnly: true
+          - mountPath: ${log_dir}
+            name: event-logs
+    hostNetwork: true
+    volumes:
+      - name: eventsconfig
+        hostPath:
+          path: /etc/yc-iot/events_broker.yaml
+      - name: config-dir
+        hostPath:
+          path: /etc
+      - name: tvmtool-config
+        hostPath:
+          path: /etc/tvmtool/tvmtool.conf
+      - name: event-logs
+        hostPath:
+          path: ${log_dir}
+          type: DirectoryOrCreate
+      - name: all-logs
+        hostPath:
+          path: /var/log
+          type: DirectoryOrCreate
+      - name: var-spool
+        hostPath:
+          path: /data/var/spool
+          type: DirectoryOrCreate
+      - name: push-client-config
+        hostPath:
+          path: /etc/yandex/statbox-push-client

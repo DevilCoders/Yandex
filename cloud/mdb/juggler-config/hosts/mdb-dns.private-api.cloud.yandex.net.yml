@@ -1,0 +1,41 @@
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    namespace: dbaas.core
+    host: mdb-dns.private-api.cloud.yandex.net
+    cgroup: mdb_dns_compute_prod
+    installation: compute_prod
+
+  tasks:
+    - juggler_facts: jserver_api=http://juggler-api.search.yandex.net:8998/api
+    - include_vars: ../configs/core_resps.yml
+    - include_vars: ../configs/core_tags.yml
+    - include_vars: ../configs/common.yml
+    - include_vars: ../configs/limit.yml
+    - include_vars: ../configs/notifications.yml
+    - include: ../checks/meta-unreach.yml
+    - include: ../checks/common.yml
+    - include: ../checks/unispace.yml
+    - include: ../checks/common-act.yml
+    - include: ../checks/common-dns.yml
+    - include: ../checks/common-http-ping.yml
+    - include: ../checks/http-tls.yml
+    - include: ../checks/balancer-tcp.yml
+
+    - juggler_check:
+      args: "{{ common_checks | hash_merge( unreach_pass, item ) }}"
+      with_items:
+        - service: mdb-dns-live
+          refresh_time: 30
+          flap:
+            stable: 90
+            critical: 450
+          meta:
+            urls:
+              - { title: "How to handle?", url: "https://wiki.yandex-team.ru/mdb/internal/operations/duty-howto/handling-alerts/mdb-dns-live/", type: "mdb" }
+          children:
+            service: mdb_dns_live
+
+  post_tasks:
+    - juggler_cleanup: jcheck_mark={{ host }}

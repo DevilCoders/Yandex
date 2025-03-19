@@ -1,0 +1,29 @@
+{%- from "components/greenplum/map.jinja" import gpdbvars with context -%}
+{%- set segments_per_disk = salt.pillar.get('data:greenplum:segment_in_host', 1) -%}
+
+ARRAY_NAME={{ salt.pillar.get('data:gp_init:array_name','GPDB').upper() }}
+SEG_PREFIX={{ gpdbvars.segprefix }}
+PORT_BASE={{ salt.pillar.get('data:gp_init:port_base', 6000) }}
+
+declare -a DATA_DIRECTORY=(
+{%- for i in range(0, segments_per_disk|int) %}
+{%- for dir in gpdbvars.data_folders %}{{- dir + '/primary ' }}{%- endfor %}
+{%- endfor %})
+
+MASTER_HOSTNAME={{ salt.grains.get('id') }}
+MASTER_DIRECTORY={{ gpdbvars.masterdir }}/master
+MASTER_PORT={{ gpdbvars.master_port }}
+
+TRUSTED_SHELL={{ salt.pillar.get('data:gp_init:trusted_shell', 'ssh') }}
+CHECK_POINT_SEGMENTS={{ salt.pillar.get('data:gp_init:check_point_segments', 8) }}
+ENCODING={{ salt.pillar.get('data:gp_init:encoding','unicode').upper() }}
+HBA_HOSTNAMES=1
+
+{% if salt.pillar.get('data:mirror_enable', True) -%}
+MIRROR_PORT_BASE={{ salt.pillar.get('data:gp_init:mirror_port_base', 7000) }}
+
+declare -a MIRROR_DATA_DIRECTORY=(
+{%- for i in range(0, segments_per_disk| int) %}
+{%- for dir in gpdbvars.data_folders %}{{- dir + '/mirror ' }}{%- endfor %}
+{%- endfor %})
+{%- endif -%}

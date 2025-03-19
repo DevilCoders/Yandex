@@ -1,0 +1,140 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "yc-infra-pod.fullname" . }}-daemonset
+  labels:
+{{ include "yc-infra-pod.labels" . | indent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "yc-infra-pod.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "yc-infra-pod.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      hostNetwork: true
+      containers:
+        {{- if .Values.pushClient.enabled }}
+        - image: "{{ .Values.fluentd.imageRepository }}:{{ .Values.fluentd.imageTag }}"
+          name: fluentd
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              value: {{ include "yc-infra-pod.fullname" . }}
+            - name: SERVICE_POD_NAME
+              value: {{ include "yc-infra-pod.servicePodName" . }}
+          volumeMounts:
+            - name: var-log
+              mountPath: /var/log
+        - image: "{{ .Values.pushClient.imageRepository }}:{{ .Values.pushClient.imageTag }}"
+          name: push-client
+          volumeMounts:
+            - name: var-log-fluent
+              mountPath: /var/log/fluent
+            - name: var-lib-push-client
+              mountPath: /var/lib/push-client
+            - name: push-client-config
+              mountPath: /etc/yandex/statbox-push-client
+            {{- with required "You must specify secrets for push-client" .Values.pushClient.secrets }}
+            {{- include "yc-infra-pod.secretVolumeMounts" (dict "secrets" . "pathPrefix" "/var/lib/yc/push-client") | indent 12 }}
+            {{- end }}
+        {{- end }}
+        {{- if .Values.unifiedAgent.enabled }}
+        - image: "{{ .Values.unifiedAgent.imageRepository }}:{{ .Values.unifiedAgent.imageTag }}"
+          name: unified-agent
+          volumeMounts:
+            - name: unified-agent-data-storage
+              mountPath: /var/lib/unified_agent/data/storage
+            - name: var-run-unified-agent
+              mountPath: /var/run/unified_agent
+            - name: unified-agent-config
+              mountPath: /etc/yandex/unified_agent
+            {{- with required "You must specify secrets for unified agent" .Values.unifiedAgent.secrets }}
+            {{- include "yc-infra-pod.secretVolumeMounts" (dict "secrets" . "pathPrefix" "/var/lib/yc/unified_agent") | indent 12 }}
+            {{- end }}
+        {{- end }}
+        {{- if .Values.solomonAgent.enabled }}
+        - image: "{{ .Values.solomonAgent.imageRepository }}:{{ .Values.solomonAgent.imageTag }}"
+          name: solomon-agent
+          volumeMounts:
+            - name: solomon-agent-config
+              mountPath: /etc/yandex/solomon-agent
+          {{- if .Values.solomonAgent.secrets }}
+          {{- with .Values.solomonAgent.secrets }}
+          {{- include "yc-infra-pod.secretVolumeMounts" (dict "secrets" . "pathPrefix" "/var/lib/yc/solomon-agent") | indent 12 }}
+          {{- end }}
+          {{- end }}
+        {{- end }}
+        {{- if .Values.jugglerClient.enabled }}
+        - image: "{{ .Values.jugglerClient.imageRepository }}:{{ .Values.jugglerClient.imageTag }}"
+          name: juggler-client
+          volumeMounts:
+            - name: juggler-client-config
+              mountPath: /etc/juggler
+        {{- end }}
+      volumes:
+      {{- if .Values.pushClient.enabled }}
+        - name: var-log
+          hostPath:
+            type: Directory
+            path: /var/log
+        - name: var-log-fluent
+          hostPath:
+            type: Directory
+            path: /var/log/fluent
+        - name: var-lib-push-client
+          hostPath:
+            type: DirectoryOrCreate
+            path: /var/lib/push-client
+        - name: push-client-config
+          configMap:
+            name: {{ include "yc-infra-pod.fullname" . }}-configmap
+            items:
+            - key: "push-client.yaml"
+              path: "push-client.yaml"
+        {{- include "yc-infra-pod.secretVolumes" (dict "secrets" .Values.pushClient.secrets "pathPrefix" "/var/lib/yc/push-client") | indent 8 }}
+      {{- end }}
+      {{- if .Values.unifiedAgent.enabled }}
+        - name: unified-agent-data-storage
+          hostPath:
+            type: DirectoryOrCreate
+            path: /var/lib/unified_agent/{{ .Release.Namespace }}-{{ include "yc-infra-pod.servicePodName" . }}/data/storage
+        - name: var-run-unified-agent
+          hostPath:
+            type: DirectoryOrCreate
+            path: /var/run/unified_agent/{{ .Release.Namespace }}-{{ include "yc-infra-pod.servicePodName" . }}
+        - name: unified-agent-config
+          configMap:
+            name: {{ include "yc-infra-pod.fullname" . }}-configmap
+            items:
+              - key: "config.yml"
+                path: "config.yml"
+        {{- include "yc-infra-pod.secretVolumes" (dict "secrets" .Values.unifiedAgent.secrets "pathPrefix" "/var/lib/yc/unified_agent") | indent 8 }}
+      {{- end }}
+      {{- if .Values.solomonAgent.enabled }}
+        - name: solomon-agent-config
+          configMap:
+            name: {{ include "yc-infra-pod.fullname" . }}-configmap
+            items:
+              - key: "agent.conf"
+                path: "agent.conf"
+        {{- if .Values.solomonAgent.secrets }}
+        {{- include "yc-infra-pod.secretVolumes" (dict "secrets" .Values.solomonAgent.secrets "pathPrefix" "/var/lib/yc/solomon-agent") | indent 8 }}
+        {{- end }}
+      {{- end }}
+      {{- if .Values.jugglerClient.enabled }}
+        - name: juggler-client-config
+          configMap:
+            name: {{ include "yc-infra-pod.fullname" . }}-configmap
+            items:
+              - key: "client.conf"
+                path: "client.conf"
+      {{- end }}

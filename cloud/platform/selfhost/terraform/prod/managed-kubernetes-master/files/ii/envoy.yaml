@@ -1,0 +1,173 @@
+admin:
+  access_log_path: /dev/null
+  address:
+    socket_address:
+      address: 127.0.0.1
+      port_value: 9901
+static_resources:
+  clusters:
+  - connect_timeout: 30s
+    hosts:
+    - socket_address:
+        address: 127.0.0.1
+        port_value: 443
+    name: kube_apiserver_tcp
+    type: STATIC
+  - common_http_protocol_options:
+      idle_timeout: 30s
+    connect_timeout: 30s
+    hosts:
+    - socket_address:
+        address: 127.0.0.1
+        port_value: 443
+    name: kube_apiserver_http
+    tls_context:
+      common_tls_context:
+        alpn_protocols:
+        - http/1.1
+    type: STATIC
+  listeners:
+  - address:
+      socket_address:
+        address: 0.0.0.0
+        port_value: 6443
+    filter_chains:
+    - filters:
+      - config:
+          cluster: kube_apiserver_tcp
+          idle_timeout: 45s
+          max_connect_attempts: 3
+          stat_prefix: tcp_proxy
+        name: envoy.tcp_proxy
+    name: tcp_proxy_v4
+  - address:
+      socket_address:
+        address: '::'
+        port_value: 6443
+    filter_chains:
+    - filters:
+      - config:
+          cluster: kube_apiserver_tcp
+          idle_timeout: 45s
+          max_connect_attempts: 3
+          stat_prefix: tcp_proxy
+        name: envoy.tcp_proxy
+    name: tcp_proxy_v6
+  - address:
+      socket_address:
+        address: 0.0.0.0
+        port_value: 7890
+    filter_chains:
+    - filters:
+      - config:
+          delayed_close_timeout: 0s
+          http_filters:
+          - config: {}
+            name: envoy.router
+          http_protocol_options:
+            accept_http_10: true
+          idle_timeout: 120s
+          route_config:
+            name: default
+            validate_clusters: true
+            virtual_hosts:
+            - domains:
+              - '*'
+              name: default
+              routes:
+              - match:
+                  prefix: /healthz
+                route:
+                  cluster: kube_apiserver_http
+                  timeout: 60s
+          stat_prefix: apiserver_healthcheck
+        name: envoy.http_connection_manager
+    name: apiserver_healthcheck_v4
+  - address:
+      socket_address:
+        address: '::'
+        port_value: 7890
+    filter_chains:
+    - filters:
+      - config:
+          delayed_close_timeout: 0s
+          http_filters:
+          - config: {}
+            name: envoy.router
+          http_protocol_options:
+            accept_http_10: true
+          idle_timeout: 120s
+          route_config:
+            name: default
+            validate_clusters: true
+            virtual_hosts:
+            - domains:
+              - '*'
+              name: default
+              routes:
+              - match:
+                  prefix: /healthz
+                route:
+                  cluster: kube_apiserver_http
+                  timeout: 60s
+          stat_prefix: apiserver_healthcheck
+        name: envoy.http_connection_manager
+    name: apiserver_healthcheck_v6
+  - address:
+      socket_address:
+        address: 127.0.0.1
+        port_value: 6789
+    filter_chains:
+    - filters:
+      - config:
+          delayed_close_timeout: 0s
+          http_filters:
+          - config: {}
+            name: envoy.router
+          idle_timeout: 120s
+          route_config:
+            name: default
+            validate_clusters: true
+            virtual_hosts:
+            - domains:
+              - '*'
+              name: default
+              routes:
+              - direct_response:
+                  body:
+                    inline_string: OK
+                  status: 200
+                match:
+                  prefix: /
+          stat_prefix: liveness_probe
+        name: envoy.http_connection_manager
+    name: envoy_liveness_probe_v4
+  - address:
+      socket_address:
+        address: ::1
+        port_value: 6789
+    filter_chains:
+    - filters:
+      - config:
+          delayed_close_timeout: 0s
+          http_filters:
+          - config: {}
+            name: envoy.router
+          idle_timeout: 120s
+          route_config:
+            name: default
+            validate_clusters: true
+            virtual_hosts:
+            - domains:
+              - '*'
+              name: default
+              routes:
+              - direct_response:
+                  body:
+                    inline_string: OK
+                  status: 200
+                match:
+                  prefix: /
+          stat_prefix: liveness_probe
+        name: envoy.http_connection_manager
+    name: envoy_liveness_probe_v6

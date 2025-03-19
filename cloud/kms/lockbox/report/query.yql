@@ -1,0 +1,83 @@
+USE hahn;
+
+$now = CurrentTzDate("Europe/Moscow");
+--$now = CAST("2021-06-18,Europe/Moscow" AS TzDate);
+
+$ignored_cloud_list = AsList(
+  'b1gom8hoka1ah17b9c5b', -- yc-crypto-e2e-monitoring
+  'b1goqsbku9fl8uv5r5fj'  -- andrey.zamyslov@yandex.ru
+);
+
+$billing_accounts = SELECT
+  cloud_id,
+  MAX(billing_account_id) AS billing_account_id,
+  IF (
+    MAX_BY(billing_account_person_type, billing_account_id) LIKE '%individual%',
+    MAX_BY(person_email, billing_account_id),
+    MAX_BY(billing_account_company_name, billing_account_id)
+  ) AS name,
+  MAX_BY(billing_account_usage_status, billing_account_id) AS usage
+FROM `home/cloud/billing/analytics_cube/realtime/prod`
+WHERE
+  cloud_id IS NOT NULL AND cloud_id != ""
+GROUP BY billing_record_cloud_id AS cloud_id
+ORDER BY cloud_id;
+
+$days_from_the_epoch = ($time) -> {
+  RETURN CAST(CAST(SUBSTRING(CAST($time AS String), 0, 10) AS Date) AS Int32);
+};
+
+$to_string = ($days_from_the_epoch) -> {
+  RETURN CAST(CAST($days_from_the_epoch AS Date) AS String);
+};
+
+DEFINE SUBQUERY $statistics($now, $interval_length, $interval_count) AS
+  $min_date = $to_string($days_from_the_epoch($now) / $interval_length * $interval_length - $interval_length * $interval_count);
+  $max_date = $to_string($days_from_the_epoch($now) / $interval_length * $interval_length - 1);
+  SELECT
+    `date`,
+    COUNT(DISTINCT cloud_id) AS clouds,
+    COUNT(DISTINCT COALESCE(Yson::ConvertToString(_rest['details']['secret_id']))) AS secrets,
+    COUNT(*) AS operations
+  FROM RANGE(`logs/yc-lockbox-audit-prod/1d`, $min_date, $max_date)
+  WHERE
+    `event_type` == 'yandex.cloud.events.lockbox.GetPayload'
+    AND
+    `event_status` == 'DONE'
+    AND
+    NOT ListHas($ignored_cloud_list, `cloud_id`)
+  GROUP BY $to_string(($days_from_the_epoch(iso_eventtime) / $interval_length + 1) * $interval_length - 1) AS `date`
+  ORDER BY `date` DESC
+END DEFINE;
+
+DEFINE SUBQUERY $top_users($now, $days, $limit) AS
+  $min_date = SUBSTRING(CAST($now - DateTime::IntervalFromDays($days) AS String), 0, 10);
+  $max_date = SUBSTRING(CAST($now - DateTime::IntervalFromDays(1) AS String), 0, 10);
+  SELECT
+    (COALESCE(c.name, b.name) || " / " || b.billing_account_id) AS name,
+    COUNT(*) AS count
+  FROM RANGE(`logs/yc-lockbox-audit-prod/1d`, $min_date, $max_date) AS a
+  JOIN $billing_accounts AS b ON
+    a.cloud_id == b.cloud_id
+  LEFT JOIN `home/cloud/lockbox/custom-billing-account-name.input` AS c ON
+    b.billing_account_id = c.billing_account_id
+  WHERE
+    `event_type` == 'yandex.cloud.events.lockbox.GetPayload'
+    AND
+    NOT ListHas($ignored_cloud_list, a.cloud_id)
+  GROUP BY b.name, c.name, b.billing_account_id
+  ORDER BY count DESC
+  LIMIT $limit;
+END DEFINE;
+
+INSERT INTO `home/cloud/lockbox/top-users-for-7-days.output` WITH TRUNCATE
+SELECT * FROM $top_users($now, 7, 10);
+
+INSERT INTO `home/cloud/lockbox/top-users-for-30-days.output` WITH TRUNCATE
+SELECT * FROM $top_users($now, 30, 10);
+
+INSERT INTO `home/cloud/lockbox/statistics-7-days.output` WITH TRUNCATE
+SELECT * FROM $statistics($now, 7, 8);
+
+INSERT INTO `home/cloud/lockbox/statistics-30-days.output` WITH TRUNCATE
+SELECT * FROM $statistics($now, 30, 8);

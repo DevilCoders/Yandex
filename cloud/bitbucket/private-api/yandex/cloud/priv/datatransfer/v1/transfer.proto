@@ -1,0 +1,273 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.datatransfer.v1;
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/datatransfer/v1;tm_server";
+
+import "yandex/cloud/priv/datatransfer/v1/endpoint.proto";
+
+enum TransferType {
+    TRANSFER_TYPE_UNSPECIFIED = 0;
+    SNAPSHOT_AND_INCREMENT = 1;
+    SNAPSHOT_ONLY = 2;
+    INCREMENT_ONLY = 3;
+}
+enum TransferStatus {
+    TRANSFER_STATUS_UNSPECIFIED = 0;
+    CREATING = 1;
+    CREATED = 2;
+    RUNNING = 3;
+    STOPPING = 4;
+    STOPPED = 5;
+    ERROR = 6;
+    SNAPSHOTTING = 7;
+    DONE = 8;
+}
+enum OperationType {
+    OPERATION_TYPE_UNSPECIFIED = 0;
+    ACTIVATE = 1;
+    DEACTIVATE = 2;
+    PAUSE = 3;
+    REUPLOAD = 4;
+    START = 5;
+    RESTART = 6;
+    CHECKSUM = 7;
+}
+enum YtRuntimeCluster {
+    YT_RUNTIME_CLUSTER_UNSPECIFIED = 0;
+    YT_RUNTIME_CLUSTER_ARNOLD = 1;
+    YT_RUNTIME_CLUSTER_BOHR = 2;
+    YT_RUNTIME_CLUSTER_FREUD = 3;
+    YT_RUNTIME_CLUSTER_HAHN = 4;
+    YT_RUNTIME_CLUSTER_HUME = 5;
+    YT_RUNTIME_CLUSTER_LANDAU = 6;
+    YT_RUNTIME_CLUSTER_SENECA_MAN = 7;
+    YT_RUNTIME_CLUSTER_SENECA_SAS = 8;
+    YT_RUNTIME_CLUSTER_SENECA_VLA = 9;
+    YT_RUNTIME_CLUSTER_VANGA = 10;
+}
+enum RegularSnapshotScheduleInterval {
+    REGULAR_SNAPSHOT_SCHEDULE_INTERVAL_UNSPECIFIED = 0;
+    REGULAR_SNAPSHOT_SCHEDULE_INTERVAL_5MIN = 1;
+    REGULAR_SNAPSHOT_SCHEDULE_INTERVAL_15MIN = 2;
+    REGULAR_SNAPSHOT_SCHEDULE_INTERVAL_30MIN = 3;
+    REGULAR_SNAPSHOT_SCHEDULE_INTERVAL_HOUR = 4;
+    REGULAR_SNAPSHOT_SCHEDULE_INTERVAL_2HOUR = 5;
+    REGULAR_SNAPSHOT_SCHEDULE_INTERVAL_3HOUR = 6;
+    REGULAR_SNAPSHOT_SCHEDULE_INTERVAL_6HOUR = 7;
+    REGULAR_SNAPSHOT_SCHEDULE_INTERVAL_8HOUR = 8;
+    REGULAR_SNAPSHOT_SCHEDULE_INTERVAL_12HOUR = 9;
+    REGULAR_SNAPSHOT_SCHEDULE_INTERVAL_DAY = 10;
+}
+enum Flavor {
+    FLAVOR_UNSPECIFIED = 0;
+    SMALL = 1;
+    MEDIUM = 2;
+    LARGE = 3;
+}
+enum MaskFunction {
+    MASK_FUNCTION_UNSPECIFIED = 0;
+    MASK_FUNTION_HASH = 1;
+    MASK_FUNTION_SNOOPER = 2;
+}
+enum EventType {
+    EVENT_TYPE_UNSPECIFIED = 0;
+    EVENT_TYPE_DELETE = 1;
+    EVENT_TYPE_TRUNCATE = 2;
+    EVENT_TYPE_DROP_TABLE = 3;
+}
+// Transfer core entity
+message Transfer {
+    string id = 1;
+    string folder_id = 2;
+    string created_at = 3;
+    string name = 4;
+    string description = 5;
+    map<string,string> labels = 6;
+    Endpoint source = 7;
+    Endpoint target = 8;
+    Runtime runtime = 9;
+    TransferStatus status = 10;
+    Dashboard dashboard = 11;
+    TransferType type = 12;
+    double progress = 13;
+    string owner_id = 14;
+    string warning = 15;
+    RegularSnapshot regular_snapshot = 16;
+    Transformation transformation = 17;
+    TmpPolicyConfig tmp_policy = 18;
+    DataObjects data_objects = 19;
+}
+message Dashboard {
+    string id = 1;
+    map<string,string> params = 2;
+    string link = 3;
+}
+message LogLevel {
+    enum Level {
+        LEVEL_UNSPECIFIED = 0;
+        TRACE = 1;
+        DEBUG = 2;
+        INFO = 3;
+        WARN = 4;
+        ERROR = 5;
+        FATAL = 6;
+    }
+    Level level = 1;
+}
+message Runtime {
+    oneof runtime {
+        LocalRuntime local_runtime = 1;
+        YtRuntime yt_runtime = 2;
+        MultiYtRuntime multi_yt_runtime = 3;
+        YcRuntime yc_runtime = 4;
+        ServerlessRuntime serverless_runtime = 5;
+        Ec2Runtime ec2_runtime = 6;
+    }
+}
+message ServerlessRuntime {
+    int64 job_count = 2;
+    LogLevel.Level minimum_log_level = 7;
+    ShardingUploadParams upload_shard_params = 8;
+}
+message LocalRuntime {
+}
+message YtRuntime {
+    YtRuntimeCluster yt_cluster = 6;
+    string pool = 4;
+    double cpu = 1;
+    string ram = 5;
+    int64 job_count = 2;
+    ShardingUploadParams upload_shard_params = 8;
+    LogLevel.Level minimum_log_level = 7;
+    bool disable_cpu_reclaim = 9;
+}
+message ShardingUploadParams {
+    int64 job_count = 1;
+    int64 process_count = 2;
+}
+message RegularSnapshot {
+    oneof mode {
+        RegularSnapshotDisabled disabled = 4;
+        RegularSnapshotSettings settings = 3;
+    }
+}
+message RegularSnapshotDisabled {
+}
+message RegularSnapshotSettings {
+    RegularSnapshotScheduleInterval schedule = 1;
+    repeated IncrementalTable tables = 2;
+}
+message IncrementalTable {
+    string table_namespace = 1;
+    string table_name = 2;
+    string cursor_column = 3;
+    string initial_state = 4;
+}
+message MultiYtRuntime {
+    message YtDc {
+        YtRuntimeCluster yt_cluster = 6;
+        string pool = 4;
+        double cpu = 2;
+        string ram = 5;
+        int64 job_count = 1;
+        LogLevel.Level minimum_log_level = 7;
+        bool disable_cpu_reclaim = 9;
+    }
+    repeated YtDc yts = 10;
+}
+message YcRuntime {
+    Flavor flavor = 2;
+    int64 job_count = 1;
+    LogLevel.Level minimum_log_level = 7;
+    ShardingUploadParams upload_shard_params = 8;
+}
+message Ec2Runtime {
+    Flavor flavor = 2;
+    LogLevel.Level minimum_log_level = 7;
+    Settings settings = 8;
+}
+message Settings {
+    oneof settings {
+        AutoSettings auto_settings = 1;
+        ManualSettings manual_settings = 2;
+    }
+}
+message AutoSettings {
+}
+message ManualSettings {
+    string network_id = 4;
+}
+message TablesFilter {
+    repeated string include_tables = 1;
+    repeated string exclude_tables = 2;
+}
+message ColumnsFilter {
+    repeated string include_columns = 1;
+    repeated string exclude_columns = 2;
+}
+message MaskFieldTransformer {
+    TablesFilter tables = 1;
+    repeated string columns = 2;
+    MaskFunction function = 3;
+}
+message FilterColumnsTransformer {
+    TablesFilter tables = 1;
+    ColumnsFilter columns = 2;
+}
+message Table {
+    string name_space = 1;
+    string name = 2;
+}
+message RenameTable {
+    Table original_name = 1;
+    Table new_name = 2;
+}
+message RenameTablesTransformer {
+    repeated RenameTable rename_tables = 1;
+}
+message SkipEventsTransformer {
+    TablesFilter tables = 1;
+    repeated EventType events = 3;
+}
+message FilterStrmAccessLogTransformer {
+    bool stub = 1;
+}
+message Transformer {
+    oneof transformer {
+        MaskFieldTransformer mask_field = 1;
+        FilterColumnsTransformer filter_columns = 2;
+        SkipEventsTransformer skip_events = 3;
+        RenameTablesTransformer rename_tables = 4;
+        FilterStrmAccessLogTransformer filter_strm_access_log = 5;
+    }
+}
+message ObjectStorage {
+    string bucket = 1;
+    string service_account_id = 8;
+    string access_key = 2;
+}
+message YDSTopic {
+    string database = 1;
+    string stream = 2;
+    string service_account_id = 8;
+}
+message TransformerErrorsOutput {
+    oneof output {
+        bool devnull = 1;
+        bool transfer_destination = 2;
+        ObjectStorage bucket_id = 3;
+        YDSTopic yds_topic = 4;
+    }
+}
+message Transformation {
+    bool debug_mode = 2;
+    TransformerErrorsOutput errors_output = 3;
+    repeated Transformer transformers = 1;
+}
+message TmpPolicyConfig {
+    string suffix = 1;
+}
+message DataObjects {
+    repeated string include_objects = 1;
+}

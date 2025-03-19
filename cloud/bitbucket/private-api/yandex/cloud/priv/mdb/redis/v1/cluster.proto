@@ -1,0 +1,288 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.mdb.redis.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "google/type/timeofday.proto";
+import "yandex/cloud/api/tools/options.proto";
+import "yandex/cloud/priv/mdb/redis/v1/config/redis5_0.proto";
+import "yandex/cloud/priv/mdb/redis/v1/config/redis6_0.proto";
+import "yandex/cloud/priv/mdb/redis/v1/config/redis6_2.proto";
+import "yandex/cloud/priv/mdb/redis/v1/config/redis7_0.proto";
+import "yandex/cloud/priv/mdb/redis/v1/maintenance.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/mdb/redis/v1;redis";
+option java_outer_classname = "PRC";
+
+// Redis cluster.
+message Cluster {
+  // Deployment environment.
+  enum Environment {
+    ENVIRONMENT_UNSPECIFIED = 0;
+
+    // Stable environment with concervative update policy.
+    PRODUCTION = 1;
+
+    // Environment with more aggressive update policy in comparisson with
+    // production environment.
+    PRESTABLE = 2;
+  }
+
+  enum Health {
+    option (cloud.api.tools.enumeration).lint_skip.unspecified_value = true;
+    HEALTH_UNKNOWN = 0; // Cluster is in unknown state (we have no data)
+    ALIVE = 1; // Cluster is alive and well (all hosts are alive)
+    DEAD = 2; // Cluster is inoperable (it cannot perform any of its essential functions)
+    DEGRADED = 3; // Cluster is partially alive (it can perform some of its essential functions)
+  }
+
+  enum Status {
+    option (cloud.api.tools.enumeration).lint_skip.unspecified_value = true;
+    STATUS_UNKNOWN = 0; // Cluster status is unknown
+    CREATING = 1; // Cluster is being created
+    RUNNING = 2; // Cluster is running
+    ERROR = 3; // Cluster failed
+    UPDATING = 4; // Cluster is being updated
+    STOPPING = 5; // Cluster is stopping
+    STOPPED = 6; // Cluster stopped
+    STARTING = 7; // Cluster is starting
+  }
+
+  enum PersistenceMode {
+    option (cloud.api.tools.enumeration).lint_skip.unspecified_value = true;
+    ON = 0; // cluster persistence mode on
+    OFF = 1; // cluster persistence mode off
+  }
+
+  // Required. Unique ID of the Redis cluster.
+  // This ID is assigned by MDB in the process of creating a Redis cluster.
+  string id = 1;
+
+  // Required. ID of the folder that the Redis cluster belongs to.
+  string folder_id = 2;
+
+  // The time when the Redis cluster was created.
+  google.protobuf.Timestamp created_at = 3;
+
+  // Required. Name of the Redis cluster.
+  // The name is unique within the folder. 1-64 characters long.
+  string name = 4;
+
+  // Description of the Redis cluster. 0-256 characters long.
+  string description = 5;
+
+  map<string, string> labels = 6;
+
+  // Required. Deployment environment of the Redis cluster.
+  Environment environment = 7;
+
+  // Required. Monitoring systems relevant to the Redis cluster.
+  repeated Monitoring monitoring = 8;
+
+  // Required. Configuration of the Redis cluster.
+  ClusterConfig config = 9;
+
+  string network_id = 10;
+
+  // Aggregated cluster health.
+  Health health = 11;
+
+  // Cluster status.
+  Status status = 12;
+
+  // Redis cluster mode on/off.
+  bool sharded = 13;
+
+  // Window of maintenance operations.
+  MaintenanceWindow maintenance_window = 14;
+
+  // Maintenance operation planned at nearest maintenance_window.
+  MaintenanceOperation planned_operation = 15;
+
+  // User security groups
+  repeated string security_group_ids = 16;
+
+  // TLS port and functionality on\off
+  bool tls_enabled = 17;
+
+  // Deletion Protection inhibits deletion of the cluster
+  bool deletion_protection = 18;
+
+  // Persistence mode
+  PersistenceMode persistence_mode = 19;
+}
+
+// Monitoring system.
+message Monitoring {
+  // Required. Name of the monitoring system.
+  string name = 1;
+
+  // Description of the monitoring system.
+  string description = 2;
+
+  // Required. Link to the monitoring system.
+  string link = 3;
+}
+
+message ClusterConfig {
+  // Redis version.
+  string version = 1;
+
+  oneof redis_config {
+    config.RedisConfigSet5_0 redis_config_5_0 = 2 [json_name="redisConfig_5_0"];
+    config.RedisConfigSet6_0 redis_config_6_0 = 6 [json_name="redisConfig_6_0"];
+    config.RedisConfigSet6_2 redis_config_6_2 = 7 [json_name="redisConfig_6_2"];
+    config.RedisConfigSet7_0 redis_config_7_0 = 8 [json_name="redisConfig_7_0"];
+  }
+
+  // Resources allocated to Redis hosts.
+  Resources resources = 3;
+
+  // Start time for the daily backup in UTC timezone
+  google.type.TimeOfDay backup_window_start = 4;
+
+  // Access policy to DB
+  Access access = 5;
+}
+
+message Shard {
+  string name = 1;
+
+  string cluster_id = 2;
+}
+
+message Host {
+
+  enum Role {
+    option (cloud.api.tools.enumeration).lint_skip.unspecified_value = true;
+    ROLE_UNKNOWN = 0; // Role is unknown (we have no data)
+    MASTER = 1;
+    REPLICA = 2;
+  }
+
+  enum Health {
+    option (cloud.api.tools.enumeration).lint_skip.unspecified_value = true;
+    HEALTH_UNKNOWN = 0; // Host is in unknown state (we have no data)
+    ALIVE = 1; // Host is alive and well (all services are alive)
+    DEAD = 2; // Host is inoperable (it cannot perform any of its essential functions)
+    DEGRADED = 3; // Host is partially alive (it can perform some of its essential functions)
+  }
+
+  message CPUMetric {
+    int64 timestamp = 1;
+    double used = 2;
+  }
+
+  message MemoryMetric {
+    int64 timestamp = 1;
+    int64 used = 2;
+    int64 total = 3;
+  }
+
+  message DiskMetric {
+    int64 timestamp = 1;
+    int64 used = 2;
+    int64 total = 3;
+  }
+
+  message SystemMetrics {
+    CPUMetric cpu = 1;
+    MemoryMetric memory = 2;
+    DiskMetric disk = 3;
+  }
+
+  // Required. Name of the host.
+  string name = 1;
+
+  // Required. ID of the Redis cluster.
+  string cluster_id = 2;
+
+  // ID of the availability zone.
+  string zone_id = 3;
+
+  // ID of the subnet that the host belongs to.
+  string subnet_id = 4;
+
+  // Resources allocated to the host.
+  Resources resources = 5;
+
+  // Host's role
+  Role role = 6;
+
+  // Aggregated host health
+  Health health = 7;
+
+  repeated Service services = 8;
+
+  string shard_name = 9;
+
+  // A replica with a low priority number is considered better for promotion.
+  // A replica with priority of 0 will never be selected by Redis Sentinel for promotion.
+  // Works only for non-sharded clusters. Default value is 100.
+  google.protobuf.Int64Value replica_priority = 10;
+
+  // Flag showing public IP assignment status to this host.
+  bool assign_public_ip = 11;
+
+  // System metrics
+  SystemMetrics system = 12;
+}
+
+message Service {
+
+  enum Type {
+    TYPE_UNSPECIFIED = 0;
+
+    // The host is a Redis server.
+    REDIS = 1;
+
+    // The host provides a Sentinel-only service (quorum node).
+    ARBITER = 2;
+
+    // The host is a Redis Cluster node.
+    REDIS_CLUSTER = 3;
+  }
+
+  enum Health {
+    option (cloud.api.tools.enumeration).lint_skip.unspecified_value = true;
+    HEALTH_UNKNOWN = 0; // Service is in unknown state (we have no data)
+    ALIVE = 1; // Service is alive and well
+    DEAD = 2; // service is dead or does not respond
+  }
+
+  // Type of service
+  Type type = 1;
+
+  // Service health
+  Health health = 2;
+}
+
+message Resources {
+  string resource_preset_id = 1;
+
+  // Volume of the storage available to a host.
+  int64 disk_size = 2;
+
+  // Type of the storage environment for the host.
+  // Possible values:
+  // * network-ssd - network SSD drive,
+  // * local-ssd - local SSD storage.
+  string disk_type_id = 3;
+}
+
+message Access {
+  // Allow access for DataLens.
+  bool data_lens = 1;
+
+  // Allow access for Web SQL.
+  bool web_sql = 2;
+
+  // Allow access for DataTransfer.
+  // NOTE: Do not propagate to public API until Data Transfer integration is required.
+  bool data_transfer = 3;
+
+  // Allow access for Serverless.
+  // NOTE: Do not propagate to public API until Serverless integration is required.
+  bool serverless = 4;
+}

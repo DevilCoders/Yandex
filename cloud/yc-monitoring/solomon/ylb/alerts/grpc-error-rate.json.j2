@@ -1,0 +1,54 @@
+{%- extends "../../base/alert.j2" %}
+
+{%- set type_map = {
+	'server': 'grpc__*',
+	'client': 'client_grpc__*'
+}
+%}
+{%- set prefix = type_map.get(type, '*grpc__*') %}
+
+{%- macro svm_fqdn() %}
+	[[labels.host]].{{ svm_domains[env] }}
+{%- endmacro %}
+
+{%- macro prog() %}
+let errors = non_negative_derivative(group_lines('sum', {
+	cluster='cloud_{{ env }}_ylb',
+	service='{{ service }}',
+	host!='cluster',
+	name='{{ prefix }}_fail',
+	code='*'
+	} + constant_line(0, 5m)));
+let successess = non_negative_derivative(group_lines('sum', {
+	cluster='cloud_{{ env }}_ylb',
+	service='{{ service }}',
+	host!='cluster',
+	name='{{ prefix }}_success',
+	code='*'
+	} + constant_line(0, 5m)));
+let rps = errors + successess;
+let avg_rps = avg(rps);
+let avg_errors = avg(errors);
+let error_perc = avg_rps == 0 ? 0 : avg_errors/avg_rps;
+let description = 'Too much gRPC errors, avg errors: ' + error_perc + '%';
+
+let is_red = avg_rps > 100 ? error_perc > {{ red_threshold }} : avg_errors > {{ abs_red_threshold }};
+alarm_if(is_red);
+
+let is_yellow = avg_rps > 100 ? error_perc > {{ yellow_threshold }} : avg_errors > {{ abs_yellow_threshold }};
+warn_if(is_yellow);
+{%- endmacro %}
+
+{%- block main %}
+	"id": "{{ id }}",
+	"name": "{{ name }}",
+	"description": "",
+	"groupByLabels": ["host"],
+	"annotations": {
+		"details": "[[expression.description]]",
+		"host": "{{ svm_fqdn() }}",
+		"service": "grpc-{{ type }}-error-rate{{ service_suffix }}",
+		"wiki": "https://docs.yandex-team.ru/yc-monitoring/cgw/grpc-error-rate"
+	},
+	"type": {{ type_expression() }}
+{%- endblock %}

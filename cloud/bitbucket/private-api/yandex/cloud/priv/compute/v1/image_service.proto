@@ -1,0 +1,182 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.compute.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/field_mask.proto";
+import "yandex/cloud/api/operation.proto";
+import "yandex/cloud/priv/compute/v1/image.proto";
+import "yandex/cloud/priv/compute/v1/validation.proto";
+import "yandex/cloud/priv/compute/v1/os.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+import "yandex/cloud/priv/reference/reference.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/compute/v1;compute";
+option java_outer_classname = "PIS";
+
+service ImageService {
+  rpc Get (GetImageRequest) returns (Image) {
+    option (google.api.http) = { get: "/compute/v1/images/{image_id}" };
+  }
+
+  rpc GetLatestByFamily (GetImageLatestByFamilyRequest) returns (Image) {
+    option (google.api.http) = { get: "/compute/v1/images:latestByFamily" };
+  }
+
+  rpc List (ListImagesRequest) returns (ListImagesResponse) {
+    option (google.api.http) = { get: "/compute/v1/images"};
+  }
+
+  rpc Create (CreateImageRequest) returns (operation.Operation) {
+    option (google.api.http) = { post: "/compute/v1/images" body: "*" };
+    option (yandex.cloud.api.operation) = {
+      metadata: "CreateImageMetadata"
+      response: "Image"
+    };
+  }
+
+  rpc Update (UpdateImageRequest) returns (operation.Operation) {
+    option (google.api.http) = { patch: "/compute/v1/images/{image_id}" body: "*" };
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateImageMetadata"
+      response: "Image"
+    };
+  }
+
+  rpc Delete (DeleteImageRequest) returns (operation.Operation) {
+    option (google.api.http) = { delete: "/compute/v1/images/{image_id}" };
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeleteImageMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+
+  rpc ListOperations (ListImageOperationsRequest) returns (ListImageOperationsResponse) {
+    option (google.api.http) = { get: "/compute/v1/images/{image_id}/operations" };
+  }
+
+  rpc UpdateReferences (UpdateImageReferencesRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateImageReferencesMetadata"
+      response: "UpdateImageReferencesResponse"
+    };
+  }
+
+  rpc ListReferences (ListImageReferencesRequest) returns (ListImageReferencesResponse);
+}
+
+message GetImageRequest {
+  string image_id = 1 [(valid) = "resource_id", (required) = true];
+}
+
+message GetImageLatestByFamilyRequest {
+  string folder_id = 1 [(valid) = "resource_id", (required) = true];
+  string family = 2 [(valid) = "resource_name", (required) = true];
+}
+
+message ListImagesRequest {
+  string folder_id = 1 [(valid) = "resource_id", (required) = true];
+  int64 page_size = 2 [(valid) = "page_size"];
+  string page_token = 3 [(valid) = "page_token"];
+  string filter = 4;
+  string name = 5 [(valid) = "resource_name"];	// legacy, for backward compatibility
+
+  // By which column the listing should be ordered and in which direction,
+  // format is "createdAt desc". "id asc" if omitted.
+  string order_by = 6 [(valid) = "order_by"];
+}
+
+message ListImagesResponse {
+  repeated Image images = 1;
+  string next_page_token = 2;
+}
+
+message CreateImageRequest {
+  string folder_id = 1 [(valid) = "resource_id", (required) = true];
+  string name = 2 [(valid) = "resource_name"];
+  string description = 3 [(valid) = "description"];
+  map<string, string> labels = 4 [(valid) = "labels"];
+  string family = 5 [(valid) = "resource_name"];
+  int64 min_disk_size = 6 [(valid) = "min_disk_size"];  // optional, should be > source data
+  repeated string product_ids = 7 [(valid) = "resource_id", (required) = true];
+
+  oneof source {
+    option (exactly_one) = true;
+    string image_id = 8 [(valid) = "resource_id"];
+    string disk_id = 9 [(valid) = "resource_id"];
+    string snapshot_id = 10 [(valid) = "resource_id"];
+    string uri = 11 [(valid) = "url"];
+  }
+
+  Os os = 12;
+  bool override_product_ids = 13;
+
+  bool pooled = 17;
+
+  // private fields
+  map<string, string> requirements = 14 [(valid) = "labels"];
+  bool ignore_whitelist = 15;
+  repeated reference.Reference references = 16 [(required) = true];
+}
+
+message CreateImageMetadata {
+  string image_id = 1;
+  double progress_percentage = 2;
+}
+
+message UpdateImageRequest {
+  string image_id = 1 [(valid) = "resource_id", (required) = true];
+  google.protobuf.FieldMask update_mask = 2;
+
+  string name = 3 [(valid) = "resource_name"];
+  string description = 4 [(valid) = "description"];
+  int64 min_disk_size = 5 [(valid) = "min_disk_size"];
+  map<string, string> labels = 6 [(valid) = "labels"];
+}
+
+message UpdateImageMetadata {
+  string image_id = 1;
+}
+
+message DeleteImageRequest {
+  string image_id = 1 [(valid) = "resource_id", (required) = true];
+}
+
+message DeleteImageMetadata {
+  string image_id = 1;
+}
+
+message ListImageOperationsRequest {
+  string image_id = 1 [(valid) = "resource_id", (required) = true];
+  int64 page_size = 2 [(valid) = "page_size"];
+  string page_token = 3 [(valid) = "page_token"];
+}
+
+message ListImageOperationsResponse {
+  repeated operation.Operation operations = 1;
+  string next_page_token = 2;
+}
+
+message UpdateImageReferencesRequest {
+  string image_id = 1 [ (valid) = "resource_id", (required) = true];
+  repeated reference.Reference reference_additions = 2 [(required) = true];
+  repeated reference.Reference reference_deletions = 3 [(required) = true];
+}
+
+message UpdateImageReferencesMetadata {
+  string image_id = 1;
+}
+
+message UpdateImageReferencesResponse {
+}
+
+message ListImageReferencesRequest {
+  string image_id = 1 [(valid) = "resource_id", (required) = true];
+  int64 page_size = 2 [(valid) = "page_size"];
+  string page_token = 3 [(valid) = "page_token"];
+}
+
+message ListImageReferencesResponse {
+  repeated reference.Reference references = 1;
+  string next_page_token = 2;
+}

@@ -1,0 +1,340 @@
+<% set db = db|default('s3db') %>
+
+<% set env = env|default('prod') %>
+<% set env_map = {
+    'prod': 'mdb-{0}-porto-prod,mdb-{0}*-porto-prod,mail-{0}'.format(db),
+    'test': 'mdb-{0}-porto-test,mdb-{0}*-porto-test'.format(db),
+   }
+%>
+
+<% set dom0_env_map = {
+    'prod': 'pers,pgaas',
+    'test': 'test',
+   }
+%>
+
+<% set dom0_env = dom0_env_map.get(env, env) %>
+<% set env = env_map.get(env, env) %>
+
+<% set host = 'CON' %>
+<% set geo = geo|default(None) %>
+<% set geo_colors = {
+    "iva": "#37bff2",
+    "myt": "#169833",
+    "man": "#c95edd",
+    "vla": "#f6ab31",
+    "sas": "#e85b4e"
+} %>
+
+<% set shard = shard|default(prj|default(None)) %>
+
+<% set all_shards = list_prj(itype='mailpostgresql', ctype=env) %>
+
+<% if geo %>
+<% set all_geos = [geo] %>
+<% else %>
+<% if shard %>
+<% set all_geos = list_geo(itype='mailpostgresql', ctype=env, prj='{0}'.format(shard)) %>
+<% else %>
+<% set all_geos = list_geo(itype='mailpostgresql', ctype=env) %>
+<% endif %>
+<% endif %>
+<% set by_geo = by_geo|default(1) %>
+
+<% set tags = 'itype=mailpostgresql' %>
+<% set dom0_tags = 'itype=mdbdom0' %>
+<% if env %>
+    <% set tags = tags + ";ctype={0}".format(env) %>
+<% endif %>
+
+<% if dom0_env %>
+    <% set dom0_tags = dom0_tags + ";ctype={0}".format(dom0_env) %>
+<% endif %>
+
+<% if shard %>
+    <% set tags = tags + ";prj={0}".format(shard) %>
+    <% set dom0_tags = dom0_tags + ";prj={0}".format(shard) %>
+<% else %>
+    <% set dom0_tags = dom0_tags + ";prj={0}".format(all_shards|join(",")) %>
+<% endif %>
+
+<% if geo %>
+    <% set geo_tags = tags + ";geo={0}".format(geo) %>
+    <% set geo_dom0_tags = dom0_tags + ";geo={0}".format(geo) %>
+<% else %>
+    <% set geo_tags = tags %>
+    <% set geo_dom0_tags = dom0_tags %>
+<% endif %>
+
+<< suggest.clear() >>
+<< suggest.add_var("host") >>
+<< suggest.set_choice_list("env", env_map.keys()) >>
+<< suggest.set_choice_list("units", ['Ki', 'Mi', 'Gi', 'Ti', 'Pi', 1]) >>
+<< suggest.set_choice_list("shard", all_shards) >>
+<< suggest.set_choice_list("geo", all_geos) >>
+<< suggest.set_choice_list("by_geo", [0, 1]) >>
+<< suggest.set_choice_list("db", ['s3db', 's3meta']) >>
+
+{
+    "title": "MDB S3 dashboard. shard: << shard >>. db: << db >>. env: << env >>. dom0_env: << dom0_env >>.by_geo: << by_geo >>.",
+    "type": "panel",
+    "charts":  [
+        <% set mailpostgresql_signals = [
+            ["RPS", "push-pooler-{0}_query_count_tmmx".format(db)],
+            ["Avg Query Time", "push-pooler-avg_query_time_tmmx"],
+            ["Log Errors/Fatals/Warnings", "push-postgres-log_*_tmmx"],
+            ["Replication Lag", "push-postgres-replication_lag_tmmx"],
+            ["Is Master", "push-postgres-is_primary_vmmv"],
+        ]%>
+        <% for sig in mailpostgresql_signals %>
+        {
+            "type": "graphic",
+            "width": 2,
+            "height": 2,
+            "title": "<< sig[0] >>",
+            <% if sig[0] == "Avg Query Time" %>
+            "stacked": false,
+            <% else %>
+            "stacked": true,
+            <% endif %>
+            "signals": [
+                <% if by_geo == 0 %>
+                   {
+                       "title": "<< g | upper >>",
+                       "color": "<< geo_colors[g] | default(make_color(g)) >>",
+                       "tag": "<< geo_tags >>",
+                       "host": "<< host >>",
+                       "name": "<< sig[1] >>"
+                   },
+                <% else %>
+                    <% for g in all_geos %>
+                    {
+                        "title": "<< g | upper >>",
+                        "color": "<< geo_colors[g] | default(make_color(g)) >>",
+                        "tag": "<< tags >>;geo=<< g >>",
+                        "host": "<< host >>",
+                        "name": "<< sig[1] >>"
+                    },
+                    <% endfor %>
+                <% endif %>
+            ],
+        },
+        <% endfor %>
+        {
+            "type": "graphic",
+            "width": 2,
+            "height": 2,
+            "title": "CPU",
+            "signals": [
+                <% for sig in ['Usage', 'Guarantee', 'Limit', 'Wait'] %>
+                {
+                    "tag": "<< dom0_tags >>",
+                    "host": "<< host >>",
+                    "name": "portoinst-cpu_<< sig|lower >>_cores_tmmv",
+                    "title": "<< sig >>",
+                    <% if sig in ['Usage', 'Wait'] %>
+                    "yAxis": 0
+                    <% else %>
+                    "yAxis": 1
+                    <% endif %>
+                },
+                <% endfor %>
+            ],
+            "stacked": true,
+        },
+        {
+            "type": "graphic",
+            "width": 2,
+            "height": 2,
+            "title": "Disk",
+            "stacked": true,
+            "signals": [
+                <% for sig in ['Read_fs', 'Write_fs', 'Limit'] %>
+                {
+                    "tag": "<< dom0_tags >>",
+                    "host": "<< host >>",
+                    "name": "portoinst-io_<< sig|lower >>_bytes_tmmv",
+                    "title": "<< sig >>",
+                    <% if sig in ['Limit'] %>
+                    "yAxis": 1
+                    <% else %>
+                    "yAxis": 0
+                    <% endif %>
+                },
+                <% endfor %>
+            ],
+        },
+        {
+            "type": "graphic",
+            "width": 2,
+            "height": 2,
+            "title": "Net",
+            "signals": [
+                {
+                    "tag": "<< dom0_tags >>",
+                    "host": "<< host >>",
+                    "name": "sum(portoinst-net_rx_mb_summ, portoinst-net_tx_mb_summ)",
+                    "title": "Used",
+                },
+                {
+                    "tag": "<< dom0_tags >>",
+                    "host": "<< host >>",
+                    "name": "portoinst-net_guarantee_mb_summ",
+                    "title": "Guaranteed",
+                },
+                {
+                    "tag": "<< dom0_tags >>",
+                    "host": "<< host >>",
+                    "name": "portoinst-net_limit_mb_summ",
+                    "title": "Limit",
+                }
+            ],
+        },
+        {
+            "type": "graphic",
+            "width": 2,
+            "height": 2,
+            "title": "Used Space",
+            "stacked": true,
+            "normalize": false,
+            "signals": [
+                {
+                    "tag": "<< tags >>;tier=primary",
+                    "host": "<< host >>",
+                    "name": "push-disk-used_bytes_pgdata_tmmx",
+                    "title": "Used"
+                },
+                {
+                    "tag": "<< tags >>;tier=primary",
+                    "host": "<< host >>",
+                    "name": "push-disk-free_bytes_pgdata_tmmx",
+                    "title": "Free"
+                }
+            ],
+        },
+
+        <% set mailpostgresql_signals = [
+            ["Wait Event", "push-postgres_wait_event_(?P<title>[^.]*)_tmmx"],
+            ["Backends", "push-postgres_role_sessions_(?P<title>[^.]*)_tmmx"],
+        ]%>
+        <% for sig in mailpostgresql_signals %>
+        {
+            "type": "graphic",
+            "width": 2,
+            "height": 2,
+            "title": "<< sig[0] >>",
+            "stacked": true,
+            "signals": [
+                <% for signal in list_signals(pattern=sig[1], itype='mailpostgresql', ctype=env) %>
+                {
+                    "tag": "<< geo_tags >>",
+                    "host": "<< host >>",
+                    "name": "<< signal >>",
+                    "title": "<< signal.sub('title') >>"
+                },
+                <% endfor %>
+            ],
+        },
+        <% endfor %>
+
+
+        <% if db == "s3db" %>
+            <% set mailpostgresql_signals = [
+                ["Buckets Count", "push-s3db_buckets_count_tmmx"],
+                ["Chunks Count", "push-s3db_chunks_count_tmmx"],
+                ["Delete Queue Count", "push-s3db_deleted_objects_count_tmmx"],
+                ["Delete Queue Size", "push-s3db_deleted_objects_size_tmmx"]
+            ]%>
+            <% for sig in mailpostgresql_signals %>
+            {
+                "type": "graphic",
+                "width": 1,
+                "height": 1,
+                "title": "<< sig[0] >>",
+                "stacked": true,
+                "signals": [
+                    {
+                        "tag": "<< geo_tags >>;tier=primary",
+                        "host": "<< host >>",
+                        "name": "<< sig[1] >>",
+                        "title": "count"
+                    },
+                ],
+            },
+            <% endfor %>
+            {
+                "type": "graphic",
+                "width": 2,
+                "height": 1,
+                "stacked": true,
+                "normalize": true,
+                "title": "Objects Count",
+                "signals": [
+                    <% for sig in ["multipart_objects", "objects_parts", "simple_objects", "active_multipart"] %>
+                    {
+                        "tag": "<< geo_tags >>;tier=primary",
+                        "host": "<< host >>",
+                        "name": "push-s3db_<< sig >>_count_tmmx",
+                        "title": "<< sig >>",
+                    },
+                    <% endfor %>
+                ],
+            },
+            {
+                "type": "graphic",
+                "width": 2,
+                "height": 1,
+                "stacked": true,
+                "normalize": true,
+                "title": "Chunks Size",
+                "signals": [
+                    <% for sig in ["0_0", "0_10", "10_100", "100_1000", "1000_10000", "10000_100000", "100000_inf"] %>
+                    {
+                        "tag": "<< geo_tags >>;tier=primary",
+                        "host": "<< host >>",
+                        "name": "push-s3db_chunks_size_<< sig >>_tmmx",
+                        "title": "<< sig >>",
+                        "color": "<< make_color(sig) >>",
+                    },
+                    <% endfor %>
+                ],
+            },
+        <% else %>
+            <% set mailpostgresql_signals = [
+                ["Buckets Count", "push-s3meta_buckets_count_vmmv"],
+                ["Chunks Count", "push-s3meta_chunks_count_vmmv"],
+            ]%>
+            <% for sig in mailpostgresql_signals %>
+            {
+                "type": "graphic",
+                "width": 1,
+                "height": 1,
+                "title": "<< sig[0] >>",
+                "signals": [
+                    {
+                        "tag": "<< geo_tags >>;tier=primary",
+                        "host": "<< host >>",
+                        "name": "<< sig[1] >>",
+                        "title": "count"
+                    },
+                ],
+            },
+            <% endfor %>
+            {
+                "type": "graphic",
+                "width": 2,
+                "height": 1,
+                "normalize": true,
+                "title": "Shards Disbalance",
+                "signals": [
+                    {
+                        "tag": "<< geo_tags >>;tier=primary",
+                        "host": "<< host >>",
+                        "name": "push-s3meta_shard_disbalance_tmmx",
+                        "title": "count"
+                    },
+                ],
+            },
+        <% endif %>
+    ]
+}

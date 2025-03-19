@@ -1,0 +1,33 @@
+SELECT
+    cid,
+    name,
+    type,
+    env,
+    created_at,
+    pillar_value AS "value",
+    network_id,
+    status,
+    description,
+    labels::jsonb,
+    mw_day,
+    mw_hour,
+    mw_config_id,
+    mw_max_delay,
+    mw_delayed_until,
+    mw_create_ts,
+    mw_info,
+    rev,
+    backup_schedule,
+    user_sgroup_ids,
+    host_group_ids,
+    deletion_protection
+FROM code.get_clusters(
+    i_folder_id         => %(folder_id)s,
+    i_cid               => %(cid)s,
+    i_cluster_name      => %(cluster_name)s,
+    i_env               => %(env)s,
+    i_cluster_type      => %(cluster_type)s,
+    i_page_token_name   => %(page_token_name)s,
+    i_limit             => %(limit)s,
+    i_visibility        => %(visibility)s
+)

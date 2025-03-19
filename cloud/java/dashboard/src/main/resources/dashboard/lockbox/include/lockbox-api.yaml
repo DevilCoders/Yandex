@@ -1,0 +1,93 @@
+uid: 'yc-lockbox-@{environment}-api'
+title: '@{title}'
+refresh: 1m
+
+tags: [ 'yc-lockbox-@{environment}' ]
+
+variables:
+  replacement:
+    !include ../../include/errors.yaml
+    title: '@1'
+    datasource: '@2'
+    environment: '@3'
+    project: '@4'
+  repeat:
+    data_method:
+      values:
+        - Get
+    control_method:
+      values:
+        - Get
+        - List
+        - Create
+        - Update
+        - Delete
+        - Activate
+        - Deactivate
+        - ListVersions
+        - AddVersion
+        - ScheduleVersionDestruction
+        - CancelVersionDestruction
+        - ListOperations
+        - ListAccessBindings
+        - SetAccessBindings
+        - UpdateAccessBindings
+
+links:
+  - { title: 'Dashboards', tags: ['yc-lockbox-@{environment}'] }
+
+graphDefaults: { datasource: '@{datasource}', width: 12, height: 6 }
+
+rows:
+  - title: Data Plane
+    drilldowns:
+      - subUid: data
+        #tags: [ 'yc-lockbox-@{environment}-api' ]
+        uiQuery:
+          host:
+            labels: 'project=@{project}, cluster=lockbox, service=service, host=lockbox-data-*, app=lockbox-data-plane_server'
+            multi: true
+        uiRepeat: host
+        labels: 'host=$host'
+    queryDefaults: { labels: 'project=@{project}, cluster=lockbox, service=service, host=lockbox-data-*, app=lockbox-data-plane_server' }
+    panels:
+      - type: graph
+        repeat: data_method
+        templates: { name: rps, rate: rps }
+        title: 'lockbox.v1.PayloadService/@{data_method} rps'
+        queries:
+          - params: { labels: 'sensor=grpc_requests, meter_type=count, method=lockbox.v1.PayloadService/@{data_method}' }
+
+      - type: graph
+        repeat: data_method
+        templates: { name: percentile, format: solomon, groupLines: true, sensor: rate }
+        title: 'lockbox.v1.PayloadService/@{data_method} response duration'
+        queries:
+          - params: { labels: 'sensor=grpc_durations, method=lockbox.v1.PayloadService/@{data_method}' }
+        yAxes: [{ min: 0 }]
+
+  - title: Control Plane
+    drilldowns:
+      - subUid: control
+        #tags: [ 'yc-lockbox-@{environment}-api' ]
+        uiQuery:
+          host:
+            labels: 'project=@{project}, cluster=lockbox, service=service, host=lockbox-control-*, lockbox-control-plane_server'
+            multi: true
+        uiRepeat: host
+        labels: 'host=$host'
+    queryDefaults: { labels: 'project=@{project}, cluster=lockbox, service=service, host=lockbox-control-*, lockbox-control-plane_server' }
+    panels:
+      - type: graph
+        repeat: control_method
+        templates: { name: rps, rate: rps }
+        title: 'lockbox.v1.SecretService/@{control_method} rps'
+        queries:
+          - params: { labels: 'sensor=grpc_requests, meter_type=count, method=lockbox.v1.SecretService/@{control_method}' }
+      - type: graph
+        repeat: control_method
+        templates: { name: percentile, format: solomon, groupLines: true, sensor: rate }
+        title: 'lockbox.v1.SecretService/@{control_method} response duration'
+        queries:
+          - params: { labels: 'sensor=grpc_durations, method=lockbox.v1.SecretService/@{control_method}' }
+        yAxes: [{ min: 0 }]

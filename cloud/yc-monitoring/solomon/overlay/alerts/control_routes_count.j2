@@ -1,0 +1,48 @@
+{% extends "../../base/alert.j2" %}
+
+{% set checkExpression = "" %}
+{% set windowSecs = 600 %}
+
+{% set description = "Number of paths maintained by contrail-controls. Large number may lead " +
+                     "to control outage. https://st.yandex-team.ru/CLOUD-73012" %}
+
+{% macro prog() %}
+let warn = {{ warn_limit }};
+let crit = {{ alarm_limit }};
+let warn_human = to_fixed(warn / 1000000, 3) + "M";
+let crit_human = to_fixed(crit / 1000000, 3) + "M";
+
+let data = {
+    project='{{ project_id }}',
+    cluster='cloud_{{ env }}_oct',
+    service='oct_control_routes',
+    name='routes.by-class-family.paths',
+    host='oct*',
+    class='{{ class }}'
+};
+
+let total = group_lines('sum', data);
+let routes = max(total);
+let routes_human = to_fixed(routes / 1000000, 3) + "M";
+
+alarm_if(routes == 0);
+alarm_if(routes > crit);
+warn_if(routes > warn);
+{% endmacro %}
+
+{% block main %}
+    "name": "contrail-control routes count in {{ class }} @ {{ env | upper }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "host": "{{ svm_fqdn() }}",
+        "tags": "routes",
+        "current_level": "[[expression.routes_human]]",
+        "crit_level": "[[expression.crit_human]]",
+        "warn_level": "[[expression.warn_human]]",
+        "service": "contrail-control-routes-count-{{ class_name }}",
+        "description": "{{ description }}",
+        "time_window_seconds": "{{ windowSecs }}"
+    },
+    "description": "{{ description }}",
+    "type": {{ type_expression() }}
+{% endblock %}

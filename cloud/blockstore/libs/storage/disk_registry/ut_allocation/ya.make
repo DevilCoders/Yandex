@@ -1,0 +1,20 @@
+UNITTEST_FOR(cloud/blockstore/libs/storage/disk_registry)
+
+OWNER(g:cloud-nbs)
+
+SRCS(
+    disk_registry_ut_allocation.cpp
+)
+
+PEERDIR(
+    cloud/blockstore/config
+    cloud/blockstore/libs/storage/api
+    cloud/blockstore/libs/storage/disk_registry/testlib
+    cloud/blockstore/libs/storage/testlib
+    library/cpp/testing/unittest
+    ydb/core/testlib/basics
+)
+
+REQUIREMENTS(cpu:4)
+
+END()

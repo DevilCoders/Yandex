@@ -1,0 +1,431 @@
+{% extends "base.html" %}
+
+{% block styles %}
+{{ super() }}
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/v/bs/dt-1.10.15/b-1.3.1/b-colvis-1.3.1/se-1.2.2/datatables.min.css"/>
+<!--    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/bootstrap-suggest.css') }}"/> -->
+    <style type="text/css">
+td.details-control {
+    background: url("{{ url_for('static', filename='img/details_open.png') }}") no-repeat center center;
+    cursor: pointer;
+}
+tr.shown td.details-control {
+    background: url("{{ url_for('static', filename='img/details_close.png') }}") no-repeat center center;
+}
+    </style>
+{% endblock %}
+
+{% block nav_elements %}
+{{ super() }}
+            <li class="active"><a href="#">Containers</a></li>
+            <li><a href="/volumes">Volumes</a></li>
+            <li><a href="/transfers">Transfers</a></li>
+            <li><a href="/volume_backups">Volume backups</a></li>
+{% endblock %}
+
+{% block content %}
+{{ super() }}
+    <br/><br/><br/><br/>
+    <div class="container">
+    <form>
+      <div class="form-group row">
+        <div class="col-sm-11">
+          <input type="text" class="form-control" id="inputQueryString"
+          placeholder="I.e.: dom0=man1-; cluster_name=apidb04,apidb05; cpu_guarantee>=4; limit=100500; order_by=cpu_guarantee DESC"
+          autocomplete="off" autofocus=true>
+        </div>
+        <div class="col-sm-1">
+            <button type="submit" class="btn btn-primary" id="showContainers">Поиск</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col-sm-11">
+          <div id="alertResult"></div>
+        </div>
+      </div>
+
+      <div class="row">
+      <div class="col-sm-12">
+        <table id="containersTable" class="table table-striped table-bordered
+            table-hover" cellspacing="0" width="100%">
+                <thead>
+                    <tr>
+                        <th style="width: 20px"></th>
+                        <th>Dom0</th>
+                        <th>FQDN</th>
+                        <th style="width: 120px">Cluster</th>
+                        <th>CPU (cores)</th>
+                        <th>Memory (bytes)</th>
+                        <th>Net (bps)</th>
+                        <th>I/O (bps)</th>
+                    </tr>
+                </thead>
+            </table>
+      </div>
+      </div>
+
+    </form>
+    </div>
+
+    <div class="modal fade" id="modalEditContainers" tabindex="-1" role="dialog" aria-labelledby="modalEditContainersLabel">
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            <h4 class="modal-title" id="modalEditContainersLabel">Edit containers</h4>
+            <div style="font-size: small" id="modalEditContainersSmall"></div>
+          </div>
+          <div class="modal-body">
+
+            <form class="form-horizontal">
+              <div class="form-group">
+                <label for="inputClusterName" class="col-sm-4 control-label">Cluster name</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputClusterName">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="inputCpuGuarantee" class="col-sm-4 control-label text-success">CPU guarantee</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputCpuGuarantee">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="inputCpuLimit" class="col-sm-4 control-label text-warning">CPU limit</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputCpuLimit">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="inputMemoryGuarantee" class="col-sm-4 control-label text-success">Memory guarantee</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputMemoryGuarantee">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="inputMemoryLimit" class="col-sm-4 control-label text-warning">Memory limit</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputMemoryLimit">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="inputHugetlbLimit" class="col-sm-4 control-label text-warning">Hugetlb limit</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputHugetlbLimit">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="inputNetGuarantee" class="col-sm-4 control-label text-success">Net guarantee</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputNetGuarantee">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="inputNetLimit" class="col-sm-4 control-label text-warning">Net limit</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputNetLimit">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="inputIOLimit" class="col-sm-4 control-label text-warning">I/O limit</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputIOLimit">
+                </div>
+              </div>
+
+            </form>
+
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+            <button type="button" class="btn btn-primary" id="btnSaveContainers">Save changes</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="modalLaunchContainers" tabindex="-1" role="dialog" aria-labelledby="modalLaunchContainersLabel">
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            <h4 class="modal-title" id="modalLaunchContainersLabel">Launch container</h4>
+            <div style="font-size: small" id="modalLaunchContainersSmall"></div>
+          </div>
+          <div class="modal-body">
+
+            <form class="form-horizontal">
+              <div class="form-group">
+                <label for="selectProject" class="col-sm-4 control-label">Project</label>
+                <div class="col-sm-8">
+                  <select class="selectpicker selectProject form-control" title="Ничего не выбрано" id="selectProject">
+                      <option>sandbox</option>
+                      <option>pers</option>
+                      <option>pgaas</option>
+                      <option>disk</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="inputFQDN" class="col-sm-4 control-label">FQDN</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputFQDN">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="inputClusterNameLaunch" class="col-sm-4 control-label">Cluster name</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputClusterNameLaunch">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="inputProjectIdLaunch" class="col-sm-4 control-label">Project ID</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputProjectIdLaunch">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="inputManagingProjectIdLaunch" class="col-sm-4 control-label">Managing Project ID</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputManagingProjectIdLaunch">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="inputPlacement" class="col-sm-4 control-label">Placement</label>
+                <div class="col-sm-8">
+                    <div class="btn-group" data-toggle="buttons" id="inputPlacement">
+                      <label class="btn btn-default active">
+                        <input type="radio" name="options" id="placementAuto" autocomplete="off" value="auto"> Auto
+                      </label>
+                      <label class="btn btn-default">
+                        <input type="radio" name="options" id="placementManual" autocomplete="off" value="manual"> Manual
+                      </label>
+                    </div>
+                </div>
+              </div>
+
+              <div class="form-group collapse" id="InputDom0Form">
+                <label for="inputDom0" class="col-sm-4 control-label">Dom0</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputDom0">
+                </div>
+              </div>
+
+              <hr/>
+              <div class="form-group">
+                <label for="inputCpuGuaranteeLaunch" class="col-sm-4 control-label text-success">CPU guarantee</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputCpuGuaranteeLaunch">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="inputCpuLimitLaunch" class="col-sm-4 control-label text-warning">CPU limit</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputCpuLimitLaunch">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="inputMemoryGuaranteeLaunch" class="col-sm-4 control-label text-success">Memory guarantee</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputMemoryGuaranteeLaunch">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="inputMemoryLimitLaunch" class="col-sm-4 control-label text-warning">Memory limit</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputMemoryLimitLaunch">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="inputHugetlbLimitLaunch" class="col-sm-4 control-label text-warning">Hugetlb limit</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputHugetlbLimitLaunch">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="inputNetGuaranteeLaunch" class="col-sm-4 control-label text-success">Net guarantee</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputNetGuaranteeLaunch">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="inputNetLimitLaunch" class="col-sm-4 control-label text-warning">Net limit</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputNetLimitLaunch">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="inputIOLimitLaunch" class="col-sm-4 control-label text-warning">I/O limit</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputIOLimitLaunch">
+                </div>
+              </div>
+              <hr/>
+
+              <div class="form-group">
+                <label for="inputDom0Path" class="col-sm-4 control-label">Dom0 path</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputDom0Path">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="selectVolumeBackend" class="col-sm-4 control-label">Backend</label>
+                <div class="col-sm-8">
+                  <select class="selectpicker selectVolumeBackend form-control" title="native" id="selectVolumeBackend">
+                      <option selected>native</option>
+                      <option>bind</option>
+                      <option>loop</option>
+                      <option>overlay</option>
+                      <option>plain</option>
+                      <option>quota</option>
+                      <option>rbd</option>
+                      <option>tmpfs</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="inputReadOnly" class="col-sm-4 control-label">Read only</label>
+                <div class="col-sm-8">
+                    <div class="btn-group" data-toggle="buttons" id="inputReadOnly">
+                      <label class="btn btn-default active">
+                        <input type="radio" name="options" id="volumeRW" autocomplete="off" value="false"> RW
+                      </label>
+                      <label class="btn btn-default">
+                        <input type="radio" name="options" id="volumeRO" autocomplete="off" value="true"> RO
+                      </label>
+                    </div>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="inputSpaceGuarantee" class="col-sm-4 control-label text-success">Space guarantee</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputSpaceGuarantee">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="inputSpaceLimit" class="col-sm-4 control-label text-warning">Space limit</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputSpaceLimit">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="inputInodeGuarantee" class="col-sm-4 control-label text-success">Inode guarantee</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputInodeGuarantee">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="inputInodeLimit" class="col-sm-4 control-label text-warning">Inode limit</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputInodeLimit">
+                </div>
+              </div>
+
+              <hr/>
+
+              <div class="form-group">
+                <label for="inputBootstrapCmd" class="col-sm-4 control-label">Bootstrap command</label>
+                <div class="col-sm-8">
+                  <input class="form-control" id="inputBootstrapCmd">
+                </div>
+              </div>
+
+            </form>
+
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+            <button type="button" class="btn btn-primary" id="btnCheckLaunchConfig">Check configuration</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="modalLaunchContainersConfig" tabindex="-1" role="dialog" aria-labelledby="modalLaunchContainersConfigLabel">
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            <h4 class="modal-title" id="modalLaunchContainersConfigLabel">Launch container</h4>
+            <div style="font-size: small" id="modalLaunchContainersConfigSmall"></div>
+          </div>
+          <div class="modal-body">
+
+            <form class="form-horizontal">
+              <div class="form-group">
+                <div class="col-sm-12">
+                    <textarea class="form-control" rows="20" id="inputLaunchConfig"></textarea>
+                </div>
+              </div>
+            </form>
+
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+            <button type="button" class="btn btn-primary" id="btnLaunchContainers">Launch container(s)</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <div class="modal fade" id="modalDeleteContainer" tabindex="-1" role="dialog" aria-labelledby="modalDeleteContainerLabel">
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            <h4 class="modal-title" id="modalDeleteContainerLabel">Delete container(s)</h4>
+          </div>
+          <div class="modal-body">
+            <p>Next container(s) will be deleted:</p>
+            <form class="form-horizontal">
+              <div class="form-group">
+                <label for="inputFQDNDestroy" class="col-sm-2 control-label">Containers</label>
+                <div class="col-sm-10">
+                  <textarea class="form-control" id="inputFQDNDestroy" rows="5"></textarea>
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="inputSavePaths" class="col-sm-2 control-label">Paths to backup</label>
+                <div class="col-sm-10">
+                  <textarea class="form-control" id="inputSavePaths"></textarea>
+                </div>
+              </div>
+            </form>
+            <p>Both fields are '\n' separated (one entity per line).</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+            <button type="button" class="btn btn-danger" id="btnDeleteContainer">Delete container(s)</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+    <script type="text/javascript" src="https://cdn.datatables.net/v/bs/dt-1.10.15/b-1.3.1/b-colvis-1.3.1/se-1.2.2/datatables.min.js"></script>
+<!--    <script src="{{ url_for('static', filename='js/bootstrap-typeahead.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/bootstrap-suggest.js')}}"></script> -->
+    <script src="{{ url_for('static', filename='js/containers.js') }}"></script>
+{% endblock %}

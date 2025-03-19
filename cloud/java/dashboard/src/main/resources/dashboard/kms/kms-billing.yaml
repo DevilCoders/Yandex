@@ -1,0 +1,50 @@
+uid: yc-kms-billing
+refresh: 1m
+title: YC KMS Billing
+
+tags: [ 'yc-kms' ]
+
+variables:
+  repeat:
+    cluster: { values: ['prod', 'preprod'], titles: ['PROD', 'PREPROD'], variables: { 'topic': ['yc', 'yc/preprod'] } }
+
+graphDefaults: { datasource: 'Solomon', width: 8, height: 6 }
+queryDefaults: { labels: 'project=yc_billing, service=uploader_pull, cluster=@cluster, host=all' }
+
+rows:
+  - title: Billing Metrics Route
+    panels:
+      - type: graph
+        repeat: cluster
+        title: 'SKU counters rate (@cluster:title)'
+        templates: { name: rps, sumLines: false }
+        queries:
+          - params: { labels: 'route=sku_counters, source=topic-@cluster:topic/billing-kms-api-0|topic-@cluster:topic/billing-kms-storage-0' }
+
+      - type: graph
+        repeat: cluster
+        title: 'kms-api topic errors (@cluster:title)'
+        templates: { name: errors }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'route=discarded_metrics, source=topic-@cluster:topic/billing-kms-api-0' }
+          - params: { labels: 'route=expired_metrics, source=topic-@cluster:topic/billing-kms-api-0' }
+          - params: { labels: 'route=unparsed_metrics, source=topic-@cluster:topic/billing-kms-api-0' }
+        draw:
+          - { color: '#147', alias: 'discarded' }
+          - { color: '#da7', alias: 'expired' }
+          - { color: '#b20', alias: 'unparsed' }
+
+      - type: graph
+        repeat: cluster
+        title: 'kms-storage topic errors (@cluster:title)'
+        templates: { name: errors }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'route=discarded_metrics, source=topic-@cluster:topic/billing-kms-storage-0' }
+          - params: { labels: 'route=expired_metrics, source=topic-@cluster:topic/billing-kms-storage-0' }
+          - params: { labels: 'route=unparsed_metrics, source=topic-@cluster:topic/billing-kms-storage-0' }
+        draw:
+          - { color: '#147', alias: 'discarded' }
+          - { color: '#da7', alias: 'expired' }
+          - { color: '#b20', alias: 'unparsed' }

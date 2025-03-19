@@ -1,0 +1,3 @@
+RECURSE(
+    dist-sync
+)

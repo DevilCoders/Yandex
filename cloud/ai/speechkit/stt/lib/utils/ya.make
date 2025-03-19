@@ -1,0 +1,4 @@
+RECURSE(
+    arcadia
+    s3
+)

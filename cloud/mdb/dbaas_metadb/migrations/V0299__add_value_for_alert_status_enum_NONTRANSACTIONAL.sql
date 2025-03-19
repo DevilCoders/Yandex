@@ -1,0 +1,1 @@
+ALTER TYPE dbaas.alert_status ADD VALUE 'UPDATING' AFTER 'ACTIVE';

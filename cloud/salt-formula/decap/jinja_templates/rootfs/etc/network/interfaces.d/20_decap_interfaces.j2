@@ -1,0 +1,38 @@
+{% set specific_decap_config = pillar["specific_decap_config"][grains['nodename']] %}
+{% set generic_decap_config = pillar["generic_decap_config"] %}
+{% set generic_netinfra_config = pillar["generic_netinfra_config"] %}
+{% set deployment = specific_decap_config["deployment"] %}
+{% set location = grains["cluster_map"]["hosts"][grains['nodename']]["zone_id"] %}
+{% set decap_fv_peering_loopback_ipv4_address = specific_decap_config["decap_fv_peering_loopback_ipv4_address"] %}
+{% set decap_anycast_loopback_ipv6_address =  generic_decap_config["anycast_route"][deployment][location]["address"] %}
+
+
+auto kni0
+iface kni0 inet static
+    address {{ ipv4_upstream_address }}
+    netmask 24
+{% for RR in generic_netinfra_config["fv_reflectors"][deployment] %}
+     post-up  ip route add {{RR.ipv4_address}}/32 via 10.255.254.1
+     pre-down ip route del {{RR.ipv4_address}}/32 via 10.255.254.1
+{% endfor %}
+{% for BORDER in generic_netinfra_config["borders"] %}
+    post-up  ip route add {{BORDER.ipv4_address}}/32 via 10.255.254.1
+    pre-down ip route del {{BORDER.ipv4_address}}/32 via 10.255.254.1
+{% endfor %}
+
+
+auto kni0
+iface kni0 inet static
+    address {{ decap_fv_peering_loopback_ipv4_address }}
+    netmask 32 
+
+
+auto kni1
+iface kni1 inet6 static
+    address {{ ipv6_upstream_address }}
+    netmask 64
+
+
+iface kni1 inet6 static
+    address {{ decap_anycast_loopback_ipv6_address }}
+    netmask 64

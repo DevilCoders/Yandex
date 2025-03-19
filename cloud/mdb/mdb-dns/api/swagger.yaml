@@ -1,0 +1,249 @@
+swagger: "2.0"
+info:
+  description: "Simplifies registration of primary names for the cluster."
+  version: "1.0.0"
+  title: "MDB DNS"
+  contact:
+    email: "mdb@yandex-team.ru"
+  license:
+    name: "Proprietary"
+schemes:
+- "http"
+consumes:
+- "application/json"
+produces:
+- "application/json"
+paths:
+  /v1/dns:
+    put:
+      tags:
+      - dns
+      summary: "Update primary DNS for cluster"
+      operationId: "UpdatePrimaryDNS"
+      parameters:
+      - name: "body"
+        in: "body"
+        description: "Regular update request for primary DNS names"
+        required: true
+        schema:
+          $ref: "#/definitions/DNSUpdate"
+      - name: X-Signature
+        in: header
+        description: "Base64-encoded signature of request body. Uses RSA-PSS to sign SHA512(body)."
+        required: true
+        type: string
+      responses:
+        202:
+          description: "DNS names applied to update"
+        204:
+          description: "No update required for cid"
+        400:
+          description: "Invalid data supplied"
+          schema:
+            $ref: "#/definitions/Error"
+        403:
+          description: "Invalid data signature"
+          schema:
+            $ref: "#/definitions/Error"
+        500:
+          description: "Internal server error"
+          schema:
+            $ref: "#/definitions/Error"
+        503:
+          description: "Service unavailable (database or other dependency is offline)"
+          schema:
+            $ref: "#/definitions/Error"
+        504:
+          description: "Gateway Timeout (resolve current cid cname record failed)"
+          schema:
+            $ref: "#/definitions/Error"
+  /v1/live:
+    get:
+      tags:
+      - dns
+      summary: "Reports service live status with all connections"
+      operationId: "Live"
+      responses:
+        200:
+          description: "Return of live status on communication with others"
+          schema:
+            $ref: "#/definitions/LiveStatus"
+  /v1/lives/{ctype}/{env}:
+    get:
+      tags:
+        - dns
+      summary: "Reports service live status with all connections by cluster type"
+      operationId: "LiveByCluster"
+      parameters:
+        - name: "ctype"
+          in: path
+          description: "Cluster type"
+          required: true
+          type: string
+          enum:
+            - postgresql_cluster
+            - mysql_cluster
+            - mongodb_cluster
+            - clickhouse_cluster
+            - redis_cluster
+            - elasticsearch_cluster
+            - sqlserver_cluster
+            - hadoop_cluster
+            - kafka_cluster
+            - greenplum_cluster
+        - name: "env"
+          in: path
+          description: "Cluster environment"
+          required: true
+          type: string
+          enum:
+            - dev
+            - load
+            - qa
+            - prod
+            - compute-prod
+      responses:
+        200:
+          description: "Return of live status on communication with others"
+          schema:
+            $ref: "#/definitions/LiveStatus"
+  /v1/ping:
+    get:
+      tags:
+      - dns
+      summary: "Reports service status"
+      operationId: "Ping"
+      responses:
+        200:
+          description: "Service is alive and well"
+        503:
+          description: "Service temporary unavailable and can't work with clients"
+          schema:
+            $ref: "#/definitions/Error"
+  /v1/stats:
+    get:
+      tags:
+      - dns
+      summary: "Reports service stats"
+      operationId: "Stats"
+      responses:
+        200:
+          description: "Reports service stats"
+          schema:
+            $ref: "#/definitions/Stats"
+        500:
+          description: "Failed to gather metrics"
+          schema:
+            $ref: "#/definitions/Error"
+definitions:
+  ClusterInfo:
+    type: object
+    required:
+    - cid
+    - primaryfqdn
+    properties:
+      cid:
+        description: "Cluster ID this host belongs to"
+        type: string
+        x-nullable: false
+      sid:
+        description: "Shard ID this host belongs to"
+        type: string
+        x-nullable: false
+      primaryfqdn:
+        description: "Primary host's fqdn"
+        type: string
+        x-nullable: false
+      secondaryfqdn:
+        description: "Secondary host's fqdn, either replica or closest quorum"
+        type: string
+  DNSUpdate:
+    description: "Update of primary DNS"
+    type: object
+    required:
+    - timestamp
+    - primarydns
+    properties:
+      timestamp:
+        description: "Time and date of data in Unix Time format of current time to validate request."
+        type: integer
+        format: int64
+        x-nullable: false
+      primarydns:
+        description: "Primary DNS data"
+        x-nullable: false
+        $ref: "#/definitions/ClusterInfo"
+  LiveStatus:
+    description: "Collection of live status"
+    type: object
+    required:
+    - activeclients
+    - lastfailedcycles
+    properties:
+      activeclients:
+        description: "Current active clients"
+        type: integer
+        x-nullable: false
+      lastfailedcycles:
+        description: "Number of last failed primary cycles"
+        type: integer
+        x-nullable: false
+      updprimaryratio:
+        description: "Percent of records for primary update"
+        type: number
+        x-nullable: false
+      updsecondaryratio:
+        description: "Percent of records for primary update"
+        type: number
+        x-nullable: false
+      slayerdns:
+        $ref: '#/definitions/LiveDNSStatus'
+        description: "Current slayer DNS client status"
+      computedns:
+        $ref: '#/definitions/LiveDNSStatus'
+        description: "Current compute DNS client status"
+  LiveDNSStatus:
+    description: "Collection of live status for DNS client"
+    type: object
+    required:
+    - primary
+    properties:
+      primary:
+        $ref: '#/definitions/LiveDNSRoleStatus'
+      secondary:
+        $ref: '#/definitions/LiveDNSRoleStatus'
+      totalresolveerror:
+        description: "Total resolve error count"
+        type: integer
+      lastresolveerror:
+        description: "Last service sycle resolve error count"
+        type: integer
+  LiveDNSRoleStatus:
+    description: "Collection of live status for DNS client role, like primary or secondary"
+    type: object
+    required:
+    - lastfailedcycles
+    - pointlagsec
+    properties:
+      lastfailedcycles:
+        description: "Last failed cycles for update"
+        type: integer
+        x-nullable: false
+      pointlagsec:
+        description: "Seconds since last status point"
+        type: integer
+        x-nullable: false
+  Stats:
+    description: "Collection of service stats"
+    type: array
+    items:
+      description: "Specific stats"
+      type: array
+      items:
+        type: object
+  Error:
+    type: object
+    properties:
+      message:
+        description: "Error description"
+        type: string

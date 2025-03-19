@@ -1,0 +1,32 @@
+info: Updating tls certificates
+repeatable: true
+env_order_disabled: true
+clusters_selection:
+  db: >-
+    SELECT c.cid FROM dbaas.clusters c
+             JOIN dbaas.subclusters s USING (cid)
+             JOIN dbaas.hosts h USING (subcid)
+             JOIN dbaas.pillar ph ON (h.fqdn = ph.fqdn)
+             JOIN dbaas.pillar pc ON (c.cid = pc.cid)
+             LEFT JOIN dbaas.versions v ON (c.cid = v.cid AND v.component = 'mysql')
+    WHERE type = 'mysql_cluster'
+      AND (
+            pc.value -> 'data' -> 'mysql' -> 'version' ->> 'major_num' = '800'
+            OR v.major_version = '8.0'
+        )
+      AND dbaas.string_to_iso_timestamptz(ph.value ->> 'cert.expiration') < now() + '60 days'::::interval
+      AND ph.fqdn is not null
+      AND dbaas.visible_cluster_status(status)
+    GROUP BY c.cid
+pillar_change: 'SELECT 1
+
+  '
+worker:
+  operation_type: mysql_cluster_modify
+  task_type: mysql_cluster_maintenance
+  task_args:
+    update_tls: true
+    force_tls_certs: true
+  timeout: 24h
+max_delay_days: 21
+min_days: 7

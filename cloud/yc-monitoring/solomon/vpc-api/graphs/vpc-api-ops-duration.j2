@@ -1,0 +1,49 @@
+{% extends "vpc-api-base.j2" %}
+
+{% set id_suffix = id_suffix | default("ops_duration") %}
+{% set name = name | default("operations duration") %}
+{% set only_slow = only_slow | default(false) %}
+{% set dropNans = 'true' %}
+{% set aggr = "SUM" %}
+
+{% macro duration_count_by_time(le) %}
+series_sum(['service_type', 'type', 'errorcode'], 
+    drop_below({
+        sensor=vpc_operation_duration,
+        hist_type=bin,
+        le='{{le}}'
+    }, 0.001)
+)
+{% endmacro %}
+
+{% block additional_params %}
+    ,{
+        "name": "host",
+        "value": "*"
+    }
+    ,{
+        "name": "zone",
+        "value": "*"
+    }
+    ,{
+        "name": "service_type",
+        "value": "vpc|loadbalancer"
+    }
+    ,{
+        "name": "type",
+        "value": "all"
+    }
+    ,{
+        "name": "errorcode",
+        "value": "*"
+    }
+{% endblock %}
+
+{% block elements %}
+    {% if not only_slow %}
+        {{ render_element("< 5s {{service_type}}/{{type}} - {{errorcode}}", duration_count_by_time('0.001|0.0025|0.005|0.0075|0.01|0.025|0.05|0.075|0.1|0.25|0.5|0.75|1.0|2.5|5.0') | to_prog, area="true") }},
+    {% endif %}
+	{{ render_element("5s - 25s {{service_type}}/{{type}} - {{errorcode}}", duration_count_by_time('7.5|10.0|25.0') | to_prog, area="true") }},
+	{{ render_element("25s - 250s {{service_type}}/{{type}} - {{errorcode}}", duration_count_by_time('50.0|75.0|100.0|250.0') | to_prog, area="true") }},
+	{{ render_element("> 250s {{service_type}}/{{type}} - {{errorcode}}", duration_count_by_time('500.0|1000.0|inf') | to_prog, area="true") }}
+{% endblock %}

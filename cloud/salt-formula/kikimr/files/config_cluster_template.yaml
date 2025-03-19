@@ -1,0 +1,255 @@
+{%- import "common/kikimr/init.sls" as vars with context %}
+
+{%- set stand_type = grains['cluster_map']['stand_type'] %}
+{%- set kikimr_cluster = grains['cluster_map']['kikimr']['clusters'][cluster_id] -%}
+{%- set hostname = grains['nodename'] -%}
+
+{#
+  CloudVM is a special case which doesn't have databases except NBS, so we convert
+  iterator to list here (reject returns iterator) and check if it is non-empty later
+#}
+{%- set databases = kikimr_cluster['databases'].keys() %}
+# TODO(gvit): Completely rethink logic of threads supports
+# But now keep that as is
+{%- set databases_except_nbs = databases|reject('equalto', 'NBS')|list %}
+{%- set kikimr_threads = 8 if databases_except_nbs else 3 -%}
+
+{%- set defined_disk_sets = [] %}
+{%- set disk_types = kikimr_cluster['disk_types'] %}
+{%- set pdisk_type = 'SSD' if 'SSD' in disk_types else 'ROT' %}
+
+{% set storage_encrypted = 'encrypted' if vars.need_encryption else "" %}
+
+{% set ssd_storage = 'ssd' %}
+{% set rot_storage = 'rot' %}
+
+use_walle: True
+use_fixed_tablet_types: True
+cluster_uuid: "{{ kikimr_cluster['seed'] }}"
+static_pdisk_type: {{ pdisk_type }}
+static_erasure: {{ kikimr_cluster['erasure'] }}
+fail_domain_type: {{ kikimr_cluster['fail_domain_type'] }}
+monitoring_address: localhost
+hosts:
+{%- for hostname in kikimr_cluster['storage_nodes'] -%}
+  {%- set host = grains['cluster_map']['hosts'][hostname] %}
+  {%- set disk_set = host['kikimr']['disk_set'] %}
+  - address: "{{ host['ipv6']['addr'] }}"
+    {%- if stand_type == 'virtual' %}
+    body: "{{ loop.index }}"
+    datacenter: "1"
+    rack: "{{ loop.index }}"
+    {%- endif %}
+    {%- if 'location' in host %}
+    body: '{{ host.location.body }}'
+    datacenter: '{{ host.location.datacenter }}'
+    rack: '{{ host.location.rack }}'
+    {%- endif %}
+    name: {{ hostname }}
+    {%- if disk_set not in defined_disk_sets %}
+    drives: &disk_set_{{ disk_set }}
+      {%- for disk in grains['cluster_map']['kikimr']['disk_sets'][disk_set] %}
+      - path: {{ disk.path }}
+        type: {{ disk.type }}
+      {%- endfor -%}
+      {%- do defined_disk_sets.append(disk_set) %}
+    {%- else %}
+    drives: *disk_set_{{ disk_set }}
+    {%- endif %}
+{%- endfor %}
+kqp:
+  result_rows_limit: 10000
+log:
+  default: 3
+{%- if kikimr_cluster['debug_mode'] %}
+  entries:
+  - level: 7
+    name: HIVE
+  - level: 7
+    name: TX_DATASHARD
+  - level: 7
+    name: FLAT_TX_SCHEMESHARD
+  - level: 7
+    name: TX_PROXY
+  - level: 7
+    name: KQP_GATEWAY
+  - level: 7
+    name: LOCAL
+{%- endif %}
+domains:
+  - domain_name: {{ ydb_domain }}
+    storage_pool_kinds:
+      - kind: "ssd"
+        erasure: {{ kikimr_cluster['erasure'] }}
+        fail_domain_type: {{ kikimr_cluster['fail_domain_type'] }}
+        filter_properties:
+          type: SSD
+      - kind: "rot"
+        erasure: {{ kikimr_cluster['erasure'] }}
+        fail_domain_type: {{ kikimr_cluster['fail_domain_type'] }}
+        filter_properties:
+          type: ROT
+      - kind: "ssdencrypted"
+        erasure: {{ kikimr_cluster['erasure'] }}
+        fail_domain_type: {{ kikimr_cluster['fail_domain_type'] }}
+        encryption_mode: 1
+        filter_properties:
+          type: SSD
+      - kind: "rotencrypted"
+        erasure: {{ kikimr_cluster['erasure'] }}
+        fail_domain_type: {{ kikimr_cluster['fail_domain_type'] }}
+        encryption_mode: 1
+        filter_properties:
+          type: ROT
+    databases:
+      {%- for database in databases %}
+      - name: {{ database }}
+        storage_units:
+          {%- for unit_kind, unit_count in kikimr_cluster['databases'][database]['storage'].items() %}
+          - kind: {{ unit_kind }}
+            count: {{ unit_count }}
+          {%- endfor %}
+        overridden_configs:
+          log:
+            default: 3
+        {%- if database == vars.nbs_database %}
+          monitoring_address: "localhost"
+          nbs:
+            enable: True
+            server:
+              data_port: 9767
+              data_host: localhost
+              port: 9766
+            storage:
+              channels_profile: 3
+              channels_profile_ssd: 4
+              channels_profile_hybrid: 5
+            log:
+              default: 3
+              entries:
+              - level: 6
+                name: BLOCKSTORE_METERING
+        {%- endif %}
+        {%- if database == vars.sqs_database %}
+          sqs:
+            enable: True
+            endpoint: http://localhost:8771
+            http_server:
+              threads: 5
+              max_connections: 1000
+              max_queue_size: 500
+              enable_keep_alive: True
+        {%- endif %}
+        {%- if database == vars.solomon_database %}
+          solomon:
+            volumes:
+             - name: Solomon
+               partitions: 4096
+               channels_profile: 6
+        {%- endif %}
+      {%- endfor %}
+
+sys:
+  scheduler:
+    resolution: 256
+  executors:
+    user:
+      threads: {{ kikimr_threads }}
+      spin_threshold: 10
+    system:
+      threads: {{ kikimr_threads }}
+      spin_threshold: 10
+    io:
+      threads: 1
+    batch:
+      threads: {{ kikimr_threads }}
+profiles:
+   {%- if "SSD" in disk_types %}
+   - channels:
+     - storage_pool_kind: {{ ssd_storage ~ storage_encrypted }}
+     - storage_pool_kind: {{ ssd_storage ~ storage_encrypted }}
+     - storage_pool_kind: {{ ssd_storage ~ storage_encrypted }}
+   {%- else %}
+   - channels:
+     - storage_pool_kind: {{ rot_storage ~ storage_encrypted }}
+     - storage_pool_kind: {{ rot_storage ~ storage_encrypted }}
+     - storage_pool_kind: {{ rot_storage ~ storage_encrypted }}
+   {%- endif %}
+   # channels reserved for S3 Proxy, only S3 Proxy should use them
+   {%- if "SSD" in disk_types and "ROT" in disk_types %}
+   - channels:
+     - storage_pool_kind: {{ ssd_storage ~ storage_encrypted }}
+     - storage_pool_kind: {{ ssd_storage ~ storage_encrypted }}
+     - storage_pool_kind: {{ rot_storage ~ storage_encrypted }}
+   - channels:
+     - storage_pool_kind: {{ ssd_storage ~ storage_encrypted }}
+     - storage_pool_kind: {{ rot_storage ~ storage_encrypted }}
+     - storage_pool_kind: {{ rot_storage ~ storage_encrypted }}
+   {%- elif "SSD" in disk_types %}
+   - channels:
+     - storage_pool_kind: {{ ssd_storage ~ storage_encrypted }}
+     - storage_pool_kind: {{ ssd_storage ~ storage_encrypted }}
+     - storage_pool_kind: {{ ssd_storage ~ storage_encrypted }}
+   - channels:
+     - storage_pool_kind: {{ ssd_storage ~ storage_encrypted }}
+     - storage_pool_kind: {{ ssd_storage ~ storage_encrypted }}
+     - storage_pool_kind: {{ ssd_storage ~ storage_encrypted }}
+   {%- else %}
+   - channels:
+     - storage_pool_kind: {{ rot_storage ~ storage_encrypted }}
+     - storage_pool_kind: {{ rot_storage ~ storage_encrypted }}
+     - storage_pool_kind: {{ rot_storage ~ storage_encrypted }}
+   - channels:
+     - storage_pool_kind: {{ rot_storage ~ storage_encrypted }}
+     - storage_pool_kind: {{ rot_storage ~ storage_encrypted }}
+     - storage_pool_kind: {{ rot_storage ~ storage_encrypted }}
+   {%- endif %}
+   # channels used by NBS
+   {%- if "SSD" in disk_types and "ROT" in disk_types %}
+   - channels:
+     {%- for idx in range(11) %}
+     - storage_pool_kind: {{ rot_storage }}
+     {%- endfor %}
+   - channels:
+     {%- for idx in range(11) %}
+     - storage_pool_kind: {{ ssd_storage }}
+     {%- endfor %}
+   - channels:
+     {%- for idx in range(3) %}
+     - storage_pool_kind: {{ ssd_storage }}
+     {%- endfor %}
+     {%- for idx in range(8) %}
+     - storage_pool_kind: {{ rot_storage }}
+     {%- endfor %}
+   {%- elif "SSD" in disk_types %}
+   {%- for profile_id in range(3) %}
+   - channels:
+     {%- for channel_id in range(11) %}
+     - storage_pool_kind: {{ ssd_storage }}
+     {%- endfor %}
+   {%- endfor %}
+   {%- else %}
+   {%- for profile_id in range(3) %}
+   - channels:
+     {%- for channel_id in range(11) %}
+     - storage_pool_kind: {{ rot_storage }}
+     {%- endfor %}
+   {%- endfor %}
+   {%- endif %}
+   # Reserved for Solomon
+   - channels:
+     {%- for channel_id in range(7) %}
+       {%- if "SSD" in disk_types %}
+       - storage_pool_kind: {{ ssd_storage ~ storage_encrypted }}
+       {%- else %}
+       - storage_pool_kind: {{ rot_storage ~ storage_encrypted }}
+       {%- endif %}
+     {%- endfor %}
+   - channels:
+     {%- for channel_id in range(4) %}
+       {%- if "SSD" in disk_types %}
+       - storage_pool_kind: {{ ssd_storage ~ storage_encrypted }}
+       {%- else %}
+       - storage_pool_kind: {{ rot_storage ~ storage_encrypted }}
+       {%- endif %}
+     {%- endfor %}

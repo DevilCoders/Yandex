@@ -1,0 +1,409 @@
+{
+    "application": "compute-api",
+    "id": "5fedcde2-9757-4208-a593-6c11e60431c7",
+    "index": 1,
+    "keepWaitingPipelines": false,
+    "limitConcurrent": true,
+    "name": "update-helmfile-version-for-stand",
+    "parameterConfig": [
+        {
+            "default": "testing",
+            "description": "Name of the stand (testing, preprod, prod)",
+            "hasOptions": true,
+            "label": "",
+            "name": "stand",
+            "options": [
+                {
+                    "value": "testing"
+                },
+                {
+                    "value": "preprod"
+                },
+                {
+                    "value": "prod"
+                }
+            ],
+            "pinned": true,
+            "required": true
+        },
+        {
+            "default": "",
+            "description": "Key of the release ticket",
+            "hasOptions": false,
+            "label": "",
+            "name": "releaseTicket",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": true,
+            "required": true
+        },
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "",
+            "name": "chartVersion",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": false,
+            "required": true
+        }
+    ],
+    "spelEvaluator": "v4",
+    "stages": [
+        {
+            "failOnFailedExpressions": true,
+            "name": "Configure Context",
+            "refId": "1",
+            "requisiteStageRefIds": [],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "stand",
+                    "value": "${{\"testing\", \"preprod\", \"prod\"}.contains(parameters.stand) ? parameters.stand : UnsupportedStand}"
+                },
+                {
+                    "key": "releaseTicket",
+                    "value": "${parameters.releaseTicket}"
+                },
+                {
+                    "key": "branchName",
+                    "value": "${parameters.releaseTicket + \"_\" + parameters.stand}"
+                },
+                {
+                    "key": "chartVersion",
+                    "value": "${parameters.chartVersion}"
+                },
+                {
+                    "key": "author",
+                    "value": "${trigger.user.replace(\"@yandex-team.ru\", \"\")}"
+                }
+            ]
+        },
+        {
+            "actions": [
+                {
+                    "actionId": "5d66ce1e-5616-42be-9034-67a43343dee8",
+                    "actionName": "Check if branch exists for stand ${stand}",
+                    "actionType": "getBranch",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branchName": "${branchName}",
+                    "outputVariable": "branchInfo",
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                }
+            ],
+            "completeOtherBranchesThenFail": false,
+            "continuePipeline": true,
+            "failPipeline": false,
+            "name": "Check if branch exists",
+            "refId": "2",
+            "requisiteStageRefIds": [
+                "1"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "actions": [
+                {
+                    "actionId": "55e0e762-3b6d-4e2a-804b-2fbab727f05b",
+                    "actionName": "Create brach",
+                    "actionType": "createBranch",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branchName": "${branchName}",
+                    "outputVariable": "branchInfo",
+                    "project": "cloud",
+                    "repo": "k8s-deploy",
+                    "startPoint": "master"
+                }
+            ],
+            "name": "Create branch",
+            "refId": "3",
+            "requisiteStageRefIds": [
+                "2"
+            ],
+            "stageEnabled": {
+                "expression": "${branchInfo == null}",
+                "type": "expression"
+            },
+            "type": "bitbucket"
+        },
+        {
+            "actions": [
+                {
+                    "actionId": "bd0e1e3a-b474-408e-8db6-4910586d68d1",
+                    "actionName": "Update values for VLA",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "(  version:\\s).*",
+                            "replacement": "$1${chartVersion}"
+                        }
+                    ],
+                    "commitMessage": "Update compute-api helm chart version in ${stand} VLA",
+                    "filePath": "${stand}/ru-central1-a-svm/helmfiles/compute/compute-api/helmfile.yaml",
+                    "ignoreUnmodified": true,
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                },
+                {
+                    "actionName": "Update values for SAS",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "(  version:\\s).*",
+                            "replacement": "$1${chartVersion}"
+                        }
+                    ],
+                    "commitMessage": "Update compute-api helm chart version in ${stand} SAS",
+                    "filePath": "${stand}/ru-central1-b-svm/helmfiles/compute/compute-api/helmfile.yaml",
+                    "ignoreUnmodified": true,
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                },
+                {
+                    "actionName": "Update values for MYT",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "(  version:\\s).*",
+                            "replacement": "$1${chartVersion}"
+                        }
+                    ],
+                    "commitMessage": "Update compute-api helm chart version in ${stand} MYT",
+                    "filePath": "${stand}/ru-central1-c-svm/helmfiles/compute/compute-api/helmfile.yaml",
+                    "ignoreUnmodified": true,
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                }
+            ],
+            "name": "Update Values compute-api",
+            "notifications": [
+                {
+                    "address": "yc-compute-api-test",
+                    "level": "stage",
+                    "message": {
+                        "stage.complete": {
+                            "text": "Stage completed"
+                        },
+                        "stage.failed": {
+                            "text": "Stage failed"
+                        }
+                    },
+                    "type": "slack",
+                    "when": [
+                        "stage.complete",
+                        "stage.failed"
+                    ]
+                }
+            ],
+            "refId": "4",
+            "requisiteStageRefIds": [
+                "3",
+                "2"
+            ],
+            "sendNotifications": false,
+            "type": "bitbucket"
+        },
+        {
+            "attempts": 1,
+            "buildConfigurationId": "Compute_K8s_GenerateManifests",
+            "buildParameters": [
+                {
+                    "key": "env.PREFIXES",
+                    "value": "compute/compute-api compute/scheduler"
+                }
+            ],
+            "logicalBranchName": "${branchName}",
+            "name": "Generate Manifests",
+            "notifications": [
+                {
+                    "address": "yc-compute-api-test",
+                    "level": "stage",
+                    "message": {
+                        "stage.complete": {
+                            "text": "completed"
+                        },
+                        "stage.failed": {
+                            "text": "failed"
+                        },
+                        "stage.starting": {
+                            "text": "started"
+                        }
+                    },
+                    "type": "slack",
+                    "when": [
+                        "stage.starting",
+                        "stage.complete",
+                        "stage.failed"
+                    ]
+                }
+            ],
+            "refId": "5",
+            "requisiteStageRefIds": [
+                "8"
+            ],
+            "sendNotifications": true,
+            "tcProfile": "aw",
+            "type": "teamcityBuild"
+        },
+        {
+            "actions": [
+                {
+                    "actionName": "Wait PR",
+                    "actionType": "waitPullRequest",
+                    "source": "priorAction",
+                    "sourceActionId": "07be1246-5936-4dab-a12f-ae49c5db2564"
+                }
+            ],
+            "name": "Wait for PR merged",
+            "refId": "6",
+            "requisiteStageRefIds": [
+                "5"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "actions": [
+                {
+                    "actionId": "07be1246-5936-4dab-a12f-ae49c5db2564",
+                    "actionName": "Create PR",
+                    "actionType": "createPullRequest",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "description": "Update compute-api chart version in ${stand} to ${chartVersion}",
+                    "findExisting": true,
+                    "fromRef": "${branchName}",
+                    "ignoreEmpty": true,
+                    "outputVariable": "pullRequest",
+                    "project": "cloud",
+                    "repo": "k8s-deploy",
+                    "reviewers": [
+                        "${author}"
+                    ],
+                    "title": "${releaseTicket} Update compute-api helm chart version in ${stand} to ${chartVersion}",
+                    "toRef": "master"
+                }
+            ],
+            "name": "Create pull-request",
+            "refId": "8",
+            "requisiteStageRefIds": [
+                "4",
+                "9"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "actions": [
+                {
+                    "actionId": "bd0e1e3a-b474-408e-8db6-4910586d68d1",
+                    "actionName": "Update values for VLA",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "(  version:\\s).*",
+                            "replacement": "$1${chartVersion}"
+                        }
+                    ],
+                    "commitMessage": "Update scheduler helm chart version in ${stand} VLA",
+                    "filePath": "${stand}/ru-central1-a-svm/helmfiles/compute/scheduler/helmfile.yaml",
+                    "ignoreUnmodified": true,
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                },
+                {
+                    "actionName": "Update values for SAS",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "(  version:\\s).*",
+                            "replacement": "$1${chartVersion}"
+                        }
+                    ],
+                    "commitMessage": "Update scheduler helm chart version in ${stand} SAS",
+                    "filePath": "${stand}/ru-central1-b-svm/helmfiles/compute/scheduler/helmfile.yaml",
+                    "ignoreUnmodified": true,
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                },
+                {
+                    "actionName": "Update values for MYT",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "(  version:\\s).*",
+                            "replacement": "$1${chartVersion}"
+                        }
+                    ],
+                    "commitMessage": "Update scheduler helm chart version in ${stand} MYT",
+                    "filePath": "${stand}/ru-central1-c-svm/helmfiles/compute/scheduler/helmfile.yaml",
+                    "ignoreUnmodified": true,
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                }
+            ],
+            "name": "Update Values scheduler",
+            "refId": "9",
+            "requisiteStageRefIds": [
+                "3",
+                "2"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "application": "compute-api",
+            "failPipeline": true,
+            "name": "Notify author",
+            "pipeline": "288b49b6-0c37-4733-a329-e4fae22701a7",
+            "pipelineParameters": {
+                "message": "Pull request is created. Stand: ${stand.toUpperCase()}. Ticket: https://st.yandex-team.ru/${releaseTicket}. Chart version: ${chartVersion}. Pull request: ${pull_request_url}"
+            },
+            "refId": "10",
+            "requisiteStageRefIds": [
+                "5",
+                "11"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "failOnFailedExpressions": true,
+            "name": "Evaluate PR variables",
+            "refId": "11",
+            "requisiteStageRefIds": [
+                "8"
+            ],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "pull_request_url",
+                    "value": "${{#stage('Create pull-request').outputs.pullRequest.webUrl != \"\"} ? #stage('Create pull-request').outputs.pullRequest.webUrl : \"https://bb.yandex-team.ru/projects/CLOUD/repos/k8s-deploy/pull-requests/\" + #stage('Create pull-request').outputs.pullRequest.id + \"/diff\"}"
+                }
+            ]
+        }
+    ],
+    "triggers": []
+}

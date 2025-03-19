@@ -1,0 +1,41 @@
+definitions:
+  - &alert_id "{{.ID}}_nfs_vhost_requests_max_time"
+  - &alert_name "{{.Name}} NFS Vhost Requests Max Time"
+  - &alert_window_secs 600
+  - &alert_annotations_tag "yc-{{.Cluster}}-nfs-solomon"
+  - &alert_annotations_host "{{`{{labels.host}}`}}"
+  - &alert_annotations_service "solomon_alert_nfs_vhost_requests_max_time"
+alerts:
+  - id: *alert_id
+    name: *alert_name
+    window_secs: *alert_window_secs
+    group_by_labels:
+      - host
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+    clusters:
+      - testing_vla
+      - testing_sas
+      - testing_myt
+      - preprod_vla
+      - preprod_sas
+      - preprod_myt
+      - prod_vla
+      - prod_sas
+      - prod_myt
+    expression:
+      program: |-
+        let time = {
+        project='nfs',
+        cluster='{{.SolomonCluster}}',
+        service='vhost',
+        request='*',
+        type='-', sensor='MaxTime',
+        host='{{.Hosts}}'
+        };
+
+        alarm_if(max(series_avg(time)) >= 5000000);

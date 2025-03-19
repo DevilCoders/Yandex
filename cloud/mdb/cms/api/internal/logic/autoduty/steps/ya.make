@@ -1,0 +1,79 @@
+GO_LIBRARY()
+
+OWNER(g:mdb)
+
+SRCS(
+    allow_new_hosts.go
+    approve_manual.go
+    base.go
+    cms_instance_whip_primaries_request.go
+    cnt_count_condition.go
+    conditional_steps.go
+    config.go
+    create_host.go
+    dom0state.go
+    dom0statecondition.go
+    downtime_ensure.go
+    downtime_prolong.go
+    drills.go
+    ensure_no_primary.go
+    finish_terminal.go
+    for_containers_cond.go
+    let_go_part_change.go
+    let_go_unreachable.go
+    list.go
+    metadata_on_cluster.go
+    metadata_on_fqdns.go
+    mlock_acquire_steps.go
+    mlock_release_steps.go
+    non_db_cluster.go
+    noop.go
+    other_legs_reachable.go
+    periodic.go
+    post_restart.go
+    pre_restart.go
+    register_minion.go
+    run_result.go
+    shipments.go
+    shutdown_containers.go
+    step_ctx.go
+    unregister.go
+    wait_containers_reachable.go
+    wait_dom0_reachable.go
+    wait_for_healthy.go
+    wait_selfdns.go
+    wait_until_walle_frees_cluster.go
+)
+
+GO_TEST_SRCS(
+    create_host_test.go
+    other_legs_reachable_test.go
+)
+
+GO_XTEST_SRCS(
+    allow_new_hosts_test.go
+    approve_manual_test.go
+    cms_instance_whip_primaries_request_test.go
+    dom0state_test.go
+    dom0statecondition_test.go
+    downtime_prolong_test.go
+    drills_test.go
+    ensure_no_primary_test.go
+    let_go_part_change_test.go
+    let_go_unreachable_test.go
+    metadata_on_cluster_test.go
+    mlock_acquire_steps_test.go
+    mlock_release_steps_test.go
+    non_db_cluster_test.go
+    periodic_test.go
+    shipments_test.go
+    step_ctx_test.go
+    unregister_test.go
+    wait_dom0_reachable_test.go
+    wait_for_healthy_test.go
+    wait_until_walle_frees_cluster_test.go
+)
+
+END()
+
+RECURSE(gotest)

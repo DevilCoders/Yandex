@@ -1,0 +1,23 @@
+info: Updating common components
+repeatable: true
+clusters_selection:
+  db: >-
+    SELECT c.cid
+      FROM dbaas.clusters c
+      JOIN dbaas.pillar p on (c.cid = p.cid)
+     WHERE c.type = 'mongodb_cluster'
+       AND CAST(p.value #>> '{data,billing,use_cloud_logbroker}' AS bool) = false
+       AND env IN ('dev', 'qa')
+pillar_change: >-
+  UPDATE dbaas.pillar p
+    SET value = (value #- '{data,billing,use_cloud_logbroker}')
+  WHERE
+    p.cid = :cid
+worker:
+  operation_type: mongodb_cluster_modify
+  task_type: mongodb_cluster_maintenance
+  task_args:
+    run_highstate: true
+  timeout: 4h
+max_delay_days: 4
+min_days: 3

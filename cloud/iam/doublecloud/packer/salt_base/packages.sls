@@ -1,0 +1,19 @@
+base packages:
+  pkg.installed:
+  - pkgs:
+    - bsdmainutils
+    - tcpdump
+    - vim
+    - strace
+    - wget
+    - zip
+    - jq
+    - lsof
+    - unzip
+    - curl
+    - git
+    - bind9-host
+    - ethtool
+    - ndisc6
+    - systemd-coredump
+    - mc

@@ -1,0 +1,381 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.platform.alb.v1.inner;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
+
+import "yandex/cloud/api/operation.proto";
+import "yandex/cloud/priv/microcosm/instancegroup/v1/instance_group.proto";
+import "yandex/cloud/priv/loadbalancer/v1/network_load_balancer.proto";
+import "yandex/cloud/priv/platform/alb/v1/load_balancer.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/platform/alb/v1/inner;alb";
+option java_outer_classname = "PALIBS";
+
+service LoadBalancerService {
+    rpc ListKnown(ListKnownLoadBalancersRequest) returns (ListKnownLoadBalancersResponse);
+
+    rpc UpdateSpec(UpdateSpecRequest) returns (google.protobuf.Empty);
+    rpc GetSpec(GetSpecRequest) returns (GetSpecResponse);
+
+    rpc AssignLogGroup(AssignLogGroupRequest) returns (operation.Operation) {
+        option (yandex.cloud.api.operation) = {
+          metadata: "UpdateLoadBalancerMetadata"
+          response: "LoadBalancer"
+        };
+    }
+    rpc DetachLogGroup(DetachLogGroupRequest) returns (operation.Operation){
+        option (yandex.cloud.api.operation) = {
+          metadata: "UpdateLoadBalancerMetadata"
+          response: "LoadBalancer"
+        };
+    }
+
+    rpc Fix(FixRequest) returns (FixResponse);
+
+    rpc GetForALS(GetLoadBalancerForALSRequest) returns (GetLoadBalancerForALSResponse);
+
+    // Return error to test alerts.
+    rpc Error(ErrorRequest) returns (google.protobuf.Empty);
+
+    rpc Version(google.protobuf.Empty) returns (VersionResponse);
+
+    // Blue-green update helpers.
+
+    // Begin update.
+    rpc BluegreenUpdate(BluegreenUpdateRequest) returns (BluegreenUpdateResponse);
+    // End (cancel?) update.
+    rpc FinishBluegreenUpdate(FinishBluegreenUpdateRequest) returns (google.protobuf.Empty);
+
+    // Create new IG (asynchronously).
+    // Prerequisites: inactive IG field is empty.
+    // Will update LB adding new IG ID.
+    rpc CreateNewIG(CreateNewIGRequest) returns (google.protobuf.Empty);
+
+    // Resize inactive IG (asynchronously).
+    rpc ResizeInactiveIG(ResizeInactiveIGRequest) returns (google.protobuf.Empty);
+
+    // Delete inactive IG (synchronously).
+    // Prerequisites: IG is empty.
+    // Updates LB on completion.
+    rpc DeleteInactiveIG(DeleteInactiveIGRequest) returns (google.protobuf.Empty);
+
+    // Update all NLBs TGs (synchronously).
+    rpc UpdateNLBTargets(UpdateNLBTargetsRequest) returns (google.protobuf.Empty);
+
+    // Drain requests (asynchronously).
+    rpc DrainInactiveIG(DrainInactiveIGRequest) returns (google.protobuf.Empty);
+
+    rpc GetIGStatus(GetIGStatusRequest) returns (GetIGStatusResponse);
+
+    rpc GetNodes(GetNodesRequest) returns (GetNodesResponse);
+
+    // Updates IG with new instance_template.
+    // Do not use unless necessary, use normal blue-green update instead.
+    //
+    // Use it when new IG cannot create nodes
+    // e.g. because user's address space is exhausted.
+    rpc UpdateNodes(UpdateNodesRequest) returns (UpdateNodesResponse);
+
+    // End of blue-green update helpers.
+}
+
+message VersionResponse {
+    string version = 1;
+}
+
+message GetIGStatusRequest {
+    string load_balancer_id = 1;
+}
+
+message GetIGStatusResponse {
+    message IG {
+        string id = 1;
+        string color = 2;
+
+        int64 total = 3;
+        int64 running_actual = 4;
+        int64 running_outdated = 5;
+        int64 processing = 6;
+        microcosm.instancegroup.v1.InstanceGroup.Status status = 7;
+    }
+    repeated IG ig = 1;
+}
+
+message GetNodesRequest {
+    string load_balancer_id = 1;
+    bool only_active = 2;
+    bool only_inactive = 3;
+}
+
+message GetNodesResponse {
+    message Node {
+        string host = 1;
+        string zone = 2;
+        string color = 3;
+
+        bool disable_traffic = 4;
+        string ig_id = 5;
+        microcosm.instancegroup.v1.ManagedInstance.Status status = 6;
+        string service_ipv6 = 7;
+
+        bool bad_backends = 10;
+        bool draining = 11;
+        bool shutdown = 12;
+
+        int64 downstream_rq_active = 15;
+        int64 downstream_rq_ok = 16; // 2xx
+        int64 downstream_cx_active = 17;
+
+        message Cluster {
+            string name = 1;
+
+            message Endpoint {
+                string address = 1;
+                TargetState.Status status = 2;
+                string status_desc = 3;
+            }
+            repeated Endpoint endpoints = 2;
+            bool user = 3;
+        }
+        repeated Cluster clusters = 20;
+
+        message NLBTarget {
+            yandex.cloud.priv.loadbalancer.v1.TargetState.Status status = 2;
+            string address = 3;
+        }
+        NLBTarget nlb_v4 = 25;
+        NLBTarget nlb_v4_int = 26;
+        NLBTarget nlb_v6 = 27;
+
+        // Config dumps are outdated.
+        bool no_configs = 28;
+    }
+    repeated Node nodes = 1;
+
+    message IG {
+        string id = 1;
+        string color = 2;
+
+        int64 total = 3;
+        int64 running_actual = 4;
+        int64 running_outdated = 5;
+        int64 processing = 6;
+        microcosm.instancegroup.v1.InstanceGroup.Status status = 7;
+    }
+    repeated IG ig = 2;
+
+    string config_fetcher_error = 3;
+
+    message NLB {
+        string id = 1;
+        string type_str = 2;
+        yandex.cloud.priv.loadbalancer.v1.NetworkLoadBalancer.Status status = 3;
+    }
+    repeated NLB nlb = 4;
+}
+
+message BluegreenUpdateRequest {
+    string load_balancer_id = 1;
+    // Ignore version_tag.
+    bool force = 2;
+    bool dry_run = 3;
+    reserved 4; // bool keep_fixed_scale = 4;
+    // Skip LBs created after this time.
+    google.protobuf.Timestamp created_before = 5;
+    // Skip LBs with those versions.
+    repeated string skip_versions = 6;
+}
+
+message BluegreenUpdateResponse {
+    string diff = 1;
+    bool up_to_date = 2;
+}
+
+message FinishBluegreenUpdateRequest {
+    string load_balancer_id = 1;
+    bool dry_run = 2;
+    // TODO: bool undo ?
+}
+
+message CreateNewIGRequest {
+    string load_balancer_id = 1;
+    string next_state = 2;
+
+    string override_image_id = 3;
+
+    reserved 4; // bool fixed_scale = 4;
+
+    bool dry_run = 5;
+}
+
+message ResizeInactiveIGRequest {
+    string load_balancer_id = 1;
+    string next_state = 2;
+    reserved 3;
+    bool inflate = 4;
+    bool dry_run = 5;
+}
+
+message DeleteInactiveIGRequest {
+    string load_balancer_id = 1;
+    string next_state = 2;
+}
+
+message UpdateNLBTargetsRequest {
+    string load_balancer_id = 1;
+    string next_state = 2;
+    // Keep only active IG.
+    bool only_active = 3;
+    bool dry_run = 4;
+}
+
+message DrainInactiveIGRequest {
+    string load_balancer_id = 1;
+    string next_state = 2;
+    bool dry_run = 3;
+}
+
+message ErrorRequest {
+    google.rpc.Status status = 1;
+}
+
+message FixRequest {
+    string load_balancer_id = 1;
+    bool update = 2;
+
+    bool cert_refs = 3;
+}
+
+message FixResponse {
+    string log = 1;
+}
+
+message GetLoadBalancerForALSRequest {
+    string load_balancer_id = 1;
+}
+
+message GetLoadBalancerForALSResponse {
+    string load_balancer_id = 1;
+    string folder_id = 2;
+    string cloud_id = 3;
+    string log_group_id = 4;
+    bool internal = 5; // Deprecated, use log_to_file instead.
+    bool log_to_file = 6;
+    map<string, string> metadata = 7;
+}
+
+message ListKnownLoadBalancersRequest {
+    int64 page_size = 1 [(value) = "0-1000"];
+    string page_token = 2 [(length) = "<=100"];
+    string filter = 3 [(length) = "<=1000"];
+}
+
+message ListKnownLoadBalancersResponse {
+    repeated LoadBalancer load_balancers = 1;
+    string next_page_token = 2;
+}
+
+message UpdateSpecRequest {
+    string load_balancer_id = 1;
+    google.protobuf.FieldMask update_mask = 99;
+
+    string instance_group_id = 2;
+    string blue_ig_id = 8;
+    string green_ig_id = 9;
+
+    reserved 3; // target_group_id
+
+    string nlb_v4_id = 4;
+    string nlb_v6_id = 5;
+    string nlb_v4_internal_id = 11;
+
+    string service_account_id = 6;
+
+    string color = 7;
+
+    Resources resources = 10;
+
+    map<string, string> metadata = 12;
+
+    // Override value from create spec.
+    bool persistent_logs = 13;
+
+    LoadBalancer.Status status = 14;
+
+    string solomon_cluster_name = 15;
+    string juggler_host = 16;
+
+    // Clear the error messages list.
+    bool clear_messages = 17;
+
+    // Override current version.
+    string version_tag = 18;
+}
+
+message Resources {
+    int64 nodes_per_zone = 1;
+    int64 memory_gb = 2;
+    int64 boot_disk_gb = 3;
+    int64 secondary_disk_gb = 4;
+    string secondary_disk_type = 5;
+    int64 cores = 6;
+    int64 core_fraction = 8;
+    microcosm.instancegroup.v1.NetworkSettings.Type network_type = 7;
+}
+
+message GetSpecRequest {
+    string load_balancer_id = 1;
+}
+
+message GetSpecResponse {
+    string id = 3;
+    string name = 4;
+    LoadBalancerSpec spec = 1;
+    Resources resources = 2;
+}
+
+message LoadBalancerSpec {
+    string instance_group_id = 1;
+    string blue_ig_id = 5;
+    string green_ig_id = 6;
+
+    string nlb_v4_id = 2;
+    string nlb_v4_internal_id = 8;
+    string nlb_v6_id = 3;
+
+    string color = 4;
+
+    // Security group for health checks.
+    string hc_security_group_id = 7;
+
+    map<string, string> metadata = 9;
+
+    string version_tag = 10;
+}
+
+message AssignLogGroupRequest {
+    string load_balancer_id = 1;
+    // Create new log group if not set
+    string log_group_id = 2;
+}
+
+message DetachLogGroupRequest {
+    string load_balancer_id = 1;
+}
+
+message UpdateNodesRequest {
+    string load_balancer_id = 1;
+
+    // Dry run if not set. For safety reasons.
+    bool update = 2;
+}
+
+message UpdateNodesResponse {
+    string ig_op_id = 1;
+}

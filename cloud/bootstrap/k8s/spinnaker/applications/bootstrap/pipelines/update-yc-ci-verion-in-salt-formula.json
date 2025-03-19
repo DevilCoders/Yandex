@@ -1,0 +1,175 @@
+{
+    "appConfig": {},
+    "application": "bootstrap",
+    "id": "e01e9699-20ed-42aa-ab7b-18cfc72b2c7a",
+    "index": 1,
+    "keepWaitingPipelines": false,
+    "limitConcurrent": true,
+    "name": "update-yc-ci-verion-in-salt-formula",
+    "parameterConfig": [
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "",
+            "name": "releaseTicket",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": true,
+            "required": true
+        },
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "",
+            "name": "newVersion",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": true,
+            "required": true
+        }
+    ],
+    "spelEvaluator": "v4",
+    "stages": [
+        {
+            "failOnFailedExpressions": true,
+            "name": "Configure Context",
+            "refId": "1",
+            "requisiteStageRefIds": [],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "releaseTicket",
+                    "value": "${parameters.releaseTicket}"
+                },
+                {
+                    "key": "branchName",
+                    "value": "${parameters.releaseTicket + \"_update_yc_ci_\" + parameters.newVersion}"
+                },
+                {
+                    "key": "newVersion",
+                    "value": "${parameters.newVersion}"
+                }
+            ]
+        },
+        {
+            "actions": [
+                {
+                    "actionId": "cdf79792-0f69-436b-9c65-283ce5406de0",
+                    "actionName": "Check if branch exists for testing",
+                    "actionType": "getBranch",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branchName": "${branchName}",
+                    "outputVariable": "branchInfo",
+                    "project": "cloud",
+                    "repo": "salt-formula"
+                }
+            ],
+            "completeOtherBranchesThenFail": false,
+            "continuePipeline": true,
+            "failPipeline": false,
+            "name": "Check if branch exists",
+            "refId": "2",
+            "requisiteStageRefIds": [
+                "1"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "actions": [
+                {
+                    "actionName": "create",
+                    "actionType": "createBranch",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branchName": "${branchName}",
+                    "outputVariable": "branchInfo",
+                    "project": "cloud",
+                    "repo": "salt-formula",
+                    "startPoint": "master"
+                }
+            ],
+            "name": "Create Branch",
+            "refId": "3",
+            "requisiteStageRefIds": [
+                "2"
+            ],
+            "stageEnabled": {
+                "expression": "${branchInfo == null}",
+                "type": "expression"
+            },
+            "type": "bitbucket"
+        },
+        {
+            "actions": [
+                {
+                    "actionName": "update  yc-ci version",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "(\\s{4}yc-ci:\\s).*",
+                            "replacement": "$1\"${newVersion}\""
+                        }
+                    ],
+                    "commitMessage": "Update yc-ci version to ${newVersion}",
+                    "filePath": "pillar/roles/bootstrap.sls",
+                    "ignoreUnmodified": true,
+                    "project": "cloud",
+                    "repo": "salt-formula"
+                },
+                {
+                    "actionId": "e0705394-6b74-4b83-8752-d866afed7bce",
+                    "actionName": "Create PR",
+                    "actionType": "createPullRequest",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "description": "Update yc-ci version to ${newVersion}\nneedci",
+                    "findExisting": true,
+                    "fromRef": "${branchName}",
+                    "ignoreEmpty": true,
+                    "outputVariable": "pullRequest",
+                    "project": "cloud",
+                    "repo": "salt-formula",
+                    "reviewers": [
+                        "${trigger.user.replace(\"@yandex-team.ru\", \"\")}"
+                    ],
+                    "title": "${releaseTicket} Update yc-ci version to ${newVersion}",
+                    "toRef": "master"
+                }
+            ],
+            "failOnFailedExpressions": true,
+            "name": "Update Values",
+            "refId": "4",
+            "requisiteStageRefIds": [
+                "3",
+                "2"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "actions": [
+                {
+                    "actionName": "Wait PR",
+                    "actionType": "waitPullRequest",
+                    "source": "priorAction",
+                    "sourceActionId": "e0705394-6b74-4b83-8752-d866afed7bce"
+                }
+            ],
+            "name": "Wait for PR merged",
+            "refId": "5",
+            "requisiteStageRefIds": [
+                "4"
+            ],
+            "type": "bitbucket"
+        }
+    ],
+    "triggers": []
+}

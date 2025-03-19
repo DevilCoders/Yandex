@@ -1,0 +1,42 @@
+{
+    "annotations": {
+        "debug": "max_other_errors: {{expression.max_other_errors}} \nmax_session_errors: {{expression.max_session_errors}} \nmax_throttle_errors: {{expression.max_throttle_errors}} \nmax_total_errors: {{expression.max_total_errors}}\nreassign_gauge: {{expression.reassign_gauge}}", 
+        "host": "{{labels.host}}.cloud.yandex.net", 
+        "service": "solomon_alert_nbs_server_errors", 
+        "tags": "yc-prod-nbs-solomon"
+    }, 
+    "channels": [
+        {
+            "config": {}, 
+            "id": "juggler"
+        }
+    ], 
+    "createdAt": "2020-12-30T11:54:08Z", 
+    "createdBy": "yegorskii", 
+    "delaySeconds": 30, 
+    "delaySecs": 30, 
+    "description": "", 
+    "groupByLabels": [
+        "host"
+    ], 
+    "id": "prod_sas_nbs_server_errors", 
+    "name": "[PROD][SAS] NBS Server Errors", 
+    "noPointsPolicy": "NO_POINTS_DEFAULT", 
+    "notificationChannels": [
+        "juggler"
+    ], 
+    "periodMillis": 900000, 
+    "projectId": "nbs", 
+    "resolvedEmptyPolicy": "RESOLVED_EMPTY_DEFAULT", 
+    "state": "ACTIVE", 
+    "type": {
+        "expression": {
+            "checkExpression": "", 
+            "program": "let blacklist_requests='AlterPlacementGroupMembership|StartEndpoint|StopEndpoint|ListEndpoints|KickEndpoint';\n\nlet total_errors = integrate_fn(group_lines('sum', {\n\tproject='nbs',\n\tcluster='yandexcloud_prod_sas',\n\tservice='server',\n\thost='sas09-*',\n\trequest='*',\n\tsensor='Errors',\n\ttype= 'ssd|hdd',\n\trequest!='{{blacklist_requests}}'\n}));\n\nlet throttle_errors = integrate_fn(group_lines('sum', {\n\tproject='nbs',\n\tcluster='yandexcloud_prod_sas',\n\tservice='server',\n\thost='sas09-*',\n\trequest='*',\n\tsensor='Errors/Throttling',\n\ttype= 'ssd|hdd',\n\trequest!='{{blacklist_requests}}'\n}));\n\nlet session_errors = integrate_fn(group_lines('sum', {\n\tproject='nbs',\n\tcluster='yandexcloud_prod_sas',\n\tservice='server',\n\thost='sas09-*',\n\trequest='*',\n\tsensor='Errors/Session',\n\ttype= 'ssd|hdd',\n\trequest!='{{blacklist_requests}}'\n}));\n\nlet reassign_count = integrate_fn(group_lines('sum', {\n\tproject='nbs',\n\tcluster='yandexcloud_prod_sas',\n\tservice='server',\n\thost='sas09-*',\n\tsensor='AppCriticalEvents/ReassignTablet'\n}));\n\nlet other_errors = total_errors - throttle_errors - session_errors;\n\nno_data_if(count(total_errors) == 0);\nno_data_if(count(throttle_errors) == 0);\nno_data_if(count(session_errors) == 0);\n\nlet max_session_errors = max(session_errors);\nlet max_throttle_errors = max(throttle_errors);\nlet max_total_errors = max(total_errors);\nlet max_other_errors = max(other_errors);\n\nlet reassign_gauge = max(reassign_count) > 0 ? 20.0 : 1;\n\nalarm_if(max_session_errors >= 3000 * reassign_gauge);\nalarm_if(max_other_errors >= 3000 * reassign_gauge);\n\nwarn_if(max_session_errors >= 1000 * reassign_gauge);\nwarn_if(max_other_errors >= 1000 * reassign_gauge);"
+        }
+    }, 
+    "updatedAt": "2021-02-25T10:07:02Z", 
+    "updatedBy": "asorotsky", 
+    "version": 8, 
+    "windowSecs": 900
+}

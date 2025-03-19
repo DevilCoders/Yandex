@@ -1,0 +1,77 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudbeaver-app
+  labels:
+    app: cloudbeaver-app
+spec:
+  replicas: {{ .Values.global.app_replicas_num }}
+  selector:
+    matchLabels:
+      app: cloudbeaver-app
+  template:
+    metadata:
+      labels:
+        app: cloudbeaver-app
+    spec:
+      containers:
+      - name: cloudbeaver-app
+        image: {{ .Values.images.cloudbeaver }}
+        env:
+          - name: YC_CLOUD_TYPE
+            value: {{ .Values.global.yc_cloud_type}}
+        ports:
+          - containerPort: 8080
+        volumeMounts:
+          - mountPath: /opt/cloudbeaver/workspace
+            name: s3fs
+          - name: cloud-properties
+            mountPath: "/etc/cloudbeaver/secret"
+            readOnly: true
+{{- $ua_container_args := dict "image" .Values.global.ua.image }}
+{{- include "ua.container" $ua_container_args | indent 6 }}
+      volumes:
+      - name: s3fs
+        persistentVolumeClaim:
+          claimName: csi-s3-pvc
+          readOnly: false
+      - name: cloud-properties
+        secret:
+          secretName: external-properties
+{{- $ua_volumes_args := dict "service" "cloudbeaver-app" }}
+{{- include "ua.volumes" $ua_volumes_args | indent 6 }}
+
+{{- if .Values.global.nginx_devhost_proxy.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-devhost-proxy
+  labels:
+    app: nginx-devhost-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-devhost-proxy
+  template:
+    metadata:
+      labels:
+        app: nginx-devhost-proxy
+    spec:
+      containers:
+      - name: nginx-devhost-proxy
+        image: nginx
+        ports:
+            - containerPort: 80
+        volumeMounts:
+        - name: nginx-devhost-proxy-config
+          mountPath: "/etc/nginx/conf.d/default.conf"
+          subPath: "default.conf"
+          readOnly: true
+      volumes:
+      - name: nginx-devhost-proxy-config
+        configMap:
+            name: nginx-devhost-proxy-config
+{{- end }}

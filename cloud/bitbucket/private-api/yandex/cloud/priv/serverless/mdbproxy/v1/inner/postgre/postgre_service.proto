@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+import "yandex/cloud/priv/serverless/mdbproxy/v1/proxy.proto";
+import "yandex/cloud/priv/validation.proto";
+
+package yandex.cloud.priv.serverless.mdbproxy.v1.inner.postgre;
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/serverless/mdbproxy/v1/inner/postgre;postgreinner";
+option java_outer_classname = "PISDSP";
+
+// CPL -> DPL service for inner Postgre DPL tasks
+service PostgreProxyService {
+    // List all proxies for one shard
+    rpc WatchShard(WatchShardRequest) returns (stream WatchShardResponse);
+}
+
+message Proxy {
+    mdbproxy.v1.Proxy cpl = 1;
+    repeated string hosts = 2;
+    ActionType action_type = 3;
+    PoolingMode pooling = 4;
+
+    enum ActionType {
+        ACTION_TYPE_UNSPECIFIED = 0;
+
+        ACTION_TYPE_CREATE = 1;
+
+        ACTION_TYPE_UPDATE = 2;
+
+        ACTION_TYPE_DELETE = 3;
+    }
+
+    enum PoolingMode {
+        POOLING_MODE_UNSPECIFIED = 0;
+        POOLING_MODE_SESSION = 1;
+        POOLING_MODE_TRANSACTION = 2;
+        POOLING_MODE_STATEMENT = 3;
+    }
+}
+
+message WatchShardRequest {
+    string shard_id = 1 [(required) = true];
+    ProxyType type = 2;
+}
+
+message WatchShardResponse {
+    repeated Proxy proxies = 1;
+    ChunkType type = 2 [(required) = true];
+
+    enum ChunkType {
+        // means the chunk has no data/changes (no actions will be sent), used as a keep-alive, you have to ignore such chunks
+        CHUNK_TYPE_UNSPECIFIED = 0;
+
+        // non-last snapshot chunk: there is at least one following chunk with 'snapshot_xxx' type
+        SNAPSHOT_INCOMPLETE = 1;
+
+        // last snapshot chunk (snapshot is completed), all following changes will have 'diff' type
+        SNAPSHOT_COMPLETE = 2;
+
+        // difference to the current "aggregated" state, all following changes will have 'diff' type
+        DIFF = 3;
+    }
+}

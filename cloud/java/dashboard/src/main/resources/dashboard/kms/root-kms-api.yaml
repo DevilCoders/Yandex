@@ -1,0 +1,75 @@
+uid: yc-root-kms-api
+refresh: 1m
+title: YC Root KMS API
+
+tags: [ 'yc-kms', 'yc-kms-api' ]
+
+variables:
+  ui:
+    datasource: { values: [ 'Solomon Cloud', 'Solomon Cloud Preprod' ] }
+    project:
+      values: [ 'kms', 'aoelnudsaq38ftolajvs' ]
+      titles: [ 'Solomon Cloud', 'Solomon Cloud Preprod' ]
+    cluster: { values: [prod, preprod, testing, gpn] }
+  replacement:
+    !include ../include/errors.yaml
+  repeat:
+    data_method: { values: [ Decrypt, Encrypt, ReEncrypt, GenerateDataKey ] }
+
+links:
+  - { title: 'L3 kms.yandex', url: 'https://grafana.yandex-team.ru/d/rQPhsZcWk/l3-vs-kms-yandex' }
+  - { title: 'Dashboards', tags: ['yc-kms'] }
+
+graphDefaults: { datasource: '${datasource}', width: 8, height: 6 }
+queryDefaults: { labels: 'project=${project}, cluster=${cluster}, service=service, host=root-kms-*, app=kms-root-service_server' }
+
+rows:
+  - title: Root KMS API
+    drilldowns:
+      - uid: yc-root-kms-api-host
+        tags: [ 'yc-kms', 'yc-kms-host' ]
+        ui:
+          datasource: datasource
+          project: project
+          cluster: cluster
+        uiQuery:
+          host:
+            multi: true
+        uiRepeat: host
+        labels: 'host=$host'
+
+    panels:
+      - type: graph
+        repeat: data_method
+        templates: { name: rps, rate: rps }
+        title: '@data_method rps ($cluster)'
+        queries:
+          - params: { labels: 'sensor=grpc_requests, meter_type=count, method=kms.v1.SymmetricCryptoService/@data_method' }
+
+      - type: graph
+        repeat: data_method
+        templates: { name: percentile, format: solomon, groupLines: true, sensor: rate }
+        title: '@data_method response duration ($cluster)'
+        queries:
+          - params: { labels: 'sensor=grpc_durations, method=kms.v1.SymmetricCryptoService/@data_method' }
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        repeat: data_method
+        templates: { name: rps, rate: rps, sensor: rate }
+        title: '@data_method OK rps ($cluster)'
+        queries:
+          - params: { labels: 'sensor=grpc_statuses, status=OK, method=kms.v1.SymmetricCryptoService/@data_method' }
+
+      - type: graph
+        repeat: data_method
+        templates: { name: errors, sensor: rate }
+        title: '@data_method errors ($cluster)'
+        queries:
+          - params: { labels: 'sensor=grpc_statuses, status=@4xx, method=kms.v1.SymmetricCryptoService/@data_method' }
+          - params: { labels: 'sensor=grpc_statuses, status=@503, method=kms.v1.SymmetricCryptoService/@data_method' }
+          - params: { labels: 'sensor=grpc_statuses, status=@5xx, method=kms.v1.SymmetricCryptoService/@data_method' }
+        draw:
+          - { alias: '4xx', color: '#147', at: right }
+          - { alias: '503', color: '#da7', at: left }
+          - { alias: '5xx', color: '#b20', at: left }

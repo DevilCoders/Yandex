@@ -1,0 +1,107 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.vpc.v1.node;
+
+import "google/rpc/status.proto";
+import "google/protobuf/any.proto";
+import "google/protobuf/timestamp.proto";
+import "yandex/cloud/priv/vpc/v1/node/common.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/vpc/v1/node;node";
+option java_outer_classname = "PVNMO";
+
+message MicroOperationKey {
+  string operation_id = 1;
+  string uuid = 2;
+}
+
+message MicroOperationStatus {
+  enum Value {
+    VALUE_UNSPECIFIED = 0;
+
+    // PLANNED status is assigned by outer service or when actor spawns
+    // a child micro-operation
+    // NOTE: actor should push PLANNED for child micro-operation prior
+    // to marking its own micro-operation as DONE. Otherwise, there
+    // would be short period of time when operation is considered
+    // COMPLETED
+    PLANNED = 1;
+
+    // RUNNING, DONE, ERROR (a different kind of DONE), statuses are assigned
+    // by actors while they're running micro-operation using Upsert call.
+    // RUNNING is also pushed by vpc-node periodically by heartbeat
+    // service thread: when it stops, MicroOperationService may consider
+    // operation a candidate for retry
+    RUNNING = 2;
+    DONE = 3;
+    ERROR = 4;
+
+    // CANCELLED status is assigned by Cancel() call in micro-operation service
+    CANCELLED = 6;
+  };
+}
+
+message MicroOperationAction {
+  enum Value {
+    VALUE_UNSPECIFIED = 0;
+
+    CREATE = 1;
+    UPDATE = 2;
+    DELETE = 3;
+    FORCE_DELETE = 4;
+  }
+}
+
+message MicroOperationState {
+  // Object identifier with location and operation id. Both used as keys in
+  // micro operation table
+  MicroOperationKey key = 1;
+
+  // These fields are used as debug fields
+  ObjectLocation object = 2;
+  string name = 3;
+  string parent_uuid = 4;
+  MicroOperationAction.Value action = 10;
+
+  // Status to be committed. If there is conflict between committed statuses
+  // or try_number, message is returned with accepted = false
+  MicroOperationStatus.Value status = 5;
+  google.protobuf.Timestamp updated_at = 6;
+
+  // Try number is bumped by Retry()
+  int64 try_number = 7;
+
+  // for status ERROR - grpc-compatible status code and corresponding message
+  google.rpc.Status error = 8;
+
+  // Additional response data. May accompany error status code with details.
+  google.protobuf.Any response = 9;
+}
+
+message OperationState {
+  // Generic status that is computed based on micro-operation statuses
+  message Status {
+    enum Value {
+      VALUE_UNSPECIFIED = 0;
+
+      // Operation is RUNNING normally: there are RUNNING or PLANNED operations
+      RUNNING = 1;
+
+      DONE = 2;
+
+      ERROR = 3;
+    }
+  }
+
+  string operation_id = 1;
+  Status.Value status = 2;
+
+  repeated MicroOperationState micro_operations = 3;
+
+  // Operation is retryable when all operations are either satisfy
+  // COMPLETE condition, or has either of these
+  //  - PLANNED micro-operations not changing their state for too long
+  //  - RUNNING wasn't reported recently
+  //  - ERROR with retryable error code
+  bool retryable = 4;
+}

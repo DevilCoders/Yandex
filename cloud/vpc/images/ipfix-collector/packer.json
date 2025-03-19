@@ -1,0 +1,117 @@
+{
+  "variables": {
+    "folder_id": "{{env `FOLDER_ID`}}",
+    "subnet_id": "{{env `SUBNET_ID`}}",
+    "zone_id": "{{env `ZONE_ID`}}",
+    "commit_author": "{{env `COMMIT_AUTHOR`}}",
+    "gsid": "1000",
+    "service_account_id": "{{env `SERVICE_ACCOUNT_ID`}}",
+    "account_oauth_token": "{{env `YC_OAUTH_TOKEN`}}",
+    "export_subnet_id": "{{env `EXPORT_SUBNET_ID`}}",
+    "export_service_account_id": "{{env `EXPORT_SERVICE_ACCOUNT_ID`}}",
+    "export_storage_path": "{{env `EXPORT_STORAGE_PATH`}}",
+    "tflow_version": "{{env `TFLOW_VERSION`}}"
+  },
+  "builders": [
+    {
+      "type": "yandex",
+      "token": "{{user `account_oauth_token`}}",
+      "source_image_family": "yc-vpc-base",
+      "source_image_folder_id": "{{user `folder_id`}}",
+      "zone": "{{user `zone_id`}}",
+      "folder_id": "{{user `folder_id`}}",
+      "subnet_id": "{{user `subnet_id`}}",
+      "disk_type": "network-nvme",
+      "service_account_id": "{{user `service_account_id`}}",
+
+      "labels": {
+        "skip_update_ssh_keys": "true"
+      },
+      "metadata": {
+        "gsid": "{{user `GSID`}}"
+      },
+
+      "use_ipv4_nat": false,
+      "use_ipv6": true,
+
+      "image_name": "yc-vpc-ipfix-base-{{isotime | clean_resource_name}}",
+      "image_family": "yc-vpc-ipfix-base",
+      "image_description": "Base image for ipfix collector. Based on yc-vpc-base",
+      "image_labels": {
+        "commit_author": "{{user `commit_author`}}",
+        "version": "1"
+      },
+
+      "ssh_username": "ubuntu"
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "shell",
+      "environment_vars": [
+        "DEBIAN_FRONTEND=noninteractive"
+       ],
+      "inline": [
+        "sudo systemctl stop apt-daily-upgrade.timer apt-daily.timer; sudo systemctl disable apt-daily.timer apt-daily-upgrade.timer; sudo systemctl daemon-reload",
+        "echo 'Wait for apt-daily service first run'; while true; do [ $( ps aux | grep -c [l]ock_is_held ) -gt 0 ] && date && ps aux | grep apt && sleep 10 || break; done",
+        "sudo apt-get purge -y unattended-upgrades ubuntu-release-upgrader-core update-notifier-common",
+        "echo 'image prepared by Packer at ' | sudo tee /etc/image_description",
+        "date --rfc-3339 sec | sudo tee -a /etc/image_description",
+        "sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 7FCD11186050CD1A",
+        "echo 'deb http://yandex-cloud-upstream-xenial-secure.dist.yandex.ru/yandex-cloud-upstream-xenial-secure stable/all/' | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-upstream-xenial-secure.list",
+        "echo 'deb http://yandex-cloud-upstream-xenial-secure.dist.yandex.ru/yandex-cloud-upstream-xenial-secure stable/amd64/' | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-upstream-xenial-secure.list",
+        "echo 'deb http://yandex-cloud-secure.dist.yandex.ru/yandex-cloud-secure stable/all/' | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-secure-stable.list",
+        "echo 'deb http://yandex-cloud-secure.dist.yandex.ru/yandex-cloud-secure stable/amd64/' | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-secure-stable.list", 
+        "echo '169.254.169.254 metadata.google.internal' | sudo tee -a /etc/hosts"
+      ]
+    },
+    {
+      "type": "shell",
+      "environment_vars": [
+        "TFLOW_VERSION={{user `tflow_version`}}"
+      ],
+      "inline": [
+        "sudo mkdir -p /etc/salt || true",
+        "cat <<EOF | sudo tee /etc/salt/grains",
+        "tflow:",
+        "  version: $TFLOW_VERSION",
+        "EOF"
+      ]
+    },
+    {
+      "type": "salt-masterless",
+      "bootstrap_args": "stable 3004",
+      "local_state_tree": "{{template_dir}}/salt-formula"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'Purge Salt packages'",
+        "sudo apt-get -y purge salt-common salt-minion",
+        "sudo rm -rf /srv/salt",
+        "sudo rm -rf /srv/pillar",
+        "sudo rm -rf /var/cache/salt",
+        "sudo rm -rf /var/lib/cloud",
+        "sudo rm -ff /var/lib/dhcp/*.leases",
+        "echo 'List installed packages and versions'",
+        "dpkg -l",
+        "ls -al /var/lib/dpkg/"
+      ]
+    }
+  ],
+  "post-processors": [
+   {
+      "type": "yandex-export",
+      "token": "{{user `account_oauth_token`}}",
+      "folder_id": "{{user `folder_id`}}",
+      "subnet_id": "{{user `export_subnet_id`}}",
+ 
+      "service_account_id": "{{user `export_service_account_id`}}",
+
+      "paths": [
+        "{{user `export_storage_path`}}"
+      ],
+      "keep_input_artifact": false
+    }
+  ]
+}

@@ -1,0 +1,130 @@
+id: 432920
+uid: iam-guava-cache
+title: IAM Guava Cache
+folderId: 412692
+refresh: 1m
+
+tags: [ 'iam', 'iam-guava-cache' ]
+links:
+  !include shared/links.yaml guava-cache
+
+graphDefaults: { datasource: '${ds}', width: 8, height: 6 }
+queryDefaults:
+  labels: 'project=yc.iam.service-cloud, service=${service}, cluster=${service}-${cluster}, host=${host:pipe}, cache=${cache:pipe}'
+  dropNan: true
+  defaultTimeWindow: '1m'
+
+variables:
+  ui:
+    !include shared/services.yaml
+    !include shared/datasources.yaml
+  uiQuery:
+    !include shared/clusters.yaml '${service}'
+    host:
+      labels: 'host=@all_hosts, cache=*'
+      multi: true
+    cache:
+      labels: 'host=@all_hosts, cache=*'
+      multi: true
+  replacement:
+    !include shared/replacements.yaml
+
+rows:
+  - title: 'Cache Metrics'
+    drilldowns:
+      - subUid: dd-by-host
+        title: 'Guava cache by Hosts'
+        tags: [ 'iam-guava-cache', 'iam-guava-cache-host' ]
+        ui:
+          service: service
+          ds: ds
+        uiQuery:
+          cluster: cluster
+          host: host
+          cache: cache
+        uiRepeat: host
+
+      - subUid: dd-by-cache
+        title: 'Guava cache by Caches'
+        tags: [ 'iam-guava-cache', 'iam-guava-cache-cache' ]
+        ui:
+          service: service
+          ds: ds
+        uiQuery:
+          cluster: cluster
+          host: host
+          cache: cache
+        uiRepeat: cache
+
+    panels:
+
+      - type: graph
+        title: 'Cache Size'
+        queries:
+          - params: { labels: 'sensor=guava_cache_size' }
+            select: { drop_below: '0', group_by_labels: [ sum, cache ], alias: '{{cache}}' }
+        display: { empty: false, sort: decreasing }
+
+      - type: graph
+        title: 'Cache Age'
+        queries:
+          - params: { labels: 'sensor=guava_cache_age_seconds' }
+            select: { drop_below: '0', group_by_labels: [ sum, cache ], alias: '{{cache}}' }
+        display: { empty: false, sort: decreasing }
+        yAxes: [ { format: s } ]
+
+      - type: graph
+        title: 'Cache Requests RPS'
+        templates: [ { name: rps, sumLines: [ cache ] }, { name: alias, alias: '{{cache}}' } ]
+        queries:
+          - params: { labels: 'sensor=guava_cache_requests_total' }
+        display: { empty: false, sort: decreasing }
+
+      - type: graph
+        title: 'Hits'
+        templates: [ { name: rps, sumLines: [ cache ] }, { name: alias, alias: '{{cache}}' } ]
+        queries:
+          - params: { labels: 'sensor=guava_cache_hit_total' }
+        display: { empty: false, sort: decreasing }
+
+      - type: graph
+        title: 'Misses'
+        templates: [ { name: rps, sumLines: [ cache ] }, { name: alias, alias: '{{cache}}' } ]
+        queries:
+          - params: { labels: 'sensor=guava_cache_miss_total' }
+        display: { empty: false, sort: decreasing }
+
+      - type: graph
+        title: 'Eviction'
+        templates: [ { name: rps, sumLines: [ cache ] }, { name: alias, alias: '{{cache}}' } ]
+        queries:
+          - params: { labels: 'sensor=guava_cache_eviction_total' }
+        display: { empty: false, sort: decreasing }
+
+#      - type: graph
+#        title: 'Loads'
+#        templates: [ { name: rps, sumLines: [ cache ] }, { name: alias, alias: '{{cache}}' } ]
+#        queries:
+#          - params: { labels: 'sensor=guava_cache_loads_total' }
+#        display: { empty: false, sort: decreasing }
+
+      - type: graph
+        title: 'Load Failures'
+        templates: [ { name: rps, sumLines: [ cache ] }, { name: alias, alias: '{{cache}}' } ]
+        queries:
+          - params: { labels: 'sensor=guava_cache_load_failure_total' }
+        display: { empty: false, sort: decreasing }
+
+      - type: graph
+        title: 'Reload Duration'
+        templates: { name: percentile, groupLines: true, levels: [90, 99, 100] }
+        queries:
+          - params: { labels: 'sensor=guava_cache_reload_total_duration_seconds' }
+        yAxes: [ { format: s } ]
+
+      - type: graph
+        title: 'Filter Shard Duration'
+        templates: { name: percentile, groupLines: true, levels: [90, 99, 100] }
+        queries:
+          - params: { labels: 'sensor=guava_cache_filter_shard_duration_seconds' }
+        yAxes: [ { format: s } ]

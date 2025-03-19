@@ -1,0 +1,84 @@
+{% extends "../../../base/graph.j2" %}
+
+{% block parameters %}
+{
+	"name": "cluster",
+	"value": "*"
+},
+{
+	"name": "host",
+	"value": "*"
+}
+{% block additional_params %}
+{% endblock %}
+{% endblock %}
+
+{% set percentiles = [99, 95, 75, 50] %}
+
+{% set all_statuses = ["OK", "UNAUTHENTICATED", "PERMISSION_DENIED", "CANCELLED", "INVALID_ARGUMENT", "NOT_FOUND", "ALREADY_EXISTS", "RESOURCE_EXHAUSTED", "FAILED_PRECONDITION", "ABORTED", "OUT_OF_RANGE", "UNAVAILABLE", "DEADLINE_EXCEEDED", "UNKNOWN", "DEADLINE_EXCEEDED", "UNIMPLEMENTED", "INTERNAL", "DATA_LOSS"]%}
+
+{% set statuses_OK = "OK" %}
+{% set statuses_PERMISSION_DENIED = "PERMISSION_DENIED" %}
+{% set statuses_UNAUTHENTICATED = "UNAUTHENTICATED" %}
+{% set statuses_UNAVAILABLE = "UNAVAILABLE" %}
+{% set statuses_DEADLINE_EXCEEDED = "DEADLINE_EXCEEDED" %}
+{% set statuses_logical_errors = "CANCELLED|INVALID_ARGUMENT|NOT_FOUND|ALREADY_EXISTS|RESOURCE_EXHAUSTED|FAILED_PRECONDITION|ABORTED|OUT_OF_RANGE" %}
+{% set statuses_internal_errors = "UNKNOWN|DEADLINE_EXCEEDED|UNIMPLEMENTED|INTERNAL|DATA_LOSS" %}
+
+{% set statuses_server_errors = ["UNAVAILABLE", "DEADLINE_EXCEEDED", "UNKNOWN", "UNIMPLEMENTED", "INTERNAL", "DATA_LOSS"] %}
+
+{% macro grpc_percentile(percentile, app='none', zone='none', host='none', method='none') %}
+histogram_percentile(
+    {{ percentile }},
+    'le',
+    group_by_labels(
+        {
+            sensor='grpc_durations'
+            ,hist_type='bin'
+            {% if app != 'none' %}
+                ,app='{{ app }}'
+            {% endif %}
+            {% if method != 'none' %}
+                ,method='{{ method }}'
+            {% endif %}
+            {% if host != 'none' %}
+                ,host='{{host}}'
+            {% endif %}
+            {% if zone != 'none' %}
+                ,zone='{{zone}}'
+            {% endif %}
+            ,le='*'
+        },
+        'le',
+        v -> diff(group_lines('sum', v))
+    )
+)
+{% endmacro %}
+
+{% macro grpc_statuses(status='none', app='none', zone='none', host='none', method='none') %}
+series_sum({
+    sensor='grpc_requests_with_status'
+    ,meter_type='m1_rate'
+    {% if app != 'none' %}
+        ,app='{{ app }}'
+    {% endif %}
+    {% if method != 'none' %}
+        ,method='{{ method }}'
+    {% endif %}
+    {% if status != 'none' %}
+        ,status='{{ status }}'
+    {% endif %}
+    {% if host != 'none' %}
+        ,host='{{host}}'
+    {% endif %}
+    {% if zone != 'none' %}
+        ,zone='{{zone}}'
+    {% endif %}
+})
+{% endmacro %}
+
+{% macro grpc_all_percentiles(app='none', zone='none', host='none', method='none') %}
+    {% for percentile in percentiles %}
+		{{ render_element("{}%".format(percentile), grpc_percentile(percentile, app=app, zone=zone, host=host, method=method) | to_prog) }}
+    {% if not loop.last %},{% endif %}{% endfor %}
+{% endmacro %}

@@ -1,0 +1,380 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.dataproc.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/field_mask.proto";
+import "yandex/cloud/priv/dataproc/v1/common.proto";
+import "yandex/cloud/priv/dataproc/v1/cluster.proto";
+import "yandex/cloud/priv/dataproc/v1/subcluster.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+import "yandex/cloud/priv/validation.proto";
+import "yandex/cloud/api/operation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/dataproc/v1;dataproc";
+option java_outer_classname = "PHCS";
+
+// A set of methods for managing Hadoop clusters.
+service ClusterService {
+  // Returns the specified Hadoop cluster.
+  rpc Get (GetClusterRequest) returns (Cluster) {
+    option (google.api.http) = { get: "/mdb/hadoop/v1/clusters/{cluster_id}" };
+  }
+
+  // Retrieves a list of Hadoop clusters.
+  rpc List (ListClustersRequest) returns (ListClustersResponse) {
+    option (google.api.http) = { get: "/mdb/hadoop/v1/clusters" };
+  }
+
+  // Creates a Hadoop cluster.
+  rpc Create (CreateClusterRequest) returns (operation.Operation) {
+    option (google.api.http) = { post: "/mdb/hadoop/v1/clusters" body: "*" };
+    option (yandex.cloud.api.operation) = {
+      metadata: "CreateClusterMetadata"
+      response: "Cluster"
+    };
+  }
+
+  // Updates configuration of the specified Hadoop cluster.
+  rpc Update (UpdateClusterRequest) returns (operation.Operation) {
+    option (google.api.http) = { patch: "/mdb/hadoop/v1/clusters/{cluster_id}" body: "*" };
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateClusterMetadata"
+      response: "Cluster"
+    };
+  }
+
+  // Deletes the specified Hadoop cluster.
+  rpc Delete (DeleteClusterRequest) returns (operation.Operation) {
+    option (google.api.http) = { delete: "/mdb/hadoop/v1/clusters/{cluster_id}" };
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeleteClusterMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+
+  // Start the specified Hadoop cluster.
+  rpc Start (StartClusterRequest) returns (operation.Operation) {
+    option (google.api.http) = { post: "/mdb/hadoop/v1/clusters/{cluster_id}:start" };
+    option (yandex.cloud.api.operation) = {
+      metadata: "StartClusterMetadata"
+      response: "Cluster"
+    };
+  }
+
+  // Stop the specified Hadoop cluster.
+  rpc Stop (StopClusterRequest) returns (operation.Operation) {
+    option (google.api.http) = { post: "/mdb/hadoop/v1/clusters/{cluster_id}:stop" body: "*" };
+    option (yandex.cloud.api.operation) = {
+      metadata: "StopClusterMetadata"
+      response: "Cluster"
+    };
+  }
+
+  rpc ListOperations (ListClusterOperationsRequest) returns (ListClusterOperationsResponse) {
+    option (google.api.http) = { get: "/mdb/hadoop/v1/clusters/{cluster_id}/operations" };
+  }
+
+  // Retrieves a list of hosts.
+  rpc ListHosts (ListClusterHostsRequest) returns (ListClusterHostsResponse) {
+    option (google.api.http) = { get: "/mdb/hadoop/v1/clusters/{cluster_id}/hosts" };
+  }
+
+  // Retrieves a list of links to web interfaces being proxied by Data Proc UI Proxy.
+  rpc ListUILinks (ListUILinksRequest) returns (ListUILinksResponse) {
+    option (google.api.http) = { get: "/mdb/hadoop/v1/clusters/{cluster_id}/ui_links" };
+  }
+}
+
+message GetClusterRequest {
+  // Required. ID of the Hadoop cluster to return.
+  string cluster_id = 1 [(length) = "<=50"];
+}
+
+message ListClustersRequest {
+  // Required. ID of the folder to list Hadoop clusters in.
+  string folder_id = 1 [(length) = "<=50"];
+
+  // The maximum number of results per page that should be returned. If the number of available
+  // results is larger than `page_size`, the service returns a `next_page_token` that can be used
+  // to get the next page of results in subsequent ListClusters requests.
+  // Acceptable values are 0 to 1000, inclusive. Default value: 100.
+  int64 page_size = 2 [(value) = "<=1000"];
+
+  // Page token. Set `page_token` to the `next_page_token` returned by a previous ListClusters
+  // request to get the next page of results.
+  string page_token = 3 [(length) = "<=100"];
+
+  // String that describes a display filter.
+  string filter = 4 [(length) = "<=1000"];
+}
+
+message ListClustersResponse {
+  // Requested list of Hadoop clusters.
+  repeated Cluster clusters = 1;
+
+  // This token allows you to get the next page of results for ListClusters requests,
+  // if the number of results is larger than `page_size` specified in the request.
+  // To get the next page, specify the value of `next_page_token` as a value for
+  // the `page_token` parameter in the next ListClusters request. Subsequent ListClusters
+  // requests will have their own `next_page_token` to continue paging through the results.
+  string next_page_token = 2;
+}
+
+message CreateSubclusterConfigSpec {
+
+  string name = 1 [(pattern) = "|[a-z][-a-z0-9]{1,61}[a-z0-9]"];
+
+  // Role of hosts in subcluster
+  Role role = 2;
+
+  // Resource configuration for hosts in subcluster
+  Resources resources = 3;
+
+  string subnet_id = 4 [(length) = "<=50"];
+
+  // Number of hosts in subcluster
+  int64 hosts_count = 5 [(value) = ">=1"];
+
+  // Assign public ip addresses for all hosts in subcluter.
+  bool assign_public_ip = 6;
+
+  // Configuration for instance group based subclusters
+  AutoscalingConfig autoscaling_config = 7;
+}
+
+message CreateClusterConfigSpec {
+  // Version of image for cluster provisioning
+  string version_id = 1;
+
+  // Hadoop specific options
+  HadoopConfig hadoop = 2;
+
+  // Subclusters configuration.
+  repeated CreateSubclusterConfigSpec subclusters_spec = 4;
+}
+
+message UpdateSubclusterConfigSpec {
+  // Unique ID of the Hadoop subcluster.
+  string id = 1;
+
+  string name = 2 [(pattern) = "|[a-z][-a-z0-9]{1,61}[a-z0-9]"];
+
+  // Resource configuration for hosts in subcluster
+  Resources resources = 3;
+
+  // Number of hosts in subcluster
+  int64 hosts_count = 4 [(value) = ">=1"];
+
+  // Assign public ip addresses for all hosts in subcluter.
+  bool assign_public_ip = 5;
+
+  // Configuration for instance group based subclusters
+  AutoscalingConfig autoscaling_config = 6;
+}
+
+message UpdateClusterConfigSpec {
+  // Vesion of image for cluster provisioning
+  string version_id = 1;
+
+  // Hadoop specific options
+  HadoopConfig hadoop = 2;
+
+  // Subclusters configuration.
+  repeated UpdateSubclusterConfigSpec subclusters_spec = 4;
+}
+
+message CreateClusterRequest {
+  // Required. ID of the folder to create Hadoop cluster in.
+  string folder_id = 1 [(length) = "<=50"];
+
+  // Required. Name of the Hadoop cluster. The name must be unique within the folder.
+  // The name must be 1-63 characters long and match the regular expression `^[a-z]([-a-z0-9]{,61}[a-z0-9])?$`.
+  // The name can't be changed after the Hadoop cluster is created.
+  string name = 2 [(pattern) = "|[a-z][-a-z0-9]{1,61}[a-z0-9]"];
+
+  // Description of the Hadoop cluster. 0-256 characters long.
+  string description = 3 [(length) = "<=256"];
+
+  map<string, string> labels = 4 [(priv.size) = "<=64", (length) = "<=63", (pattern) = "[-_0-9a-z]*", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_0-9a-z]*"];
+
+  CreateClusterConfigSpec config_spec = 6;
+
+  // ID of the availability zone.
+  string zone_id = 7 [(length) = "<=50"];
+
+  // Object Storage bucket name for Dataproc Jobs.
+  string bucket = 8;
+
+  // ID of the service account for Dataproc manager agent.
+  string service_account_id = 9;
+
+  // Enable UI Proxy feature.
+  bool ui_proxy = 10;
+
+  // Host groups to place VMs of cluster on.
+  repeated string host_group_ids = 11;
+
+  // User security groups.
+  repeated string security_group_ids = 12;
+
+  // Deletion Protection inhibits deletion of the cluster
+  bool deletion_protection = 13;
+
+  // ID of the cloud logging log group to write logs. If not set, logs will not be sent to logging service
+  string log_group_id = 14;
+}
+
+message CreateClusterMetadata {
+  // Required. ID of the creating Hadoop cluster.
+  string cluster_id = 1;
+}
+
+message UpdateClusterRequest {
+  // Required. ID of the Hadoop cluster.
+  string cluster_id = 1 [(length) = "<=50"];
+
+  google.protobuf.FieldMask update_mask = 2;
+
+  // Description of the Hadoop cluster. 0-256 characters long.
+  string description = 3 [(length) = "<=256"];
+
+  map<string, string> labels = 4 [(priv.size) = "<=64", (length) = "<=63", (pattern) = "[-_0-9a-z]*", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_0-9a-z]*"];
+
+  UpdateClusterConfigSpec config_spec = 5;
+
+  string name = 6 [(pattern) = "|[a-z][-a-z0-9]{1,61}[a-z0-9]"];
+
+  // Identifier of the new service account for the cluster.
+  string service_account_id = 7;
+
+  // New object storage bucket for Dataproc Jobs.
+  string bucket = 8;
+
+  // Timeout to gracefully decommission nodes. In seconds. Default value: 0
+  int64 decommission_timeout = 9 [(value) = "0-86400"];
+
+  // Enable UI Proxy feature.
+  bool ui_proxy = 10;
+
+  // User security groups.
+  repeated string security_group_ids = 11;
+
+  // Deletion Protection inhibits deletion of the cluster
+  bool deletion_protection = 12;
+
+  // ID of the cloud logging log group to write logs. If not set, logs will not be sent to logging service
+  string log_group_id = 13;
+}
+
+message UpdateClusterMetadata {
+  // Required. ID of the Hadoop cluster.
+  string cluster_id = 1;
+}
+
+message DeleteClusterRequest {
+  // Required. ID of the Hadoop cluster to delete.
+  string cluster_id = 1 [(length) = "<=50"];
+
+  // Timeout to gracefully decommission nodes. In seconds. Default value: 0
+  int64 decommission_timeout = 2 [(value) = "0-86400"];
+}
+
+message DeleteClusterMetadata {
+  // Required. ID of the deleting Hadoop cluster.
+  string cluster_id = 1;
+}
+
+message StartClusterRequest {
+  // Required. ID of the Hadoop cluster to start.
+  string cluster_id = 1 [(length) = "<=50"];
+}
+
+message StartClusterMetadata {
+  // Required. ID of the Hadoop cluster.
+  string cluster_id = 1;
+}
+
+message StopClusterRequest {
+  // Required. ID of the Hadoop cluster to stop.
+  string cluster_id = 1 [(length) = "<=50"];
+
+  // Timeout to gracefully decommission nodes. In seconds. Default value: 0
+  int64 decommission_timeout = 2 [(value) = "0-86400"];
+}
+
+message StopClusterMetadata {
+  // Required. ID of the Hadoop cluster.
+  string cluster_id = 1;
+}
+
+message ListClusterOperationsRequest {
+  // Required. ID of the Hadoop cluster.
+  string cluster_id = 1 [(length) = "<=50"];
+
+  // The maximum number of results per page that should be returned. If the number of available
+  // results is larger than `page_size`, the service returns a `next_page_token` that can be used
+  // to get the next page of results in subsequent ListOperations requests.
+  // Acceptable values are 0 to 1000, inclusive. Default value: 100.
+  int64 page_size = 2 [(value) = "<=1000"];
+
+  // Page token. Set `page_token` to the `next_page_token` returned by a previous ListOperations
+  // request to get the next page of results.
+  string page_token = 3 [(length) = "<=100"];
+}
+
+message ListClusterOperationsResponse {
+  repeated operation.Operation operations = 1;
+
+  // This token allows you to get the next page of results for ListOperations requests,
+  // if the number of results is larger than `page_size` specified in the request.
+  // To get the next page, specify the value of `next_page_token` as a value for
+  // the `page_token` parameter in the next ListOperations request. Subsequent ListOperations
+  // requests will have their own `next_page_token` to continue paging through the results.
+  string next_page_token = 2;
+}
+
+message ListClusterHostsRequest {
+  // Required. ID of the Hadoop cluster.
+  string cluster_id = 1 [(length) = "<=50"];
+
+  // The maximum number of results per page that should be returned. If the number of available
+  // results is larger than `page_size`, the service returns a `next_page_token` that can be used
+  // to get the next page of results in subsequent ListClusterHosts requests.
+  // Acceptable values are 0 to 1000, inclusive. Default value: 100.
+  int64 page_size = 2 [(value) = "<=1000"];
+
+  // Page token. Set `page_token` to the `next_page_token` returned by a previous ListClusterHosts
+  // request to get the next page of results.
+  string page_token = 3 [(length) = "<=100"];
+
+  // String that describes a display filter.
+  string filter = 4 [(length) = "<=1000"];
+}
+
+message ListClusterHostsResponse {
+  // Requested list of hosts.
+  repeated Host hosts = 1;
+
+  // This token allows you to get the next page of results for ListClusterHosts requests,
+  // if the number of results is larger than `page_size` specified in the request.
+  // To get the next page, specify the value of `next_page_token` as a value for
+  // the `page_token` parameter in the next ListSubclusterHosts request. Subsequent ListClusterHosts
+  // requests will have their own `next_page_token` to continue paging through the results.
+  string next_page_token = 2;
+}
+
+message ListUILinksRequest {
+  // Required. ID of the Hadoop cluster.
+  string cluster_id = 1 [(length) = "<=50"];
+}
+
+message UILink {
+  string name = 1;
+  string url = 2;
+}
+
+message ListUILinksResponse {
+  // Requested list of ui links.
+  repeated UILink links = 1;
+}

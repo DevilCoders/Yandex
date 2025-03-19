@@ -1,0 +1,68 @@
+use hahn;
+
+PRAGMA yt.InferSchema = '1';
+
+$ba_isv_var = (
+    select
+        ba_id,
+        isv_start_date,
+        var_start_date,
+        isv_end_date,
+        var_end_date,
+        isv_start_date is not null and isv_end_date is null as is_isv,
+        var_start_date is not null and var_end_date is null as is_var
+    from (
+        select
+            billing_account_id as ba_id,
+            isv_start_date,
+            var_start_date,
+            if(isv_start_date > isv_end_date, null, isv_end_date) as isv_end_date,
+            if(var_start_date > var_end_date, null, var_end_date) as var_end_date
+        from (
+            select
+                billing_account_id,
+                max(if(is_isv and not was_isv, updated_at)) as isv_start_date,
+                max(if(was_isv and not is_isv, updated_at)) as isv_end_date,
+                max(if(is_var and not was_var, updated_at)) as var_start_date,
+                max(if(was_var and not is_var, updated_at)) as var_end_date
+            from (
+                select
+                  billing_account_id,
+                  updated_at,
+                  is_isv,
+                  is_var,
+                  lag(is_isv, 1) over w ?? false as was_isv,
+                  lag(is_var, 1) over w ?? false as was_var,
+                from (
+                    SELECT
+                       Yson::ConvertToString(feature_flags) like '%isv\": true%' as is_isv,
+                       Yson::ConvertToString(feature_flags) like '%var\": true%' as is_var,
+                      t.*
+                     from `//home/cloud/billing/exported-billing-tables/billing_accounts_history_prod` as t
+                )
+                window w as (partition by billing_account_id order by updated_at)
+            )
+            group by billing_account_id
+        )
+    )
+);
+
+INSERT INTO `//home/cloud_analytics/import/billing/billing_accounts_isv_var` WITH TRUNCATE
+select
+    l.dwh_id as dwh_id,
+    l.email  as email,
+    ba.ba_id as ba_id,
+    ba.isv_start_date as isv_start_date,
+    ba.var_start_date as var_start_date,
+    ba.isv_end_date   as isv_end_date,
+    ba.var_end_date   as var_end_date,
+    ba.is_isv as is_isv,
+    ba.is_var as is_var
+from $ba_isv_var as ba
+join `//home/cloud_analytics/leads/dyn_table` as l
+  on ba.ba_id = l.ba_id
+where ba.isv_start_date is not null
+   or ba.var_start_date is not null
+   or ba.isv_end_date is not null
+   or ba.var_end_date is not null
+;

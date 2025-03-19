@@ -1,0 +1,30 @@
+{% extends "base_alert.j2" %}
+{% set checkExpression = "minValue < " + (instances - 1) | string + " || " + "maxValue < " + instances | string %}
+{% set description = "Lockbox " + env | upper + " " + service_name + " Alive instances" %}
+{% set windowSecs = 180 %}
+{% set delaySecs = 30 %}
+
+{% macro prog() %}
+let data = {
+  project='{{ project_id }}',
+  service='service',
+  cluster='cloud_{{ env }}_lockbox_cluster',
+  host='{{ host_regex }}',
+  sensor='instanceHealthy'
+};
+let group_data = replace_nan(group_lines('sum',  data), 0);
+let minValue = min(group_data);
+let maxValue = max(group_data);
+{% endmacro %}
+
+{% block main %}
+  "name": "Lockbox {{ env | upper }} {{ service_name }} Alive instances",
+  "groupByLabels": ["cluster", "host"],
+  "annotations": {
+    "jugglerService": "[[labels.cluster]]--{{ service_name | lower }}--alive--instances",
+    "description": "[[expression.minValue]] instances alive",
+    "wikiUrl": "#",
+    "jugglerTags" : "{{ jugglerTags }}"
+  },
+  "type": {{ type_expression() }}
+{% endblock %}

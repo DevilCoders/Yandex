@@ -1,0 +1,143 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.healthcheck.v1alpha.inner;
+
+import "google/protobuf/timestamp.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/healthcheck/v1alpha/inner;healthcheck";
+option java_outer_classname = "PHCGI";
+
+message HealthCheckGroup {
+  enum Owner {
+    OWNER_UNSPECIFIED = 0;
+    LOAD_BALANCER = 1;
+    INSTANCE_GROUP = 2;
+  }
+
+  message Target {
+    enum ForcedStatus {
+      FORCED_STATUS_UNSPECIFIED = 0;
+      FORCED_STATUS_NOT_FORCED = 1;
+      FORCED_STATUS_OK = 2; // to match with HealthCheckResult.Status
+      FORCED_STATUS_FAIL = 3; // to match with HealthCheckResult.Status
+    };
+
+    string zone_id = 1 [(length) = "<=50"];
+    string address = 2;
+    ForcedStatus forced_status = 3;
+    int64 block_size = 4 [(value) = "0-128"]; // NOTE: For quasi addresses, value must be valid (block size of ipv4 rip + 96).
+  }
+
+  string id = 1;
+
+  repeated Target targets = 2;
+  repeated HealthCheck health_checks = 3;
+
+  google.protobuf.Timestamp created_at = 4;
+
+  string folder_id = 5;
+
+  Owner owner = 6;
+}
+
+message HealthCheck {
+  message TcpOptions {
+    int64 port = 1 [(value) = "1-65535"];
+  }
+
+  message HttpOptions {
+    int64 port = 1 [(value) = "1-65535"];
+    string path = 2;
+    repeated int64 success_codes = 3 [(size) = "<=100"];
+    map<string, string> headers = 4 [(size) = "<=100"];
+  }
+
+  message HttpsOptions {
+    int64 port = 1 [(value) = "1-65535"];
+    string host = 2;
+    string path = 3;
+    repeated int64 success_codes = 4 [(size) = "<=100"];
+    map<string, string> headers = 5 [(size) = "<=100"];
+    bool verify_hostname = 6;
+    bool verify_cert_dates = 7;
+  }
+
+  message Http2Options {
+    int64 port = 1 [(value) = "1-65535"];
+    string host = 2;
+    string path = 3;
+    repeated int64 success_codes = 4 [(size) = "<=100"];
+    map<string, string> headers = 5 [(size) = "<=100"];
+    bool verify_hostname = 6;
+    bool verify_cert_dates = 7;
+  }
+
+  message IcmpOptions {
+  }
+
+  // https://github.com/grpc/grpc/blob/master/doc/health-checking.md
+  message GrpcOptions {
+    int64 port = 1 [(value) = "1-65535"];
+    string service_name = 2;
+    string authority = 3;
+  }
+
+  string name = 1 [(required) = true, (pattern) = "|[a-z][-a-z0-9]{1,61}[a-z0-9]"];
+  int64 interval = 2 [(value) = ">=1000"]; // milliseconds, default = 1000
+  int64 timeout = 3 [(value) = ">=1000"]; // milliseconds, default = 1000
+  int64 unhealthy_threshold = 4 [(value) = ">=1"]; // default = 2
+  int64 healthy_threshold = 5 [(value) = ">=1"]; // default = 2
+
+  oneof health_check_options {
+    option (exactly_one) = true;
+
+    TcpOptions tcp_options = 6;
+    HttpOptions http_options = 7;
+    HttpsOptions https_options = 9;
+    Http2Options http2_options = 10;
+    IcmpOptions icmp_options = 11;
+    GrpcOptions grpc_options = 12;
+  }
+
+  enum AggregationAlgorithm {
+    AGGREGATION_ALGORITHM_UNSPECIFIED = 0;
+    ALL_OF = 1;
+    AT_LEAST_ONE = 2;
+    MAJORITY = 3;
+  }
+
+  AggregationAlgorithm aggregation_algorithm = 8 [(required) = false]; // default MAJORITY
+}
+
+message HealthCheckResult {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+
+    // NOT_CHECKED used when node hasn't checked the target yet.
+    NOT_CHECKED = 1;
+
+    OK = 2;
+    FAIL_TIMEOUT = 3;
+    FAIL_NETWORK_UNREACHABLE = 4;
+    FAIL_CONNECTION_RESET = 5;
+    FAIL_HTTP_5XX = 6;
+    FAIL_UNSPECIFIED = 7;
+
+    // NOT_CHECKING used for determine that target is removed from node check list.
+    NOT_CHECKING = 8;
+
+    // NOT_SHIPPED used when target hasn't shipped to node yet.
+    NOT_SHIPPED = 9;
+  }
+
+  string health_check_group_id = 1;
+  string name = 2;
+  string address = 3;
+  Status status = 4;
+  google.protobuf.Timestamp status_changed_at = 5;
+  // health_check_group_generation is an experimental field with
+  // non-decreasing number of mutable operations hc group has gone through.
+  // Don't use it unless CLOUD-96086 is not closed for 6 months in a row.
+  int64 health_check_group_generation = 6;
+}

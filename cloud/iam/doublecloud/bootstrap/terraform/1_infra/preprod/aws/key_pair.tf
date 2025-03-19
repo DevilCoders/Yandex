@@ -1,0 +1,4 @@
+resource "aws_key_pair" "iam_common_dev" {
+  key_name   = "iam-common-dev"
+  public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDDailkKYaFrz6TL3OsvloJ2duvhU9yB40sqHUQpp4VS6KbeUy6RVbFHdIDRuSU3Dqn608PAKOQjRXN6dmbt2YZ+G5ygtrcmfnz22UPUEqlw04fPEzDmfpx+rBsB2dPMBYhzsQi8WmHrBtUcouW6dNgrRNgyymH1pHuTA8jsY1iKCButFW+prN2yy/azMjgKvigDU6MfEkE5Nuz4yHIjeVUNYYdl5XvHWmi8/rSovaY0wk/0kB+EEUMq7BFD+qraxPJTJ0ojGEM46VXTN5fNny6zxEfSTub8cVm+Z//twrFFihUzIcfYZqxzr40fiAedfdsy5jQp2UVr2OH9LnANUXH iam-common-dev"
+}

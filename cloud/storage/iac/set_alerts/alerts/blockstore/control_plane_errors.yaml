@@ -1,0 +1,271 @@
+definitions:
+  - &alert_id "{{.ID}}_svm_nbs_control_plane_errors"
+  - &alert_name "{{.Name}}[SVM] NBS Control Plane Errors"
+  - &alert_annotations_tag "yc-{{.Cluster}}-nbs-solomon"
+  - &alert_annotations_host "cloud_{{.Cluster}}_nbs-control_{{.Zone}}"
+  - &alert_annotations_service "solomon_alert_nbs_control_plane_errors"
+  - &alert_juggler_description "(doc: https://nda.ya.ru/t/nRj7ozxG5Fn9vG)"
+alerts:
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_juggler_description
+    group_by_labels:
+      - request
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - preprod_vla
+      - preprod_sas
+    expression:
+      program: |-
+        let blacklist_requests='ReadBlocks|WriteBlocks|ZeroBlocks|UnmountVolume';
+
+        let total_count = integrate_fn(group_lines('sum', {
+        project='{{.SolomonProjectID}}',
+        cluster='yandexcloud_preprod',
+        service='server',
+        host='nbs-control-{{.Zone}}1|nbs-control-{{.Zone}}2|nbs-control-{{.Zone}}3',
+        request='*',
+        sensor='Count',
+        type= '-',
+        request!='{{`{{blacklist_requests}}`}}'
+        }));
+
+        let total_errors = integrate_fn(group_lines('sum', {
+        project='{{.SolomonProjectID}}',
+        cluster='yandexcloud_preprod',
+        service='server',
+        host='nbs-control-{{.Zone}}1|nbs-control-{{.Zone}}2|nbs-control-{{.Zone}}3',
+        request='*',
+        sensor='Errors/Retriable',
+        type= '-',
+        request!='{{`{{blacklist_requests}}`}}'
+        }));
+
+        no_data_if(
+        count(total_count) == 0 ||
+        count(total_errors) == 0
+        );
+
+        let e = max(total_errors);
+        let c = max(as_vector(max(total_count), 1));
+        let f = e / (100 + c);
+
+        alarm_if(f >= 0.15);
+        warn_if(f >= 0.1);
+
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_juggler_description
+    group_by_labels:
+      - request
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - preprod_myt
+    expression:
+      program: |-
+        let blacklist_requests='ReadBlocks|WriteBlocks|ZeroBlocks|UnmountVolume';
+
+        let total_count = integrate_fn(group_lines('sum', {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        host='nbs-control-{{.Zone}}1|nbs-control-{{.Zone}}2|nbs-control-{{.Zone}}3',
+        request='*',
+        sensor='Count',
+        type= '-',
+        request!='{{`{{blacklist_requests}}`}}'
+        }));
+
+        let total_errors = integrate_fn(group_lines('sum', {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        host='nbs-control-{{.Zone}}1|nbs-control-{{.Zone}}2|nbs-control-{{.Zone}}3',
+        request='*',
+        sensor='Errors/Retriable',
+        type= '-',
+        request!='{{`{{blacklist_requests}}`}}'
+        }));
+
+        no_data_if(
+        count(total_count) == 0 ||
+        count(total_errors) == 0
+        );
+
+        let e = max(total_errors);
+        let c = max(as_vector(max(total_count), 1));
+        let f = e / (100 + c);
+
+        alarm_if(f >= 0.15);
+        // warn_if(f >= 0.1);
+
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_juggler_description
+    group_by_labels:
+      - request
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - prod_vla
+    expression:
+      program: |-
+        let blacklist_requests='ReadBlocks|WriteBlocks|ZeroBlocks|CreateCheckpoint|UnmountVolume';
+
+        let total_count = integrate_fn(group_lines('sum', {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        host='nbs-control-{{.Zone}}*',
+        request='*',
+        sensor='Count',
+        type= '-',
+        request!='{{`{{blacklist_requests}}`}}'
+        }));
+
+        let total_errors = integrate_fn(group_lines('sum', {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        host='nbs-control-{{.Zone}}*',
+        request='*',
+        sensor='Errors/Retriable',
+        type= '-',
+        request!='{{`{{blacklist_requests}}`}}'
+        }));
+
+        no_data_if(
+        count(total_count) == 0 ||
+        count(total_errors) == 0
+        );
+
+        let e = max(total_errors);
+        let c = max(as_vector(max(total_count), 1));
+        let f = (5 + e) / (100 + c);
+
+        alarm_if(f >= 0.15);
+        // warn_if(f >= 0.1);
+
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_juggler_description
+    group_by_labels:
+      - request
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - prod_sas
+      - israel
+    expression:
+      program: |-
+        let blacklist_requests='ReadBlocks|WriteBlocks|ZeroBlocks|UnmountVolume';
+
+        let total_count = integrate_fn(group_lines('sum', {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        host='nbs-control-{{.Zone}}*',
+        request='*',
+        sensor='Count',
+        type= '-',
+        request!='{{`{{blacklist_requests}}`}}'
+        }));
+
+        let total_errors = integrate_fn(group_lines('sum', {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        host='nbs-control-{{.Zone}}*',
+        request='*',
+        sensor='Errors/Retriable',
+        type= '-',
+        request!='{{`{{blacklist_requests}}`}}'
+        }));
+
+        no_data_if(
+        count(total_count) == 0 ||
+        count(total_errors) == 0
+        );
+
+        let e = max(total_errors);
+        let c = max(as_vector(max(total_count), 1));
+        let f = (5 + e) / (100 + c);
+
+        alarm_if(f >= 0.15);
+        // warn_if(f >= 0.1);
+
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_juggler_description
+    group_by_labels:
+      - request
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - prod_myt
+    expression:
+      program: |-
+        let blacklist_requests='ReadBlocks|WriteBlocks|ZeroBlocks|UnmountVolume';
+
+        let total_count = integrate_fn(group_lines('sum', {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        host='nbs-control-{{.Zone}}*',
+        request='*',
+        request!='DescribeDiskRegistryConfig',
+        sensor='Count',
+        type= '-',
+        request!='{{`{{blacklist_requests}}`}}'
+        }));
+
+        let total_errors = integrate_fn(group_lines('sum', {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.SolomonCluster}}',
+        service='server',
+        host='nbs-control-{{.Zone}}*',
+        request='*',
+        request!='DescribeDiskRegistryConfig',
+        sensor='Errors/Retriable',
+        type= '-',
+        request!='{{`{{blacklist_requests}}`}}'
+        }));
+
+        no_data_if(
+        count(total_count) == 0 ||
+        count(total_errors) == 0
+        );
+
+        let e = max(total_errors);
+        let c = max(as_vector(max(total_count), 1));
+        let f = (5 + e) / (100 + c);
+
+        alarm_if(f >= 0.15);
+        // warn_if(f >= 0.1);

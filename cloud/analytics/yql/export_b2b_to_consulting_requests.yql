@@ -1,0 +1,30 @@
+USE hahn;
+
+$dst_path = "//home/cloud_analytics/export/crm/consulting_request";
+$b2b_dir = "//home/cloud_analytics/export/crm/b2b";
+$convert_history_tbl = "//home/cloud_analytics/export/crm/b2b2cr_history";
+
+$current_ts = DateTime::Update(CurrentUtcTimestamp(), 0 AS Microsecond);
+$table_name_date_format = "%Y-%m-%dT%H:%M:%S";
+$dt_format = DateTime::Format($table_name_date_format);
+$dst_table = $dst_path ||  "/" || $dt_format($current_ts) ?? '';
+
+INSERT INTO $dst_table WITH TRUNCATE
+SELECT firstName AS user_firstName,
+       "[B2B] " || lastName AS user_lastName,
+       email AS user_email,
+       phone AS user_phone,
+       comment AS message,
+       yandex_login,
+       yandex_puid,
+       ba_id,
+       created_time AS `timestamp`
+FROM RANGE($b2b_dir) AS b
+LEFT ONLY JOIN $convert_history_tbl AS h
+    ON h.`timestamp` == b.created_time
+ORDER BY `timestamp`;
+
+COMMIT;
+
+INSERT INTO $convert_history_tbl
+SELECT * FROM $dst_table;

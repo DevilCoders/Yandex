@@ -1,0 +1,297 @@
+$convert_to_rub = ($value, $currency, $rate) -> { RETURN $value * IF($currency == "USD", CAST($rate AS Double), 1); };
+$get_amount_by_type = ($raw, $type) -> { RETURN IF(Yson::LookupString($raw, "credit_type") == $type, CAST(Yson::LookupString($raw, "consumed_amount") AS Double), 0); };
+$get_committed_use_discount_credit_charge = ($raw) -> { RETURN $get_amount_by_type($raw, "CommittedUseDiscount"); };
+$get_credit_charge = ($raw, $func) -> { RETURN COALESCE(ListAggregate(ListMap(Yson::ConvertToList(Yson::ParseJson(Yson::ConvertToString($raw))), $func), AGGREGATION_FACTORY("SUM")), 0); };
+$get_disabled_credit_charge = ($raw) -> { RETURN $get_amount_by_type($raw, "Disabled"); };
+$get_monetary_grant_credit_charge = ($raw) -> { RETURN $get_amount_by_type($raw, "MonetaryGrant"); };
+$get_service_credit_charge = ($raw) -> { RETURN $get_amount_by_type($raw, "Service"); };
+$get_trial_credit_charge = ($raw) -> { RETURN $get_amount_by_type($raw, "Trial"); };
+$get_volume_incentive_credit_charge = ($raw) -> { RETURN $get_amount_by_type($raw, "VolumeIncentive"); };
+$format_date = DateTime::Format("%Y-%m-%d");
+$format_month = DateTime::Format("%Y-%m");
+$format_datetime = DateTime::Format("%Y-%m-%d %H:%M:%S");
+$make_not_null = ($field, $default_value) -> { RETURN IF($field is NULL, $default_value, $field); };
+$get_date_by_timestamp = ($timestamp) -> { RETURN $format_date(AddTimezone(DateTime::FromSeconds(CAST($timestamp AS Uint32)), 'Europe/Moscow')); };
+$get_datetime_by_timestamp = ($timestamp) -> { RETURN $format_datetime(AddTimezone(DateTime::FromSeconds(CAST($timestamp AS Uint32)), 'Europe/Moscow')); };
+$get_month_by_timestamp = ($timestamp) -> { RETURN $format_month(AddTimezone(DateTime::FromSeconds(CAST($timestamp AS Uint32)), 'Europe/Moscow')); };
+$get_vat = ($field, $date, $currency) -> { RETURN CASE
+    WHEN $currency = 'USD' THEN $field
+    WHEN $date < '2019-01-01' AND $currency != 'USD' THEN $field/1.18
+    WHEN $date >= '2019-01-01' AND $currency != 'USD' THEN $field/1.2
+    ELSE $field END };
+$lookup_string_dict = ($json, $field) -> { RETURN Yson::ConvertToStringDict(Yson::Lookup(Yson::ParseJson($json), $field)) };
+$get_next_date = ($date) -> { RETURN $get_date_by_timestamp(DateTime::ToSeconds(cast($date as Date)) + cast(24 * 60 * 60 as uint32)) };
+
+
+$conversion_rates = (
+    SELECT `date`, LAST_VALUE(quote) IGNORE NULLS
+    OVER w AS quote
+    FROM(
+        SELECT a.`date` AS `date`, b.quote AS quote
+        FROM (
+            SELECT CAST(`date` AS STRING) AS `date`
+            FROM (
+                SELECT * from (
+                    SELECT ListCollect(ListMap(ListFromRange(0, (DateTime::ToDays(
+                    DateTime::MakeDate(DateTime::MakeDatetime(AddTimezone(CurrentUtcTimestamp(), 'Europe/Moscow')))-
+                    DATE("2015-01-01")) + 1) ?? 0), ($x) -> {return DATE("2015-01-01") + DateTime::IntervalFromDays(CAST($x AS Int16))})) AS `date`)
+                FLATTEN LIST BY `date`
+            )
+        )
+        AS a
+        LEFT JOIN
+            (SELECT *
+            FROM $conversion_rates_table
+            WHERE currency = "USD")
+        AS b
+        USING (`date`))
+    WINDOW w AS (ORDER BY `date`)
+);
+
+$billing_accounts_mapping = (
+    SELECT
+    billing_accounts.balance                                                                                                        AS balance,
+    billing_accounts.created_at                                                                                                     AS created_at,
+    billing_accounts.creation_date                                                                                                  AS creation_date,
+    billing_accounts.creation_month                                                                                                 AS creation_month,
+    billing_accounts.creation_time                                                                                                  AS creation_time,
+    billing_accounts.creation_week                                                                                                  AS creation_week,
+    billing_accounts.currency                                                                                                       AS currency,
+    billing_accounts.id                                                                                                             AS id,
+    billing_accounts.is_verified                                                                                                    AS is_verified,
+    billing_accounts.master_account_id                                                                                              AS master_account_id,
+    billing_accounts.metadata                                                                                                       AS metadata,
+    billing_accounts.name                                                                                                           AS name,
+    billing_accounts.payment_cycle_type                                                                                             AS payment_cycle_type,
+    billing_accounts.payment_method_id                                                                                              AS payment_method_id,
+    billing_accounts.person_type                                                                                                    AS person_type,
+    billing_accounts.state                                                                                                          AS state,
+    billing_accounts.type                                                                                                           AS type,
+    billing_accounts.usage_status                                                                                                   AS usage_status,
+    billing_accounts.usage_status                                                                                                   AS usage_status_actual,
+    conversion_rates.quote                                                                                                          AS conversion_rate_quote,
+    conversion_rates.`date`                                                                                                         AS conversion_rate_date
+    FROM $billing_accounts_table AS billing_accounts
+    CROSS JOIN $conversion_rates AS conversion_rates
+);
+
+-- please, keep alphabetical order by alias
+$sku_mapping = (
+    SELECT
+    -- service
+    skus.service_id                                                                                                                 AS service_id,
+    services.name                                                                                                                   AS service_name,
+    services.product_name                                                                                                           AS product_name,
+    -- sku
+    skus.id                                                                                                                         AS sku_id,
+    skus.name                                                                                                                       AS sku_name,
+    skus.pricing_unit                                                                                                               AS pricing_unit,
+    skus.usage_unit                                                                                                                 AS usage_unit,
+
+    FROM $sku_table AS skus
+    LEFT JOIN $service_table AS services
+    ON skus.service_id == services.id
+);
+
+
+$max_day_path = (
+    SELECT MAX(Path)
+    FROM FOLDER($realtime_metrics_dir || "1d", "row_count")
+    WHERE Type = "table"
+    AND Yson::LookupInt64(Attributes, "row_count") > 0
+);
+
+$realtime_metrics_paths = (
+    SELECT AGGREGATE_LIST(Path) AS paths
+    FROM (
+        SELECT Path
+        FROM FOLDER($realtime_metrics_dir || "1d", "row_count")
+        WHERE Path <= $max_day_path
+        AND Type = "table"
+        AND Yson::LookupInt64(Attributes, "row_count") > 0
+        UNION ALL
+        SELECT Path
+        FROM FOLDER($realtime_metrics_dir || "1h", "row_count")
+        WHERE TableName(Path) >= $get_next_date(TableName($max_day_path))
+        AND Type = "table"
+        AND Yson::LookupInt64(Attributes, "row_count") > 0
+    )
+);
+$realtime_billing_records = (
+    SELECT
+    billing_account_id                                      AS billing_account_id,
+    cloud_id                                                AS cloud_id,
+    end_time                                                AS end_time,
+    folder_id                                               AS folder_id,
+    labels_hash                                             AS labels_hash,
+    resource_id                                             AS resource_id,
+    sku_id                                                  AS sku_id,
+    $get_date_by_timestamp(end_time)                        AS `date`,
+    $get_month_by_timestamp(end_time)                       AS month,
+    SOME(currency)                                          AS currency,
+    SOME(labels)                                            AS labels,
+    SOME(labels_json)                                       AS labels_json,
+    $lookup_string_dict(SOME(labels_json), "system_labels") AS system_labels,
+    $lookup_string_dict(SOME(labels_json), "user_labels")   AS user_labels,
+    SOME(master_account_id)                                 AS master_account_id,
+    SOME(pricing_unit)                                      AS pricing_unit,
+    SOME(publisher_account_id)                              AS publisher_account_id,
+    SOME(publisher_balance_client_id)                       AS publisher_balance_client_id,
+    SOME(publisher_currency)                                AS publisher_currency,
+    SOME(service_id)                                        AS service_id,
+    SOME(sku_name)                                          AS sku_name,
+    SOME(start_time)                                        AS start_time,
+    -SUM(CAST(cud_credit AS double))                                                                AS committed_use_discount_credit_charge,
+    SUM(CAST(cost AS double))                                                                       AS cost,
+    SUM(CAST(credit AS double))                                                                     AS credit,
+    -SUM(CAST(disabled_credit AS double))                                                           AS disabled_credit_charge,
+    -SUM(CAST(service_credit AS double))                                                            AS service_credit_charge,
+    SUM(CAST(cost AS double) + CAST(credit AS double))                                              AS total,
+    -SUM(CAST(trial_credit AS double))                                                              AS trial_credit_charge,
+    -SUM(CAST(monetary_grant_credit AS double))                                                     AS monetary_grant_credit_charge,
+    SUM(CAST(pricing_quantity AS double))                                                           AS pricing_quantity,
+    SUM(CAST(revenue AS double))                                                                    AS revenue,
+    SUM(CAST(reward AS double))                                                                     AS var_reward,
+    -SUM(CAST(volume_incentive_credit AS double))                                                   AS volume_incentive_credit_charge
+    FROM EACH($realtime_metrics_paths)
+    WHERE
+    sku_id NOT IN $blacklisted_skus
+    GROUP BY
+    billing_account_id,
+    cloud_id,
+    end_time,
+    folder_id,
+    labels_hash,
+    resource_id,
+    sku_id
+);
+
+$analytics_cube = (
+    SELECT
+    -- billing_account actual
+    billing_accounts.balance                                                                                                        AS billing_account_balance,
+    billing_accounts.created_at                                                                                                     AS billing_account_created_at,
+    billing_accounts.creation_date                                                                                                  AS billing_account_creation_date,
+    billing_accounts.creation_month                                                                                                 AS billing_account_creation_month,
+    billing_accounts.creation_time                                                                                                  AS billing_account_creation_time,
+    billing_accounts.creation_week                                                                                                  AS billing_account_creation_week,
+    billing_records.currency                                                                                                        AS billing_account_currency,
+    billing_records.billing_account_id                                                                                              AS billing_account_id,
+    billing_accounts.is_verified                                                                                                    AS billing_account_is_verified,
+    billing_records.master_account_id                                                                                               AS billing_account_master_account_id,
+    billing_accounts.metadata                                                                                                       AS billing_account_metadata,
+    billing_accounts.name                                                                                                           AS billing_account_name,
+    billing_accounts.payment_cycle_type                                                                                             AS billing_account_payment_cycle_type,
+    billing_accounts.payment_method_id                                                                                              AS billing_account_payment_method_id,
+    billing_accounts.person_type                                                                                                    AS billing_account_person_type,
+    billing_accounts.state                                                                                                          AS billing_account_state,
+    billing_accounts.type                                                                                                           AS billing_account_type,
+    billing_accounts.usage_status                                                                                                   AS billing_account_usage_status,
+    billing_accounts.usage_status                                                                                                   AS billing_account_usage_status_actual,
+    -- billing_record
+    billing_records.cloud_id                                                                                                                        AS billing_record_cloud_id,
+    billing_records.committed_use_discount_credit_charge                                                                                            AS billing_record_committed_use_discount_credit_charge,
+    $convert_to_rub(billing_records.committed_use_discount_credit_charge, billing_accounts.currency, billing_accounts.conversion_rate_quote)        AS billing_record_committed_use_discount_credit_charge_rub,
+    billing_records.cost                                                                                                                            AS billing_record_cost,
+    $convert_to_rub(billing_records.cost, billing_accounts.currency, billing_accounts.conversion_rate_quote)                                        AS billing_record_cost_rub,
+    billing_records.credit                                                                                                                          AS billing_record_credit,
+    $convert_to_rub(billing_records.credit, billing_accounts.currency, billing_accounts.conversion_rate_quote)                                      AS billing_record_credit_rub,
+    billing_records.`date`                                                                                                                          AS billing_record_date,
+    billing_records.disabled_credit_charge                                                                                                          AS billing_record_disabled_credit_charge,
+    $convert_to_rub(billing_records.disabled_credit_charge, billing_accounts.currency, billing_accounts.conversion_rate_quote)                      AS billing_record_disabled_credit_charge_rub,
+    billing_records.end_time                                                                                                                        AS billing_record_end_time,
+    billing_records.folder_id                                                                                                                       AS billing_record_folder_id,
+    billing_records.monetary_grant_credit_charge                                                                                                    AS billing_record_monetary_grant_credit_charge,
+    $convert_to_rub(billing_records.monetary_grant_credit_charge, billing_accounts.currency, billing_accounts.conversion_rate_quote)                AS billing_record_monetary_grant_credit_charge_rub,
+    billing_records.month                                                                                                                           AS billing_record_month,
+    billing_records.pricing_quantity                                                                                                                AS billing_record_pricing_quantity,
+    billing_records.pricing_unit                                                                                                                    AS billing_record_pricing_unit,
+    billing_records.resource_id                                                                                                                     AS billing_record_resource_id,
+    billing_records.service_credit_charge                                                                                                           AS billing_record_service_credit_charge,
+    $convert_to_rub(billing_records.service_credit_charge, billing_accounts.currency, billing_accounts.conversion_rate_quote)                       AS billing_record_service_credit_charge_rub,
+    billing_records.start_time                                                                                                                      AS billing_record_start_time,
+    billing_records.total                                                                                                                           AS billing_record_total,
+    $convert_to_rub(billing_records.total, billing_accounts.currency, billing_accounts.conversion_rate_quote)                                       AS billing_record_total_rub,
+    billing_records.trial_credit_charge                                                                                                             AS billing_record_trial_credit_charge,
+    $convert_to_rub(billing_records.trial_credit_charge, billing_accounts.currency, billing_accounts.conversion_rate_quote)                         AS billing_record_trial_credit_charge_rub,
+    skus.usage_unit                                                                                                                                 AS billing_record_usage_unit,
+    billing_records.var_reward                                                                                                                      AS billing_record_var_reward,
+    $convert_to_rub(billing_records.var_reward, billing_accounts.currency, billing_accounts.conversion_rate_quote)                                  AS billing_record_var_reward_rub,
+    billing_records.volume_incentive_credit_charge                                                                                                  AS billing_record_volume_incentive_credit_charge,
+    $convert_to_rub(billing_records.volume_incentive_credit_charge, billing_accounts.currency, billing_accounts.conversion_rate_quote)              AS billing_record_volume_incentive_credit_charge_rub,
+    -- labels_map
+    if(DictContains(billing_records.user_labels , "managed-kubernetes-cluster-id"), 'mk8s-worker', 'other')                         AS labels_vm_origin,
+    billing_records.labels_hash                                                                                                     AS labels_hash,
+    billing_records.labels_json                                                                                                     AS labels_json,
+    billing_records.system_labels                                                                                                   AS labels_system_labels,
+    billing_records.user_labels                                                                                                     AS labels_user_labels,
+    -- publisher
+    billing_records.publisher_account_id                                                                                            AS publisher_account_id,
+    billing_records.publisher_balance_client_id                                                                                     AS publisher_balance_client_id,
+    billing_records.publisher_currency                                                                                              AS publisher_currency,
+    -- service
+    billing_records.service_id                                                                                                      AS service_id,
+    skus.service_name                                                                                                               AS service_name,
+    skus.product_name                                                                                                               AS product_name,
+    -- sku
+    billing_records.sku_id                                                                                                          AS sku_id,
+    skus.sku_name                                                                                                                   AS sku_name,
+    -- conversion_rates
+    IF (billing_accounts.currency == "USD", billing_accounts.conversion_rate_quote, 1)                                              AS cb_quote
+    FROM $realtime_billing_records AS billing_records
+    LEFT JOIN $billing_accounts_mapping AS billing_accounts
+    ON billing_records.billing_account_id == billing_accounts.id AND billing_records.`date` == billing_accounts.conversion_rate_date
+    LEFT JOIN $sku_mapping AS skus
+    ON billing_records.sku_id == skus.sku_id
+);
+
+$consumption_aggregation = (SELECT
+    -- group by fields
+    billing_account_currency                                        AS billing_account_currency,
+    billing_account_is_verified                                     AS billing_account_is_verified,
+    billing_account_person_type                                     AS billing_account_person_type,
+    billing_account_usage_status                                    AS billing_account_usage_status,
+    billing_account_usage_status_actual                             AS billing_account_usage_status_actual,
+    billing_record_date                                             AS billing_record_date,
+    billing_record_end_time                                         AS billing_record_end_time,
+    billing_record_month                                            AS billing_record_month,
+    product_name                                                    AS product_name,
+    sku_name                                                        AS sku_name,
+    service_name                                                    AS service_name,
+    -- other fields. Keep alphabeticalco order by alias
+    SUM(billing_record_committed_use_discount_credit_charge)        AS billing_record_committed_use_discount_credit_charge,
+    SUM(billing_record_committed_use_discount_credit_charge_rub)    AS billing_record_committed_use_discount_credit_charge_rub,
+    SUM(billing_record_cost)                                        AS billing_record_cost,
+    SUM(billing_record_cost_rub)                                    AS billing_record_cost_rub,
+    SUM(billing_record_credit)                                      AS billing_record_credit,
+    SUM(billing_record_credit_rub)                                  AS billing_record_credit_rub,
+    SUM(billing_record_disabled_credit_charge)                      AS billing_record_disabled_credit_charge,
+    SUM(billing_record_disabled_credit_charge_rub)                  AS billing_record_disabled_credit_charge_rub,
+    SUM(billing_record_monetary_grant_credit_charge)                AS billing_record_monetary_grant_credit_charge,
+    SUM(billing_record_monetary_grant_credit_charge_rub)            AS billing_record_monetary_grant_credit_charge_rub,
+    SUM(billing_record_pricing_quantity)                            AS billing_record_pricing_quantity,
+    SUM(billing_record_service_credit_charge)                       AS billing_record_service_credit_charge,
+    SUM(billing_record_service_credit_charge_rub)                   AS billing_record_service_credit_charge_rub,
+    SUM(billing_record_total)                                       AS billing_record_total,
+    SUM(billing_record_total_rub)                                   AS billing_record_total_rub,
+    SUM(billing_record_trial_credit_charge)                         AS billing_record_trial_credit_charge,
+    SUM(billing_record_trial_credit_charge_rub)                     AS billing_record_trial_credit_charge_rub,
+    SUM(billing_record_var_reward)                                  AS billing_record_var_reward,
+    SUM(billing_record_var_reward)                                  AS billing_record_var_reward_rub,
+    SUM(billing_record_volume_incentive_credit_charge)              AS billing_record_volume_incentive_credit_charge,
+    SUM(billing_record_volume_incentive_credit_charge_rub)          AS billing_record_volume_incentive_credit_charge_rub,
+FROM $analytics_cube
+GROUP BY(
+    billing_account_currency,
+    billing_account_is_verified,
+    billing_account_person_type,
+    billing_account_usage_status,
+    billing_account_usage_status_actual,
+    billing_record_date,
+    billing_record_end_time,
+    billing_record_month,
+    product_name,
+    service_name,
+    sku_name
+    -- no comma at the end
+));

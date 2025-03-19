@@ -1,0 +1,313 @@
+uid: yc-kms-hsm-front-drilldown
+refresh: 1m
+title: YC KMS HSM Front Drilldown
+
+tags: [ 'yc-kms', 'yc-kms-hsm-front-drilldown' ]
+
+variables:
+  ui:
+    datasource: { values: [ 'Solomon Cloud', 'Solomon Cloud Preprod' ] }
+    project:
+      values: [ 'kms', 'aoelnudsaq38ftolajvs' ]
+      titles: [ 'Solomon Cloud', 'Solomon Cloud Preprod' ]
+    cluster: { values: [prod, preprod, testing, gpn] }
+  replacement:
+    !include ../include/errors.yaml
+  repeat:
+    jvm_memory_area:
+      values: ['heap', 'nonheap']
+      titles: ['Heap', 'Non-Heap']
+    hsm_crypto_operation:
+      values: ['generateHsmSecretKey', 'hsmAesEncrypt', 'hsmAesDecrypt', 'hsmSecretKeyWrap', 'hsmSecretKeyUnwrap', 'hsmMac']
+      titles: ['Generate Key', 'AES Encrypt', 'AES Decrypt', 'Secret Key Wrap', 'Secret Key Unwrap', 'HSM Mac']
+
+links:
+  - { title: 'L3 kms.yandex', url: 'https://grafana.yandex-team.ru/d/rQPhsZcWk/l3-vs-kms-yandex' }
+  - { title: 'Dashboards', tags: ['yc-kms'] }
+
+graphDefaults: { datasource: '${datasource}', width: 8, height: 6 }
+queryDefaults: { labels: 'project=${project}, service=hsm-front-service, cluster=${cluster}, host=root-kms*' }
+
+rows:
+  - title: HSM Front Keys Storage
+    drilldowns:
+      - uid: yc-kms-hsm-front-keys-host-data
+        tags: [ 'yc-kms', 'yc-kms-host' ]
+        ui:
+          datasource: datasource
+          project: project
+          cluster: cluster
+        uiQuery:
+          host:
+            multi: true
+        uiRepeat: host
+        labels: 'host=$host'
+
+    graphDefaults: { width: 8 }
+    panels:
+      - type: graph
+        title: 'HSM Front Keys Storage Refresh Fails'
+        queries:
+          - params: { labels: 'sensor=hsmFrontKeysStorageRefreshFail' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'hsmFrontKeysStorageRefreshFail' }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'HSM Front Keys Storage Refresh Time'
+        queries:
+          - params: { labels: 'sensor=hsmFrontKeysStorageRefreshSeconds' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'hsmFrontKeysStorageRefreshSeconds' }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Time Since Last HSM Front Keys Storage Refresh'
+        queries:
+          - params: { labels: 'sensor=hsmFrontKeysStorageSecondsSinceLastRefresh' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'hsmFrontKeysStorageSecondsSinceLastRefresh' }
+        yAxes: [{ min: 0 }]
+
+  - title: HSM Front Crypto Operations
+    drilldowns:
+      - uid: yc-kms-hsm-front-crypto-host-data
+        tags: [ 'yc-kms', 'yc-kms-host' ]
+        ui:
+          datasource: datasource
+          project: project
+          cluster: cluster
+        uiQuery:
+          host:
+            multi: true
+        uiRepeat: host
+        labels: 'host=$host'
+
+    panels:
+      - type: graph
+        repeat: hsm_crypto_operation
+        templates: { name: rps, sensor: rate }
+        title: '@{hsm_crypto_operation:title} fails ($cluster)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'sensor=@{hsm_crypto_operation}Fails' }
+
+      - type: graph
+        repeat: hsm_crypto_operation
+        templates: { name: percentile, format: solomon, groupLines: true, sensor: rate }
+        title: '@{hsm_crypto_operation:title} duration ($cluster)'
+        queries:
+          - params: { labels: 'sensor=@{hsm_crypto_operation}Durations' }
+        yAxes: [{ min: 0 }]
+
+  - title: JVM and System
+    drilldowns:
+      - uid: yc-kms-hsm-front-system-host-data
+        tags: [ 'yc-kms', 'yc-kms-host' ]
+        ui:
+          datasource: datasource
+          project: project
+          cluster: cluster
+        uiQuery:
+          host:
+            multi: true
+        uiRepeat: host
+        labels: 'host=$host'
+
+    graphDefaults: { width: 8 }
+    panels:
+      - type: graph
+        title: 'Instances'
+        queries:
+          - params: { labels: 'sensor=instanceHealthy' }
+        display: { empty: false, stack: true }
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        title: 'JVM @{jvm_memory_area:title} Memory'
+        repeat: jvm_memory_area
+        queries:
+          - params: { labels: 'sensor=jvm_memory_bytes_used, area=@{jvm_memory_area}' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'] }
+        yAxes: [{ format: bytes }]
+      - type: graph
+        title: 'Sum JVM @{jvm_memory_area:title} Memory'
+        repeat: jvm_memory_area
+        queries:
+          - params: { labels: 'sensor=jvm_memory_bytes_used, area=@{jvm_memory_area}' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'] }
+        yAxes: [{ format: bytes }]
+      - type: graph
+        title: 'JVM Threads'
+        queries:
+          - params: { labels: 'sensor=jvm_threads_state, state=*' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'state'] }
+        display: { empty: false, stack: true }
+      - type: graph
+        title: 'Load Average (1 min)'
+        queries:
+          - params: { labels: 'service=sys, path=/Proc/LoadAverage1min' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'la' }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Sum Load Average (1 min)'
+        queries:
+          - params: { labels: 'service=sys, path=/Proc/LoadAverage1min' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'la' }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Memory'
+        queries:
+          - params: { labels: 'service=sys, path=/Memory/ActiveAnon' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'anon' }
+          - params: { labels: 'service=sys, path=/Memory/ActiveFile' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'file' }
+          - params: { labels: 'service=sys, path=/Memory/MemTotal' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'total' }
+        yAxes: [{ format: bytes, min: 0 }]
+      - type: graph
+        title: 'Sum Memory'
+        queries:
+          - params: { labels: 'service=sys, path=/Memory/ActiveAnon' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'anon' }
+          - params: { labels: 'service=sys, path=/Memory/ActiveFile' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'file' }
+          - params: { labels: 'service=sys, path=/Memory/MemTotal' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'total' }
+        yAxes: [{ format: bytes, min: 0 }]
+      - type: graph
+        title: 'Network Bytes'
+        queries:
+          - params: { labels: 'service=sys, path=/Net/Ifs/RxBytes, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'rx' }
+          - params: { labels: 'service=sys, path=/Net/Ifs/TxBytes, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'tx' }
+        display: { stack: true }
+        yAxes: [{ format: bytes, min: 0 }]
+      - type: graph
+        title: 'Network Packets'
+        queries:
+          - params: { labels: 'service=sys, path=/Net/Ifs/RxPackets, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'rx' }
+          - params: { labels: 'service=sys, path=/Net/Ifs/TxPackets, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'tx' }
+        display: { stack: true }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Network Drop & Err'
+        queries:
+          - params: { labels: 'service=sys, path=/Net/Ifs/RxDrop, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'rx drop' }
+          - params: { labels: 'service=sys, path=/Net/Ifs/TxDrop, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'tx drop' }
+          - params: { labels: 'service=sys, path=/Net/Ifs/RxErrs, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'rx errs' }
+          - params: { labels: 'service=sys, path=/Net/Ifs/TxErrs, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'tx errs' }
+        display: { stack: true }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'File Descriptors'
+        queries:
+          - params: { labels: 'sensor=process_open_fds' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: ['max', 'name'], alias: 'max FDs' }
+      - type: graph
+        title: 'Free Space'
+        queries:
+          - params: { labels: 'service=sys, path=/Filesystem/FreeB' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['min', 'name'], alias: 'space' }
+        yAxes: [{ format: bytes, min: 0 }]
+      - type: graph
+        title: 'IO Ops'
+        queries:
+          - params: { labels: 'service=sys, path=/Io/Disks/Reads' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'reads' }
+          - params: { labels: 'service=sys, path=/Io/Disks/Writes' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'writes' }
+        display: { stack: true }
+      - type: graph
+        title: 'IO Bytes'
+        queries:
+          - params: { labels: 'service=sys, path=/Io/Disks/ReadBytes' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'reads' }
+          - params: { labels: 'service=sys, path=/Io/Disks/WriteBytes' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'writes' }
+        display: { stack: true }
+        yAxes: [{ format: bytes }]
+      - type: graph
+        title: 'IO Waits'
+        queries:
+          - params: { labels: 'service=sys, path=/Io/Disks/ReadWaitMillisec' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'reads msec' }
+          - params: { labels: 'service=sys, path=/Io/Disks/WriteWaitMillisec' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'writes msec' }
+        display: { stack: true }
+      - type: graph
+        title: 'Major Page Faults'
+        queries:
+          - params: { labels: 'service=sys, path=/Memory/MajorPageFaults' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'faults' }
+
+  - title: HSM Front Clients
+    drilldowns:
+      - uid: yc-kms-hsm-front-clients-host-data
+        tags: [ 'yc-kms', 'yc-kms-host' ]
+        ui:
+          datasource: datasource
+          project: project
+          cluster: cluster
+        uiQuery:
+          host:
+            multi: true
+        uiRepeat: host
+        labels: 'host=$host'
+
+    panels:
+      - type: graph
+        templates: { name: rps, rate: rps }
+        title: 'Auth client rps ($cluster)'
+        queries:
+          - params: { labels: 'sensor=grpc_requests, app=auth_client, meter_type=count' }
+
+      - type: graph
+        templates: { name: errors, sensor: rate }
+        title: 'Auth client errors ($cluster)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'sensor=grpc_statuses, app=auth_client, status=@4xx' }
+          - params: { labels: 'sensor=grpc_statuses, app=auth_client, status=@503' }
+          - params: { labels: 'sensor=grpc_statuses, app=auth_client, status=@5xx' }
+        draw: [{ alias: '4xx', color: '#147', at: right }, { alias: '503', color: '#da7', at: left }, { alias: '5xx', color: '#b20', at: left }]
+
+      - type: graph
+        templates: { name: percentile, format: solomon, groupLines: true, sensor: rate }
+        title: 'Auth client response duration ($cluster)'
+        queries:
+          - params: { labels: 'sensor=grpc_durations, app=auth_client' }
+        yAxes: [{ min: 0 }]

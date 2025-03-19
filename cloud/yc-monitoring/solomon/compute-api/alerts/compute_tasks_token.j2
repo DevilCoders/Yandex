@@ -1,0 +1,27 @@
+{% extends "base_alert.j2" %}
+
+{% set windowSecs = 300 %}
+{% set checkExpression = "" %}
+{% set repeatNotifySecs = 3600 %}
+{% set description = "https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-head-token" %}
+
+{% macro prog() %}
+let latency = histogram_percentile(99, 'bin', group_by_time(20s, 'max', {project='{{ project_id }}', cluster='cloud_{{ env }}_head', sensor='metadata_public_client_token_past_refresh', service='compute_tasks', host!='cluster'}));
+let max_latency=max(latency);
+let latency_seconds = to_fixed(max_latency,3);
+alarm_if(max_latency > 300);
+warn_if(max_latency > 60);
+{% endmacro %}
+
+{% block main %}
+    "name": "Alert on compute tasks token refresh time @{{ env | upper }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "service": "compute-tasks-token",
+        "host": "{{ compute_node_fqdn() }}",
+        "latency_seconds": "[[expression.latency_seconds]]",
+        "description": "{{ description }}"
+    },
+    "description": "Notifies about problems with refreshing service token\n\nSee {{ description }} for instructions.",
+    "type": {{ type_expression() }}
+{% endblock %}

@@ -1,0 +1,57 @@
+USE hahn;
+
+
+$billing_accounts_table = (
+    SELECT MAX(Path) as Path
+    FROM FOLDER("//home/logfeller/logs/yc-billing-export-billing-accounts/1h", "row_count")
+    WHERE Type = "table" AND Yson::LookupInt64(Attributes, "row_count") > 0
+);
+
+
+$usage_reports_table = (
+    SELECT MAX(Path) as Path
+    FROM FOLDER("//home/logfeller/logs/yc-billing-export-usage-reports/1h", "row_count")
+    WHERE Type = "table" AND Yson::LookupInt64(Attributes, "row_count") > 0
+);
+
+
+$sku_table = (
+    SELECT MAX(Path) as Path
+    FROM FOLDER("//home/logfeller/logs/yc-billing-export-sku/1h", "row_count")
+    WHERE Type = "table" AND Yson::LookupInt64(Attributes, "row_count") > 0
+);
+
+
+$complete_reports = (
+    SELECT 
+        UNWRAP(ur.date) AS date,
+        UNWRAP(ba.usage_status) AS usage_status,
+        UNWRAP(sk.name) AS sku_name,
+     
+        CAST(ur.cost AS Decimal(22,9)) AS cost,
+        CAST(ur.credit AS Decimal(22,9)) AS credit
+    FROM CONCAT($usage_reports_table) AS ur
+    
+    JOIN CONCAT($billing_accounts_table) AS ba ON ur.billing_account_id = ba.id
+    JOIN CONCAT($sku_table) AS sk ON ur.sku_id = sk.id
+);
+
+
+$group_by_sku = (
+    SELECT 
+        date AS fielddate,
+        sku_name AS sku,
+        CAST(SUM(cost) AS String) AS cost,
+        CAST(SUM(credit) AS String) AS credit,
+        CAST(SUM(cost) + SUM(credit) AS String) AS total
+    FROM $complete_reports
+    GROUP BY (date, sku_name)
+);
+
+
+SELECT * FROM $group_by_sku;
+
+
+UPSERT INTO stat.[Cloud/b-egor/usage/usage_by_sku/daily]
+ERASE BY (fielddate, sku)
+SELECT * FROM $group_by_sku;

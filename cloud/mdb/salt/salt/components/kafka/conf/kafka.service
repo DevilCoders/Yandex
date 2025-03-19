@@ -1,0 +1,39 @@
+{%- set kafka_opts = [] -%}
+{% do kafka_opts.append('-Djava.security.auth.login.config=/etc/kafka/kafka_server_jaas.conf') %}
+{% if salt.pillar.get('data:zk:scram_auth_enabled', False) %}
+    {% do kafka_opts.append('-Dzookeeper.sasl.clientconfig=ZkClient') %}
+{% else %}
+    {% do kafka_opts.append('-Dzookeeper.sasl.client=false') %}
+{% endif %}
+{% if salt.dbaas.is_aws() %}
+    {% do kafka_opts.append('-Djava.net.preferIPv6Addresses=true -Djava.net.preferIPv4Stack=false') %}
+{% endif %}
+{% do kafka_opts.append('-javaagent:/opt/kafka/libs/jmx_prometheus_javaagent-0.14.0.jar=7071:/etc/kafka/prometheus_jmx_exporter.yml') %}
+
+[Unit]
+Description=Apache Kafka server (broker)
+Documentation=http://kafka.apache.org/documentation.html
+Requires=network.target remote-fs.target
+After=network.target remote-fs.target zookeeper.service
+
+[Service]
+{% if salt.pillar.get('data:database_slice:enable', False) and salt.dbaas.is_dataplane() %}
+Slice=database.slice
+{% endif %}
+Type=simple
+User=kafka
+Group=kafka
+Environment=LOG_DIR='/var/log/kafka'
+Environment=JMX_PORT={{ salt['pillar.get']('data:kafka:jmx_port', '9999') }}
+Environment=KAFKA_JMX_OPTS='-Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.authenticate=true -Dcom.sun.management.jmxremote.access.file=/etc/kafka/jmxremote.access -Dcom.sun.management.jmxremote.password.file=/etc/kafka/jmxremote.password'
+Environment=KAFKA_HEAP_OPTS='-Xms1G -Xmx{{ salt.mdb_kafka.jvm_xmx_gb() }}G'
+Environment=KAFKA_GC_LOG_OPTS="-Xlog:gc*:file=/var/log/kafka/kafkaServer-gc.log:time,tags:filecount=10,filesize=32M"
+Environment=KAFKA_OPTS='{{kafka_opts | join(' ')}}'
+ExecStart=/opt/kafka/bin/kafka-server-start.sh /etc/kafka/server.properties
+ExecStop=/opt/kafka/bin/kafka-server-stop.sh
+Restart=on-failure
+RestartSec=10
+LimitNOFILE=256000
+
+[Install]
+WantedBy=multi-user.target

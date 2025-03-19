@@ -1,0 +1,161 @@
+{%- import "common/kikimr/init.sls" as vars with context %}
+
+{%- set lb_endpoints = grains['cluster_map']['load_balancer']['endpoints'] -%}
+{%- set test_mode = salt['grains.get']('overrides:test_mode', False) %}
+
+{%- set kikimr_ycloud_host = 'localhost' if vars.subdomains|length > 1 else lb_endpoints.ycloud_kikimr_grpc.host %}
+{%- set kikimr_ycloud_port = pillar['kikimr_tenant_ports'][vars.compute_database]['grpc_port'] if vars.subdomains|length > 1 or vars.base_role == 'cloudvm' else lb_endpoints.ycloud_kikimr_grpc.port %}
+{%- set kikimr_snapshot_host = 'localhost' if vars.subdomains|length > 1 else lb_endpoints.snapshot_kikimr_grpc.host %}
+{%- set kikimr_snapshot_port = pillar['kikimr_tenant_ports'][vars.compute_database]['grpc_port'] if vars.subdomains|length > 1 or vars.base_role == 'cloudvm' else lb_endpoints.snapshot_kikimr_grpc.port %}
+
+{%- set default_quotas = pillar['compute-api']['default_quotas'] -%}
+{%- set hostname = grains['nodename'] -%}
+{%- set base_role = grains['cluster_map']['hosts'][hostname]['base_role'] -%}
+
+{%- if test_mode %}
+test_mode: true
+{%- endif %}
+
+api_level: {{ salt['pillar.get']('compute-api:api_level', 'v1beta1') }}
+db_level: {{ salt['pillar.get']('compute-api:db_level', 'current') }}
+enable_features: {{ salt['pillar.get']('compute-api:enable_features', '[]') }}
+
+endpoints:
+  kikimr:
+    compute_global:
+      host: {{ salt['grains.get']('overrides:kikimr_endpoint', (kikimr_ycloud_host, kikimr_ycloud_port)|join(':')) }}
+      root: /{{ vars.ydb_domain }}/{{ vars.compute_database }}/{{ grains['cluster_map']['stand_type'] }}/{{ salt['grains.get']('overrides:kikimr_id', salt['grains.get']('cluster_map:kikimr:shared_dir')) }}/compute_global
+      enable_logging: false
+      ydb_client_version: 2
+      disable_pool: true
+      allow_autoprepare: true
+      enable_trace_ydb_session_leak: true
+
+    compute_az:
+      host: {{ salt['grains.get']('overrides:kikimr_endpoint', (kikimr_ycloud_host, kikimr_ycloud_port)|join(':')) }}
+      root: /{{ vars.ydb_domain }}/{{ vars.compute_database }}/{{ grains['cluster_map']['stand_type'] }}/{{ salt['grains.get']('overrides:kikimr_id', salt['grains.get']('cluster_map:kikimr:shared_dir')) }}/compute_az
+      enable_logging: false
+      ydb_client_version: 2
+      disable_pool: true
+      allow_autoprepare: true
+      enable_trace_ydb_session_leak: true
+
+
+    snapshot:
+      host: {{ salt['grains.get']('overrides:kikimr_endpoint', (kikimr_snapshot_host, kikimr_snapshot_port)|join(':')) }}
+      root: /{{ vars.ydb_domain }}/{{ vars.snapshot_database }}/{{ grains['cluster_map']['stand_type'] }}/{{ salt['grains.get']('overrides:kikimr_id', salt['grains.get']('cluster_map:kikimr:shared_dir')) }}/snapshot
+      enable_logging: false
+      ydb_client_version: 2
+      disable_pool: false
+      allow_autoprepare: true
+      enable_trace_ydb_session_leak: true
+
+
+  snapshot:
+    url: http://{{ lb_endpoints.snapshot.host }}:{{ lb_endpoints.snapshot.port }}
+  snapshot_grpc:
+    url: ip6-localhost:7627
+  nbs:
+    url: {{ nbs_host }}:9766
+    cluster_id: {{ zone_id }}
+  network:
+    protocol: http
+    schema_version: '3.2'
+    use_network_default_routing_policies: false
+    zones:
+      {% for zone_id in grains.cluster_map.availability_zones | sort %}
+      - name: {{ zone_id }}
+        oct_clusters:
+          {% for cluster_id in grains.cluster_map.oct_clusters_by_az[zone_id] %}
+          - name: {{ cluster_id }}
+            host: oct-{{ cluster_id }}-balancer
+            port: 8082
+          {% endfor %}
+      {% endfor %}
+  access_service:
+    enabled: true
+    url: {{ lb_endpoints.access_service_grpc.host }}:{{ lb_endpoints.access_service_grpc.port }}
+  identity:
+    url: http://{{ lb_endpoints.identity_public.host }}:{{ lb_endpoints.identity_public.port }}
+  identity_private:
+    url: http://{{ lb_endpoints.identity_public.host }}:{{ lb_endpoints.identity_public.port }}
+  staff:
+    client_id: {{ pillar['zoidberg']['oauth']['intranet_id'] }}
+    token_file: /etc/yc/compute/intranet_token
+    base_url: https://staff-api.yandex-team.ru/v3/
+  cauth:
+    cert: /etc/yc/compute/certnew.pem
+    key:  /etc/yc/compute/privkey.pem
+
+  health_check_ctrl:
+    url: {{ pillar["load-balancer"]["hc-ctrl"]["endpoint"] }}
+    timeout: {{ salt['pillar.get']('load-balancer:hc-ctrl:timeout', 3) }}
+  load_balancer_ctrl:
+    url: {{ pillar["load-balancer"]["lb-ctrl"]["endpoint"] }}
+    timeout: {{ salt['pillar.get']('load-balancer:lb-ctrl:timeout', 3) }}
+  network_load_balancer:
+    lb_asn: 65531
+    eggress_acl:
+      name: egress-lb-splitter
+      ri_name: lb-ri
+
+{%- if salt['pillar.get']('console:push:url', '') != '' %}
+  push:
+    url: {{ pillar['console']['push']['url'] }}
+task_processing:
+  push:
+    enabled: true
+{%- endif %}
+
+dns:
+  # Zone used for "gray vDNS": .<region_name>.<internal_zone>
+  internal_zone: {{ pillar['dns']['virtual_dns']['internal_zone'] }}
+  region_name: {{ pillar['dns']['virtual_dns']['region_name'] }}
+  proxy_vdns_zone: {{ grains['cluster_map']['proxy_vdns_zone'] }}
+
+responsibles:
+  staff_group_url: {{ pillar['compute-api']['responsibles'] }}
+
+{%- set zones = salt['grains.get']('cluster_map:availability_zones', [zone_id]) %}
+default_zone_id: {{ zone_id }}
+placement:
+  availability_zone: {{ zone_id }}
+default_zones:
+  {%- for zone_id in zones %}
+  - {{ zone_id }}
+  {%- endfor %}
+
+default_api_limits:
+  max_operations_per_folder: {{ pillar['compute-api']['default_api_limits']['max_operations_per_folder'] }}
+
+global_hard_limits:
+  instance:
+    max_nbs_disks: {{ pillar['compute-api']['global_hard_limits']['instance']['max_nbs_disks'] }}
+    max_network_interfaces: {{ pillar['compute-api']['global_hard_limits']['instance']['max_network_interfaces'] }}
+
+default_quotas:
+  cloud:
+    instances: {{ default_quotas['cloud']['instances'] }}
+    cores: {{ default_quotas['cloud']['cores'] }}
+    gpus: {{ default_quotas['cloud']['gpus'] }}
+    memory: {{ default_quotas['cloud']['memory'] }}
+    templates: {{ default_quotas['cloud']['templates'] }}
+    snapshots: {{ default_quotas['cloud']['snapshots'] }}
+    total_snapshot_size: {{ default_quotas['cloud']['total_snapshot_size'] }}
+    nbs_disks: {{ default_quotas['cloud']['nbs_disks'] }}
+    total_disk_size: {{ default_quotas['cloud']['total_disk_size'] }}
+    network_hdd_total_disk_size: {{ default_quotas['cloud']['network_hdd_total_disk_size'] }}
+    network_ssd_total_disk_size: {{ default_quotas['cloud']['network_ssd_total_disk_size'] }}
+    images: {{ default_quotas['cloud']['images'] }}
+    networks: {{ default_quotas['cloud']['networks'] }}
+    subnets: {{ default_quotas['cloud']['subnets'] }}
+    target_groups: {{ default_quotas['cloud']['target_groups'] }}
+    network_load_balancers: {{ default_quotas['cloud']['network_load_balancers'] }}
+    external_addresses: {{ default_quotas['cloud']['external_addresses'] }}
+    external_static_addresses: {{ default_quotas['cloud']['external_static_addresses'] }}
+    route_tables: {{ default_quotas['cloud']['route_tables'] }}
+    static_routes: {{ default_quotas['cloud']['static_routes'] }}
+
+nbs:
+  min_channels: 4
+  max_channels: 8

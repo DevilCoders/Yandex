@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "{{ .Values.serviceName }}-configs"
+  namespace: "iam"
+  labels:
+    {{- include "datacloud-lib.labels" . | nindent 4 }}
+data:
+  {{- $configFiles := printf "%s/config.{yaml,toml}" (include "datacloud-lib.getConfigsPath" . ) }}
+{{ (.Files.Glob $configFiles).AsConfig | indent 2 }}
+
+  {{- $log4j := .Files.Get (printf "%s/log4j2.yaml" (include "datacloud-lib.getConfigsPath" . )) | fromYaml }}
+  {{- if $log4j }}
+  {{- $log4jExtra := .Files.Get "files/log4j2-extra.yaml" | fromYaml }}
+  {{- $appenderRefs := concat $log4j.Configuration.Loggers.Root.AppenderRef $log4jExtra.Configuration.Loggers.Root.AppenderRef | uniq }}
+  {{- $appenderDict := dict "Configuration" (dict "Loggers" (dict "Root" (dict "AppenderRef" $appenderRefs))) }}
+  log4j2.yaml: |
+    {{- mergeOverwrite $log4j $log4jExtra $appenderDict | toYaml | nindent 4 }}
+  {{- end }}

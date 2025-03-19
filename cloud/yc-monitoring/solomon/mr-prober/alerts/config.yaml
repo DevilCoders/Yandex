@@ -1,0 +1,166 @@
+{% import "vars.yaml" as vars with context %}
+menu: "Alerts"
+menu_type: admin
+api_path: /alerts/
+tags: ["mr-prober"]
+entities:
+  # По умолчанию не создаем алерты для HW-LAB, чтобы не тратить
+  # время на их синхронизацию и не перегружать интерфейс
+  # Solomon лишними алертами.
+  mr_prober_cpu_steal_time:
+    template: cpu_steal_time.j2
+    exclude:
+      env: &hw_labs [hw-cgw-ci-lab, hw-cgw-dev-lab, hw-load-lab, hw-mellanox-lab, hw-6dxlx-lab,
+                     hw1-lab, hw2-lab, hw3-lab, hw4-lab, hw6-lab, hw7-lab, hw9-lab, hw10-lab, hw11-lab]
+
+    context:
+      project: {{ vars.project_id }}
+      service: "linux-metrics"
+      unit: "mr-prober-agent"
+      host: "[[labels.host]]"
+      warn_limit:
+        default: 10
+        testing: 1000
+        preprod: 1000
+        prod: 1000
+      alarm_limit:
+        default: 50
+        testing: 1200
+        preprod: 1200
+        prod: 1200
+
+  mr_prober_memory_available:
+    template: available_memory_percent.j2
+    exclude: {env: *hw_labs}
+    context:
+      project: {{ vars.project_id }}
+      service: "linux-metrics"
+      unit: "mr-prober-agent"
+      host: "[[labels.host]]"
+      warn_limit: 20
+      alarm_limit: 5
+
+  mr_prober_disk_io:
+    template: disk_io.j2
+    exclude: {env: *hw_labs}
+    context:
+      project: {{ vars.project_id }}
+      service: "linux-metrics"
+      unit: "mr-prober-agent"
+      host: "[[labels.host]]"
+      disk: "vda"
+      warn_limit: 500
+      alarm_limit: 10000
+
+  mr_prober_disk_available:
+    template: disk_available_percent.j2
+    exclude: {env: *hw_labs}
+    context:
+      project: {{ vars.project_id }}
+      service: "linux-metrics"
+      unit: "mr-prober-agent"
+      host: "[[labels.host]]"
+      mountpoint: "/"
+      warn_limit: 10
+      alarm_limit: 5
+
+  # Common alers for prober fails
+
+  fail-1min:
+    template: fail.j2
+    project_id: {{ vars.project_id }}
+    context:
+      minutes: 1
+      s3_viewer_url: {{ vars.s3_viewer_url }}
+
+  fail-5min:
+    template: fail.j2
+    project_id: {{ vars.project_id }}
+    context:
+      minutes: 5
+      s3_viewer_url: {{ vars.s3_viewer_url }}
+
+  # Network team custom alerts
+
+  network-ping-external-targets:
+    template: network/ping-external-targets.j2
+    project_id: {{ vars.project_id }}
+    context:
+      az_names: "Vla|Sas|Myt|Il1a"
+      s3_viewer_url: {{ vars.s3_viewer_url }}
+
+  network-ping-external-target:
+    template: network/ping-external-target.j2
+    project_id: {{ vars.project_id }}
+    context:
+      az_names: "Vla|Sas|Myt|Il1a"
+      s3_viewer_url: {{ vars.s3_viewer_url }}
+
+  network-ping-internal-targets:
+    template: network/ping-internal-targets.j2
+    project_id: {{ vars.project_id }}
+    context:
+      az_names: "Vla|Sas|Myt|Il1a"
+      s3_viewer_url: {{ vars.s3_viewer_url }}
+
+  network-ping-internal-target:
+    template: network/ping-internal-target.j2
+    project_id: {{ vars.project_id }}
+    context:
+      az_names: "Vla|Sas|Myt|Il1a"
+      s3_viewer_url: {{ vars.s3_viewer_url }}
+
+  internal-smtp-available:
+    template: network/internal-smtp-available.j2
+    project_id: {{ vars.project_id }}
+    context:
+      az_names: "Vla|Sas|Myt|Il1a"
+      s3_viewer_url: {{ vars.s3_viewer_url }}
+
+  external-smtp-unavailable:
+    template: network/external-smtp-unavailable.j2
+    project_id: {{ vars.project_id }}
+    context:
+      az_names: "Vla|Sas|Myt|Il1a"
+      s3_viewer_url: {{ vars.s3_viewer_url }}
+
+  # Mr. Prober Control Plane: API, Creator and Meeseeks Updater
+  api-non-200-responses:
+    template: api/non-200-responses.j2
+    project_id: {{ vars.project_id }}
+
+  api-request-duration:
+    template: api/request-duration.j2
+    project_id: {{ vars.project_id }}
+
+  creator-alive:
+    template: creator/creator-alive.j2
+    project_id: {{ vars.project_id }}
+
+  creator-too-few-deployments:
+    template: creator/too-few-deployments.j2
+    project_id: {{ vars.project_id }}
+
+  creator-too-much-deployments:
+    template: creator/too-much-deployments.j2
+    project_id: {{ vars.project_id }}
+    context:
+      s3_viewer_url: {{ vars.s3_viewer_url }}
+
+  creator-too-much-failed-deployments:
+    template: creator/too-much-failed-deployments.j2
+    project_id: {{ vars.project_id }}
+    context:
+      s3_viewer_url: {{ vars.s3_viewer_url }}
+
+  meeseeks-updater-alive:
+    template: creator/meeseeks-updater-alive.j2
+    project_id: {{ vars.project_id }}
+
+  meeseeks-updater-error:
+    template: creator/meeseeks-updater-error.j2
+    project_id: {{ vars.project_id }}
+
+  meeseeks-updater-nodes-count:
+    template: creator/meeseeks-updater-nodes-count.j2
+    project_id: {{ vars.project_id }}

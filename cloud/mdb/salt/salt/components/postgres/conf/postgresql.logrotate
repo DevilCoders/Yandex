@@ -1,0 +1,33 @@
+{% from "components/postgres/pg.jinja" import pg with context %}
+/var/log/postgresql/pgbouncer*.log /var/log/postgresql/s3-backup.log /var/log/postgresql/resetup.log {
+    daily
+    rotate {{ salt['pillar.get']('data:config:log_keep_days', 10) }}
+    copytruncate
+    compress
+    notifempty
+    maxsize {{ salt['pillar.get']('data:config:log_maxsize', '128M') }}
+    missingok
+    su root root
+}
+
+/var/log/postgresql/postgresql*.log /var/log/postgresql/postgresql*.csv {
+    daily
+    rotate {{ salt['pillar.get']('data:config:log_keep_days', 10) }}
+{% if salt['pillar.get']('data:ship_logs', False) %}
+    nocompress
+{% else %}
+    delaycompress
+    compress
+{% endif %}
+    missingok
+    maxsize {{ salt['pillar.get']('data:config:log_maxsize', '128M') }}
+    create 640 postgres adm
+    su root root
+    sharedscripts
+    firstaction
+        su - postgres -c "{{ pg.bin_path }}/pg_isready -q" > /dev/null 2>&1
+    endscript
+    lastaction
+        su - postgres -c "{{ pg.bin_path }}/pg_isready -q && {{ pg.bin_path }}/psql -c 'select pg_rotate_logfile()'" > /dev/null 2>&1
+    endscript
+}

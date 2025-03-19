@@ -1,0 +1,227 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: "{{ .Values.serviceName }}"
+  namespace: "iam"
+  labels:
+    {{- include "datacloud-lib.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicas }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "datacloud-lib.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      namespace: "iam"
+      labels:
+        {{- include "datacloud-lib.selectorLabels" . | nindent 8 }}
+      annotations:
+      {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+        {{- $certificateSha := include (print $.Template.BasePath "/certificate.yaml") . | sha256sum }}
+        {{- $configmapSha := include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- $secretsSha := include (print $.Template.BasePath "/secrets.yaml") . | sha256sum }}
+        {{- $sha := printf "%s%s%s" $certificateSha $configmapSha $secretsSha | sha256sum | trunc 63 }}
+{{- if eq .Values.serviceName "identity" }}
+        {{- $configmapIdentitySha := include (print $.Template.BasePath "/identity-extra.yaml") . | sha256sum }}
+        {{- $sha = printf "%s%s" $sha $configmapIdentitySha | sha256sum | trunc 63 }}
+{{- end }}
+        checksum/config: {{ $sha }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: {{ .Values.serviceName }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.docker.registry }}/{{ .Values.docker.repository }}:{{ .Values.docker.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            {{- range $k, $v := .Values.service.ports }}
+            - name: "{{ $k }}"
+              containerPort: {{ $v }}
+              protocol: TCP
+            {{- end }}
+            {{- if ne .Values.serviceName "identity" }}
+            - name: metrics
+              containerPort: 6060
+              protocol: TCP
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              scheme: {{ .Values.service.healthCheck.scheme }}
+              port: {{ .Values.service.healthCheck.port }}
+              path: {{ .Values.service.healthCheck.path }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          env:
+            {{ include "datacloud-lib.renderEnvironmentVariables" . | nindent 12 }}
+          volumeMounts:
+{{- if eq .Values.serviceName "identity" }}
+            - name: config-volume
+              mountPath: "/etc/yc/{{ .Values.serviceName }}/"
+              readOnly: true
+{{- else }}
+            - name: config-volume
+              mountPath: "/etc/yc/{{ .Values.serviceName }}/config.yaml"
+              subPath: config.yaml
+              readOnly: true
+            - name: config-volume
+              mountPath: "/etc/yc/{{ .Values.serviceName }}/log4j2.yaml"
+              subPath: log4j2.yaml
+              readOnly: true
+            - name: keystores-volume
+              mountPath: "/etc/yc/{{ .Values.serviceName }}/truststore"
+              subPath: truststore
+              readOnly: true
+{{- end }}
+            - name: logs-volume
+              mountPath: "/var/log/yc/{{ .Values.serviceName }}/"
+            - name: secrets-volume
+              mountPath: "/etc/yc/{{ .Values.serviceName }}/secrets/"
+              readOnly: true
+            - name: certificates-volume
+              mountPath: "/etc/yc/{{ .Values.serviceName }}/certs"
+              readOnly: true
+            - name: tls-secrets-volume
+              mountPath: /etc/ssl/certs/ca.crt
+              subPath: ca.crt
+              readOnly: true
+{{- if eq .Values.serviceName "identity" }}
+            - name: identity-configs-extra-volume
+              mountPath: "/etc/yc/"
+              readOnly:  true
+            - name: ca-certificates-volume
+              mountPath: "/etc/ssl/certs/ca-certificates.crt"
+              subPath: ca-certificates.crt
+              readOnly: true
+
+        # nginx container
+        - name: nginx
+          image: nginx:1.19.10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: nginx-config-volume
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+            - name: identity-nginx-config-volume
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+            - name: nginx-secrets-volume
+              mountPath: /etc/nginx/ssl
+              readOnly: true
+            - name: tls-secrets-volume
+              mountPath: /etc/ssl/certs/ca.crt
+              subPath: ca.crt
+              readOnly: true
+          ports:
+            - name: "identity-https"
+              containerPort: 14336
+      initContainers:
+        - name: init-server-pem-file
+          image: "{{ .Values.docker.registry }}/{{ .Values.docker.repository }}:{{ .Values.docker.tag }}"
+          command:
+            - "sh"
+            - "-c"
+            - "rm -f /usr/share/ca-certificates/mozilla/DST_Root_CA_X3.crt \
+                  && sed -i '/^mozilla\\/DST_Root_CA_X3.crt$/ s/^/!/' /etc/ca-certificates.conf \
+                  && update-ca-certificates \
+                  && cat /certs-secrets/tls.crt /certs-secrets/ca.crt > /nginx-secrets/tls.crt; cp /certs-secrets/tls.key /nginx-secrets/tls.key; cat /etc/ssl/certs/ca-certificates.crt /certs-secrets/ca.crt > /ca-certs/ca-certificates.crt"
+          volumeMounts:
+            - name: nginx-secrets-volume
+              mountPath: /nginx-secrets
+            - name: ca-certificates-volume
+              mountPath: /ca-certs
+            - name: tls-secrets-volume
+              mountPath: /certs-secrets
+              readOnly: true
+{{- else }}
+            # TODO Remove it
+            - name: keystores-volume
+              mountPath: /etc/yc/ssl/certs/ca-certs-jks
+              subPath: truststore
+              readOnly: true
+      initContainers:
+        - name: init-server-pem-and-trustedstore-files
+          image: "{{ .Values.docker.registry }}/{{ .Values.docker.repository }}:{{ .Values.docker.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            {{ include "datacloud-lib.renderEnvironmentVariables" . | nindent 12 }}
+          command:
+            - "sh"
+            - "-c"
+            - "(cat /certs-secrets/tls.crt /certs-secrets/ca.crt /certs-secrets/tls.key > /certs/server.pem) \
+                && (cp ${JAVA_HOME}/lib/security/cacerts /keystores/truststore) \
+                && (echo changeit | _JAVA_OPTIONS='' keytool -keystore /keystores/truststore -noprompt -import -alias yc-iam-root-ca -file /certs-secrets/ca.crt) \
+               "
+          volumeMounts:
+            - name: keystores-volume
+              mountPath: /keystores
+            - name: certificates-volume
+              mountPath: /certs
+            - name: tls-secrets-volume
+              mountPath: /certs-secrets
+              readOnly: true
+{{- end }}
+      volumes:
+        - name: config-volume
+          configMap:
+            name: "{{ .Values.serviceName }}-configs"
+        - name: logs-volume
+          hostPath:
+            path: "/var/log/yc/{{ .Values.serviceName }}"
+            type: DirectoryOrCreate
+        - name: secrets-volume
+          secret:
+            secretName: "{{ .Values.serviceName }}-secrets"
+        - name: certificates-volume
+          emptyDir: {}
+        - name: ca-certificates-volume
+          emptyDir: {}
+        - name: tls-secrets-volume
+          secret:
+            secretName: "{{ .Values.serviceName }}-tls"
+        - name: keystores-volume
+          emptyDir: {}
+{{- if eq .Values.serviceName "identity" }}
+        - name: identity-configs-extra-volume
+          configMap:
+            name: "identity-configs-extra"
+            items:
+              - key: "ids.yaml"
+                path: "ids.yaml"
+        - name: identity-nginx-config-volume
+          configMap:
+            name: "identity-nginx-config"
+        - name: nginx-config-volume
+          configMap:
+            name: "nginx-config"
+            items:
+              - key: nginx.conf
+                path: nginx.conf
+        - name: nginx-secrets-volume
+          emptyDir: {}
+{{- end }}
+
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

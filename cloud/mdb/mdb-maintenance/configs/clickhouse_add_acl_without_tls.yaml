@@ -1,0 +1,38 @@
+info: Cluster maintenance
+repeatable: true
+clusters_selection:
+  db: >-
+    SELECT c.cid
+      FROM dbaas.clusters c
+     WHERE code.visible(c)
+       AND EXISTS (
+       SELECT 1
+         FROM dbaas.subclusters sc
+         JOIN dbaas.pillar p ON sc.cid=p.cid
+         JOIN dbaas.pillar sp ON sc.subcid=sp.subcid
+        WHERE sc.cid = c.cid
+          AND sc.roles && '{clickhouse_cluster}'
+          AND cast(p.value->'data'->'unmanaged'->>'enable_zk_tls' AS bool) IS DISTINCT FROM true
+          AND sp.value->'data'->'clickhouse'->'zk_users'->'clickhouse' IS NOT NULL
+       )
+       AND EXISTS (
+       SELECT 1
+         FROM dbaas.subclusters sc
+        WHERE sc.cid = c.cid
+          AND sc.roles && '{zk}'
+       )
+pillar_change: >-
+  UPDATE dbaas.pillar p
+     SET value = jsonb_set(
+         jsonb_set(value, '{data,unmanaged,enable_zk_tls}', to_jsonb(CAST('true' as BOOLEAN))),
+         '{data,unmanaged,tmp_disable_zk_tls_mdb_12035}', to_jsonb(CAST('true' as BOOLEAN)))
+   WHERE
+     p.cid = :cid
+worker:
+  operation_type: clickhouse_cluster_modify
+  task_type: clickhouse_cluster_maintenance
+  task_args:
+    deploy_zk_tls: true
+  timeout: 4h
+max_delay_days: 21
+min_days: 7

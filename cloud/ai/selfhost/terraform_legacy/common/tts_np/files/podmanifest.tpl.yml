@@ -1,0 +1,229 @@
+apiVersion: v1
+kind: PodList
+items:
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: app-tts
+    namespace: kube-system
+    annotations:
+      config_digest: ${config_digest}
+      scheduler.alpha.kubernetes.io/critical-pod: ""
+  spec:
+    priority: 2000000001
+    priorityClassName: system-cluster-critical
+    hostNetwork: true
+    initContainers:
+    - name: deploy-configs
+      image: registry.yandex.net/cloud/api/metadata:${metadata_version}
+      volumeMounts:
+      - name: all-configs
+        mountPath: /etc
+        terminationGracePeriodSeconds: 30
+
+    containers:
+    # ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+    - name: envoy
+      image: cr.yandex/crppns4pq490jrka0sth/envoyproxy/envoy-dev:${envoy_version}
+      ports:
+      - containerPort: ${tts_server_port}
+      volumeMounts:
+      - name: envoy-config
+        mountPath: /etc/envoy
+        readOnly: true
+      # ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+    - name: billing-proxy-logs-relay
+      image: cr.yandex/crppns4pq490jrka0sth/billing-proxy/billing-relay:${billing_proxy_logs_relay_version}
+      ports:
+      - containerPort: 8087
+      env:
+      - name: TOPIC
+        value: ${topic_billing}
+      - name: SOURCE_ID
+        value: "tts"
+      - name: SCHEMA
+        value: "ai.speech.tts.dialogue_platform.v1"
+      - name: SA_KID
+        value: "ajen8g8b6dmg36jk1b74"
+      - name: SA_ID
+        value: "ajea5bftn6388al7u8jl"
+      volumeMounts:
+      - name: data-sa-keys
+        mountPath: /etc/yc/ai/keys/data-sa
+        readOnly: true
+    # ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+    - name: cadvisor
+      image:  cr.yandex/crppns4pq490jrka0sth/cadvisor:${cadvisor_version}
+      ports:
+      - containerPort: 17008
+      command:
+        [ /usr/bin/cadvisor, -logtostderr, --port=17008 ]
+      volumeMounts:
+      - name: root
+        mountPath: /rootfs
+        readOnly: true
+      - name: var-run
+        mountPath: /var/run
+        readOnly: true
+      - name: sys
+        mountPath: /sys
+        readOnly: true
+      - name: var-lib-docker
+        mountPath: /var/lib/docker
+        readOnly: true
+      - name: dev-disk
+        mountPath: /dev/disk
+        readOnly: true
+    # ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+#    - name: nvidia-dcgm-exporter
+#      image: cr.yandex/crppns4pq490jrka0sth/nvidia/dcgm-exporter:${nvidia_dcgm_exporter_version}
+#      volumeMounts:
+#      - name: run-prometheus
+#        mountPath: /run/prometheus
+    # ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+    - name: tts-server
+      image: cr.yandex/crppns4pq490jrka0sth/tts-server:${tts_server_version}
+      resources:
+        requests:
+          memory: "${instance_max_memory}Gi"
+        limits:
+          memory: "${instance_max_memory}Gi"
+      env:
+        - name: TTS_MAXCONNECTION
+          value: "48"
+      ports:
+      - containerPort: ${tts_port}
+      volumeMounts:
+      - name: var-log
+        mountPath: /var/log
+      command: ['/bin/bash', '-c']
+      args:
+      - touch /var/log/tts_server.log && cp /var/log/tts_server.log /var/log/tts_server.log.bac && ./tts_server --config-path /lingware/tts_server_config.json --port ${tts_port} > /var/log/tts_server.log 2>&1
+    # ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+    - name:  solomon-agent
+      image: registry.yandex.net/cloud-ai/solomon-agent:${solomon_version}
+      resources:
+        requests:
+          memory: "384Mi"
+        limits:
+          memory: "384Mi"
+      volumeMounts:
+      - name: solomon-agent-config
+        mountPath: /etc/solomon-agent/
+        readOnly: true
+    # ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+    - name: push-client
+      image: cr.yandex/crppns4pq490jrka0sth/push-client:${push_client_version}
+      volumeMounts:
+      - name: var-log
+        mountPath: /var/log
+        terminationGracePeriodSeconds: 30
+      - name: var-spool
+        mountPath: /var/spool
+        terminationGracePeriodSeconds: 30
+      - name: push-client-config
+        mountPath: /etc/yandex/statbox-push-client
+        readOnly: true
+      - name: etc-secrets
+        mountPath: /etc/secrets
+        readOnly: true
+    # ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+    - name: logrotate
+      image: cr.yandex/crppns4pq490jrka0sth/logrotate:${logrotate_version}
+      volumeMounts:
+      - name: logs
+        mountPath: /logs
+      - name: logrotate-config
+        mountPath: /etc/logrotate.d
+        readOnly: true
+    # - name: juggler-client
+    #   image: registry.yandex.net/cloud/platform/juggler-client:${juggler_version}
+    #   volumeMounts:
+    #   - name: juggler-bundle-manifest-file
+    #     mountPath: /juggler-bundle/MANIFEST.json
+    #     readOnly: true
+    #   - name: platform-http-check-json
+    #     mountPath: /juggler-bundle/platform-http-checks.json
+    #     readOnly: true
+    #   - name: juggler-client-config
+    #     mountPath: /home/monitor/juggler/etc/client.conf
+    #     readOnly: true
+    #   - name: juggler-client-log
+    #     mountPath: /var/log/juggler-client
+    #     terminationGracePeriodSeconds: 30
+    #   - name: var-log-fluent
+    #     mountPath: /var/log/fluent
+    #     terminationGracePeriodSeconds: 30
+    #     readOnly: true
+    #   - name: var-spool-push-client
+    #     mountPath: /var/spool/push-client
+    #     terminationGracePeriodSeconds: 30
+    #     readOnly: true
+    #   - name: push-client-config
+    #     mountPath: /etc/yandex/statbox-push-client
+    #     readOnly: true
+    #   - name: hostfs-mon
+    #     mountPath: /hostfs
+    #     readOnly: true
+    volumes:
+    - name: all-configs
+      hostPath:
+        path: /etc
+        type: DirectoryOrCreate
+    - name: var-log
+      hostPath:
+        path: /var/log
+    - name: var-log-yc-ai
+      hostPath:
+        path: /var/log/yc/ai
+    - name: var-lib-billing
+      hostPath:
+        path: /var/lib/billing
+    - name: logs
+      hostPath:
+        path: /logs
+    - name: var-spool
+      hostPath:
+        path: /var/spool
+    - name: var-log-fluent
+      hostPath:
+        path: /var/log/fluent
+    - name: var-spool-push-client
+      hostPath:
+        path: /var/spool/push-client
+    - name: push-client-config
+      hostPath:
+        path: /etc/yandex/statbox-push-client
+    - name: solomon-agent-config
+      hostPath:
+        path: /etc/solomon-agent
+    - name: logrotate-config
+      hostPath:
+        path: /etc/logrotate.d
+    - name: data-sa-keys
+      hostPath:
+        path: /etc/yc/ai/keys/data-sa
+    - name: root
+      hostPath:
+        path: /
+    - name: var-run
+      hostPath:
+        path: /var/run
+    - name: sys
+      hostPath:
+        path: /sys
+    - name: var-lib-docker
+      hostPath:
+        path: /var/lib/docker
+    - name: dev-disk
+      hostPath:
+        path: /dev/disk
+    - name: run-prometheus
+      hostPath:
+        path: /run/prometheus
+    - name: etc-secrets
+      hostPath:
+          path: /etc/secrets
+    - name: envoy-config
+      hostPath:
+          path: /etc/envoy

@@ -1,0 +1,41 @@
+{% extends "vpc_api_base_alert.j2" %}
+
+{% set service = "vpc-api-unparsed-search-docs-{}".format(service_name) %}
+{% macro yc_search_dashboard_url() -%}
+    {{ solomon_endpoint }}/?project=yc.search&dashboard=ycs-{{ env }}-health-duty-board
+{%- endmacro %}
+
+{% macro prog() %}
+let failed = series_sum({
+    project='yc.search'
+    ,cluster='ycsearch-indexer'
+    ,service='yc-search-stat'
+    ,sensor='search_indexation_parse_failed_documents_{{ service_name }}_ammm'
+});
+let parsed = series_sum({
+    project='yc.search'
+    ,service='yc-search-stat'
+    ,cluster='ycsearch-indexer'
+    ,sensor='search_indexation_parsed_documents_{{ service_name }}_ammm'
+});
+let unparsedCount = integrate(failed);
+let parsedCount = integrate(parsed);
+let is_red = unparsedCount > 0;
+
+alarm_if(is_red);
+{% endmacro %}
+
+{% block main %}
+    "name": "VPC API unparsed search docs {{ service_name }} {{env}}",
+    "annotations": {
+        "tags": "Solomon, vpc-api-yc-search",
+        "parsed_count": "[[expression.parsedCount]]",
+        "unparsed_count": "[[expression.unparsedCount]]",
+        "description": "VPC API unparsed search docs {{ service_name }} more than zero: [[ expression.unparsedCount ]]",
+        "host": "{{ solomon_host() }}",
+        "service": "{{ service }}",
+        "dashboard": "{{ yc_search_dashboard_url() }}",
+        "wiki": "{{ wiki_url(service) }}" 
+    },
+    "type": {{ type_expression() }}
+{% endblock %}

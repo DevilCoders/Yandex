@@ -1,0 +1,29 @@
+info: Update Kafka cluster to 2.8.1
+clusters_selection:
+  db: >-
+    SELECT cid
+      FROM (
+        SELECT cid,
+             CAST(
+               string_to_array(
+                 regexp_replace(p.value #>> '{data,kafka,package_version}', '([\d\.]+)-.+', '\1'),
+                 '.'
+               ) AS int[]
+             ) AS version_nums
+        FROM dbaas.clusters c
+        JOIN dbaas.pillar p USING(cid)
+        WHERE c.type='kafka_cluster' AND c.status='RUNNING'
+      ) x
+    JOIN dbaas.default_pillar dp ON (true)
+    WHERE version_nums > ARRAY[2, 8]
+      AND version_nums < ARRAY[2, 8, 1, 1]
+pillar_change: >-
+  UPDATE dbaas.pillar p
+     SET value = jsonb_set(value, '{data,kafka,package_version}', to_jsonb(CAST('2.8.1.1-java11' AS text)))
+   WHERE p.cid=:cid
+worker:
+  operation_type: kafka_cluster_modify
+  task_type: kafka_cluster_maintenance
+  task_args:
+    restart: true
+  timeout: 4h

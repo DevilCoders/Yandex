@@ -1,0 +1,99 @@
+definitions:
+  - &alert_id "{{.ID}}_solomon_quota"
+  - &alert_name "{{.Name}} Solomon quota"
+  - &preprod_alert_description "Sensors quota reached: https://solomon.yandex-team.ru/?project=solomon&cluster=production&service=coremon&l.sensor=engine.fileSensors*&l.host=cluster&l.projectId=nfs&l.shardId=nfs_yandexcloud_preprod_*&graph=auto&stack=false&b=1h&e=&min=0"
+  - &prod_vla_alert_description "Sensors quota reached: https://solomon.yandex-team.ru/?project=solomon&cluster=production&service=coremon&l.sensor=engine.fileSensors*&l.host=cluster&l.projectId=nfs&l.shardId=nfs_yandexcloud_prod_vla*&graph=auto&stack=false&b=1h&e=&min=0"
+  - &prod_sas_alert_description "Sensors quota reached: https://solomon.yandex-team.ru/?project=solomon&cluster=production&service=coremon&l.sensor=engine.fileSensors*&l.host=cluster&l.projectId=nfs&l.shardId=nfs_yandexcloud_prod_sas*&graph=auto&stack=false&b=1h&e=&min=0"
+  - &alert_window_secs 300
+  - &alert_delay_secs 60
+  - &alert_program |-
+      let limit = {
+          project="solomon",
+          cluster="production",
+          service="coremon",
+          host="???",
+          sensor="engine.fileSensorsLimit",
+          projectId="{{.SolomonProjectID}}",
+          shardId="nfs_{{.SolomonCluster}}_*"};
+
+      let usage = {
+          project="solomon",
+          cluster="production",
+          service="coremon",
+          host="???",
+          sensor="engine.fileSensors",
+          projectId="{{.SolomonProjectID}}",
+          shardId="nfs_{{.SolomonCluster}}_*"};
+
+      let avg_usage = avg(usage);
+      let avg_limit = avg(limit);
+
+      alarm_if(avg_usage/avg_limit > 0.9);
+alerts:
+  - id: *alert_id
+    name: *alert_name
+    description: *preprod_alert_description
+    window_secs: *alert_window_secs
+    delay_secs: *alert_delay_secs
+    group_by_labels:
+      - shardId
+      - host
+    channels:
+      - id: telegram
+    clusters:
+      - preprod
+    expression:
+      program: |-
+        let limit = {
+            project="solomon",
+            cluster="production",
+            service="coremon",
+            host="???",
+            sensor="engine.fileSensorsLimit",
+            projectId="{{.SolomonProjectID}}",
+            shardId="nfs_{{.SolomonCluster}}_*"};
+
+        let usage = {
+            project="solomon",
+            cluster="production",
+            service="coremon",
+            host="???",
+            sensor="engine.fileSensors",
+            projectId="{{.SolomonProjectID}}",
+            shardId="nfs_{{.SolomonCluster}}_*"};
+
+        let avg_usage = avg(usage);
+        let avg_limit = avg(limit);
+
+        alarm_if(avg_usage/avg_limit > 0.9);
+        warn_if(avg_usage/avg_limit > 0.8);
+
+  - id: *alert_id
+    name: *alert_name
+    description: *prod_vla_alert_description
+    window_secs: *alert_window_secs
+    delay_secs: *alert_delay_secs
+    group_by_labels:
+      - shardId
+      - host
+    channels:
+      - id: telegram
+    clusters:
+      - prod_vla
+    expression:
+      program: *alert_program
+
+  - id: *alert_id
+    name: *alert_name
+    description: *prod_sas_alert_description
+    window_secs: *alert_window_secs
+    delay_secs: *alert_delay_secs
+    group_by_labels:
+      - shardId
+      - host
+    channels:
+      - id: telegram
+    clusters:
+      - prod_sas
+    expression:
+      program: *alert_program

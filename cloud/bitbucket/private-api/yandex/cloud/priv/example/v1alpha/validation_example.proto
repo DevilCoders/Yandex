@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.example.v1alpha;
+
+import "yandex/cloud/priv/validation.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/example/v1alpha;example";
+
+message ValidatedMessage {
+
+  // (required) validator for message requires message to be set.
+  SomeMessage message = 7 [(required) = true];
+  // Since protobuf scalar types (https://developers.google.com/protocol-buffers/docs/proto3#scalar) cannot be null,
+  // the (required) validator has "not-default-value" meaning for scalars.
+  // For strings it means "not empty":
+  string info = 8 [(required) = true];
+  // For enums it means "not 0-th element":
+  SomeEnum enum = 9 [(required) = true];
+  // For other types it is not applicable, at least for the moment.
+
+  // (value) validator bounds integer value from top,
+  int64 age = 10 [(value) = "<123"];
+  // ... from bottom,
+  int64 price = 11 [(value) = ">0"];
+  // ... defines range,
+  int64 weight = 12 [(value) = "30-130"];
+  // ... requires to be one of,
+  int64 sort = 32 [(value) = "5,6,7"];
+  // ... or even to be exactly defined value
+  int64 type = 33 [(value) = "5"];
+  // Int64Value wrapper can also be validated, it is only validated if not null.
+  google.protobuf.Int64Value wrapped_int = 41 [(value) = "<100"];
+
+  // (length) validator is applicable to strings, defining its length, it has the same format as (value) validator.
+  string text = 13 [(length) = "<=2048"];
+
+  // (pattern) validator checks regexp, basic set of PCRE expressions should be used so that Java/Go/Python default
+  // implementations treat them equally.
+  string exp = 14 [(pattern) = "[a-z][a-z0-9]*"];
+
+  // (size) validator bounds list size, it has the same format as (value) validator.
+  // You can still validate each value with other validators.
+  repeated int64 digits = 15 [(size) = "<=10", (value) = "1-9"];
+
+  // (size) validator is applicable to maps also, other validators defined here will be applied to map values,
+  // (map_key) validator allows to validate keys.
+  map<string, string> map = 16 [(size) = "<=64", (length) = "<=63", (pattern) = "[-_0-9a-z]*", (map_key).length = "<=63", (map_key).pattern = "[a-z][-_0-9a-z]*"];
+
+  // (unique) validator is applicable to repeated fields
+  repeated string strings = 17 [(unique) = true];
+
+  oneof options {
+    // (exactly_one) requires one of oneof options to be set. It is kind of required validator for oneof.
+    option (exactly_one) = true;
+
+    string option1 = 21;
+    string option2 = 22;
+  }
+
+  message SomeMessage {
+    // In case of name clash use fully qualified validaor name, ex:
+    int64 size = 31 [(yandex.cloud.priv.value) = ">=1"];
+  }
+  enum SomeEnum {
+    SOME_ENUM_UNSPECIFIED = 0;
+    A = 1;
+    B = 2;
+  }
+}

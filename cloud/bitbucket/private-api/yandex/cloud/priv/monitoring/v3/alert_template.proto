@@ -1,0 +1,151 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.monitoring.v3;
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/monitoring/v3;monitoring";
+option java_package = "ru.yandex.cloud.priv.monitoring.v3";
+option java_multiple_files = true;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "yandex/cloud/priv/monitoring/v3/alert.proto";
+import "yandex/cloud/priv/monitoring/v3/parametrization.proto";
+
+message AlertTemplate {
+    // Id
+    string id = 1;
+
+    // Template version
+    string template_version_tag = 2;
+
+    // Service provider of template
+    string service_provider_id = 3;
+
+    // Template name
+    string name = 4;
+
+    // Description about template
+    string description = 5;
+
+    // Creation timestamp.
+    google.protobuf.Timestamp created_at = 6;
+
+    // ID of the user who created.
+    string created_by = 7;
+
+    // Templates by key with details about evaluation status. Result of processing templates
+    // will be available during notification and by evaluation status endpoints.
+    // Variable available to use into template depends on alert type.
+    map<string, string> annotations = 8;
+
+    // Resource labels as key:value pairs.
+    map<string, string> labels = 9;
+
+    // Template type
+    oneof type {
+        ThresholdTemplate threshold_template = 10;
+        ExpressionTemplate expression_template = 11;
+    }
+
+    // Optional. Alert template parameters and thresholds.
+    repeated AlertTemplateParameter alert_template_parameters = 12;
+
+    // Status
+    AlertTemplateStatus alert_template_status = 13;
+
+    // Is default template.
+    bool is_default = 14;
+}
+
+message ExpressionTemplate {
+    // Required parameter, contains expression to evaluate
+    // Example:
+    // let man = {project=kikimr, cluster=common, service=blob, sensor=idleTime, dc=MAN, host='*'});
+    // let sas = {project=kikimr, cluster=common, service=blob, sensor=idleTime, dc=SAS, host='*'});
+    // let manSum = sum(group_lines('sum', man));
+    // let sasSum = sum(group_lines('sum', sas));
+    string program = 1;
+
+    // Optional list label names that should be used to group alerts.
+    // It's allowed to make check per host or per cluster.
+    repeated string group_by_labels = 2;
+
+    // Alert evaluation window in seconds.
+    google.protobuf.Duration window = 3;
+
+    // Alert evaluation delay in seconds.
+    google.protobuf.Duration delay = 4;
+
+    // NO_DATA policy for selectors that resolve to empty set of metrics.
+    NoMetricsPolicy no_metrics_policy = 5;
+
+    // NO_DATA policy for timeseries without data points.
+    NoPointsPolicy no_points_policy = 6;
+}
+
+message ThresholdTemplate {
+    message TemplatePredicateRule {
+        // Criteria by which the alert will be checked.
+        ThresholdType threshold_type = 1;
+        // Operation used to compare with threshold value.
+        Comparison comparison = 2;
+
+        oneof threshold {
+            // Threshold value.
+            double value = 3;
+            // Predicate threshold parameter value to compare with
+            string threshold_parameter_template = 4;
+        }
+
+        // Status to set if predicate evaluates true
+        TargetStatus target_status = 5;
+    }
+
+    // Query data to be checked.
+    string query = 1;
+
+    // A list of predicate rules to test against the data.
+    repeated TemplatePredicateRule template_predicate_rules = 2;
+
+    // Optional list label names that should be used to group alerts.
+    // It's allowed to make check per host or per cluster.
+    repeated string group_by_labels = 3;
+
+    // Alert evaluation window in seconds.
+    google.protobuf.Duration window = 4;
+
+    // Alert evaluation delay in seconds.
+    google.protobuf.Duration delay = 5;
+
+    // NO_DATA policy for selectors that resolve to empty set of metrics.
+    NoMetricsPolicy no_metrics_policy = 6;
+
+    // NO_DATA policy for timeseries without data points.
+    NoPointsPolicy no_points_policy = 7;
+
+}
+
+message AlertTemplateParameter {
+    enum Type {
+        TYPE_UNSPECIFIED = 0;
+
+        // Parameters specific for service provider.
+        SERVICE_PROVIDER_DATA = 1;
+
+        // Alert specific data.
+        ALERT_DATA = 2;
+    }
+    // Parameter data.
+    Parameter parameter = 1;
+
+    // Parameter type.
+    Type type = 2;
+}
+
+enum AlertTemplateStatus {
+    ALERT_TEMPLATE_STATUS_UNSPECIFIED = 0;
+
+    ALERT_TEMPLATE_STATUS_PUBLISHED = 1;
+
+    ALERT_TEMPLATE_STATUS_DRAFT = 2;
+}

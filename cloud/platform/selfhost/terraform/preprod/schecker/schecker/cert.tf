@@ -1,0 +1,8 @@
+resource "ycp_certificatemanager_certificate_request" "schecker-api" {
+  name = "schecker-api"
+  domains = [
+    "api.schecker.cloud-preprod.yandex.net",
+  ]
+  cert_provider  = "INTERNAL_CA"
+  challenge_type = "CHALLENGE_TYPE_UNSPECIFIED"
+}

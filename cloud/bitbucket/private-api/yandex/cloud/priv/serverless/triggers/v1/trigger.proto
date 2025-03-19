@@ -1,0 +1,440 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.serverless.triggers.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "yandex/cloud/priv/logging/v1/log_entry.proto";
+import "yandex/cloud/priv/serverless/triggers/v1/predicate.proto";
+import "yandex/cloud/priv/validation.proto";
+import "yandex/cloud/priv/sensitive.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/serverless/triggers/v1;triggers";
+option java_outer_classname = "PST";
+
+enum TriggerType {
+  TRIGGER_TYPE_UNSPECIFIED = 0;
+  CLOUD_EVENT = 1;
+  TIMER = 2;
+  MESSAGE_QUEUE = 3;
+  IOT_MESSAGE = 4;
+  IOT_BROKER_MESSAGE = 12;
+  OBJECT_STORAGE = 5;
+  CONTAINER_REGISTRY = 6;
+  CLOUD_LOGS = 7;
+  LOGGING = 8;
+  BILLING_BUDGET = 9;
+  YDS = 10;
+  MAIL = 11;
+}
+
+message Trigger {
+
+  // ID of the trigger.
+  string id = 1;
+
+  // ID of the folder that the trigger belongs to.
+  string folder_id = 2 [(required) = true, (length) = "<=50"];
+
+  //
+  google.protobuf.Timestamp created_at = 3;
+
+  // Name of the trigger.
+  string name = 4 [(required) = true];
+
+  // Description of the trigger.
+  string description = 5;
+
+  // Resource labels as `key:value` pairs.
+  map<string, string> labels = 6;
+
+  // Used to shard triggers across runtime instances (internal).
+  string shard_id = 7;
+
+  // Defines trigger rule (is always consistent with type filed)
+  Rule rule = 8 [(required) = true];
+
+  // Trigger status
+  Status status = 9;
+
+  message Rule {
+    oneof rule {
+      option (exactly_one) = true;
+      CloudEvent cloud_event = 1;
+      Timer timer = 2;
+      MessageQueue message_queue = 3;
+      IoTMessage iot_message = 4;
+      IoTBrokerMessage iot_broker_message = 14;
+      ObjectStorage object_storage = 5;
+      ContainerRegistry container_registry = 6;
+      CloudLogs cloud_logs = 9;
+      Logging logging = 10;
+      BillingBudget billing_budget = 11;
+      DataStream data_stream = 12;
+      Mail mail = 13;
+    }
+    string cloud_id = 7;
+    string folder_id = 8;
+  }
+
+  message CloudEvent {
+
+    // Source (to filter the origin of events).
+    oneof source {
+      option (exactly_one) = true;
+      string cloud_id = 1 [(length) = "<=50"];
+      string folder_id = 2 [(length) = "<=50"];
+    }
+
+    // Type (name) of events, at least one value is required.
+    repeated string event_type = 3 [(size) = ">0", (length) = ">0"];
+
+    // Status of events, optional.
+    string status = 4;
+
+    // Filter, optional.
+    Predicate filter = 5;
+
+    // TODO: string query = ?; <-- next feature
+    // TODO: BatchSettings batch_settings = ?; <-- next feature
+
+    oneof action {
+      option (exactly_one) = true;
+      InvokeFunctionWithRetry invoke_function = 101;
+      PutQueueMessage put_queue_message = 102;
+      InvokeContainerWithRetry invoke_container = 103;
+    }
+  }
+
+  enum ObjectStorageEventType {
+    OBJECT_STORAGE_EVENT_TYPE_UNSPECIFIED = 0;
+    OBJECT_STORAGE_EVENT_TYPE_CREATE_OBJECT = 1;
+    OBJECT_STORAGE_EVENT_TYPE_UPDATE_OBJECT = 2;
+    OBJECT_STORAGE_EVENT_TYPE_DELETE_OBJECT = 3;
+  }
+
+  message ObjectStorage {
+
+    // Source (to filter the origin of events).
+    oneof source {
+      string cloud_id = 1 [(length) = "<=50"];
+      string folder_id = 2 [(length) = "<=50"];
+    }
+
+    // Type (name) of events, at least one value is required.
+    repeated ObjectStorageEventType event_type = 3 [(size) = ">0"];
+
+    string bucket_id = 4;
+
+    // Filter, optional.
+    string prefix = 6;
+    string suffix = 7;
+
+    oneof action {
+      option (exactly_one) = true;
+      InvokeFunctionWithRetry invoke_function = 101;
+      PutQueueMessage put_queue_message = 102;
+      InvokeContainerWithRetry invoke_container = 103;
+    }
+  }
+
+  enum ContainerRegistryEventType {
+    CONTAINER_REGISTRY_EVENT_TYPE_UNSPECIFIED = 0;
+    CONTAINER_REGISTRY_EVENT_TYPE_CREATE_IMAGE = 1;
+    CONTAINER_REGISTRY_EVENT_TYPE_DELETE_IMAGE = 2;
+    CONTAINER_REGISTRY_EVENT_TYPE_CREATE_IMAGE_TAG = 3;
+    CONTAINER_REGISTRY_EVENT_TYPE_DELETE_IMAGE_TAG = 4;
+  }
+
+  message ContainerRegistry {
+
+    // Source (to filter the origin of events).
+    oneof source {
+      string cloud_id = 1 [(length) = "<=50"];
+      string folder_id = 2 [(length) = "<=50"];
+    }
+
+    // Type (name) of events, at least one value is required.
+    repeated ContainerRegistryEventType event_type = 3 [(size) = ">0"];
+
+    string registry_id = 4;
+
+    // Filter, optional.
+    string image_name = 5;
+    string tag = 6;
+
+    oneof action {
+      option (exactly_one) = true;
+      InvokeFunctionWithRetry invoke_function = 101;
+      PutQueueMessage put_queue_message = 102;
+      InvokeContainerWithRetry invoke_container = 103;
+    }
+  }
+
+  message CloudLogs {
+    // Log group identifiers, at least one value is required.
+    repeated string log_group_id = 1;
+
+    // Batch settings for processing log events.
+    CloudLogsBatchSettings batch_settings = 2 [(required) = true];
+
+    oneof action {
+      option (exactly_one) = true;
+      InvokeFunctionWithRetry invoke_function = 101;
+      PutQueueMessage put_queue_message = 102;
+      InvokeContainerWithRetry invoke_container = 103;
+    }
+  }
+
+  message Logging {
+    // Log events filter settings.
+    string log_group_id = 1 [(length) = "<=50"];
+
+    repeated string resource_type = 3 [(pattern) = "[a-zA-Z][-a-zA-Z0-9_.]{1,62}", (size) = "<=100"];
+    repeated string resource_id = 4 [(pattern) = "[a-zA-Z][-a-zA-Z0-9_.]{1,62}", (size) = "<=100"];
+    repeated yandex.cloud.priv.logging.v1.LogLevel.Level levels = 5 [(size) = "<=10"];
+
+    // Batch settings for processing log events.
+    LoggingBatchSettings batch_settings = 6 [(required) = true];
+
+    oneof action {
+      option (exactly_one) = true;
+      InvokeFunctionWithRetry invoke_function = 101;
+      PutQueueMessage put_queue_message = 102;
+      InvokeContainerWithRetry invoke_container = 103;
+    }
+  }
+
+  message Timer {
+
+    // see http://man7.org/linux/man-pages/man5/crontab.5.html with limitations
+    string cron_expression = 1 [(required) = true, (length) = "<=100"];
+
+    oneof action {
+      option (exactly_one) = true;
+      InvokeFunctionOnce invoke_function = 101; // deprecated, use invoke_function_with_retry instead
+      PutQueueMessage put_queue_message = 102;
+      InvokeFunctionWithRetry invoke_function_with_retry = 103;
+      InvokeContainerWithRetry invoke_container_with_retry = 104;
+    }
+  }
+
+  message MessageQueue {
+
+    // ID of the queue.
+    string queue_id = 11;
+
+    // SA which has read access to the queue.
+    string service_account_id = 3 [(required) = true, (length) = "<=50"];
+
+    // Batch settings for YMQ client.
+    BatchSettings batch_settings = 4 [(required) = true];
+
+    // Queue visibility timeout override.
+    google.protobuf.Duration visibility_timeout = 5 [(value) = "<=12h"];
+
+    oneof action {
+      option (exactly_one) = true;
+      InvokeFunctionOnce invoke_function = 101;
+      PutQueueMessage put_queue_message = 102;
+      InvokeContainerOnce invoke_container = 103;
+    }
+  }
+
+  message IoTMessage {
+    string registry_id = 1 [(required) = true];
+    string device_id = 2;
+    string mqtt_topic = 3; // MQTT wildcards with '#' and '+'
+
+    // TODO: BatchSettings batch_settings = ? [(required) = true]; <-- next feature
+
+    oneof action {
+      option (exactly_one) = true;
+      InvokeFunctionWithRetry invoke_function = 101;
+      PutQueueMessage put_queue_message = 102;
+      InvokeContainerWithRetry invoke_container = 103;
+    }
+  }
+
+  message IoTBrokerMessage {
+    string broker_id = 1 [(required) = true];
+    string mqtt_topic = 2; // MQTT wildcards with '#' and '+'
+
+    // TODO: BatchSettings batch_settings = ? [(required) = true]; <-- next feature
+
+    oneof action {
+      option (exactly_one) = true;
+      InvokeFunctionWithRetry invoke_function = 101;
+      PutQueueMessage put_queue_message = 102;
+      InvokeContainerWithRetry invoke_container = 103;
+    }
+  }
+
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    ACTIVE = 1;
+    PAUSED = 2;
+  }
+}
+
+// for YMQ only
+message InvokeFunctionOnce {
+  string function_id = 1 [(required) = true, (length) = "<=50"];
+  string function_tag = 2;
+
+  // SA which should be used to call a function, optional.
+  string service_account_id = 3;
+}
+
+message InvokeFunctionWithRetry {
+  string function_id = 1 [(required) = true, (length) = "<=50"];
+  string function_tag = 2;
+
+  // SA which has call permission on the function, optional.
+  string service_account_id = 3;
+
+  // Retry policy, optional (no value means no retry).
+  RetrySettings retry_settings = 4;
+
+  // DLQ policy (no value means discarding a message)
+  PutQueueMessage dead_letter_queue = 5;
+  PutToObjectStorage dead_letter_storage = 6;
+}
+
+// for YMQ only
+message InvokeContainerOnce {
+  string container_id = 1  [(required) = true, (length) = "<=50"];
+  reserved 2; // TODO: string container_revision_id = 2;
+  string path = 3;
+
+  // SA which should be used to call a container, optional.
+  string service_account_id = 4;
+}
+
+message InvokeContainerWithRetry {
+  string container_id = 1  [(required) = true, (length) = "<=50"];
+  reserved 2; // TODO: string container_revision_id = 2;
+  string path = 3;
+
+  // SA which should be used to call a container, optional.
+  string service_account_id = 4;
+
+  // Retry policy, optional (no value means no retry).
+  RetrySettings retry_settings = 5;
+
+  // DLQ policy (no value means discarding a message)
+  PutQueueMessage dead_letter_queue = 6;
+  PutToObjectStorage dead_letter_storage = 7;
+}
+
+message PutQueueMessage {
+
+  // ID of the queue.
+  string queue_id = 11;
+
+  // SA which has write permission on the queue.
+  string service_account_id = 2 [(required) = true, (length) = "<=50"];
+
+  // Constant message attributes for YMQ
+  map<string, string> message_attributes = 3 [(size) = "<=64", (length) = "<=63", (pattern) = "[-_0-9a-z]*", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_0-9a-z]*"];
+}
+
+message PutToObjectStorage {
+
+  string bucket_id = 1;
+
+  // SA which has write permission on storage.
+  string service_account_id = 2 [(required) = true, (length) = "<=50"];
+}
+
+message BatchSettings {
+
+  // Maximum batch size: trigger will send a batch if number of events exceeds this value.
+  int64 size = 1 [(value) = "0-10"]; // 10 (maximum) is a restriction of YMQ
+
+  // Maximum batch size: trigger will send a batch if its lifetime exceeds this value.
+  google.protobuf.Duration cutoff = 2 [(required) = true];
+}
+
+message CloudLogsBatchSettings {
+
+  // Batch size. Trigger will send the batch of messages to the associated function
+  // when the number of log events reaches this value, or the [cutoff] time has passed.
+  int64 size = 1 [(value) = "0-100"];
+
+  // Maximum wait time. Trigger will send the batch of messages the time since the last batch
+  // exceeds the `cutoff` value, regardless of the amount of log events.
+  google.protobuf.Duration cutoff = 2 [(value) = "1s-1m"];
+}
+
+message LoggingBatchSettings {
+
+  // Batch size. Trigger will send the batch of messages to the associated function
+  // when the number of log events reaches this value, or the [cutoff] time has passed.
+  int64 size = 1 [(value) = "1-100"];
+
+  // Maximum wait time. Trigger will send the batch of messages the time since the last batch
+  // exceeds the `cutoff` value, regardless of the amount of log events.
+  google.protobuf.Duration cutoff = 2 [(value) = "1s-1m"];
+}
+
+message RetrySettings {
+
+  // Maximum number of retries (extra calls) before an action fails.
+  int64 retry_attempts = 1 [(value) = "1-5"];
+
+  // Interval between tries.
+  google.protobuf.Duration interval = 2 [(required) = true];
+}
+
+message BillingBudget {
+  string billing_account_id = 1 [(required) = true, (length) = "<=50"];
+  string budget_id = 2 [(length) = "<=50"];
+
+  oneof action {
+    option (exactly_one) = true;
+    InvokeFunctionWithRetry invoke_function = 101;
+    PutQueueMessage put_queue_message = 102;
+    InvokeContainerWithRetry invoke_container = 103;
+  }
+}
+
+message DataStreamBatchSettings {
+
+  // Batch size in bytes. Trigger will send the batch of messages to the associated function
+  // when size of log events reaches this value, or the [cutoff] time has passed.
+  int64 size = 1 [(value) = "1-65536"];
+
+  // Maximum wait time. Trigger will send the batch of messages the time since the last batch
+  // exceeds the `cutoff` value, regardless of the amount of log events.
+  google.protobuf.Duration cutoff = 2 [(value) = "1s-1m"];
+}
+
+message DataStream {
+  string endpoint = 1;
+  string database = 2;
+  string stream = 3;
+  string service_account_id = 4;
+
+  DataStreamBatchSettings batch_settings = 5;
+
+  string consumer = 10; // For internal use.
+
+  oneof action {
+    option (exactly_one) = true;
+    InvokeFunctionWithRetry invoke_function = 13;
+    PutQueueMessage put_queue_message = 14;
+    InvokeContainerWithRetry invoke_container = 15;
+  }
+}
+
+message Mail {
+  string email = 2 [(sensitive) = true];
+
+  oneof action {
+    option (exactly_one) = true;
+    InvokeFunctionWithRetry invoke_function = 101;
+    PutQueueMessage put_queue_message = 102;
+    InvokeContainerWithRetry invoke_container = 103;
+  }
+}

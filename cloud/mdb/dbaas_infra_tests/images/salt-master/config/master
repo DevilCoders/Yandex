@@ -1,0 +1,70 @@
+timeout: 40
+worker_threads: 8
+output: nested
+log_file: /var/log/salt/master
+log_level: debug
+jinja_trim_blocks: True
+pillar_includes_override_sls: True
+ipv6: True
+interface: '::'
+failhard: False
+
+master_sign_pubkey: True
+master_sign_key_name: master_sign
+rotate_aes_key: False
+
+max_event_size: 1073741824
+
+job_cache: False
+keep_jobs: 1
+ext_job_cache: mdb-salt-returner
+
+rest_cherrypy:
+  host: ::1
+  port: 8000
+  disable_ssl: True
+  thread_pool: 8
+  socket_queue_size: 1
+
+external_auth:
+  pam:
+    saltapi:
+      - '@wheel'
+      - '@runner'
+      - '@jobs'
+      - .*
+
+module_dirs:
+    - /etc/salt/salt-master/modules
+
+pillar_roots:
+    base:
+        - /srv/pillar
+
+ext_pillar:
+    - dbaas_pillar:
+        urls:
+            - 'https://{{ 'internal-api01.' ~ conf.network_name }}/api/v1.0/config/'
+        access_id: '{{ conf.dynamic.salt.access_id }}'
+        access_secret: '{{ conf.dynamic.salt.access_secret }}'
+        api_pub_key: '{{ conf.dynamic.internal_api.pki.public }}'
+        salt_sec_key: '{{ conf.dynamic.salt.pki.secret }}'
+    - pgcerts:
+        mdb_secrets_key: '{{ conf.dynamic.secrets_api.pki.public }}'
+        privkey: '{{ conf.dynamic.salt.pki.secret }}'
+        url: 'http://secrets01.{{ conf.network_name }}:8080/v1/cert'
+        use_iam_tokens: True
+        sa_private_key: '{{ conf.jwt.private_key }}'
+        sa_id: 'salt.master.id'
+        sa_key_id: '{{ conf.jwt.key_id }}'
+        tokens_url: "http://fake_tokenservice01.{{ conf.network_name }}:50052/iam/v1/tokens"
+        iam_ca_path: False
+        ca_path: '/opt/yandex/allCAs.pem'
+
+file_roots:
+    base:
+        - /srv/salt
+    dev:
+        - /srv/salt
+    qa:
+        - /srv/salt

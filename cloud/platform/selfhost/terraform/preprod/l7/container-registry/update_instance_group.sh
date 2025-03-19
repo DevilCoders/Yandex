@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -eou pipefail
+
+INSTANCE_GROUP_ID=amcij3h4c7uj29ps0rtc
+
+FOLDER_ID=aoe7os3b67d3dn79fv5p
+
+FILES=$(jq -n \
+    --arg platformHTTPChecks "$(cat ./files/platform-http-checks.json)" \
+    --arg jaegerAgentConfig "$(cat ../common/jaeger-agent.yaml)" \
+    --arg sdsConfig "$(cat ../common/sds.yaml)" \
+    --arg caBundle "$(cat ../common/allCAs.pem)" \
+    --arg serverCertificatePEM "$(cat ./files/server.pem)" \
+    --arg serverCertificateKey "$(cat ./files/server_key.json)" \
+    --arg clientCertificatePEM "$(cat ./files/client.pem)" \
+    --arg clientCertificateKey "$(cat ./files/client_key.json)" \
+    '{
+        "/juggler-bundle/platform-http-checks.json": $platformHTTPChecks,
+        "/etc/jaeger-agent/jaeger-agent-config.yaml": $jaegerAgentConfig,
+        "/etc/l7/configs/sds/sds.yaml": $sdsConfig,
+        "/etc/l7/configs/envoy/ssl/certs/allCAs.pem": $caBundle,
+        "/etc/l7/configs/envoy/ssl/certs/frontend.crt": $serverCertificatePEM,
+        "/etc/l7/configs/envoy/ssl/private/frontend.key": $serverCertificateKey,
+        "/etc/l7/configs/envoy/ssl/certs/xds-client.crt": $clientCertificatePEM,
+        "/etc/l7/configs/envoy/ssl/private/xds-client.key": $clientCertificateKey
+    }')
+
+yc --profile=preprod compute instance-group update --id="${INSTANCE_GROUP_ID}" \
+  --endpoint=api.cloud-preprod.yandex.net:443 \
+  --folder-id="${FOLDER_ID}" \
+  --file=<(yq . ig-spec.tpl.yaml | \
+    jq --arg x "$(cat ./files/solomon-token.json)" '.instance_template.metadata.solomon_token_kms=$x' | \
+    jq --arg x "$(cat ./files/envoy.tpl.yaml)" '.instance_template.metadata.envoy_config=$x' | \
+    jq --arg x "$(cat ./files/user_data.yaml)" '.instance_template.metadata."user-data"=$x' | \
+    jq --arg x "$(cat ./files/config-dumper-endpoints.json)" '.instance_template.metadata."config-dumper-endpoints"=$x' | \
+    jq --arg x "$(cat ./files/default_ssh_keys.txt)" '.instance_template.metadata."ssh-keys"=$x' | \
+    jq --arg x "$FILES" '.instance_template.metadata.files=$x' | \
+    yq -y .)
+
+echo "IG updated successfuly"
+yc --profile=preprod compute instance-group list-instances --id="${INSTANCE_GROUP_ID}" \
+  --endpoint=api.cloud-preprod.yandex.net:443 \
+  --folder-id="${FOLDER_ID}"

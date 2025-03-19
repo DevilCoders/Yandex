@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+#
+# Patches grpcio package.
+#
+# grpcio is buggy. It has a partial fork() support which is achieved by setting a post fork() hook, but actually this
+# hook hangs the process sometimes. So we disable these workarounds to avoid problems with subprocess/psh since we don't
+# need long lived fork()ed processes and use only fork() + exec().
+#
+
+set -eu
+
+temp_dir=""
+
+cleanup() {
+    [ -z "$temp_dir" ] || rm -rf "$temp_dir" ||:
+}
+
+die() {
+    echo "Error:" "$@" >&2
+    exit 1
+}
+
+if [ $# -ne 1 ]; then
+    echo "Usage: $0 PACKAGE_PATH" >&2
+    exit 1
+fi
+
+package_path="$1"
+package_name="$(basename "$package_path")"
+sed_to_use=$(which sed)
+
+if [ "$(uname)" = Darwin ]; then
+    sed_to_use=gsed
+fi
+
+trap cleanup EXIT
+trap "exit 1" SIGINT SIGTERM SIGQUIT
+temp_dir="$(mktemp -d "/var/tmp/patch-grpcio.XXXXXX")"
+
+echo "Patching $package_name to disable fork() support..."
+tar -xf "$package_path" -C "$temp_dir"
+
+(
+    cd "$temp_dir"/grpcio-*
+    grep -q FORK setup.py || die "Failed to patch setup.py: unable to find fork support define macros."
+
+    for sed_command in \
+        "s/^\\(\\s*DEFINE_MACROS +=\\) (('HAVE_CONFIG_H', 1), ('GRPC_ENABLE_FORK_SUPPORT', 1),)\\s*\$/\\1 (('HAVE_CONFIG_H', 1),)/g" \
+        "s/^\\(\\s*DEFINE_MACROS +=\\) (('GRPC_POSIX_FORK_ALLOW_PTHREAD_ATFORK', 1),)\$/\\1 tuple()/g" \
+    ; do
+        $sed_to_use -i "$sed_command" setup.py
+    done
+
+    if grep -q FORK setup.py; then
+        die "Failed to patch setup.py: There are some unknown fork support define macros:"$'\n'"$(grep FORK setup.py)"
+    fi
+)
+
+tar -czf "$package_path" -C "$temp_dir" $(basename -a "$temp_dir"/*)
+echo "$package_name has been patched successfully."

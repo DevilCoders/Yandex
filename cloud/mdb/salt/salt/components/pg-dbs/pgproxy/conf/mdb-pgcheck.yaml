@@ -1,0 +1,24 @@
+log_level: Info
+http_port: 8081
+iteration_timeout: 1
+my_dc: {{ salt['grains.get']('ya:short_dc')|upper }}
+other_dc_prio_increase: 10
+near_prio_magic: 5
+replication_lag_multiplier: 2.0
+
+{%
+    set db_users_map = {
+        'rpopdb': {'user': 'rpop'},
+        's3db': {'user': 's3api_ro'}
+    }
+%}
+{% set pillar_db_users_map = salt['pillar.get']('data:config:db_users_map', {}) %}
+{% do db_users_map.update(pillar_db_users_map) %}
+databases:
+{% for dbname in salt['pillar.get']('data:config:databases', []) %}
+  {{ dbname }}:
+    local_conn_string: dbname={{ dbname }} user=postgres password={{ salt['pillar.get']('data:config:pgusers:postgres:password', '') }} sslmode=disable
+    append_conn_string: user={{ db_users_map[dbname]['user'] }} password={{ salt['pillar.get']('data:config:pgusers:' + db_users_map[dbname]['user'] +':password', '') }} connect_timeout=1 
+    quorum: 2
+    hysterisis: 1
+{% endfor %}

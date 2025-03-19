@@ -1,0 +1,40 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro prog() %}
+let sensors_all_ifaces_rate_all_workers = {
+	cluster='cloud_{{ env }}_cloudgate',
+	service='interfaces',
+	host='*',
+	iface='Ethernet*',
+	worker='*',
+	name='rx_packets_rate'
+};
+let sum_packet_rate_per_worker = series_sum('worker', sensors_all_ifaces_rate_all_workers);
+let total_packet_rate_series = series_sum(sum_packet_rate_per_worker);
+let total_packet_rate_max = max(total_packet_rate_series);
+let max_packet_rate = max(series_max(sum_packet_rate_per_worker));
+// comfort packet rate is 0.6 mpps per core
+let treshold_crit = 0.6 * 1000 * 1000;
+let treshold_warn = 0.5 * 1000 * 1000;
+
+let is_red = max_packet_rate > treshold_crit;
+let is_yellow = max_packet_rate > treshold_warn;
+alarm_if(is_red);
+warn_if(is_yellow);
+{% endmacro %}
+
+
+{% block main %}
+	"name": "CGW interfaces packet rate @ {{ env }}",
+	"groupByLabels": ["host"],
+	"annotations": {
+		"host": "{{ svm_fqdn() }}",
+		"tags": "Solomon, yc-{{env}}, yc-cgw",
+		"service": "{{ serviceName }}",
+		"wiki": "https://docs.yandex-team.ru/yc-monitoring/cgw/{{ serviceName }}",
+		"max_worker_packet_rate": "[[expression.max_packet_rate]]",
+		"total_packet_rate": "[[expression.total_packet_rate_max]]"
+	},
+	"description": "Check max per worker packet rate.",
+	"type": {{ type_expression() }}
+{% endblock %}

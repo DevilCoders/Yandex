@@ -1,0 +1,83 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          td-agent-bit
+# Required-Start:    $local_fs $network $named $time $syslog
+# Required-Stop:     $local_fs $network $named $time $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Description:       Fluent Bit logging agent service.
+### END INIT INFO
+
+SERVICE_NAME=td-agent-bit
+SCRIPT="/opt/td-agent-bit/bin/td-agent-bit -c /etc/td-agent-bit/td-agent-bit.conf"
+RUNAS=root
+
+PIDFILE=/var/run/$SERVICE_NAME.pid
+LOGFILE=/var/log/$SERVICE_NAME.log
+
+start() {
+  if [ -f $PIDFILE ] && kill -0 $(cat "$PIDFILE"); then
+    echo 'Service already running' >&2
+    return 1
+  fi
+  echo 'Starting service…' >&2
+  CMD="$SCRIPT &> \"$LOGFILE\" & echo \$!"
+  su -c "$CMD" $RUNAS > "$PIDFILE"
+  echo 'Service started' >&2
+}
+
+stop() {
+  if [ ! -f "$PIDFILE" ] || ! kill -0 $(cat "$PIDFILE"); then
+    echo 'Service is not running' >&2
+    return 1
+  fi
+  echo 'Stopping service…' >&2
+  PID=$(cat "$PIDFILE")
+  kill -15 $PID
+  while kill -0 $PID 2>/dev/null; do
+    sleep 1
+  done
+  rm -f "$PIDFILE"
+  echo 'Service stopped' >&2
+}
+
+status() {
+  if (( $(ps -ef | grep -v grep | grep $SERVICE_NAME | wc -l) > 0 )); then
+   echo "$SERVICE_NAME is running"
+  else
+    echo "$SERVICE_NAME is down"
+  fi
+}
+
+status() {
+  if [ -f $PIDFILE ]; then
+    PID=`cat $PIDFILE`
+    if [ -z "`ps axf | grep ${PID} | grep -v grep`" ]; then
+      printf "%s\n" "Process is dead but pidfile exists"
+    else
+      echo "$SERVICE_NAME is running"
+      return 0
+    fi
+  else
+    printf "%s\n" "$SERVICE_NAME is not running"
+    return 1
+  fi
+}
+
+case "$1" in
+  start)
+    start
+    ;;
+  stop)
+    stop
+    ;;
+  status)
+    status
+    ;;
+  restart)
+    stop
+    start
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|restart|status}"
+esac

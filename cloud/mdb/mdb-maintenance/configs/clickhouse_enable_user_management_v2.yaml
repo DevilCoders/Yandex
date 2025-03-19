@@ -1,0 +1,30 @@
+info: Cluster maintenance
+clusters_selection:
+  db: >-
+    WITH clusters AS (
+      SELECT c.cid,
+             CAST(string_to_array(p.value #>> '{data,clickhouse,ch_version}', '.') AS int[]) AS version_nums
+        FROM dbaas.subclusters sc
+        JOIN dbaas.clusters c USING(cid)
+        JOIN dbaas.pillar p USING(subcid)
+       WHERE c.status = 'RUNNING'
+         AND sc.roles && '{clickhouse_cluster}'
+         AND CAST(p.value #>> '{data,clickhouse,user_management_v2}' AS bool) IS DISTINCT FROM true
+    ) SELECT c.cid
+      FROM clusters c
+     WHERE c.version_nums > ARRAY[20, 6]
+pillar_change: >-
+  UPDATE dbaas.pillar p
+     SET value = jsonb_set(value, '{data,clickhouse,user_management_v2}', to_jsonb(CAST('true' AS BOOLEAN)))
+    FROM dbaas.subclusters sc
+   WHERE p.subcid=sc.subcid
+     AND sc.cid=:cid
+     AND sc.roles && '{clickhouse_cluster}'
+worker:
+  operation_type: clickhouse_cluster_modify
+  task_type: clickhouse_cluster_maintenance
+  task_args:
+    restart: true
+  timeout: 4h
+max_delay_days: 21
+min_days: 7

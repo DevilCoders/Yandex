@@ -1,0 +1,51 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro prog() %}
+
+{# Note that Solomon graph uses SI units, Giga will be counted as 10^9 in there #}
+let Gb = 1024 * 1024 * 1024;
+
+let free = avg({
+    cluster='{{ env }}',
+    project='{{ project }}',
+    service='{{ service }}',
+    name='filesystem.FreeB',
+    mountpoint='{{ mountpoint }}'
+});
+
+let free_gb = free / Gb;
+
+let size = avg({
+    cluster='{{ env }}',
+    project='{{ project }}',
+    service='{{ service }}',
+    name='filesystem.SizeB',
+    mountpoint='{{ mountpoint }}'
+});
+
+let value = free / size * 100;
+
+let is_red = value < {{ alarm_limit }};
+let is_yellow = value < {{ warn_limit }};
+
+alarm_if(is_red);
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+    "name": "{{ unit }} percent of available free space on '{{ mountpoint }}' @ {{ env }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "host": "{{ host }}",
+        "tags": "Solomon",
+        "disk_available_gb": "[[expression.free_gb]]",
+        "disk_free_percent": "[[expression.value]]",
+        "mountpoint": "{{ mountpoint }}",
+        "crit_avail_perc": "{{ alarm_limit }}",
+        "warn_avail_perc": "{{ warn_limit }}",
+        "service": "{{ unit }}-disk-space-available",
+        "description": "{{ unit }} percent of available free space on '{{ mountpoint }}'. If goes WARN/CRIT, check for services logs"
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

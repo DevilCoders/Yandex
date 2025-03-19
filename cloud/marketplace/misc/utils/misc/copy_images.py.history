@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+
+import boto3
+import argparse
+from botocore.exceptions import ClientError
+
+from yc_common.clients.kikimr.client import _KikimrSimpleConnection
+from yc_common.clients.kikimr import KikimrEndpointConfig
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Yandex.Cloud version image replacement script")
+    parser.add_argument("--host", nargs='?', help="Kikimr host", required=True)
+    parser.add_argument("--root", nargs='?', help="Kikimr root", required=True)
+    parser.add_argument("--product-id", nargs='?', help="Product id of pictures to replace", required=True)
+    parser.add_argument("--new-logo", nargs='?', help="Path to new logo", required=True)
+    parser.add_argument("--access-key", nargs='?', help="S3 access key", required=True)
+    parser.add_argument("--secret-key", nargs='?', help="S3 secret key", required=True)
+    parser.add_argument("--s3url", nargs='?', help="S3 endpoint url", required=True)
+    return parser.parse_args()
+
+
+def get_table(cfg, product_id):
+    return _KikimrSimpleConnection('marketplace', cfg).select("SELECT LIST(version.id) as versions FROM "
+                                                              "[{0}/os_product_family_version] as version "
+                                                              "JOIN [{0}/os_product_family] as family "
+                                                              "ON version.os_product_family_id == family.id "
+                                                              "WHERE family.os_product_id='{1}';".format(cfg.root, product_id))
+
+
+def main():
+    args = parse_args()
+
+    cfg = KikimrEndpointConfig({
+        "host": args.host,
+        "root": args.root
+    })
+
+    query_table = get_table(cfg, args.product_id)
+
+    session = boto3.session.Session()
+    client = session.client(
+        service_name="s3",
+        endpoint_url=args.s3url,
+        aws_access_key_id=args.access_key,
+        aws_secret_access_key=args.secret_key
+    )
+
+    for version in query_table[0]['versions']:
+        try:
+            client.delete_object(Bucket="version-images", Key="{}.svg".format(version))
+        except ClientError as e:
+            print("Picture for version {} doesn't exists, nothing to delete".format(version))
+        client.upload_file(args.new_logo, 'version-images', "{}.svg".format(version),
+                           ExtraArgs={"ContentType": "image/svg+xml"})
+        print("Uploaded image {}.svg".format(version))
+
+
+if __name__ == "__main__":
+    main()

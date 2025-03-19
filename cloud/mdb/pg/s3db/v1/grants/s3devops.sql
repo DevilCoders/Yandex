@@ -1,0 +1,3 @@
+GRANT USAGE ON SCHEMA s3 TO s3devops;
+GRANT SELECT ON ALL TABLES IN SCHEMA s3 TO s3devops;
+GRANT pg_monitor TO s3devops;

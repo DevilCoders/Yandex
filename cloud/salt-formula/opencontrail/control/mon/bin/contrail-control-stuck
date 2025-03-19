@@ -1,0 +1,29 @@
+#!/bin/bash
+
+# Monitoring script for contrail-control stucks (CLOUD-11925). See also CLOUD-20854.
+
+NAME=$(basename $0)
+
+query() {
+	curl --max-time 10 -s http://127.0.0.1:8083/$1 >/dev/null 2>/dev/null
+}
+report() {
+	echo "PASSIVE-CHECK:$NAME;$1;$2"
+}
+
+if query ""
+then
+	query "Snh_ShowStaticRouteReq"
+	CODE=$?
+	if [ $CODE -eq 28 ]  # 28     Operation timeout. The specified time-out period was reached according to the conditions (man curl).
+	then
+		report 2 "Stuck. See https://nda.ya.ru/3UXqBu and CLOUD-11925."
+	elif [ $CODE -eq 0 ]
+	then
+		report 0 "OK: not stuck."
+	else
+		report 1 "Second request failed with exit code $CODE. Probably not stuck."
+	fi
+else
+	report 1 "First request failed with exit code $?. Probably not stuck."
+fi

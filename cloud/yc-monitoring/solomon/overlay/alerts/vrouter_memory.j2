@@ -1,0 +1,38 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro prog() %}
+let Gb = 1024 * 1024 * 1024;
+
+let rss_gb = avg({
+  project='{{ project_id }}',
+  cluster='cloud_{{ env }}_compute',
+  service='oct_vrouter',
+  metric_group='Memory',
+  metric='rss',
+  unit='contrail-vrouter-agent'
+}) / Gb;
+let rss_limit_gb = 20;
+
+let is_red = rss_gb > 16;
+let is_yellow = rss_gb > 8;
+
+alarm_if(is_red);
+warn_if(is_yellow);
+{% endmacro %}
+
+
+{% block main %}
+    "name": "vrouter memory @ {{ env }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "host": "{{ compute_node_fqdn() }}",
+        "tags": "Solomon",
+        "dashboard": "{{ compute_node_network_metrics_url() }}",
+        "rss_gb": "[[expression.rss_gb]]",
+        "rss_limit_gb": "[[expression.rss_limit_gb]]",
+        "service": "vrouter-memory",
+        "description": "contrail-vrouter-agent memory usage (RSS). If goes WARN / CRIT, check for memory leaks. As a workaround, 'safe-restart --force contrail-vrouter-agent' is recommended."
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

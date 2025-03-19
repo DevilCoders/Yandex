@@ -1,0 +1,135 @@
+#!/usr/bin/env python
+#-*- coding: utf-8
+import requests
+import argparse
+import ConfigParser
+import os
+import json
+import socket
+
+
+def read_config(cfgpath='/home/robot-zoidberg/.conductor_client.ini'):
+  cfg = None
+  conf = None
+  if os.path.exists(os.path.expanduser(cfgpath)):
+    try:
+        cfg = ConfigParser.ConfigParser()
+        cfg.read(os.path.expanduser(cfgpath))
+    except Exception as err:
+        print "Can't read config: {}".format(str(err))
+  if cfg:
+    conf = dict((section, dict((option, cfg.get(section, option))
+                for option in cfg.options(section)))
+                for section in cfg.sections())
+  return conf
+
+
+def query(method, handler, entity, token, post_data=None):
+  headers = {'Authorization': 'OAuth {token}'.format(token=token),
+             'Accept': 'application/json',
+             'Content-Type': 'application/json'}
+  url = 'http://c.yandex-team.ru/api/v1/{}/{}'.format(handler, entity)
+  response = None
+  try:
+    response = requests.request(method=method, url=url, headers=headers, json=post_data)
+  except RuntimeError as error:
+    print("Can't make request to C: {}".format(error))
+  if response:
+    if response.text:
+      data = None
+      try:
+        data = json.loads(response.text)
+      except RuntimeError as error:
+        print("Malformed json: {}".format(error))
+      if data:
+        return response.status_code, data
+      else:
+        return response.status_code, {}
+  else:
+    print("No!")
+
+
+def get_tags(host, token):
+  tags = None
+  host += '/tags'
+  try:
+    tags = query('get', 'hosts', host, token)
+  except RuntimeError as error:
+    print("Can't get host tags: {}".format(error))
+  if tags:
+    if tags[1]:
+      data = tags[1].get('value')
+      if data:
+        return [el['value']['name'] for el in data]
+
+
+def check_tag(tag, token):
+  response = None
+  try:
+    response = query('get', 'tags', tag, token)
+  except RuntimeWarning as warning:
+    print("No such tag, we should make it : {}".format(warning))
+  return response[1]['id'] if response else False
+
+
+def make_tag(tag, token):
+  response = None
+  data = {"tag": {"name": tag}}
+  try:
+    response = query('post', 'tags', '', token, data)
+  except RuntimeError as error:
+    print("Can't post new tag: {}".format(error))
+  if response:
+    return response[1]['id'] if int(response[0]) == 201 else False
+
+
+def remove_tag_from_host(host, tag_id, token):
+  response = None
+  host += '/tags/{}'.format(tag_id)
+  response = query('delete', 'hosts', host, token)
+  return response or True
+
+
+def add_tag_to_host(host, tag_id, token):
+  data = {"tag": {"id": tag_id}}
+  host += '/tags'
+  response = query('post', 'hosts', host, token, post_data=data)
+  return response or True
+
+
+def main():
+  parser = argparse.ArgumentParser(
+    description="Conductor wrapper add or remove tag."
+                "To show current tags just run cclient.py -e <fqdn> or cclient.py -e %<conductor_group>")
+  parser.add_argument('-a', '--add', type=str, action='store', help='add tag_name')
+  parser.add_argument('-d', '--delete', type=str, action='store', help='delete tag_name')
+  args = parser.parse_args()
+  config = read_config()
+  token = config['conductor_client']['token']
+  me = socket.getfqdn()
+  tags = get_tags(me, token)
+  if args.add:
+    print args.add
+    tag_id = check_tag(args.add, token)
+    if not tag_id:
+      tag_id = make_tag(args.add, token)
+    if add_tag_to_host(me, tag_id, token):
+      print("Tag {} successfully added to host {}".format(args.add, me))
+    else:
+      print("Can't add new tag {}".format(args.add))
+  elif args.delete:
+    print args.delete
+    if args.delete in tags:
+      tag_id = check_tag(args.delete, token)
+      if remove_tag_from_host(me, tag_id, token):
+        print("Tag {} successfully removed from {}".format(args.delete, me))
+      else:
+        print("Can't delete tag {}".format(args.delete))
+    else:
+      print("No such tag on host. Do nothing.")
+  else:
+    print(", ".join(tags))
+
+
+if __name__ == '__main__':
+  main()

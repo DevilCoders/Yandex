@@ -1,0 +1,40 @@
+$year_format = DateTime::Format("%Y");
+$month_format = DateTime::Format("%b");
+$date_parse = DateTime::Parse("%Y-%m-%d");
+$month_start = ($dt) -> (DateTime::StartOfMonth($dt));
+$get_month_name = ($dt) -> ($month_format($month_start($dt)));
+$get_fy = ($dt) -> ("FY"||substring($year_format($month_start($dt)),2,2));
+
+$date_format = DateTime::Format("%Y-%m-%d");
+
+$data = (SELECT
+vs,
+YEAR,
+PERIOD,
+MAX_BY(oebs_service, abc.date)  as SERVICE,
+SUM(reports.cost) as VALUE,
+FROM
+$reports_table as `reports`
+INNER JOIN
+$billing_accounts_table as `accounts`
+ON
+reports.billing_account_id = accounts.billing_account_id
+INNER JOIN
+`//home/metering/abc_tree/last` as abc
+ON String::AsciiToLower(`accounts`.name) = String::AsciiToLower(`abc`.slug) and $date_format(`reports`.`date`) = `abc`.`date`
+WHERE $date_format(`reports`.`date`) >=  "2022-01-01"
+AND
+abc.billing_in = "hyperion"
+GROUP BY
+abc.top_to_oebs as vs,
+$get_fy(`reports`.`date`) as YEAR,
+$get_month_name(`reports`.`date`) as PERIOD
+);
+
+$result = (SELECT
+data.YEAR as YEAR,
+data.PERIOD as PERIOD,
+cast(data.VALUE as double) as VALUE,
+SERVICE
+FROM $data as data
+ORDER BY YEAR, PERIOD, SERVICE);

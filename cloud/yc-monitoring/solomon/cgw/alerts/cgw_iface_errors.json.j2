@@ -1,0 +1,34 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro prog() %}
+let sensors_all_ifaces_errors_rate = derivative({
+	cluster='cloud_{{ env }}_cloudgate',
+	service='interfaces',
+	host='*',
+	iface='Ethernet*',
+	name='*x*error'
+});
+let max_drop_iface_rate = group_lines('max', sensors_all_ifaces_errors_rate);
+let last_drops = sum(max_drop_iface_rate);
+let max_drops_rate = max((max_drop_iface_rate));
+let is_red = max_drops_rate > 0;
+let is_yellow = last_drops > 0 ;
+alarm_if(is_red);
+warn_if(is_yellow);
+{% endmacro %}
+
+
+{% block main %}
+	"name": "CGW interfaces errors @ {{ env }}",
+	"groupByLabels": ["host"],
+	"annotations": {
+		"host": "{{ svm_fqdn() }}",
+		"tags": "Solomon, yc-{{env}}, yc-cgw",
+		"errors_per_second": "[[expression.max_drops_rate]]",
+		"service": "{{ serviceName }}",
+		"wiki": "https://docs.yandex-team.ru/yc-monitoring/cgw/{{ serviceName }}",
+		"total_drops": "[[expression.last_drops]]"
+	},
+	"description": "Found errors on cgw interfaces.",
+	"type": {{ type_expression() }}
+{% endblock %}

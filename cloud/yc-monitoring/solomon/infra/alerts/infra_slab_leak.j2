@@ -1,0 +1,25 @@
+{% extends "../../base/alert.j2" %}
+
+{% set crt_threshold = 9 %} # GB 
+{% set wrn_threshold = 5 %} # GB
+
+{% macro prog() %}
+let slab = last({project="{{ project_id }}", cluster="cloud_{{ env }}", service="sys", path="/Memory/Slab", host="{{ host_prefix }}*"});
+let slab_for_human = round(slab/1000000000*100)/100;
+let is_red = slab >= ({{ crt_threshold }}*1000000000);
+let is_yellow = slab >= ({{ wrn_threshold }}*1000000000);
+alarm_if(is_red);
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+    "name": "yc_infra_slab_leak @ {{ env }}/{{ cluster }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "host": "[[labels.host]]{{ host_suffix }}",
+        "tags": "yc_infra_slab_leak, {{ env }}, {{ cluster }}",
+        "service": "slab-leak"
+    },
+    "description": "Detect high SLAB leak",
+    "type": {{ type_expression() }}
+{% endblock %}

@@ -1,0 +1,183 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.kms.v1;
+
+import "yandex/cloud/priv/kms/v1/symmetric_key.proto";
+import "yandex/cloud/priv/validation.proto";
+import "yandex/cloud/priv/sensitive.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/kms/v1;kms";
+option java_outer_classname = "PSCS";
+
+// --- data plane for KMS symmetric cryptography operations
+
+service SymmetricCryptoService {
+
+  rpc Encrypt (SymmetricEncryptRequest) returns (SymmetricEncryptResponse);
+
+  rpc Decrypt (SymmetricDecryptRequest) returns (SymmetricDecryptResponse);
+
+  rpc BatchEncrypt (SymmetricBatchEncryptRequest) returns (SymmetricBatchEncryptResponse);
+
+  rpc BatchDecrypt (SymmetricBatchDecryptRequest) returns (SymmetricBatchDecryptResponse);
+
+  rpc ReEncrypt (SymmetricReEncryptRequest) returns (SymmetricReEncryptResponse);
+
+  rpc GenerateDataKey (GenerateDataKeyRequest) returns (GenerateDataKeyResponse);
+
+  rpc GenerateRandom (GenerateRandomRequest) returns (GenerateRandomResponse);
+
+}
+
+message SymmetricEncryptRequest {
+  string key_id = 1 [(required) = true, (length) = "<=50"];
+  // Version ID, defaults to primary version if not given
+  string version_id = 2 [(length) = "<=50"];
+  // Additional authenticated data, optional
+  bytes aad_context = 3 [(length) = "<=8192", (sensitive) = true];
+  // Plaintext to be encrypted
+  bytes plaintext = 4 [(required) = true, (length) = "<=32768", (sensitive) = true];
+}
+
+message SymmetricEncryptResponse {
+  string key_id = 1;
+  string version_id = 2; // version was used for encryption
+  bytes ciphertext = 3 [(sensitive) = true]; // encrypted text
+}
+
+message SymmetricDecryptRequest {
+  string key_id = 1 [(required) = true, (length) = "<=50"];
+  // Additional authenticated data, same as in corresponding EncryptRequest
+  bytes aad_context = 2 [(length) = "<=8192", (sensitive) = true];
+  // Encrypted text to be decrypted
+  bytes ciphertext = 3 [(required) = true, (sensitive) = true];
+}
+
+message SymmetricDecryptResponse {
+  string key_id = 1;
+  string version_id = 2; // version was used for decryption
+  bytes plaintext = 3 [(sensitive) = true]; // decrypted text
+}
+
+message SymmetricBatchEncryptRequest {
+  string key_id = 1 [(required) = true, (length) = "<=50"];
+  // Items to encrypt
+  repeated Item items = 2;
+
+  message Item {
+      // Version ID, defaults to primary version if not given
+      string version_id = 1 [(length) = "<=50"];
+      // Additional authenticated data, optional
+      bytes aad_context = 2 [(length) = "<=8192", (sensitive) = true, (sensitive_type) = SENSITIVE_REMOVE];
+      // Plaintext to be encrypted
+      bytes plaintext = 3 [(required) = true, (length) = "<=32768", (sensitive) = true];
+  }
+}
+
+message SymmetricBatchEncryptResponse {
+  string key_id = 1;
+  repeated Item items = 2; // encrypted items
+
+  message Item {
+    oneof data {
+      Success success = 1;
+      Failure failure = 2;
+    }
+  }
+
+  message Success {
+    string version_id = 1; // version used for encryption
+    bytes ciphertext = 2; // encrypted text
+  }
+
+  message Failure {
+    string error_message = 1; // error message
+  }
+}
+
+message SymmetricBatchDecryptRequest {
+  string key_id = 1 [(required) = true, (length) = "<=50"];
+  // Items to decrypt
+  repeated Item items = 2;
+
+  message Item {
+    // Additional authenticated data, same as in corresponding EncryptRequest
+    bytes aad_context = 1 [(length) = "<=8192", (sensitive) = true, (sensitive_type) = SENSITIVE_REMOVE];
+    // Encrypted text to be decrypted
+    bytes ciphertext = 2 [(required) = true];
+  }
+}
+
+message SymmetricBatchDecryptResponse {
+  string key_id = 1;
+  repeated Item items = 2; // decrypted items
+
+  message Item {
+    oneof data {
+      Success success = 1;
+      Failure failure = 2;
+    }
+  }
+
+  message Success {
+    string version_id = 1; // version used for decryption
+    bytes plaintext = 2 [(sensitive) = true]; // decrypted text
+  }
+
+  message Failure {
+    string error_message = 1; // error message
+  }
+}
+
+message GenerateDataKeyRequest {
+  string key_id = 1 [(required) = true, (length) = "<=50"];
+  // Version ID, defaults to primary version if not given
+  string version_id = 2 [(length) = "<=50"];
+  // Additional authenticated data to be used by encryption algorithm (optional)
+  bytes aad_context = 3 [(length) = "<=8192", (sensitive) = true];
+  // Encryption algorithm create data key for
+  SymmetricAlgorithm data_key_spec = 4;
+  // Plaintext for data key won't be returned if this parameter is true
+  bool skip_plaintext = 5;
+}
+
+message GenerateDataKeyResponse {
+  string key_id = 1;
+  string version_id = 2; // key version used for encryption of data key, optional
+  bytes data_key_plaintext = 3 [(sensitive) = true];  // data key in plaintext
+  bytes data_key_ciphertext = 4 [(sensitive) = true]; // ciphered data key
+}
+
+message SymmetricReEncryptRequest {
+  // Target key id
+  string key_id = 1 [(required) = true, (length) = "<=50"];
+  // Target key version id, optional, defaults to primary
+  string version_id = 2 [(length) = "<=50"];
+  // Target additional authenticated data, optional
+  bytes aad_context = 3 [(length) = "<=8192", (sensitive) = true];
+  // Source key id, may be equal to target key id
+  string source_key_id = 4 [(required) = true, (length) = "<=50"];
+  // Source add-context, may differ from target add-context
+  bytes source_aad_context = 5 [(length) = "<=8192", (sensitive) = true];
+  // Encrypted text to re-encrypt
+  bytes ciphertext = 6 [(required) = true, (sensitive) = true];
+}
+
+message SymmetricReEncryptResponse {
+  string key_id = 1; // target key id
+  string version_id = 2; // target key version id used for encryption
+  string source_key_id = 3; // source key id
+  string source_version_id = 4; // source key version used for decryption
+  bytes ciphertext = 5 [(sensitive) = true]; // re-encrypted text
+}
+
+message GenerateRandomRequest {
+  // The folder id to identify and charge customer
+  string folder_id = 1 [(required) = true];
+  // The size of the generated random bytes.
+  int64 size = 2 [(value) = "1-1024"];
+}
+
+message GenerateRandomResponse {
+  bytes random = 1 [(sensitive) = true];
+}

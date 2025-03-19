@@ -1,0 +1,55 @@
+OWNER(g:cloud-marketplace)
+
+PY3_LIBRARY(yc_marketplace_queue)
+
+PY_SRCS(
+    __init__.py
+    config.py
+    exceptions.py
+    main.py
+    lib/__init__.py
+    lib/send_mail.py
+    models/__init__.py
+    models/params.py
+    models/results.py
+    tasks/__init__.py
+    tasks/bind_skus_to_version.py
+    tasks/build_factory_blueprints.py
+    tasks/cancel.py
+    tasks/check_partner_request.py
+    tasks/delete_image_pool.py
+    tasks/export_tables.py
+    tasks/finalize_clone_image.py
+    tasks/finalize_image_pool_size.py
+    tasks/finalize_partner.py
+    tasks/os_product_create_or_update.py
+    tasks/os_product_family_version_create.py
+    tasks/publish_logo.py
+    tasks/publish_eula.py
+    tasks/resolve_dependencies.py
+    tasks/send_mail_to_docs.py
+    tasks/simple_product_create_or_update.py
+    tasks/start_clone_image.py
+    tasks/start_create_image.py
+    tasks/start_publish_image.py
+    tasks/sync_isv_to_billing.py
+    tasks/sync_publisher_to_billing_finish.py
+    tasks/sync_publisher_to_billing_start.py
+    tasks/sync_var_to_billing_finish.py
+    tasks/sync_var_to_billing_start.py
+    tasks/update_image_pool_size.py
+    tasks/update_product_family.py
+    types/__init__.py
+    types/export.py
+    utils/__init__.py
+    utils/checks.py
+    utils/errors.py
+)
+
+PEERDIR(
+    library/python/deprecated/ticket_parser2
+    cloud/marketplace/common/yc_marketplace_common
+    cloud/bitbucket/python-common
+)
+
+END()

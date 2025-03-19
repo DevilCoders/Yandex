@@ -1,0 +1,38 @@
+api_path: /shards/
+entities:
+  # Формат имени: <сервис>@<кластер>
+  # Внимание!
+  # При добавлении нового шарда нужно добавить его в мониторинг квот и fetch/push
+  # (см. Juggler агрегаты:
+  # compute-head-solomon-quotas https://bb.yandex-team.ru/projects/CLOUD/repos/yc-monitoring/browse/juggler/roles/head/tasks/compute-api.yml#343).
+  # compute-solomon-fetch-status https://bb.yandex-team.ru/projects/CLOUD/repos/yc-monitoring/browse/juggler/roles/head/tasks/compute-api.yml#328
+  sys@head:
+    template: ../../base/shard.j2
+
+  solomon_agent@head:
+    template: ../../base/shard.j2
+
+  compute_head@head:
+    template: ../../base/shard.j2
+    context:
+      override_short_ttl: 30
+
+  compute_tasks@head:
+    template: ../../base/shard.j2
+    context:
+      override_short_ttl: 30
+
+  compute_metadata@compute:
+    template: ../../base/shard.j2
+
+  {% for az in zones_by_env[env] %}
+  # Устаревший общий сервис. Когда метрики перестанут поступать - удалить.
+  internals@head_{{ az.prefix }}:
+    template: ../../base/shard.j2
+  {% endfor %}
+
+  {% if env != "israel" %}
+  # Общий сервис. Кандидат на удаление, https://st.yandex-team.ru/CLOUD-2515, т.к. не используется.
+  logs@_ALL:
+    template: ../../base/shard.j2
+  {% endif %}

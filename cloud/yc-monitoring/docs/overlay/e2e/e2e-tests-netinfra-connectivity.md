@@ -1,0 +1,3 @@
+[Алерт e2e-tests-netinfra-connectivity в джаглере](https://juggler.yandex-team.ru/aggregate_checks/?query=service%3De2e-tests-netinfra-connectivity)
+
+- **test_ipv4_netinfra_extra** – Запускается на той же виртуалке что и -fip тесты. Пингует список хостов, указанный в конфиге `netinfra_extra_targets` (оргинальный список предоставил кто:eucariot). Отписывает в отдельный агрегат. Поскольку оригинальная проверка закрыта за kikimr-lock сырые данные приходят только с тех машин, которые этот лок выиграли, поэтому в агрегате указано no_data: skip. Тоесть агрегат пропускает хосты с NO_DATA. Загорается красным если больше 30% хостов не пингуются

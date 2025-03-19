@@ -1,0 +1,36 @@
+{%- set hostname = grains['fqdn'] %}
+{%- set host_roles = salt['grains.get']('cluster_map:hosts:%s:roles' % hostname) %}
+{%- set host_tags = salt['grains.get']('cluster_map:hosts:%s:tags' % hostname) %}
+{%- set base_role = salt['grains.get']('cluster_map:hosts:%s:base_role' % hostname) %}
+
+{%- for name, iface in phyifaces.iteritems() %}
+declare -A {{ name }}=(
+    ["vpp_name"]="{{ iface['vpp_name'] }}"
+    ["os_name"]="{{ iface['os_name'] }}"
+    ["addr"]="{{ host['interfaces'][name]['addr'] }}"
+{%- if (base_role == 'loadbalancer-node' or 'ipv6-mpls' in host_tags or 'cgw-dc' in host_tags) and name == 'UPSTREAM_V4' %}
+    ["feature_mpls"]="enable"
+{%- endif %}
+)
+{%- endfor %}
+
+declare -A LOOPBACK=(
+    ["vpp_name"]="loop0"
+    ["os_name"]="vpp2"
+    ["addr"]="{{ host['loopback'] }}"
+)
+
+GATEWAYS=(
+{%- for gateway in host['gateways'] %}
+    "{{ gateway['iface'] }} {{ gateway['gateway'] }}"
+{%- endfor %}
+)
+
+ROUTES=(
+{%- for route in host['routes'] %}
+    "{{ route['route'] }}
+    {%- if 'nexthop' in route %} via {{ route['nexthop'] }}{% endif %}
+    {%- if 'dev' in route %} dev {{ route['dev'] }}{% endif %}
+    {%- if 'src' in route %} src {{ route['src'] }}{% endif %}"
+{%- endfor %}
+)

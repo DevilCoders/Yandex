@@ -1,0 +1,277 @@
+{% extends 'base.html'%}
+{% from 'common_macros.html' import ticket with context %}
+{% from 'monthly_macros.html' import progress, monthly_graph with context %}
+
+{% block extra_styles %}
+  <style>
+    td, th {
+      border-bottom-width: 0 !important;
+    }
+
+    thead tr:nth-child(1) th {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      text-align: start;
+      background: white;
+    }
+
+    .tracker-summary {
+      max-width: 800px;
+    }
+
+    .tracker-importance {
+      width: 1em;
+      height: 1em;
+      line-height: 1em;
+      border: 3px solid gray;
+      color: white;
+      text-align: center;
+      border-radius: 8px;
+      box-sizing: content-box;
+      font-weight: bold;
+      background: gray;
+      padding: 2px;
+      margin: 2px 0.2em 2px 0;
+    }
+
+    .tracker-importance-legend {
+      background: gray;
+    }
+
+    .tracker-tag {
+      border-radius: 4px;
+      font-size: 80%;
+      font-weight: bold;
+      padding: 2px;
+    }
+
+    .tracker-tag-new {
+      background: #deebff;
+      color: #0e4ca9;
+    }
+
+    .tracker-tag-previous {
+      background: #e3fcef;
+      color: #006644;
+    }
+
+    .issue-progress {
+      width: 600px;
+    }
+
+    .issue > *, .category > * {
+      vertical-align: middle;
+    }
+
+    .tree-button {
+      min-width: 15px;
+    }
+
+    .tree-button:hover {
+      cursor: pointer;
+    }
+
+    .tree-button-collapsed {
+      transform: rotate(0deg);
+      transition: transform 0.2s linear;
+    }
+
+    .tree-button-expanded {
+      transform: rotate(90deg);
+      transition: transform 0.2s linear;
+    }
+
+    .modal-body {
+      display: flex;
+    }
+
+    #charts-body {
+      display: flex;
+      width: 100%;
+      padding: 20px;
+    }
+  </style>
+{% endblock extra_styles %}
+
+{% block title %}Список задач{% endblock title %}
+
+{% block legend %}
+  <a id='expand-all' class='pointer' style='display: block;'>
+    <i class='fas fa-stream'></i>
+    Раскрыть все
+  </a>
+
+  <a class='pointer' data-bs-toggle='modal' data-bs-target='#charts' style='margin-bottom: 30px; display: block;'>
+    <i class='fas fa-external-link-alt'></i>
+    Показать графики
+  </a>
+
+  <div>
+    <span class='legend-color tracker-importance-legend'></span>Приоритет
+  </div>
+{% endblock legend %}
+
+{% block body %}
+  <div class='table-fixed'>
+    <table id='tree' class='table table-hover w-auto'>
+  {% set context = namespace(node=0, path=[], collapsed=[False]) %}
+  {% for key, item in task_tree.items.items() recursive %}
+    {% if item.visible %}
+      {% set category_loop = loop %}
+      {% set context.node = context.node + 1 %}
+      {% set _ = context.collapsed.append(item.collapsed) %}
+      {% set _ = context.path.append(context.node) %}
+
+      <thead class='sticky-header tree-item {{ 'd-none' if context.collapsed[-2] }}' tree-path='{{ context.path|join(' ') }}'>
+        <tr>
+          <th>
+            <span class='category'>
+              <span style='display: inline-block; margin-left: {{ category_loop.depth0 * 30 }}px;'></span>
+              <i class='fas fa-chevron-right tree-button {{ 'tree-button-collapsed' if item.collapsed else 'tree-button-expanded' }}'
+                 tree-path='{{ context.path|join(' ') }}'>
+              </i>
+              <span style='display: inline-block;'>{{ key }} ({{ item.issues | length }})</span>
+            </span>
+          </th>
+        </tr>
+      </thead>
+
+      <tbody>
+
+      {% for issue in item.issues recursive %}
+        {% if issue.key is not none %}
+          {% set issue_loop = loop %}
+          {% set context.node = context.node + 1 %}
+          {% set _= context.path.append(context.node) %}
+
+        <tr class='tree-item {{ 'd-none' if context.collapsed[-1] or issue_loop.depth != 1 }}' tree-path='{{ context.path|join(' ') }}'>
+          <td>
+            <span class='issue'>
+              <span style='display: inline-block; margin-left: {{ (category_loop.depth0 + issue_loop.depth) * 30 }}px;'></span>
+              <i class='fas fa-chevron-right tree-button tree-button-collapsed {{ 'invisible' if issue.sub_issues|length == 0 }}'
+                 tree-path='{{ context.path|join(' ') }}'>
+              </i>
+
+              <div style='display: inline-block;'>
+                {{ ticket(issue, with_priority=True, with_tags=False) }}
+              </div>
+            </span>
+          </td>
+        </tr>
+
+        {{ loop(issue.sub_issues.values()) }}
+
+          {% set _ = context.path.pop() %}
+        {% endif %}
+      {% endfor %}
+      </tbody>
+
+      {% if item.items %}
+        {{ loop(item.items.items()) }}
+      {% endif %}
+
+      {% set _ = context.collapsed.pop() %}
+      {% set _ = context.path.pop() %}
+    {% endif %}
+  {% endfor %}
+    </table>
+  </div>
+
+  <div id='charts' class="modal fade" aria-hidden='true' tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" style='max-width: 90%;'>
+      <div class="modal-content">
+        <div class="modal-body" style='min-height: calc(100vh - 150px);'>
+          <div id='charts-body'>
+  {% for key, category in task_tree.items.items() %}
+            <div id='chart-{{ loop.index }}' class='chart'></div>
+  {% endfor %}
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock body %}
+
+{% block extra_scripts %}
+  <script>
+    var taskTree = {};
+
+    $(document).ready(function() {
+      $('#tree *[tree-path]').each(function() {
+        let node = taskTree;
+        for (const item of $(this).attr('tree-path').split(' ')) {
+          if (!(item in node)) {
+            node[item] = {}
+          }
+          node = node[item]
+        }
+
+        if ($(this).hasClass('tree-button')) {
+          node['button'] = $(this);
+        }
+
+        if ($(this).hasClass('tree-item')) {
+          node['item'] = $(this);
+        }
+      });
+    });
+
+    function addTreeItems(node, visible_only, result) {
+      result.push(node);
+
+      if (visible_only && node['button'].hasClass('tree-button-collapsed')) {
+        return;
+      }
+
+      for (const key in node) {
+        if (key === 'button' || key === 'item') {
+          continue;
+        }
+
+        addTreeItems(node[key], visible_only, result);
+      }
+    }
+
+    function subTree(path, visible_only) {
+      var node = taskTree;
+      for (const item of path) {
+        node = node[item];
+      }
+
+      var result = [];
+      for (const key in node) {
+        if (key !== 'button' && key !== 'item') {
+          addTreeItems(node[key], visible_only, result);
+        }
+      }
+
+      return result;
+    }
+
+    function expandAll() {
+      subTree([], false).forEach(function(node) {
+        node['button'].addClass('tree-button-expanded');
+        node['button'].removeClass('tree-button-collapsed');
+        node['item'].removeClass('d-none');
+      });
+    }
+
+    $('#expand-all').on('click', expandAll);
+
+    $('.tree-button').on('click', function(e) {
+      $(this).toggleClass('tree-button-collapsed tree-button-expanded');
+
+      path = $(this).attr('tree-path').split(' ');
+
+      if ($(this).hasClass('tree-button-collapsed')) {
+        subTree(path, false).forEach(node => node['item'].addClass('d-none'));
+      } else {
+        subTree(path, true).forEach(node => node['item'].removeClass('d-none'));
+      }
+    });
+  </script>
+{% endblock extra_scripts %}

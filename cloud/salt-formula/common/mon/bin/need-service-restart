@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+
+import argparse
+import os
+import sys
+from datetime import datetime
+from pathlib import Path
+
+import yc_monitoring as mon
+from yc_monitoring import Status
+
+CONFIG_FILE = "/home/monitor/agents/etc/need-service-restart.conf"
+
+
+def get_services_need_restart(marker_dir):
+    if not os.path.exists(marker_dir):
+        return []
+
+    need_restart = []
+    for service in sorted(os.listdir(marker_dir)):
+        marker_file = os.path.join(marker_dir, service)
+
+        mtime = os.path.getmtime(marker_file)
+        mtime_dt = datetime.utcfromtimestamp(mtime)
+
+        status = mon.get_systemctl_status(service)
+        active_since_dt = mon.get_service_active_since(status)
+
+        if mtime_dt > active_since_dt:
+            need_restart.append( (service, mtime_dt, active_since_dt) )
+
+    return need_restart
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--check", metavar="SERVICE", help="Check this service. Exit with 0: needed, 1: not needed.")
+    parser.add_argument("--reset", metavar="SERVICE", help="Reset 'restart is needed' flag for service.")
+    parser.add_argument("--set", metavar="SERVICE", help="Set 'restart is needed' flag for service.")
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+
+    try:
+        config = mon.load_config(CONFIG_FILE)
+    except IOError as e:
+        mon.report_status_and_exit(Status.CRIT, "Can't load monitoring config file {!r}: {}".format(CONFIG_FILE, e))
+        return
+    marker_dir = config["marker_dir"]
+
+    if args.set is not None:
+        Path(os.path.join(marker_dir, args.set)).touch()
+        return
+
+    if args.reset is not None:
+        try:
+            os.remove(os.path.join(marker_dir, args.reset))
+        except FileNotFoundError:
+            pass
+        return
+
+    try:
+        need_restart_list = get_services_need_restart(marker_dir)
+        if args.check is not None:
+            restart_needed = any(service == args.check for service, _, _ in need_restart_list)
+            print("Service {!r} {} restart.".format(args.check, "NEEDS" if restart_needed else "does NOT need"))
+            sys.exit(0 if restart_needed else 1)
+
+        if need_restart_list:
+            need_restart_formatted = []
+            for service, mtime_dt, active_since_dt in need_restart_list:
+                msg = "{} (started at {}, updated at {})".format(service, active_since_dt, mtime_dt)
+                need_restart_formatted.append(msg)
+
+            msg = "Services/configs were updated: {}".format(", ".join(need_restart_formatted))
+            mon.report_status_and_exit(Status.CRIT, msg)
+
+        mon.report_status_and_exit(Status.OK, "All services are up to date")
+    except Exception as e:
+        mon.report_status_and_exit(Status.CRIT, "Unexpected error while running check: {!r}".format(e))
+
+
+if __name__ == "__main__":
+    main()

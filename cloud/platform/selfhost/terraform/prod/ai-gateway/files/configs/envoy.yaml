@@ -1,0 +1,86 @@
+node:
+  id: any
+  cluster: translateapi_gateway
+  locality:
+    region: ru-central1
+    zone: any
+
+admin:
+  access_log_path: /var/log/envoy/admin_access.log
+  address:
+    socket_address: { address: 127.0.0.1, port_value: 9901 }
+
+# Don't change the x-request-id header.
+layered_runtime:
+  layers:
+  - name: static
+    static_layer:
+      tracing:
+        random_sampling: 0
+
+stats_config:
+  use_all_default_tags: true
+
+stats_sinks:
+- name: envoy.statsd
+  config:
+    address:
+      socket_address: { address: 127.0.0.1, port_value: 9125 }
+
+tracing:
+  http:
+    name: envoy.dynamic.ot
+    typed_config:
+      "@type": type.googleapis.com/envoy.config.trace.v2.DynamicOtConfig
+      library: /usr/local/lib/libjaegertracing_plugin.so
+      config:
+        service_name: ai-gateway
+        sampler: { type: const, param: 1 }
+        reporter: { localAgentHostPort: 127.0.0.1:5775 }
+
+dynamic_resources:
+  lds_config:
+    api_config_source:
+      api_type: GRPC
+      grpc_services:
+        envoy_grpc:
+          cluster_name: xds_cluster
+  cds_config:
+    api_config_source:
+      api_type: GRPC
+      grpc_services:
+        envoy_grpc:
+          cluster_name: xds_cluster
+
+static_resources:
+  clusters:
+    - name: xds_cluster
+      connect_timeout: 0.25s
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      http2_protocol_options: {}
+      load_assignment:
+        cluster_name: xds_cluster
+        endpoints:
+        - lb_endpoints:
+          - endpoint:
+              address:
+                socket_address:
+                  address: 127.0.0.1
+                  port_value: 4435
+
+    - name: als
+      connect_timeout: 0.25s
+      http2_protocol_options: {}
+      type: STATIC
+      hosts:
+      - socket_address:
+          address: 127.0.0.1
+          port_value: 4436
+  secrets:
+    - name: frontend_certs
+      tls_certificate:
+        certificate_chain:
+          filename: /etc/envoy/ssl/certs/ai-gateway.crt
+        private_key:
+          filename: /etc/envoy/ssl/private/ai-gateway.key

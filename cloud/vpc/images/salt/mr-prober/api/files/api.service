@@ -1,0 +1,50 @@
+[Unit]
+Description=Mr. Prober API
+After=docker.service
+Requires=docker.service
+After=skm.service
+
+[Service]
+EnvironmentFile=/etc/default/mr_prober
+TimeoutStartSec=0
+Restart=always
+RestartSec=5s
+
+# We do not use ConditionPathExists and use ExecStartPre here because systemd doesn't restart unit if conditions are not met.
+# See https://st.yandex-team.ru/CLOUD-90953#6205478a09dff1581a7a8870 for details.
+ExecStartPre=/usr/bin/test -f /etc/secrets/mr_prober_sa_key.prod.json
+ExecStartPre=/usr/bin/test -f /etc/secrets/mr_prober_sa_aws_access_key_id
+ExecStartPre=/usr/bin/test -f /etc/secrets/mr_prober_sa_aws_secret_access_key
+ExecStartPre=/usr/bin/test -f /etc/secrets/mr_prober_database_url.txt
+ExecStartPre=/usr/bin/test -f /etc/secrets/mr_prober_api_key
+
+# Authorize in cr.yandex
+ExecStartPre=/bin/bash -c "cat /etc/secrets/mr_prober_sa_key.prod.json | docker login --username json_key --password-stdin cr.yandex"
+
+# Pull the docker image
+ExecStartPre=/usr/bin/docker pull cr.yandex/crpni6s1s1aujltb5vv7/api:{{ version }}
+
+# Start the container!
+ExecStartPre=/bin/bash -c '/usr/bin/docker run --rm \
+                           --name %n.auto-migrate \
+                           --env-file /etc/default/mr_prober \
+                           -e "DATABASE_URL=$(cat /etc/secrets/mr_prober_database_url.txt)" \
+                           --network host \
+                           cr.yandex/crpni6s1s1aujltb5vv7/api:{{ version }} alembic upgrade head'
+ExecStart=/bin/bash -c '/usr/bin/docker run --rm \
+                        --name %n \
+                        --log-opt max-size=1000m \
+                        --env-file /etc/default/mr_prober \
+                        -e "S3_ACCESS_KEY_ID=$(cat /etc/secrets/mr_prober_sa_aws_access_key_id)" \
+                        -e "S3_SECRET_ACCESS_KEY=$(cat /etc/secrets/mr_prober_sa_aws_secret_access_key)" \
+                        -e "DATABASE_URL=$(cat /etc/secrets/mr_prober_database_url.txt)" \
+                        -e "API_KEY=$(cat /etc/secrets/mr_prober_api_key)" \
+                        --network host \
+                        cr.yandex/crpni6s1s1aujltb5vv7/api:{{ version }} \
+                       '
+
+ExecStop=/usr/bin/docker stop --time 3 %n
+ExecStopPost=-/usr/bin/docker rm %n
+
+[Install]
+WantedBy=multi-user.target

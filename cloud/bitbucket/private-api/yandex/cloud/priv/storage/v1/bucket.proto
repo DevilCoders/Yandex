@@ -1,0 +1,267 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.storage.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/storage/v1;storage";
+
+message Bucket {
+  // ID of the bucket. ID and Name properties are
+  // the same for bucket.
+  string id = 1;
+
+  // Name of the bucket. Name and ID properties are
+  // the same for the bucket.
+  string name = 2;
+  string folder_id = 3;
+  AnonymousAccessFlags anonymous_access_flags = 4;
+  string default_storage_class = 5;
+  Versioning versioning = 6;
+  int64 max_size = 7;
+
+  google.protobuf.Struct policy = 8;
+  ACL acl = 9;
+  google.protobuf.Timestamp created_at = 10;
+
+  repeated CorsRule cors = 11;
+  WebsiteSettings website_settings = 12;
+  repeated LifecycleRule lifecycle_rules = 13;
+}
+
+message ACL {
+  message Grant {
+    enum Permission {
+      PERMISSION_UNSPECIFIED = 0;
+      // header X-Amz-Grant-Full-Control
+      PERMISSION_FULL_CONTROL = 1;
+      // header X-Amz-Grant-Write
+      PERMISSION_WRITE = 2;
+      // header X-Amz-Grant-Write-Acp
+      PERMISSION_WRITE_ACP = 3;
+      // header X-Amz-Grant-Read
+      PERMISSION_READ = 4;
+      // header X-Amz-Grant-Read-Acp
+      PERMISSION_READ_ACP = 5;
+    }
+
+    enum GrantType {
+      GRANT_TYPE_UNSPECIFIED = 0;
+      // equal to 'id' grantee value
+      GRANT_TYPE_ACCOUNT = 1;
+      // equal to 'uri' authenticated users
+      GRANT_TYPE_ALL_AUTHENTICATED_USERS = 2;
+      // equal to 'uri' all users
+      GRANT_TYPE_ALL_USERS = 3;
+    }
+
+    Permission permission = 1 [ (required) = true ];
+    GrantType grant_type = 2 [ (required) = true ];
+    // [semi-optional] grantee id is used only when grant_type is TO_ACCOUNT
+    string grantee_id = 3;
+  }
+
+  repeated Grant grants = 1;
+}
+
+message AnonymousAccessFlags {
+  google.protobuf.BoolValue read = 1;
+  google.protobuf.BoolValue list = 2;
+  google.protobuf.BoolValue config_read = 3;
+}
+
+message CorsRule {
+  enum Method {
+    METHOD_UNSPECIFIED = 0;
+    METHOD_GET = 1;
+    METHOD_HEAD = 2;
+    METHOD_POST = 3;
+    METHOD_PUT = 4;
+    METHOD_DELETE = 5;
+  }
+
+  string id = 1;
+  repeated Method allowed_methods = 2 [ (size) = ">0", (unique) = true ];
+  // allowed_headers elements might be either as exact value
+  // (i.e. Test-Header-Field) or as pattern (i.e. Test-*-Field)
+  // But only one star allowed.
+  repeated string allowed_headers = 3;
+  // allowed_origins elements might be either as exact value
+  // (i.e. some-value) or as pattern (i.e. some*value)
+  // But only one star allowed.
+  repeated string allowed_origins = 4 [ (size) = ">0" ];
+  repeated string expose_headers = 5;
+  google.protobuf.Int64Value max_age_seconds = 6;
+}
+
+message WebsiteSettings {
+  enum Protocol {
+    PROTOCOL_UNSPECIFIED = 0;
+    PROTOCOL_HTTP = 1;
+    PROTOCOL_HTTPS = 2;
+  }
+
+  message Scheme {
+    // by default, http will be used.
+    Protocol protocol = 1;
+    string hostname = 2;
+  }
+
+  message Condition {
+    string http_error_code_returned_equals = 1;
+    string key_prefix_equals = 2;
+  }
+
+  message Redirect {
+    string hostname = 1;
+    // http_redirect_code allowed values ranges between 301 and 399.
+    // by default value 301 will be used.
+    string http_redirect_code = 2 [ (pattern) = "3(0[1-9]|[1-9][0-9])" ];
+    Protocol protocol = 3;
+    string replace_key_prefix_with = 4;
+    string replace_key_with = 5;
+  }
+
+  message RoutingRule {
+    Condition condition = 1;
+    Redirect redirect = 2;
+  }
+
+  // index points to entrypoint of the website.
+  // Either property "index" or "redirect_all_requests"
+  // should be set in order to operate.
+  string index = 1;
+  string error = 2;
+  // redirect_all_requests redirects all requests to other uri.
+  // If this field  used, no other fields should be defined.
+  Scheme redirect_all_requests = 3;
+  repeated RoutingRule routing_rules = 4;
+}
+
+message LifecycleRule {
+  message AfterDays {
+    google.protobuf.Int64Value days_after_expiration = 1;
+  }
+
+  message NoncurrentExpiration {
+    google.protobuf.Int64Value noncurrent_days = 1;
+  }
+
+  message NoncurrentTransition {
+    google.protobuf.Int64Value noncurrent_days = 1;
+    string storage_class = 2 [ (required) = true ];
+  }
+
+  message Transition {
+    google.protobuf.Timestamp date = 1;
+    google.protobuf.Int64Value days = 2;
+    string storage_class = 4 [ (required) = true ];
+  }
+
+  message Expiration {
+    // If date is set, days parameter not allowed
+    google.protobuf.Timestamp date = 1;
+    // If days are set, date parameter not allowed
+    google.protobuf.Int64Value days = 2;
+    // if expired_object_delete_marker is set, other parameters
+    // are not allowed.
+    google.protobuf.BoolValue expired_object_delete_marker = 3;
+  }
+
+  message RuleFilter {
+    string prefix = 1;
+  }
+
+  google.protobuf.StringValue id = 1;
+  bool enabled = 2;
+  RuleFilter filter = 3;
+  Expiration expiration = 4;
+  repeated Transition transitions = 5;
+  AfterDays abort_incomplete_multipart_upload = 6;
+  NoncurrentExpiration noncurrent_expiration = 7;
+  repeated NoncurrentTransition noncurrent_transitions = 8;
+}
+
+enum Versioning {
+  VERSIONING_UNSPECIFIED = 0;
+  VERSIONING_DISABLED = 1;
+  VERSIONING_ENABLED = 2;
+  VERSIONING_SUSPENDED = 3;
+}
+
+// Counters holds amount and size of various type
+// of objects.
+message Counters {
+  int64 simple_object_size = 1;
+  int64 simple_object_count = 2;
+  int64 objects_parts_size = 3;
+  int64 objects_parts_count = 4;
+  int64 multipart_objects_size = 5;
+  int64 multipart_objects_count = 6;
+  int64 active_multipart_count = 7;
+}
+
+message OptionalSizeByClass {
+  string storage_class = 1;
+  google.protobuf.Int64Value class_size = 2;
+}
+
+message SizeByClass {
+  string storage_class = 1;
+  int64 class_size = 2;
+}
+
+message CountersByClass {
+  string storage_class = 1;
+  Counters counters = 2;
+}
+
+// BucketStats describes bucket statistics.
+message BucketStats {
+  // Requested bucket name.
+  string name = 1;
+
+  // Maximum size of bucket.
+  google.protobuf.Int64Value max_size = 2;
+
+  // Size of used space in bucket.
+  int64 used_size = 3;
+
+  // Maximum size of bucket in projection of storage classes.
+  repeated OptionalSizeByClass storage_class_max_sizes = 4;
+
+  // Size of used space in projection of storage classes.
+  repeated SizeByClass storage_class_used_sizes = 5;
+
+  // Meta-info about objects stored in bucket in projection of storage classes.
+  repeated CountersByClass storage_class_counters = 6;
+
+  // Bucket's default storage class.
+  google.protobuf.StringValue default_storage_class = 7;
+
+  AnonymousAccessFlags anonymous_access_flags = 8;
+
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+message HTTPSConfig {
+  enum SourceType {
+    SOURCE_TYPE_UNSPECIFIED = 0;
+    SOURCE_TYPE_SELF_MANAGED = 1;
+    SOURCE_TYPE_MANAGED_BY_CERTIFICATE_MANAGER = 2;
+  }
+
+  string name = 1;
+  SourceType source_type = 2;
+  google.protobuf.StringValue issuer = 3;
+  google.protobuf.StringValue subject = 4;
+  repeated string dns_names = 5;
+  google.protobuf.Timestamp not_before = 6;
+  google.protobuf.Timestamp not_after = 7;
+  string certificate_id = 8;
+}

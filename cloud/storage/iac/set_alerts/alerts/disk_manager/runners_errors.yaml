@@ -1,0 +1,78 @@
+definitions:
+  - &alert_id "yc-disk-manager-runners-errors-{{.ID}}"
+  - &alert_name "{{.Name}} Disk Manager Runners Errors"
+  - &alert_annotations_tag "yc-{{.Cluster}}-disk-manager-solomon"
+  - &alert_annotations_host "{{`{{labels.host}}`}}.svc.{{.SvmDomain}}"
+  - &alert_annotations_service "solomon_alert_disk-manager_runners_errors"
+alerts:
+  - id: *alert_id
+    name: *alert_name
+    group_by_labels:
+      - host
+    channels:
+      - id: juggler
+        notify_about_statuses:
+          - OK
+          - ERROR
+          - ALARM
+          - NO_DATA
+          - WARN
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+    clusters:
+      - testing
+      - preprod
+    expression:
+      program: |-
+        let retriable_errors = {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.Cluster}}|dataplane_{{.Cluster}}',
+        service='runners',
+        host='disk-manager-*|snapshot-*',
+        sensor='errors/retriable',
+        runnerID='-',
+        type='-'
+        };
+
+        no_data_if(count(retriable_errors) == 0);
+
+        alarm_if(integrate(retriable_errors) >= 40);
+        warn_if(integrate(retriable_errors) >= 20);
+
+  - id: *alert_id
+    name: *alert_name
+    group_by_labels:
+      - host
+    channels:
+      - id: juggler
+        notify_about_statuses:
+          - OK
+          - ERROR
+          - ALARM
+          - NO_DATA
+          - WARN
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+    clusters:
+      - prod
+      - israel
+    expression:
+      program: |-
+        let retriable_errors = {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.Cluster}}|dataplane_{{.Cluster}}',
+        service='runners',
+        host='disk-manager-*|snapshot-*',
+        sensor='errors/retriable',
+        runnerID='-',
+        type='-'
+        };
+
+        no_data_if(count(retriable_errors) == 0);
+
+        alarm_if(integrate(retriable_errors) >= 200);
+        warn_if(integrate(retriable_errors) >= 100);

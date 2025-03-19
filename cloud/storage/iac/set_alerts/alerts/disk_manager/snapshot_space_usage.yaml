@@ -1,0 +1,108 @@
+definitions:
+  - &alert_id "yc-disk-manager-snapshot-space-usage-{{.ID}}"
+  - &alert_name "{{.Name}} Disk Manager Snapshot Space Usage"
+  - &alert_annotations_tag "yc-{{.Cluster}}-disk-manager-solomon"
+  - &alert_annotations_host "cloud_{{.Cluster}}_snapshot"
+  - &alert_annotations_service "solomon_alert_disk-manager_snapshot_space_usage"
+alerts:
+  - id: *alert_id
+    name: *alert_name
+    channels:
+      - id: juggler
+        notify_about_statuses:
+          - OK
+          - ERROR
+          - ALARM
+          - NO_DATA
+          - WARN
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+      graph_link: https://solomon.yandex-team.ru/?cluster=yandexcloud_prod_global&l.orderNumber=total&l.pdisk=total&service=vdisks&l.host=cluster&project=kikimr&l.subsystem=outofspace&l.sensor=DskUsedBytes%7CDskTotalBytes&l.media=rot&l.storagePool=total&l.group=total&graph=auto&stack=false
+    clusters:
+      - prod
+      - preprod
+      - testing
+    expression:
+      program: |-
+        let warn_level = 0.6;
+        let alarm_level = 0.7;
+
+        let used_bytes = {
+          project="kikimr",
+          cluster="yandexcloud_{{.Cluster}}_global",
+          service="vdisks",
+          orderNumber="total",
+          pdisk="total",
+          host="cluster",
+          subsystem="outofspace",
+          media="rot",
+          storagePool="total",
+          group="total",
+          sensor="DskUsedBytes"
+        };
+
+        let total_bytes = {
+          project="kikimr",
+          cluster="yandexcloud_{{.Cluster}}_global",
+          service="vdisks",
+          orderNumber="total",
+          pdisk="total",
+          host="cluster",
+          subsystem="outofspace",
+          media="rot",
+          storagePool="total",
+          group="total",
+          sensor="DskTotalBytes"
+        };
+
+        let usage = max(used_bytes) / max(total_bytes);
+
+        warn_if(usage > warn_level);
+        alarm_if(usage > alarm_level);
+
+  - id: *alert_id
+    name: *alert_name
+    channels:
+      - id: juggler
+        notify_about_statuses:
+          - OK
+          - ERROR
+          - ALARM
+          - NO_DATA
+          - WARN
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+      graph_link: https://solomon.yandexcloud.co.il/?project=yc.ydb.ydbaas-cloud&cluster=israel_global&service=ydb&l.host=cluster&l.database=%2Fisrael_global%2Fsnapshot&l.name=resources.storage.limit_bytes%7Cresources.storage.used_bytes&graph=auto&stack=false&b=31d&e=
+    clusters:
+      - israel
+    expression:
+      program: |-
+        let warn_level = 0.75;
+        let alarm_level = 0.85;
+
+        let used_bytes = {
+          project="yc.ydb.ydbaas-cloud",
+          cluster="{{.Cluster}}_global",
+          service="ydb",
+          host="cluster",
+          database="/israel_global/snapshot",
+          name="resources.storage.used_bytes"
+        };
+
+        let total_bytes = {
+          project="yc.ydb.ydbaas-cloud",
+          cluster="{{.Cluster}}_global",
+          service="ydb",
+          host="cluster",
+          database="/israel_global/snapshot",
+          name="resources.storage.limit_bytes"
+        };
+
+        let usage = max(used_bytes) / max(total_bytes);
+
+        warn_if(usage > warn_level);
+        alarm_if(usage > alarm_level);

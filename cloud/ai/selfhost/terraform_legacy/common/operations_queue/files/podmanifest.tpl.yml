@@ -1,0 +1,182 @@
+apiVersion: v1
+kind: PodList
+items:
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: app-operations-queue
+    namespace: kube-system
+    annotations:
+      config_digest: ${config_digest}
+      scheduler.alpha.kubernetes.io/critical-pod: ""
+  spec:
+    priority: 2000000001
+    priorityClassName: system-cluster-critical
+    hostNetwork: true
+    initContainers:
+    - name: deploy-configs
+      image: registry.yandex.net/cloud/api/metadata:${metadata_version}
+      volumeMounts:
+      - name: all-configs
+        mountPath: /etc
+        terminationGracePeriodSeconds: 30
+    containers:
+    - name: cadvisor
+      image:  cr.yandex/crppns4pq490jrka0sth/cadvisor:${cadvisor_version}
+      ports:
+      - containerPort: 17008
+      command:
+        [ /usr/bin/cadvisor, -logtostderr, --port=17008 ]
+      volumeMounts:
+      - name: root
+        mountPath: /rootfs
+        readOnly: true
+      - name: var-run
+        mountPath: /var/run
+        readOnly: true
+      - name: sys
+        mountPath: /sys
+        readOnly: true
+      - name: var-lib-docker
+        mountPath: /var/lib/docker
+        readOnly: true
+      - name: dev-disk
+        mountPath: /dev/disk
+        readOnly: true
+    - name: operations-queue
+      image: registry.yandex.net/cloud-ai/operations-queue:${operations_queue_version}
+      ports:
+      - containerPort: 443
+      resources:
+        requests:
+          memory: "${instance_max_memory}Gi"
+        limits:
+          memory: "${instance_max_memory}Gi"
+      env:
+      - name: CLOUD_INSTALLATION
+        value: "1"
+      - name: ENVIRONMENT_TYPE
+        value: ${environment}
+      - name: LOG_LEVEL
+        value: ${log_level}	
+      - name: ZOOKEEPER_SERVERS
+        value: ${zk_servers}
+      command:
+        [ /root/server ]
+      volumeMounts:
+      - name: var-log-yc-ai
+        mountPath: /var/log/yc/ai
+      - name: var-lib-billing
+        mountPath: /var/lib/billing
+      - name: run-prometheus
+        mountPath: /run/prometheus
+        readOnly: true
+      - name: data-sa-keys
+        mountPath: /etc/yc
+        readOnly: true
+    - name: solomon-agent
+      image: registry.yandex.net/cloud-ai/solomon-agent:${solomon_version}
+      resources:
+        requests:
+          memory: "384Mi"
+        limits:
+          memory: "384Mi"
+      volumeMounts:
+      - name: solomon-agent-config
+        mountPath: /etc/solomon-agent/
+        readOnly: true
+    - name: push-client
+      image: cr.yandex/crppns4pq490jrka0sth/push-client:${push_client_version}
+      volumeMounts:
+      - name: var-log
+        mountPath: /var/log
+        terminationGracePeriodSeconds: 30
+      - name: var-spool
+        mountPath: /var/spool
+        terminationGracePeriodSeconds: 30
+      - name: push-client-config
+        mountPath: /etc/yandex/statbox-push-client
+        readOnly: true
+      - name: etc-secrets
+        mountPath: /etc/secrets
+        readOnly: true
+    - name: push-client-billing
+      image: cr.yandex/crppns4pq490jrka0sth/push-client:${push_client_version}
+      command:
+        [ /usr/bin/push-client, -f, -c, /etc/yandex/statbox-push-client/push-client-billing.yaml]
+      volumeMounts:
+      - name: var-lib-billing
+        mountPath: /var/lib/billing
+        terminationGracePeriodSeconds: 30
+      - name: var-spool
+        mountPath: /var/spool
+        terminationGracePeriodSeconds: 30
+      - name: push-client-config
+        mountPath: /etc/yandex/statbox-push-client
+        readOnly: true
+      - name: etc-secrets
+        mountPath: /etc/secrets
+        readOnly: true
+    - name: logrotate
+      image: cr.yandex/crppns4pq490jrka0sth/logrotate:${logrotate_version}
+      volumeMounts:
+      - name: logrotate-config
+        mountPath: /etc/logrotate.d
+        readOnly: true
+    volumes:
+    - name: all-configs
+      hostPath:
+        path: /etc
+        type: DirectoryOrCreate
+    - name: var-log
+      hostPath:
+        path: /var/log
+    - name: var-log-yc-ai
+      hostPath:
+        path: /var/log/yc/ai
+    - name: var-lib-billing
+      hostPath:
+        path: /var/lib/billing
+    - name: var-spool
+      hostPath:
+        path: /var/spool
+    - name: var-log-fluent
+      hostPath:
+        path: /var/log/fluent
+    - name: var-spool-push-client
+      hostPath:
+        path: /var/spool/push-client
+    - name: push-client-config
+      hostPath:
+        path: /etc/yandex/statbox-push-client
+    - name: solomon-agent-config
+      hostPath:
+        path: /etc/solomon-agent
+    - name: logrotate-config
+      hostPath:
+        path: /etc/logrotate.d
+    - name: data-sa-keys
+      hostPath:
+        path: /etc/yc/ai/keys/data-sa
+    - name: root
+      hostPath:
+        path: /
+    - name: var-run
+      hostPath:
+        path: /var/run
+    - name: sys
+      hostPath:
+        path: /sys
+    - name: var-lib-docker
+      hostPath:
+        path: /var/lib/docker
+    - name: dev-disk
+      hostPath:
+        path: /dev/disk
+    - name: run-prometheus
+      hostPath:
+        path: /run/prometheus
+    - name: etc-secrets
+      hostPath:
+          path: /etc/secrets
+

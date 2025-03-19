@@ -1,0 +1,38 @@
+{% extends "../../../base/alert.j2" %}
+
+{% set idc="network-internal-smtp-available" %}
+{% set description="Кластеры world-*, пробер tcp-request.\\n\\n" +
+"Алерт на то, что многократно (в течение часа) недоступен кто-то из mx.yandex.ru:25/smtp.yandex.ru:25. Загорается WARN, если недоступен хотя бы один раз." %}
+
+{% set windowSecs=3600 %}
+{% set delaySecs=15 %}
+{% set resolvedEmptyPolicy="RESOLVED_EMPTY_NO_DATA" %}
+{% set checkExpression="" %}
+
+{% macro prog() %}
+let fails = {project="{{ project_id }}", cluster="*", service="metrics", host!="{{ az_names }}", metric="fail", cluster_slug="world-*", prober_slug="tcp-request"};
+
+let fails_count = sum(fails);
+alarm_if(fails_count >= 20);
+{% endmacro %}
+
+{% block main %}
+    "name": "[world-*] Availability of Yandex SMTP relays",
+    "groupByLabels": [
+        "cluster",
+        "host",
+        "matrix_host",
+        "cluster_slug"
+	],
+    "annotations": {
+        "host": "[[labels.host]]",
+        "stand": "[[labels.cluster]]",
+        "service": "smtp-available-[[labels.matrix_host]]",
+        "cluster": "[[labels.cluster_slug]]",
+        "fails graph": "{{ solomon_endpoint }}/?project={{ project_id }}&service=metrics&l.metric=fail&cluster=[[labels.cluster]]&l.prober_slug=tcp-request&l.host=[[labels.host]]&l.cluster_slug=[[labels.cluster_slug]]&l.matrix_host=[[labels.matrix_host]]&graph=auto&b=1h&e=&downsamplingFill=previous",
+        "logs": "{{ s3_viewer_url }}/mr-prober-logs?key=[[labels.cluster]]%2Fprobers%2F[[labels.cluster_slug]]%2F[[labels.host]]%2Ftcp-request%2F",
+        "fails count": "[[expression.fails_count]]",
+        "target": "[[labels.matrix_host]]"
+    },
+    "type": {{ type_expression() }}
+{% endblock %}

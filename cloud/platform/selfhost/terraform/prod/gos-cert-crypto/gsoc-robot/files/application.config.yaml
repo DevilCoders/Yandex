@@ -1,0 +1,199 @@
+logger:
+  level: info
+  file_pattern: /var/log/gsoc/creator-{date}-{index}.log
+  max_files: 5
+  max_size: 1gb
+
+db:
+  host: ${db_host}
+  port: ${db_port}
+  name: ${db_name}
+  user: ${db_user}
+  password: file:///run/gsoc-robot/db-password
+  ssl_mode: verify-full
+  ca_file: /etc/ssl/certs/ca-certificates.crt
+  conn_timeout: 10
+  cache_ttl: 24h
+  migrate: true
+  migration_path: /etc/yc/gsoc-robot/migrations
+
+smtp:
+  addr: ${smtp_addr}
+  user: ${smtp_user}
+  password: file:///run/gsoc-robot/smtp-password
+
+kinesis:
+  endpoint: ${kinesis_endpoint}
+  region: ${kinesis_region}
+  stream_name: ${kinesis_stream_name}
+  key_id: ${kinesis_key_id}
+  secret: file:///run/gsoc-robot/kinesis_secret
+  scan_interval: 1s
+
+notification:
+  alert:
+    recipients: ["artbelov@yandex-team.ru"]
+    alert_subject: "Security alert: "
+    unknown_alert_title: "Unknown alert"
+    unknown_alert_description: |-
+      Привет!
+      Мы обнаружили срабатывание неизвестного алерта.
+    suffix: |-
+
+      ===Техническая информация
+
+      {{ .Message }}
+  report:
+    recipients: ["artbelov@yandex-team.ru"]
+    subject: "Security report"
+    max_entries: 100000
+    description: |-
+      Привет!
+      Ежедневный репорт о сработанных алертах во вложении
+
+robot:
+  worker_threads: 4
+  inform_at: 7h00m # hour (system time)
+  max_task_lifetime: 6h
+
+cache:
+  expire_time: 24h
+  cleanup_interval: 1h
+
+filter:
+  by_search_name: ["ycloud_file_integrity", "ycloud_external_connectivity"]
+
+alerts:
+  ycloud_ipmi_access:
+    search_name: "ycloud_ipmi_access"
+    filter_fields: ["user"]
+    title: Ycloud. Обнаружено взаимодействие {{ .Fields.necessary.user }} с серверами Облака через IPMI proxy
+    description: |-
+      Привет!
+      Мы обнаружили, взаимодействие @{{ .Fields.necessary.user }} с серверами Облака через IPMI proxy.
+
+      === Что нужно сделать
+
+      Необходимо проверить, чем обусловленно взаимодействие пользователя.
+      Если взаимодействие легитимно, следует закрыть тикет.
+
+  ycloud_bastion_bypass:
+    search_name: "ycloud_bastion_bypass"
+    filter_fields: [ "user" ]
+    title: Ycloud bastion bypass by {{ .Fields.necessary.user }}@
+    description: |-
+      Обнаружен заход в обход бастиона на продовые сервера yandex облака.
+
+  ycloud_netinfra_bastion_bypass:
+    search_name: "ycloud_netinfra_bastion_bypass"
+    filter_fields: [ "user" ]
+    title: Ycloud netinfra bastion bypass by {{ .Fields.necessary.user }}@
+    description: |-
+      Обнаружен заход в обход бастиона на сетевые устройства yandex облака.
+
+  ycloud_seccomp:
+    search_name: "ycloud_seccomp"
+    filter_fields: [ "syscall" ]
+    title: Ycloud. Обнаружено срабатывание Seccomp на серверах Облака
+    description: |-
+      Привет!
+      Мы обнаружили, срабатывание механизма Seccomp на серверах Облака. Syscall - {{ .Fields.necessary.syscall }}
+
+      === Что нужно сделать
+
+      Просьба подтвердить что активность легитимная.
+
+      === Как добавить исключения
+
+      1) С помощью макроса - "Вечное исключение"
+
+  ycloud_apt_source:
+    search_name: "ycloud_apt_source"
+    filter_fields: [ "pkg_name" ]
+    title: Ycloud. Обнаружена установка нового пакета на сервера Облака
+    description: |-
+      Привет!
+      Мы обнаружили, установку нового пакета %% {{ .Fields.necessary.pkg_name }} %% на сервера Облака.
+
+      === Что нужно сделать
+
+      Просьба подтвердить что активность легитимная.
+
+      === Как добавить исключения
+
+      1) С помощью макроса - "Вечное исключение"
+      2) Через PR в ((https://bb.yandex-team.ru/projects/INFRASEC/repos/yandex-splunk-apps/browse/yandex-internal-info/lookups/ycloud_apt_approve.csv лукап))
+
+  ycloud_apparmor_event:
+    search_name: "ycloud_apparmor_event"
+    filter_fields: [ "host", "service", "profile" ]
+    title: Apparmor events in {{ .Fields.necessary.host }}@ logs (critical)
+    description: |-
+      Сработало событие apparmor на серверах yandex cloud.
+      Инструкция по разбору вот тут:
+      https://wiki.yandex-team.ru/users/shashial/apparmor/alert/
+      Если будут вопросы - пишите /duty security
+
+  ycloud_password_ssh:
+    search_name: "ycloud_password_ssh"
+    filter_fields: [ "host" ]
+    title: Авторизация по паролю в ssh
+    description: |-
+      Здравствуйте!
+      Мы заметили,  что на ваших серверах включена авторизация по паролю по ssh.
+
+      ===Что нужно сделать
+      Следует перестать использовать пароли для аутентификации в ssh и начать использовать ключи. Для этого необходимо настроить сервер ssh.
+      Подробнее об этом можно почитать ((https://wiki.yandex-team.ru/security/ssh/ здесь)).
+      Как настроить ssh-клиент можно узнать ((https://wiki.yandex-team.ru/diy/common-ssh/#instrukciiponastrojjkessh-klientov тут)).
+
+  ycloud_docker_image_integrity:
+    search_name: "ycloud_docker_image_integrity"
+    filter_fields: [ "user" ]
+    title: Обнаружено нарушение целостности docker-образов
+    description: |-
+      Алерт срабатывает на изменение идентификатора docker-образов на хостах Яндекс.Облака
+
+  ycloud_open_ports:
+    search_name: "ycloud_open_ports"
+    filter_fields: [ "service_responsible", "tag", "folder_id" ]
+    title: Ycloud. Обнаружено открытие новых портов на серверах Облака(Underlay), находящихся под PCI DSS
+    description: |-
+      Привет!
+      Мы обнаружили, открытие новых портов на серверах Облака(Underlay).
+
+      === Что нужно сделать
+
+      Необходимо проверить, чем обусловленно открытие новых портов на серверах.
+      Если открытие портов легитимно, следует добавить исключение в лукап для конкретной группы или для всех, добавив cloud_prod:<port>
+
+      === Как добавить исключения
+
+      1) Через PR в ((https://bb.yandex-team.ru/projects/INFRASEC/repos/yandex-splunk-apps/browse/yandex-internal-info/lookups/ycloud_ports_approve.csv лукап))
+
+  ycloud_time_control:
+    search_name: "ycloud_time_control"
+    filter_fields: [ "host" ]
+    title: Время на сервере отличается от реального более чем на 120 секунд.
+    description: |-
+      Это очень тестовый алерт, потому-что реальных срабатываний мало.
+
+  ycloud_file_integrity:
+    search_name: "ycloud_file_integrity"
+    filter_fields: [ "sample_host", "service_responsible", "tag" ]
+    title: Ycloud. Обнаружено присутствие двух и более различных hash одного файла под file_integrity мониторингом на серверах Облака(Underlay), находящихся под PCI DSS
+    description: |-
+      Привет!
+      Мы обнаружили присутствие двух и более различных hash одного файла под file_integrity мониторингом на серверах Облака(Underlay).
+
+      === Что нужно сделать
+
+      Необходимо проверить, чем обусловленно наличие файлов на серверах.
+      Привести все файлы/приложения к единой версии.
+
+  ycloud_external_connectivity:
+    search_name: "ycloud_file_integrity"
+    filter_fields: [ "sample_host", "service_responsible", "tag" ]
+    title: Ycloud external connectivity
+    description: |-
+      Обнаружена внешняя связность с продовых серверов yandex облака.

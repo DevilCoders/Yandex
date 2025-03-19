@@ -1,0 +1,92 @@
+USE hahn;
+PRAGMA yt.InferSchema = '1';
+
+$src_table = '//home/cloud_analytics/import/forms/consulting_request_history';
+$dst_path = '//home/cloud_analytics/export/crm/consulting_request';
+$send_email = '//home/cloud_analytics/import/marketo/send_email';
+
+$dst_cleanup_interval = DateTime::IntervalFromDays(7);
+$table_name_date_format = "%Y-%m-%dT%H:%M:%S";
+$dt_parse = DateTime::Parse($table_name_date_format);
+$dt_format = DateTime::Format($table_name_date_format);
+
+$last_sync_ts = (
+    SELECT
+        COALESCE(
+            DateTime::MakeTimestamp($dt_parse(MAX(TableName(Path)))),
+            DateTime::FromSeconds(0)
+        )
+    FROM FOLDER($dst_path, 'row_count')
+    WHERE
+        Type = 'table'
+);
+
+$delta_items = (
+    SELECT
+        created_time AS `timestamp`,
+        first_name AS user_firstName,
+        yandex_login AS yandex_login,
+        ba_id AS ba_id,
+        last_name AS user_lastName,
+        'Заявка на индивидуальную консультацию специалиста Яндекс.Облака \n Звонить в будний день в ' || `time` AS message,
+        yandex_puid AS yandex_puid,
+        phone AS user_phone,
+        marketo_lead_id
+    FROM $src_table AS src
+    WHERE DateTime::FromSeconds(CAST(`created_time` AS Uint32)) > $last_sync_ts
+);
+
+$delta_items_count = (SELECT COUNT(1) FROM $delta_items);
+
+DEFINE ACTION $drop_table($table_path) AS
+    DROP TABLE $table_path;
+END DEFINE;
+
+DEFINE ACTION $create_delta_table() AS
+    $last_item_ts = (
+        SELECT MAX(DateTime::FromSeconds(CAST(`timestamp` AS Uint32)))
+        FROM $delta_items
+    );
+    $dst_table = $dst_path || '/' || $dt_format($last_item_ts) ?? '';
+    INSERT INTO $dst_table
+    SELECT
+        `timestamp`,
+        user_firstName,
+        yandex_login,
+        ba_id,
+        user_lastName,
+        message,
+        sent_emails.email AS user_email,
+        yandex_puid,
+        user_phone,
+    FROM $delta_items AS src
+    LEFT JOIN $send_email AS sent_emails
+    ON src.marketo_lead_id = CAST(sent_emails.lead_id AS String);
+
+    -- Cleanup old tables
+    $tables_count = (
+        SELECT COUNT(*) as tables_count
+        FROM FOLDER($dst_path)
+        WHERE Type == 'table'
+    );
+
+    -- Log tables_count for future debug
+    SELECT * FROM $tables_count;
+
+    $tables_to_delete = (
+        SELECT AGGREGATE_LIST(Path) AS tables_to_delete
+        FROM FOLDER($dst_path, 'row_count')
+        WHERE Type == 'table' AND (
+            DateTime::MakeTimestamp($dt_parse(TableName(Path))) < CurrentUtcTimestamp() - $dst_cleanup_interval
+        )
+    );
+
+    -- Log deletion for future debug
+    SELECT * FROM $tables_to_delete;
+
+    EVALUATE FOR $tb_ts IN $tables_to_delete
+        DO $drop_table($tb_ts);
+END DEFINE;
+
+EVALUATE IF $delta_items_count > 0
+    DO $create_delta_table();

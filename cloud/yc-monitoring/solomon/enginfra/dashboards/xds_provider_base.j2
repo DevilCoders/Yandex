@@ -1,0 +1,34 @@
+{% extends "../../base/dashboard.j2" %}
+{% import "../../common/dashboards/panels/system.j2" as system_panels with context %}
+
+{% block parameters %}
+{
+    "name": "service",
+    "value": "xds-provider"
+}
+{% endblock %}
+
+{% block rows %}
+[
+{# alerts #}
+  {%- for alert_id, data in xds_alerts.items() %}
+{ "panels": [
+    {%- for az in zones_by_env[env] %}
+        {%- set alert_id = [alert_id, az.prefix, env] | join("_") %}
+        {{ render_panel_raw(data["title"], "/admin/projects/yandexcloud/alerts/" ~ alert_id ~ "/subAlerts/fullscreen?view=tiles&filterByEvalStatus=OK%2CWARN%2CALARM%2CNO_DATA%2CERROR&annotationKeys=error_rate") }}
+        {%- if not loop.last -%},{%- endif -%}
+    {% endfor %}
+]
+},
+{% endfor %}
+{%-   for type, graph in xds_graphs.items() -%}
+{ "panels": [
+  {%- for az in zones_by_env[env] %}
+    {%- set params_args = '&host={{host}}' ~ '&cluster=cloud_' ~ env ~ '_xds-provider_' ~ az.prefix -%}
+    {{ render_panel(graph["title"] + az.prefix|upper, cluster, graph["service"], "graph=" + graph["graph"] + params_args, colspan=graph.get("colspan", 1)) }}{%- if not loop.last -%},{%- endif -%}
+  {%- endfor %}
+]
+}{%- if not loop.last -%},{%- endif -%}
+{%-   endfor -%}
+]
+{% endblock %}

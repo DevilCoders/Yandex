@@ -1,0 +1,3 @@
+RECURSE(
+    currency_rates
+)

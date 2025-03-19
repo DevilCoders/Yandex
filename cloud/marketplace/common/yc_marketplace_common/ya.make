@@ -1,0 +1,107 @@
+OWNER(g:cloud-marketplace)
+
+PY3_LIBRARY(yc_marketplace_common)
+
+PY_SRCS(
+    __init__.py
+    utils/__init__.py
+    utils/db.py
+    utils/dev_config.py
+    utils/billing.py
+    utils/service_account.py
+    utils/transactions.py
+    utils/filter.py
+    utils/errors.py
+    utils/ids.py
+    utils/paging.py
+    utils/metadata_token.py
+    models/__init__.py
+    models/abstract_mkt_base.py
+    models/avatar.py
+    models/eula.py
+    models/base.py
+    models/billing/__init__.py
+    models/billing/billing_account.py
+    models/billing/cloud.py
+    models/billing/calculators.py
+    models/billing/contract.py
+    models/billing/grant_policy.py
+    models/billing/monetary_grant_offer.py
+    models/billing/person.py
+    models/billing/pricing.py
+    models/billing/publisher_account.py
+    models/billing/revenue_report.py
+    models/billing/sku.py
+    models/blueprint.py
+    models/build.py
+    models/category.py
+    models/deprecation.py
+    models/form.py
+    models/health.py
+    models/i18n.py
+    models/isv.py
+    models/operation.py
+    models/ordering.py
+    models/os_product.py
+    models/os_product_family.py
+    models/os_product_family_version.py
+    models/metrics.py
+    models/partner.py
+    models/partner_requests.py
+    models/product_slug.py
+    models/product_to_sku_binding.py
+    models/product_license_rules.py
+    models/product_reference.py
+    models/product_type.py
+    models/publisher.py
+    models/resource_spec.py
+    models/saas_product.py
+    models/simple_product.py
+    models/sku_draft.py
+    models/task.py
+    models/var.py
+    lib/__init__.py
+    lib/avatar.py
+    lib/eula.py
+    lib/billing.py
+    lib/blueprint.py
+    lib/build.py
+    lib/category.py
+    lib/form.py
+    lib/i18n.py
+    lib/isv.py
+    lib/metrics.py
+    lib/ordering.py
+    lib/os_product.py
+    lib/os_product_family.py
+    lib/os_product_family_version.py
+    lib/partner.py
+    lib/partner_requests.py
+    lib/product_licence_rules.py
+    lib/product_slug.py
+    lib/product_to_sku_binding.py
+    lib/publisher.py
+    lib/saas_product.py
+    lib/simple_product.py
+    lib/sku_draft.py
+    lib/task.py
+    lib/var.py
+    db/__init__.py
+    db/models.py
+    db/migration.py
+    client/__init__.py
+    client/billing.py
+    client/public.py
+    client/private.py
+)
+
+PEERDIR(
+    cloud/marketplace/migrations/yc_marketplace_migrations
+    cloud/gauthling/auth_token_python/lib
+    cloud/bitbucket/python-common
+    contrib/python/boto3
+    contrib/python/natsort
+    kikimr/public/sdk/python/iam
+)
+
+END()

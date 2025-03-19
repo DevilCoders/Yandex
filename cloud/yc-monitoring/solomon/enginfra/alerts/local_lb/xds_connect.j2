@@ -1,0 +1,42 @@
+{% extends "base_alert.j2" %}
+
+{% set service = "xds-connect" %}
+
+
+{% set hc_failures = (
+    'envoy_cluster_*_health_check_failure',
+)%}
+{% set hc_success = (
+    'envoy_cluster_*_health_check_success',
+)%}
+
+{% macro prog() %}
+let xds_connected = series_sum({
+    cluster='cloud_{{env}}_{{ bootstrap_base_role }}_{{ az }}'
+    ,sensor='envoy_cluster_manager_cds_control_plane_connected_state|envoy_listener_manager_lds_control_plane_connected_state'
+    ,bootstrap_base_role='{{ bootstrap_base_role }}'
+    ,host='*'
+});
+
+let error_rate = min(xds_connected);
+// It's ok,when cds&lds connected and got 1 in each
+ok_if(error_rate == 2);
+alarm_if(error_rate < 2);
+{% endmacro %}
+
+{% block main %}
+    "name": "LocalLb XDS connect error {{ bootstrap_base_role }} {{env}}@{{az}}",
+    "annotations": {
+        "error_rate": "xDS connected: [[ expression.error_rate ]]",
+        "description": "LocalLb XDS connect error",
+        "host": "{{ svm_fqdn() }}",
+        "service": "{{ service }}",
+        "dashboard": "{{ local_lb_dashboard(bootstrap_base_role) }}",
+        "wiki": "{{ wiki_url(service) }}" 
+    },
+    "type": {{ type_expression() }},
+    "description": "",
+    "groupByLabels": [
+        "host"
+    ]
+{% endblock %}

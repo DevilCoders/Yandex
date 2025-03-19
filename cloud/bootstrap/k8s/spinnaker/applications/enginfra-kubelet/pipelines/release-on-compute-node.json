@@ -1,0 +1,645 @@
+{
+    "appConfig": {},
+    "application": "enginfra-kubelet",
+    "id": "acb9b077-d267-4acb-921f-85c7d5e674f1",
+    "index": 2,
+    "keepWaitingPipelines": false,
+    "limitConcurrent": true,
+    "name": "release-on-compute-node",
+    "parameterConfig": [
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "saltFormulaVersion",
+            "name": "saltFormulaVersion",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": false,
+            "required": false
+        },
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "Use existing release ticket",
+            "name": "releaseTicket",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": false,
+            "required": false
+        }
+    ],
+    "spelEvaluator": "v4",
+    "stages": [
+        {
+            "failOnFailedExpressions": true,
+            "name": "Configure Parameters",
+            "refId": "1",
+            "requisiteStageRefIds": [
+                "2"
+            ],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "saltFormulaVersion",
+                    "value": "${ parameters.saltFormulaVersion == \"\" ? versionJson[\"version\"] : parameters.saltFormulaVersion.matches(\"0\\.1-[0-9]{5}\\.[0-9]{6}\") == true ? parameters.saltFormulaVersion: INVALID_SALT_FORMULA_VERSION_FORMAT}"
+                },
+                {
+                    "key": "releaseTicket",
+                    "value": "${ parameters.releaseTicket == \"\" ? releaseTicket : parameters.releaseTicket.matches(\"CLOUD-[0-9]{5,6}\") == true ? parameters.releaseTicket: INVALID_TICKET_FORMAT}"
+                }
+            ]
+        },
+        {
+            "components": "Selfhost",
+            "description": "Salt Formula version: `${parameters.saltFormulaVersion}` Spinnaker execution: ${spinnakerExecutionMD}",
+            "followers": "${triggerUserLogin}",
+            "name": "Create Release Startrek ticket if not speicifed",
+            "outputVariable": "releaseTicket",
+            "queue": "CLOUD",
+            "refId": "2",
+            "requisiteStageRefIds": [
+                "43"
+            ],
+            "stageEnabled": {
+                "expression": "${ parameters.releaseTicket == \"\" }",
+                "type": "expression"
+            },
+            "summary": "[ ${ today } ] [ Deploy ] ${baseRole}: ${saltRole} salt role",
+            "ticketType": "release",
+            "type": "createStartrekTicket"
+        },
+        {
+            "application": "enginfra-kubelet",
+            "failPipeline": true,
+            "name": "[child] update salt version HW for TESTING",
+            "pipeline": "0c2ee0f3-6292-4ac6-bbab-14561f7cd6df",
+            "pipelineParameters": {
+                "releaseTicket": "${releaseTicket}",
+                "saltFormulaVersion": "${saltFormulaVersion}",
+                "stand": "testing"
+            },
+            "refId": "4",
+            "requisiteStageRefIds": [
+                "1"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "enginfra-kubelet",
+            "failPipeline": true,
+            "name": "[child] apply az HW to TESTING A (VLA)",
+            "pipeline": "1235ae05-7055-48ee-aab3-e8d7ebab97dc",
+            "pipelineParameters": {
+                "az": "a",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "testing"
+            },
+            "refId": "5",
+            "requisiteStageRefIds": [
+                "35"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "enginfra-kubelet",
+            "failPipeline": true,
+            "name": "[child] apply az HW to TESTING B (SAS)",
+            "pipeline": "1235ae05-7055-48ee-aab3-e8d7ebab97dc",
+            "pipelineParameters": {
+                "az": "b",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "testing"
+            },
+            "refId": "6",
+            "requisiteStageRefIds": [
+                "46"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "enginfra-kubelet",
+            "failPipeline": true,
+            "name": "[child] apply az HW to TESTING C (MYT)",
+            "pipeline": "1235ae05-7055-48ee-aab3-e8d7ebab97dc",
+            "pipelineParameters": {
+                "az": "c",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "testing"
+            },
+            "refId": "7",
+            "requisiteStageRefIds": [
+                "47"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Ready for PREPROD",
+            "notifications": [],
+            "refId": "8",
+            "requisiteStageRefIds": [
+                "15",
+                "32"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "application": "enginfra-kubelet",
+            "failPipeline": true,
+            "name": "[child] update salt version HW for  PREPROD",
+            "pipeline": "0c2ee0f3-6292-4ac6-bbab-14561f7cd6df",
+            "pipelineParameters": {
+                "releaseTicket": "${releaseTicket}",
+                "saltFormulaVersion": "${saltFormulaVersion}",
+                "stand": "preprod"
+            },
+            "refId": "9",
+            "requisiteStageRefIds": [
+                "8"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "enginfra-kubelet",
+            "failPipeline": true,
+            "name": "[child] apply az HW to PREPROD A (VLA)",
+            "pipeline": "1235ae05-7055-48ee-aab3-e8d7ebab97dc",
+            "pipelineParameters": {
+                "az": "a",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "preprod"
+            },
+            "refId": "10",
+            "requisiteStageRefIds": [
+                "36"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "enginfra-kubelet",
+            "failPipeline": true,
+            "name": "[child] apply az HW to PREPROD B (SAS)",
+            "pipeline": "1235ae05-7055-48ee-aab3-e8d7ebab97dc",
+            "pipelineParameters": {
+                "az": "b",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "preprod"
+            },
+            "refId": "11",
+            "requisiteStageRefIds": [
+                "37"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Ready for PRERPOD B (SAS)",
+            "notifications": [],
+            "refId": "12",
+            "requisiteStageRefIds": [
+                "16"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Ready for CANARY",
+            "notifications": [],
+            "refId": "13",
+            "requisiteStageRefIds": [
+                "17",
+                "33"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "application": "enginfra-kubelet",
+            "failPipeline": true,
+            "name": "[child] update salt version for PROD",
+            "pipeline": "0c2ee0f3-6292-4ac6-bbab-14561f7cd6df",
+            "pipelineParameters": {
+                "releaseTicket": "${releaseTicket}",
+                "saltFormulaVersion": "${saltFormulaVersion}",
+                "stand": "prod"
+            },
+            "refId": "14",
+            "requisiteStageRefIds": [
+                "13"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "comments": "Check monitorings at https://juggler.yandex-team.ru/aggregate_checks/?project=ycloud\u0026query=host%3Dcloud_testing_compute",
+            "name": "Check TESTING monitroing for 30 minutes",
+            "refId": "15",
+            "requisiteStageRefIds": [
+                "6",
+                "5",
+                "7"
+            ],
+            "type": "wait",
+            "waitTime": 1800
+        },
+        {
+            "comments": "Check monitoring at https://juggler.yandex-team.ru/aggregate_checks/?project=ycloud\u0026query=host%3Dcloud_preprod_compute",
+            "name": "Check PREPROD A monitroing for 30 minutes",
+            "refId": "16",
+            "requisiteStageRefIds": [
+                "10"
+            ],
+            "type": "wait",
+            "waitTime": 1800
+        },
+        {
+            "comments": "Check monitoring at https://juggler.yandex-team.ru/aggregate_checks/?project=ycloud\u0026query=host%3Dcloud_preprod_compute",
+            "name": "Check PREPROD B monitroing for 30 minutes",
+            "refId": "17",
+            "requisiteStageRefIds": [
+                "11"
+            ],
+            "type": "wait",
+            "waitTime": 1800
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Deploy on CANARY (STUB)",
+            "notifications": [],
+            "refId": "18",
+            "requisiteStageRefIds": [
+                "38"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "application": "enginfra-kubelet",
+            "failPipeline": true,
+            "name": "[child] apply az HW to PROD A (VLA)",
+            "pipeline": "1235ae05-7055-48ee-aab3-e8d7ebab97dc",
+            "pipelineParameters": {
+                "az": "a",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "prod"
+            },
+            "refId": "19",
+            "requisiteStageRefIds": [
+                "39"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "comments": "Check monitoring at https://juggler.yandex-team.ru/aggregate_checks/?project=ycloud\u0026query=host%3Dcloud_prod_compute",
+            "name": "Check CANARY monitroing for 16 hours",
+            "refId": "20",
+            "requisiteStageRefIds": [
+                "18"
+            ],
+            "type": "wait",
+            "waitTime": 57600
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Ready for PROD",
+            "notifications": [],
+            "refId": "21",
+            "requisiteStageRefIds": [
+                "20"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "comments": "Check monitoring at https://juggler.yandex-team.ru/aggregate_checks/?project=ycloud\u0026query=host%3Dcloud_prod_compute",
+            "name": "Check PROD A (VLA) monitroing for 16 hours",
+            "refId": "22",
+            "requisiteStageRefIds": [
+                "19"
+            ],
+            "type": "wait",
+            "waitTime": 57600
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Ready for PROD B (SAS)",
+            "notifications": [],
+            "refId": "23",
+            "requisiteStageRefIds": [
+                "22"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "application": "enginfra-kubelet",
+            "failPipeline": true,
+            "name": "[child] apply az HW to to PROD B (VLA)",
+            "pipeline": "1235ae05-7055-48ee-aab3-e8d7ebab97dc",
+            "pipelineParameters": {
+                "az": "b",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "prod"
+            },
+            "refId": "24",
+            "requisiteStageRefIds": [
+                "40"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "comments": "Check monitoring at https://juggler.yandex-team.ru/aggregate_checks/?project=ycloud\u0026query=host%3Dcloud_prod_compute",
+            "name": "Check PROD B (SAS) monitroing for 16 hours",
+            "refId": "25",
+            "requisiteStageRefIds": [
+                "24"
+            ],
+            "type": "wait",
+            "waitTime": 57600
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Ready for PROD C (MYT)",
+            "notifications": [],
+            "refId": "26",
+            "requisiteStageRefIds": [
+                "25"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "application": "enginfra-kubelet",
+            "failPipeline": true,
+            "name": "[child] apply az HW to PROD C (MYT)",
+            "pipeline": "1235ae05-7055-48ee-aab3-e8d7ebab97dc",
+            "pipelineParameters": {
+                "az": "a",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "prod"
+            },
+            "refId": "27",
+            "requisiteStageRefIds": [
+                "41"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "comments": "Check monitoring at https://juggler.yandex-team.ru/aggregate_checks/?project=ycloud\u0026query=host%3Dcloud_prod_compute",
+            "name": "Check PROD C (MYT) monitroing for 1 hour",
+            "refId": "28",
+            "requisiteStageRefIds": [
+                "27"
+            ],
+            "type": "wait",
+            "waitTime": 3600
+        },
+        {
+            "application": "enginfra-kubelet",
+            "comments": "Check monitoring at https://juggler.yandex-team.ru/aggregate_checks/?project=ycloud\u0026query=host%3Dcloud_preprod_compute",
+            "failPipeline": true,
+            "name": "[child] apply az HW to PREPROD C (MYT)",
+            "pipeline": "1235ae05-7055-48ee-aab3-e8d7ebab97dc",
+            "pipelineParameters": {
+                "az": "c",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "preprod"
+            },
+            "refId": "30",
+            "requisiteStageRefIds": [
+                "28",
+                "34",
+                "42"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "comments": "Check monitoring at https://juggler.yandex-team.ru/aggregate_checks/?project=ycloud\u0026query=host%3Dcloud_preprod_compute",
+            "name": "Check PREPROD C (MYT) monitroing for 1 hour",
+            "refId": "31",
+            "requisiteStageRefIds": [
+                "30"
+            ],
+            "type": "wait",
+            "waitTime": 3600
+        },
+        {
+            "name": "Switch ticket to TESTING",
+            "refId": "32",
+            "requisiteStageRefIds": [
+                "5",
+                "6",
+                "7"
+            ],
+            "ticketId": "${releaseTicket}",
+            "transition": "tesingInDev",
+            "type": "executeTransition"
+        },
+        {
+            "name": "Switch ticket to PREPROD",
+            "refId": "33",
+            "requisiteStageRefIds": [
+                "11"
+            ],
+            "ticketId": "${releaseTicket}",
+            "transition": "testingAtRc",
+            "type": "executeTransition"
+        },
+        {
+            "name": "Switch ticket to PROD",
+            "refId": "34",
+            "requisiteStageRefIds": [
+                "27"
+            ],
+            "ticketId": "${releaseTicket}",
+            "transition": "released",
+            "type": "executeTransition"
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Dry-run salt to TESTING  A (STUB)",
+            "notifications": [],
+            "refId": "35",
+            "requisiteStageRefIds": [
+                "4"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Dry-run salt to PREPROD A (VLA) (STUB)",
+            "notifications": [],
+            "refId": "36",
+            "requisiteStageRefIds": [
+                "9"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Dry-run salt to PREPROD B (SAS) (STUB)",
+            "notifications": [],
+            "refId": "37",
+            "requisiteStageRefIds": [
+                "12"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Dry-run salt to CANARY (STUB)",
+            "notifications": [],
+            "refId": "38",
+            "requisiteStageRefIds": [
+                "14"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Dry-run salt to PROD A (VLA) (STUB)",
+            "notifications": [],
+            "refId": "39",
+            "requisiteStageRefIds": [
+                "21"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Dry-run salt to PROD B (SAS) (STUB)",
+            "notifications": [],
+            "refId": "40",
+            "requisiteStageRefIds": [
+                "23"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Dry-run salt to PROD C (MYT) (STUB)",
+            "notifications": [],
+            "refId": "41",
+            "requisiteStageRefIds": [
+                "26"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Dry-run salt to PREPROD C (MYT)  (STUB)",
+            "notifications": [],
+            "refId": "42",
+            "requisiteStageRefIds": [
+                "27"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "buildConfigurationId": "Cloud_Selfhost_GetSaltFormulaBuildForHead",
+            "name": "Get latest salt formula version if not specified",
+            "parseArtifacts": [
+                {
+                    "artifactPath": "version.json",
+                    "outputVariable": "versionJson"
+                }
+            ],
+            "queueAtTop": true,
+            "refId": "43",
+            "requisiteStageRefIds": [
+                "44"
+            ],
+            "stageEnabled": {
+                "expression": "${ parameters.saltFormulaVersion == \"\" }",
+                "type": "expression"
+            },
+            "tcProfile": "yandex",
+            "type": "teamcityBuild"
+        },
+        {
+            "failOnFailedExpressions": true,
+            "name": "Configure Context",
+            "refId": "44",
+            "requisiteStageRefIds": [],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "spinnakerExecutionURL",
+                    "value": "https://spinnaker.cloud.yandex.net/#/applications/${execution.application}/executions/${execution.Id}"
+                },
+                {
+                    "key": "spinnakerExecutionMD",
+                    "value": "[${execution.Id}](https://spinnaker.cloud.yandex.net/#/applications/${execution.application}/executions/${execution.Id})"
+                },
+                {
+                    "key": "today",
+                    "value": "${new java.text.SimpleDateFormat(\"dd.MM.yyyy\").format(new java.util.Date())}"
+                },
+                {
+                    "key": "triggerUserLogin",
+                    "value": "${trigger.user.replace(\"@yandex-team.ru\", \"\")}"
+                },
+                {
+                    "key": "baseRole",
+                    "value": "compute"
+                },
+                {
+                    "key": "saltRole",
+                    "value": "kubelet"
+                }
+            ]
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Dry-run salt to TESTING B (STUB)",
+            "notifications": [],
+            "refId": "46",
+            "requisiteStageRefIds": [
+                "4"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Dry-run salt to TESTING C (STUB)",
+            "notifications": [],
+            "refId": "47",
+            "requisiteStageRefIds": [
+                "4"
+            ],
+            "type": "manualJudgment"
+        }
+    ],
+    "triggers": []
+}

@@ -1,0 +1,95 @@
+id: 442472
+uid: iam-db
+title: IAM Database
+folderId: 412692
+refresh: 1m
+
+tags: [ 'iam', 'iam-db' ]
+links:
+  !include shared/links.yaml db
+
+graphDefaults: { datasource: 'Solomon', width: 8, height: 6 }
+queryDefaults:
+  labels: 'project=kikimr, cluster=yandexcloud_${cluster}_global, service=kqp, host=${host:pipe}, slot=cluster'
+  dropNan: true
+  defaultTimeWindow: '1m'
+
+variables:
+  ui:
+    cluster:
+      values: [ prod, preprod, testing ]
+  uiQuery:
+    host:
+      labels: 'host=iam*'
+      multi: true
+
+rows:
+  - title: 'IAM Kikimr'
+    drilldowns:
+      - subUid: dd-iam-db-by-host
+        title: 'IAM Database by Hosts'
+        tags: [ 'iam-duty', 'iam-db', 'iam-db-host' ]
+        ui:
+          cluster: cluster
+        uiQuery:
+          host: host
+        uiRepeat: host
+        labels: 'host=${host}'
+    panels:
+      - type: graph
+        title: 'Infly'
+        queries:
+          - params: { labels: 'service=grpc, request=ExecuteDataQuery, sensor=infly, subsystem=serverStats' }
+            select: { group_lines: [ sum ], alias: 'ExecuteDataQuery' }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: 'Query/ExecPreparedLatency'
+        queryDefaults: { labels: 'sensor=Query/ExecPreparedLatency' }
+        queries:
+          - select: { group_by_labels: [ sum, range ], alias: '{{range}}' }
+        display: { stack: true, sort: decreasing, fill: 10 }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: 'Query/ExecPreparedLatency'
+        queryDefaults: { labels: 'sensor=Query/ExecPreparedLatency' }
+        queries:
+          - params: { labels: 'range=512 ms|1024 ms|2048 ms|4096 ms|8192 ms|16384 ms|32768 ms|65536 ms|131072 ms|262144 ms|INF ms' }
+            select: { group_lines: [ 'sum' ], alias: '>= 0.5 sec'  }
+          - params: { labels: 'range=1 ms|2 ms|4 ms|8 ms|16 ms|32 ms|64 ms|128 ms|256 ms' }
+            select: { group_lines: [ 'sum' ], alias: '< 0.5 sec' }
+        draw:
+          - { alias: '>= 0.5 sec', color: '#C4162A' }
+          - { alias: '< 0.5 sec', color: '#73BF69' }
+        display: { stack: true, sort: decreasing, fill: 10 }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: 'Responses/LocksInvalidated'
+        queries:
+          - params: { labels: 'sensor=Responses/LocksInvalidated' }
+            select: { group_lines: [ sum ], alias: 'Responses/LocksInvalidated' }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: 'Query/ExecuteLatency'
+        queryDefaults: { labels: 'sensor=Query/ExecuteLatency' }
+        queries:
+          - select: { group_by_labels: [ sum, range ], alias: '{{range}}' }
+        display: { stack: true, sort: decreasing, fill: 10 }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: 'Query/ExecuteLatency'
+        queryDefaults: { labels: 'sensor=Query/ExecuteLatency' }
+        queries:
+          - params: { labels: 'range=512 ms|1024 ms|2048 ms|4096 ms|8192 ms|16384 ms|32768 ms|65536 ms|131072 ms|262144 ms|INF ms' }
+            select: { group_lines: [ 'sum' ], alias: '>= 0.5 sec' }
+          - params: { labels: 'range=1 ms|2 ms|4 ms|8 ms|16 ms|32 ms|64 ms|128 ms|256 ms' }
+            select: { group_lines: [ 'sum' ], alias: '< 0.5 sec' }
+        draw:
+          - { alias: '>= 0.5 sec', color: '#C4162A' }
+          - { alias: '< 0.5 sec', color: '#73BF69' }
+        display: { stack: true, sort: decreasing, fill: 10 }
+        yAxes: [ { min: 0 } ]

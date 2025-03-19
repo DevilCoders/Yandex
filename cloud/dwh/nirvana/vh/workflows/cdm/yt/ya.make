@@ -1,0 +1,24 @@
+RECURSE(
+    antifraud
+    console
+    datalens
+    dm_ba_crm_tags
+    dm_ba_history
+    dm_crm_calls
+    dm_crm_leads
+    dm_events
+    dm_folder_consumption
+    dm_quota_usage_and_limits
+    dm_sku_actual_prices
+    dm_yc_consumption
+    fct_client_ba_info
+    fct_client_cloud_webpage_visit
+    fct_client_consumption
+    fct_client_nurture_stream
+    fct_client_support_request
+    iaas
+    marketing
+    mdb
+    staff
+    support
+)

@@ -1,0 +1,18 @@
+{% set api_gateway = pillar.get('api-gateway', {}) %}
+{% set cluster_map = salt['grains.get']('cluster_map') %}
+{% set hostname = grains['nodename'] %}
+{% set dc = salt['grains.get']('cluster_map:hosts:%s:location:datacenter' % hostname, 'my')  %}
+{% set default_zone_id = pillar['placement']['dc'] %}
+{% set zone_id = salt['grains.get']('cluster_map:hosts:%s:location:zone_id' % hostname, default_zone_id) %}
+
+{% set logbroker_host = dc + '.logbroker.yandex.net' if dc not in [None, 'my', 'virt'] else 'logbroker.yandex.net' %}
+{% set load_balancer = cluster_map.load_balancer %}
+{% set api_adapter = {
+  'host': load_balancer.endpoints.api_adapter.host,
+  'port': load_balancer.endpoints.api_adapter.port,
+}%}
+
+{% set envoy_listeners = [
+  {'name': 'frontend_v4_tls', 'address': '0.0.0.0', 'port': load_balancer.endpoints.api_gateway_ssl.port, 'tls': True},
+  {'name': 'frontend_v6_tls', 'address': '::', 'port': load_balancer.endpoints.api_gateway_ssl.port, 'tls': True},
+]%}

@@ -1,0 +1,223 @@
+regions:
+  - sas
+  - man
+# Juggler check namespace
+namespace: "ycloud"
+# Conductor group.
+cgroup: "cloud_{{ env }}_{{ app }}"
+# Juggler checks host.
+host: "{{ cgroup }}"
+# Aggregate checks children.
+children: "CGROUP%{{ cgroup }}"
+
+# Juggler tags prefix. Should be used in all tags.
+common_tag: yc-platform-terraform
+apiteam_tag: "{{ common_tag }}-api"
+env_tag: "{{ common_tag }}-{{ env }}"
+app_tag: "{{ env_tag }}-{{ app }}"
+http_tag: "['{{ common_tag }}-http',
+            '{{ common_tag }}-http-{{ env }}-{{ app }}',
+            '{{ common_tag }}-http-{{ env }}-{{ app }}-envoy']"
+
+# Tags that every check should have.
+required_tags:  "['{{ common_tag }}', '{{ env_tag }}', '{{ app_tag }}']"
+# Juggler check tags. May be override in playbook, but should include {{ default_tags }} in such case.
+
+# Add this tag enable cloud[-preprod]-api-alerts telegram chat notifications.
+telegram_notify_tag: "{{ common_tag }}-notify"
+phone_notify_tag: "{{ common_tag }}-notify-phone"
+
+# By default, checks has no duty telegram chats notifications.
+tags: "{{ required_tags }}"
+
+duty_tags: "{{ required_tags }} + ['{{ telegram_notify_tag }}']"
+
+skip_common: false
+
+# Juggler flap.
+flap: { stable: 0, critical: 0 }
+
+jserver_api: http://juggler-api.search.yandex.net/api
+telegram_statuses: [OK, WARN, CRIT]
+telegram_notification:
+  - template: on_status_change
+    status: "{{ telegram_statuses }}"
+    login: ["{{ telegram_chat_id }}"]
+    method: [telegram]
+    delay: "{{ telegram_notification_delay | default(60) }}"
+default_notification_methods:  [{"template": "phone_escalation", logins: ["robot-zoidberg"]}]
+notification_methods: "{{ default_notification_methods }}"
+default_http_check_options:
+  args:
+    - --service
+    - envoy-front
+  env:
+    config_json: '{ envoy-front: { port: 80, scheme: http, header-host: null, host: localhost, path: /ping }}'
+
+default_check:
+  host: "{{ host }}"
+  namespace: "{{ namespace }}"
+  notifications: "{{ notification_methods }}"
+  flap: "{{ flap }}"
+  meta: {}
+  responsible: []
+  tags: "{{ tags }}"
+  children: "{{ children }}"
+  ttl: "{{ttl | default(600)}}"
+  refresh_time: "{{refresh_time | default(120) }}"
+  __force__: true
+
+default_http_check:
+  host: "{{ host }}"
+  namespace: "{{ namespace }}"
+  notifications: "{{ notification_methods }}"
+  flap: "{{ flap }}"
+  meta: {}
+  check_options: "{{ http_check_options | default(default_http_check_options) }}"
+  responsible: []
+  tags: "{{ tags }}"
+  children: "{{ children }}"
+  ttl: "{{ttl | default(600)}}"
+  refresh_time: "{{refresh_time | default(120) }}"
+  __force__: true
+
+default_infra_check:
+  host: "{{ host }}"
+  namespace: "{{ namespace }}"
+  notifications: []
+  flap: "{{ flap }}"
+  meta: {}
+  responsible: []
+  tags: "{{ tags }}"
+  service: "{{ service }}"
+  ttl: "{{ttl | default(600)}}"
+  refresh_time: "{{refresh_time | default(60) }}"
+  __force__: true
+
+
+staging_check:  # for testing new checks before including in duty process
+  host: "{{ host }}"
+  namespace: "{{ namespace }}"
+  meta: {}
+  responsible: []
+  tags: "{{ tags }} + ['{{ staging_tag }}']"
+  children: "{{ children }}"
+  ttl: "{{ttl | default(600)}}"
+  refresh_time: "{{ refresh_time | default(120) }}"
+  __force__: true
+
+default_limits:
+  - {crit: '0', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '0'}
+default_limits_20perc_crit:
+  - {crit: '20%', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '0'}
+default_limits_32perc_crit:
+  - {crit: '32%', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '0'}
+default_limits_50perc_crit:
+  - {crit: '50%', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '0'}
+default_limits_99perc_crit:
+  - {crit: '99%', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '0'}
+default_limits_logic_and:
+  - {day_end: 7, day_start: 1, time_end: 23, time_start: 0, aggregator: 'logic_and'}
+
+
+off_check_limits:
+  - {crit: "100%", day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: "0"}
+
+default_timed_limits:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+
+default_timed_limits_unreach_skip:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+    unreach_mode: skip
+    unreach_service:
+      check: "{{ unreachable_host }}:UNREACHABLE"
+      hold: 600
+
+default_timed_limits_unreach_force_ok:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+    unreach_mode: force_ok
+    unreach_service:
+      check: "{{ unreachable_host }}:UNREACHABLE"
+      hold: 600
+
+off_timed_limits:
+  timed_more_than_limit_is_problem:
+    limits: "{{ off_check_limits }}"
+
+off_timed_limits_with_unreach:
+  timed_more_than_limit_is_problem:
+    limits: "{{ off_check_limits }}"
+    unreach_mode: skip
+    unreach_service:
+      check: ":UNREACHABLE"
+      hold: 600
+
+timed_limits_20perc_crit:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits_20perc_crit }}"
+
+timed_limits_50perc_crit:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits_50perc_crit }}"
+
+timed_limits_32perc_crit:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits_32perc_crit }}"
+
+timed_limits_32perc_crit_unreach_force_ok:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits_32perc_crit }}"
+    unreach_mode: force_ok
+    unreach_service:
+      check: ":UNREACHABLE"
+      hold: 600
+
+timed_limits_99perc_crit:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits_99perc_crit }}"
+
+logic_or_unreach_ok:
+  logic_or:
+    unreach_mode: force_ok
+    unreach_service:
+      check: ":UNREACHABLE"
+      hold: 600
+
+logic_or_unreach_force_ok:
+  logic_or:
+    "nodata_mode": "skip"
+
+default_timed_limits_logic_and:
+  timed:
+    times: "{{ default_limits_logic_and }}"
+
+e2e_behind_lock:
+  timed_more_than_limit_is_problem:
+    limits: "{{ e2e_behind_lock_limits }}"
+    hold_crit: 300
+    unreach_mode: skip
+    unreach_service:
+      check: ":UNREACHABLE"
+      hold: 600
+
+permanent_limits_32perc_crit_unreach_force_ok:
+  more_than_limit_is_problem:
+    mode: 'percent'
+    crit_limit: 32
+    warn_limit: 100
+    unreach_mode: force_ok
+    unreach_service:
+      check: ":UNREACHABLE"
+      hold: 600
+
+permanent_limits_32perc_crit:
+  more_than_limit_is_problem:
+    mode: 'percent'
+    crit_limit: 32
+    warn_limit: 100
+
+logic_or:
+    logic_or:

@@ -1,0 +1,31 @@
+#!/bin/sh
+
+# This is default plugin for selfdns-client.
+# it chooses ipv6 addresses from default route to selfdns-api.yandex.net
+#    as AAAA addresses for current host (PTR will be added on api call).
+
+# have to be defined in each plugin
+PLUGIN_VERS="0.1-mdb"
+
+# host, which will be used below to determine default route src addresses
+ROUTE_HOST="dns-api.yandex.net"
+
+LOCAL_HOSTNAME="$(cat /proc/sys/kernel/hostname)"
+
+V6_ROUTE_HOST="$(dig -t AAAA +short "${ROUTE_HOST}" | head -1 | grep -Eo "[0-9a-f]{1,4}:[0-9a-f]{1,4}.*")"
+
+if [ -z "${V6_ROUTE_HOST}" ] ; then
+    echo 1>&2 "Cannot find V6_ROUTE_HOST, probably resolv.conf broken";
+else
+    IPV6_ADDRESS="$(/sbin/ip 2>/dev/null route get "${V6_ROUTE_HOST}" | awk '/ src / {for(i=1;i<=NF;i++)if($i~/src/)print $(i+1)}')"
+fi
+
+if ! echo "${LOCAL_HOSTNAME}" | grep -Eq "\.[a-z0-9-]+\." ; then
+    echo 1>&2 "hostname seems not as fqdn, please fix it"
+else
+    if [ -z "${IPV6_ADDRESS}" ]; then
+        echo 1>&2 "IPV6_ADDRESS not found"
+    else
+        echo "${PLUGIN_VERS} ${LOCAL_HOSTNAME} ${IPV6_ADDRESS}"
+    fi
+fi

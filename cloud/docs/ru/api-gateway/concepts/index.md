@@ -1,0 +1,38 @@
+---
+title: "Взаимосвязь ресурсов сервиса {{ api-gw-full-name }}"
+description: "API-шлюз — это интерфейс взаимодействия с сервисами внутри Yandex.Cloud или в интернете. API-шлюз задается декларативно при помощи спецификации. Спецификация — это файл в формате JSON или YAML с описанием API-шлюза по стандарту OpenAPI 3.0. В сервисе {{ api-gw-name }} спецификация дополнена расширениями, которые вы можете использовать для интеграции с другими облачными платформами."
+---
+
+# Взаимосвязь ресурсов в {{ api-gw-name }}
+
+_API-шлюз_ — это интерфейс взаимодействия с сервисами внутри {{ yandex-cloud }} или в интернете.
+
+API-шлюз задается декларативно при помощи спецификации. Спецификация — это файл в формате JSON или YAML с описанием API-шлюза по стандарту  [OpenAPI 3.0](https://github.com/OAI/OpenAPI-Specification). В сервисе {{ api-gw-name}} спецификация дополнена расширениями, которые вы можете использовать для интеграции с другими облачными платформами.
+
+Доступные расширения:
+* [Статический ответ](../concepts/extensions/dummy.md).
+* [Вызов функции](../concepts/extensions/cloud-functions.md).
+* [Обращение по HTTP](../concepts/extensions/http.md).
+* [Интеграция с {{ objstorage-name }}](../concepts/extensions/object-storage.md).
+* [Интеграция с {{ ml-platform-name }}](../concepts/extensions/datasphere.md).
+* [Интеграция с {{ yds-name }}](../concepts/extensions/datastreams.md).
+* [Интеграция с {{ serverless-containers-name }}](../concepts/extensions/containers.md).
+* [Интеграция с {{ message-queue-short-name }}](../concepts/extensions/ymq.md).
+* [Жадные параметры](../concepts/extensions/greedy-parameters.md).
+* [Обобщенный HTTP-метод](../concepts/extensions/any-method.md).
+
+## Использование доменов {#domains}
+
+Сервис {{ api-gw-short-name }} интегрирован с системой управления доменами сервиса {{ certificate-manager-short-name }}. 
+
+Вы можете использовать домены с подтвержденными правами при обращении к API. При этом для обеспечения TLS-соединения будет использован привязанный к домену сертификат.
+
+Подробнее о доменах читайте в разделе [{#T}](../../certificate-manager/concepts/domains/services.md).
+
+## Авторизация {#authorization}
+
+{{ api-gw-short-name }} позволяет реализовать стандартные [механизмы аутентификации и авторизации](https://swagger.io/docs/specification/authentication/), которые предусмотрены спецификацией [OpenAPI 3.0](https://github.com/OAI/OpenAPI-Specification). На данный момент доступна [авторизация с помощью функции](../concepts/extensions/function-authorizer.md).
+ 
+#### См. также {#see-also}
+
+* [Обзор доступных расширений](extensions/index.md).

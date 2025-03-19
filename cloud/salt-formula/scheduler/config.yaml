@@ -1,0 +1,26 @@
+{%- import "common/kikimr/init.sls" as vars with context %}
+
+{%- set lb_endpoints = grains['cluster_map']['load_balancer']['endpoints'] -%}
+{%- set test_mode = salt['grains.get']('overrides:test_mode', False) %}
+
+{%- set kikimr_ycloud_host = 'localhost' if vars.subdomains|length > 1 else lb_endpoints.ycloud_kikimr_grpc.host %}
+{%- set kikimr_ycloud_port = pillar['kikimr_tenant_ports'][vars.scheduler_database]['grpc_port'] if vars.subdomains|length > 1 or vars.base_role == 'cloudvm' else lb_endpoints.ycloud_kikimr_grpc.port %}
+
+# Default Scheduler daemon configuration
+
+bind_address: "[::]:7000"
+scheduler_id: "cloudVM-scheduler"
+
+{%- if test_mode %}
+test_mode: true
+{%- endif %}
+
+endpoints:
+  kikimr:
+    host: {{ salt['grains.get']('overrides:kikimr_endpoint', (kikimr_ycloud_host, kikimr_ycloud_port)|join(':')) }}
+    root: /{{ vars.ydb_domain }}/{{ vars.scheduler_database }}/{{ grains['cluster_map']['stand_type'] }}/{{ salt['grains.get']('overrides:kikimr_id', salt['grains.get']('cluster_map:kikimr:shared_dir')) }}/compute_az
+  compute_private:
+    url: http://{{ lb_endpoints.compute.host }}:{{ lb_endpoints.compute.port }}/private
+  compute_public:
+    url: http://{{ lb_endpoints.compute.host }}:{{ lb_endpoints.compute.port }}/public
+

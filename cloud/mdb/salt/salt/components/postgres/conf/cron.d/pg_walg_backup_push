@@ -1,0 +1,11 @@
+{% set timezone = salt['timezone.get_offset']() %}
+{% set hours_delta = timezone[:3]|int * 60 %}
+{% set delta = (timezone[0] + timezone[3:])|int + hours_delta %}
+{% set utc_minutes = salt['pillar.get']('data:backup:start:hours', 22) * 60 + salt['pillar.get']('data:backup:start:minutes', 0) %}
+{% set local_minutes = utc_minutes + delta %}
+{% set cron_hours = (24 + local_minutes // 60) % 24 %}
+{% set cron_minutes = local_minutes % 60 %}
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
+MAILTO=''
+
+{{ cron_minutes }} {{ cron_hours }} * * * postgres flock -w 10 -o /tmp/pg_walg_backup_push.lock /usr/local/yandex/pg_walg_backup_push.py --delta-from-previous-backup

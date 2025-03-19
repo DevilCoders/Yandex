@@ -1,0 +1,33 @@
+definitions:
+  - &alert_id "{{.ID}}_nbs_service_compaction_score"
+  - &alert_name "{{.Name}} NBS Compaction score"
+  - &alert_annotations_tag "yc-{{.Cluster}}-nbs-solomon"
+  - &alert_annotations_host "{{`{{labels.host}}`}}.{{.HostDomain}}"
+  - &alert_annotations_service "solomon_alert_nbs_compaction_score"
+  - &alert_juggler_description "(doc: https://nda.ya.ru/t/tvKdL87q5Fn9Yt)"
+alerts:
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_juggler_description
+    window_secs: 1800
+    group_by_labels:
+      - host
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - preprod
+      - prod_vla
+      - prod_sas
+      - prod_myt
+      - israel
+    expression:
+      program: |-
+        let score = {project="{{.SolomonProjectID}}", cluster="{{.SolomonCluster}}", service="service", type="-", sensor="CompactionScore", host="{{.Hosts}}"};
+
+        alarm_if(avg(score) >= 300 && last(score) >= 500);
+        warn_if(max(score) >= 300);

@@ -1,0 +1,85 @@
+definitions:
+  - &alert_id "{{.ID}}_nbs_server_fatal_nrd_errors"
+  - &alert_name "{{.Name}}[NRD] NBS Server Fatal Errors"
+  - &alert_annotations_tag "yc-{{.Cluster}}-nbs-solomon"
+  - &alert_annotations_host "{{`{{labels.host}}`}}.{{.HostDomain}}"
+  - &alert_annotations_service "solomon_alert_nbs_server_fatal_nrd_errors"
+  - &alert_juggler_description "(doc: https://nda.ya.ru/t/VNtGfOek5Fnosp)"
+alerts:
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_juggler_description
+    group_by_labels:
+      - host
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - preprod
+    expression:
+      program: |-
+        let not_so_fatal_error_list='DescribeVolume';
+
+        let fatal_errors = integrate_fn(group_lines('sum', {
+          project='{{.SolomonProjectID}}',
+          cluster='{{.SolomonCluster}}',
+          service='server',
+          host='{{.Hosts}}',
+          request!='{{`{{not_so_fatal_error_list}}`}}',
+          sensor='Errors/Fatal',
+          type= 'ssd_nonrepl'
+        }));
+
+        no_data_if(count(fatal_errors) == 0);
+
+        alarm_if(max(fatal_errors) > 1);
+        warn_if(max(fatal_errors) == 1);
+
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_juggler_description
+    group_by_labels:
+      - host
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - prod_vla
+      - prod_sas
+      - prod_myt
+      - israel
+    debug: "errors: {{expression.error_count}}; t0: {{expression.x}}; t1: {{expression.y}}; dt = {{expression.dt}};"
+    expression:
+      program: |-
+        let io_requests='ReadBlocks|WriteBlocks|ZeroBlocks';
+
+        let io_fatal_errors = group_lines('sum', {
+          project='{{.SolomonProjectID}}',
+          cluster='{{.SolomonCluster}}',
+          service='server',
+          host='{{.Hosts}}',
+          request='{{`{{io_requests}}`}}',
+          sensor='Errors/Fatal',
+          type= 'ssd_nonrepl'
+        });
+
+        let errors = drop_below(ceil(io_fatal_errors), 1);
+        let error_count = count(errors);
+
+        let t0 = last(get_timestamps(head(errors, 1)));
+        let t1 = last(get_timestamps(errors));
+        let dt = t1 - t0;
+
+        let x = to_fixed(t0, 2);
+        let y = to_fixed(t1, 2);
+
+        no_data_if(count(io_fatal_errors) == 0);
+        warn_if(integrate(io_fatal_errors) > 0);

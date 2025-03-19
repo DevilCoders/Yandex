@@ -1,0 +1,243 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.baas.v1;
+
+import "google/protobuf/timestamp.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/baas/v1;baas";
+
+message Policy {
+    string id = 1 [ (required) = true, (length) = "<=50"];
+    string name = 2 [ (required) = true, (length) = "<=50"];
+    google.protobuf.Timestamp created_at = 3;
+    google.protobuf.Timestamp updated_at = 4;
+    bool enabled = 5;
+    PolicySettings settings = 6;
+}
+
+message PolicySettings {
+    enum Compression {
+        COMPRESSION_UNSPECIFIED = 0;
+        NORMAL = 1;
+        HIGH = 2;
+        MAX = 3;
+    }
+
+    enum Format {
+        FORMAT_UNSPECIFIED = 0;
+        VERSION_11 = 1;
+        VERSION_12 = 2;
+        AUTO = 3;
+    }
+
+    message Interval {
+        enum Type {
+            TYPE_UNSPECIFIED = 0;
+            SECONDS = 1;
+            MINUTES = 2;
+            HOURS = 3;
+            DAYS = 4;
+        }
+
+        // A type of the interval.
+        Type type = 1 [ (required) = true ];
+        // The amount of value specified in interval.type.
+        int64 count = 2 [ (value)=">0" ];
+    }
+
+    message RetriesConfiguration {
+        // If true, enables retry on errors.
+        bool enabled = 1;
+        // An interval between retry attempts.
+        Interval interval = 2 [ (required) = true ];
+        // Max number of retry attempts. Operation will be considered as failed when max number of retry attempts is reached.
+        int64 max_attempts = 3 [ (value)=">0" ];
+    }
+
+    message Splitting {
+        // The size of split backup file in bytes.
+        int64 size = 1;
+    }
+
+    message VolumeShadowCopyServiceSettings {
+        enum VSSProvider {
+            VSS_PROVIDER_UNSPECIFIED = 0;
+            NATIVE = 1;
+            TARGET_SYSTEM_DEFINED = 2;
+        }
+
+        // If true, the VSS will be enabled.
+        bool enabled = 1;
+        // A type of VSS provider to use in backup.
+        VSSProvider provider = 2 [ (required) = true ];
+    }
+
+    message ArchiveProperties {
+        // The name of the generated archive. The name may use the following variables: ``[Machine Name]``, ``[Plan ID]``, ``[Plan Name]``, ``[Unique ID]``, ``[Virtualization Server Type]``.
+        // default value: '[Machine Name]-[Plan ID]-[Unique ID]A'
+        string name = 1;
+    }
+
+    message PerformanceWindow {
+        // If true, the time windows will be enabled.
+        bool enabled = 1;
+    }
+
+    enum RepeatePeriod {
+        REPEATE_PERIOD_UNSPECIFIED = 0;
+        HOURLY = 1;
+        DAILY = 2;
+        WEEKLY = 3;
+        MONTHLY = 4;
+    }
+
+    enum Day {
+        DAY_UNSPECIFIED = 0;
+        MONDAY = 1;
+        TEUSDAY = 2;
+        WEDNESDAY = 3;
+        THURSDAY = 4;
+        FRIDAY = 5;
+        SATURDAY = 6;
+        SUNDAY = 7;
+    }
+
+    message TimeOfDay {
+        int64 hour = 1;
+        int64 minute = 2;
+    }
+
+    message Retention {
+        message RetentionRule {
+            // A list of backup sets where rules are effective.
+            repeated RepeatePeriod backup_set = 1;
+            oneof condition {
+                option (exactly_one) = true;
+                Interval max_age = 2;
+                int64 max_count = 3;    
+            }
+        }
+
+        // A list of retention rules.
+        repeated RetentionRule rules = 1;
+        // If true, retention rules will be applied after backup is finished.
+        bool after_backup = 2;
+    }
+
+    message Scheduling {
+        message BackupSet {
+            message Time {
+                // daily, weekly setting
+                repeated Day weekdays = 1 [(unique) = true];
+                repeated TimeOfDay repeat_at = 2;
+                
+                // hourly settings
+                Interval repeat_every = 3;
+                TimeOfDay time_from = 4;
+                TimeOfDay time_to = 5;
+
+    			// monthly settings
+                // 1-31
+                repeated int64 monthdays = 6 [(unique) = true];
+                bool include_last_day_of_month = 7;
+                // 1-12
+                repeated int64 months = 8 [(unique) = true];
+            }
+            message SinceLastExecTime {
+                Interval delay = 1;
+            }
+
+            oneof setting {
+                option (exactly_one) = true;
+                Time time = 1;
+                SinceLastExecTime since_last_exec_time = 2;
+            }
+        }
+
+        enum Scheme {
+            SCHEME_UNSPECIFIED = 0;
+            SIMPLE = 1;
+            ALWAYS_FULL = 2;
+            ALWAYS_INCREMENTAL = 3;
+            WEEKLY_INCREMENTAL = 4;
+            WEEKLY_FULL_DAILY_INCREMENTAL = 5;
+            CUSTOM = 6;
+            CDP = 7;
+        }
+
+        // A list of schedules with backup sets that compose the whole scheme.
+        repeated BackupSet backup_sets = 1;
+        // If true, the backup schedule will be enabled.
+        bool enabled = 2;
+        // Max number of backup processes allowed to run in parallel. Unlimited if not set.
+        int64 max_parallel_backups = 3;
+        // Configuration of the random delay between the execution of parallel tasks.
+        Interval rand_max_delay = 4;
+        // A backup scheme. Available values: ``simple``, ``always_full``, ``always_incremental``, ``weekly_incremental``, ``weekly_full_daily_incremental``, ``custom``, ``cdp``.
+        Scheme scheme = 5;
+        // A day of week to start weekly backups.
+        Day weekly_backup_day = 6;
+    }
+
+    enum ChangedBlockTracking {
+        CHANGED_BLOCK_TRACKING_UNSPECIFIED = 0;
+        USE_IF_ENABLED = 1;
+        ENABLE_AND_USE = 2;
+        DO_NOT_USE = 3;
+    }
+
+    // Archive compression level.
+    Compression compression = 1;
+    // Format of the Acronis backup archive.
+    Format format = 2 [ (required) = true ];
+    // If true, snapshots of multiple volumes will be taken simultaneously.
+    bool multi_volume_snapshotting_enabled = 3;
+    // If true, the file security settings will be preserved.
+    bool preserve_file_security_settings = 4;
+    // Configuration of retries on recoverable errors during the backup operations like reconnection to destination. No attempts to fix recoverable errors will be made if retry configuration is not set.
+    RetriesConfiguration reattempts = 5;
+    // If true, a user interaction will be avoided when possible. Equals to false if value is not specified.
+    bool silent_mode_enabled = 6;
+    // Determines the size to split backups on. Splitting is not performed if value is not specified.
+    Splitting splitting = 7;
+    // Configuration of retries on errors during the creation of the virtual machine snapshot. No attempts to fix recoverable errors will be made if retry configuration is not set.
+    RetriesConfiguration vm_snapshot_reattempts = 8;
+    // Settings for the Volume Shadow Copy Service (VSS) provider. If not set, no VSS provider is used.
+    VolumeShadowCopyServiceSettings vss = 9;
+    // The archive properties.
+    ArchiveProperties archive = 10;
+    // Time windows for performance limitations of backup and storage maintenance operations.
+    PerformanceWindow performance_window = 11;
+    // Configuration of backup retention rules.
+    Retention retention = 12;
+    // Storage location of the archives.
+    // Managed on server side. Always cloud (s3).
+    // Vault vault = 13;
+    // Configuration of policy-related alerts.
+    // Managed on server side.
+    // Alerts alerts = 14;
+    // Configuration of the backup schedule.
+    Scheduling scheduling = 15;
+    // A configuration of Changed Block Tracking (CBT).
+    ChangedBlockTracking cbt = 16;
+    // If true, determines whether a file has changed by the file size and timestamp. Otherwise, the entire file contents are compared to those stored in the backup.
+    bool fast_backup_enabled = 17;
+    // If true, a quiesced snapshot of the virtual machine will be taken.
+    bool quiesce_snapshotting_enabled = 18;
+}
+
+message PolicyApplication {
+    enum Status {
+        STATUS_UNSPECIFIED = 0;
+        OK = 1;
+        RUNNING = 2;
+        DISABLED = 3;
+    }
+
+    string policy_id = 1;
+    string compute_instance_id = 2;
+    bool enabled = 3;
+    Status status = 4;
+    google.protobuf.Timestamp created_at = 5;
+}

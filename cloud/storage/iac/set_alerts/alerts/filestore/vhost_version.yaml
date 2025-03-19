@@ -1,0 +1,42 @@
+definitions:
+  - &alert_id "{{.ID}}_nfs_vhost_version"
+  - &alert_name "{{.Name}} NFS Vhost Version"
+  - &alert_annotations_tag "yc-{{.Cluster}}-nfs-vhost-solomon"
+  - &alert_annotations_host "{{`{{labels.host}}`}}"
+  - &alert_annotations_service "solomon_alert_nfs_vhost_version"
+alerts:
+  - id: *alert_id
+    name: *alert_name
+    group_by_labels:
+      - host
+    window_secs: 300
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+      juggler_description: |-
+        cluster: {{expression.cluster_rev}}
+        host: {{expression.host_rev}}
+    clusters:
+      - testing_vla
+      - testing_sas
+      - testing_myt
+      - preprod_vla
+      - preprod_sas
+      - preprod_myt
+      - prod_vla
+      - prod_sas
+      - prod_myt
+    expression:
+      program: |-
+        let cluster = top_max(1, {cluster="{{.SolomonCluster}}", service="vhost", host=="cluster-{{.Zone}}", sensor="version"});
+        let host = top_max(1, {cluster="{{.SolomonCluster}}", service="vhost", host="{{.Hosts}}", sensor="version"});
+
+        no_data_if(count(host) == 0);
+
+        let cluster_rev = get_label(cluster, 'revision');
+        let host_rev = get_label(host, 'revision');
+
+        warn_if(cluster_rev != host_rev);

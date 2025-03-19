@@ -1,0 +1,39 @@
+GO_LIBRARY()
+
+OWNER(g:mdb)
+
+SRCS(
+    command_def.go
+    command_resp.go
+    command_status.go
+    commands_list_resp.go
+    error.go
+    group.go
+    group_resp.go
+    groups_list_resp.go
+    job_resp.go
+    job_result.go
+    job_result_resp.go
+    job_result_status.go
+    job_results_list_resp.go
+    job_status.go
+    jobs_list_resp.go
+    master.go
+    master_resp.go
+    masters_list_resp.go
+    minion.go
+    minion_change.go
+    minion_change_list.go
+    minion_master.go
+    minion_public_key.go
+    minion_resp.go
+    minions_list_resp.go
+    paging.go
+    shipment.go
+    shipment_resp.go
+    shipment_status.go
+    shipments_list_resp.go
+    stats.go
+)
+
+END()

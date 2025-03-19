@@ -1,0 +1,228 @@
+{
+    "appConfig": {},
+    "application": "compute-gpu-base-role",
+    "id": "9d8aad38-17a8-495a-8790-a15820415313",
+    "index": 3,
+    "keepWaitingPipelines": false,
+    "limitConcurrent": true,
+    "name": "update-salt-formula",
+    "parameterConfig": [
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "",
+            "name": "releaseTicket",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": true,
+            "required": true
+        },
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "",
+            "name": "gpuVersion",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": true,
+            "required": true
+        }
+    ],
+    "spelEvaluator": "v4",
+    "stages": [
+        {
+            "failOnFailedExpressions": true,
+            "name": "[update-salt-formula] Configure Context",
+            "refId": "1",
+            "requisiteStageRefIds": [],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "releaseTicket",
+                    "value": "${parameters.releaseTicket}"
+                },
+                {
+                    "key": "branchName",
+                    "value": "${parameters.releaseTicket + \"_update_gpu_version_\" + parameters.gpuVersion}"
+                },
+                {
+                    "key": "gpuVersion",
+                    "value": "${parameters.gpuVersion}"
+                },
+                {
+                    "key": "triggerUserLogin",
+                    "value": "${trigger.user.replace(\"@yandex-team.ru\", \"\")}"
+                }
+            ]
+        },
+        {
+            "actions": [
+                {
+                    "actionId": "759f2b29-9716-4109-ab7f-831313a00a97",
+                    "actionName": "Check if branch exists for testing",
+                    "actionType": "getBranch",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branchName": "${branchName}",
+                    "outputVariable": "branchInfo",
+                    "project": "cloud",
+                    "repo": "salt-formula"
+                }
+            ],
+            "completeOtherBranchesThenFail": false,
+            "continuePipeline": true,
+            "failPipeline": false,
+            "name": "[update-salt-formula] Check if branch exists",
+            "refId": "2",
+            "requisiteStageRefIds": [
+                "1"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "actions": [
+                {
+                    "actionId": "c3c2e859-c8d1-4d7c-a2e6-dfa9d347ba07",
+                    "actionName": "Create Branch",
+                    "actionType": "createBranch",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branchName": "${branchName}",
+                    "outputVariable": "branchInfo",
+                    "project": "cloud",
+                    "repo": "salt-formula",
+                    "startPoint": "master"
+                }
+            ],
+            "name": "[update-salt-formula] Create Branch",
+            "refId": "4",
+            "requisiteStageRefIds": [
+                "2"
+            ],
+            "stageEnabled": {
+                "expression": "${branchInfo == null}",
+                "type": "expression"
+            },
+            "type": "bitbucket"
+        },
+        {
+            "actions": [
+                {
+                    "actionId": "435ddf4f-323b-43f9-a464-384b44159720",
+                    "actionName": "Edit GPU packages",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "(gpu_version: \u0026version_gpu\\s).*",
+                            "replacement": "$1\"${gpuVersion}\""
+                        }
+                    ],
+                    "commitMessage": "Update GPU version to ${gpuVersion}",
+                    "filePath": "pillar/packages/16.04/compute_gpu.yaml",
+                    "ignoreUnmodified": true,
+                    "project": "cloud",
+                    "repo": "salt-formula"
+                },
+                {
+                    "actionId": "57e56030-2afa-45c6-b11b-1df76aebaa03",
+                    "actionName": "Create PR salt-formula",
+                    "actionType": "createPullRequest",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "description": "Update GPU version to ${gpuVersion}\n\nNeedCI",
+                    "findExisting": true,
+                    "fromRef": "${branchName}",
+                    "ignoreEmpty": true,
+                    "outputVariable": "pullRequest",
+                    "project": "cloud",
+                    "repo": "salt-formula",
+                    "reviewers": [
+                        "${triggerUserLogin}"
+                    ],
+                    "title": "${releaseTicket} Update GPU version to ${gpuVersion}",
+                    "toRef": "master"
+                },
+                {
+                    "actionId": "38742838-82be-41c8-a905-de1bb75ba56b",
+                    "actionName": "Get latest commit",
+                    "actionType": "getBranch",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branchName": "${branchName}",
+                    "outputVariable": "saltBranchState",
+                    "project": "cloud",
+                    "repo": "salt-formula"
+                }
+            ],
+            "failOnFailedExpressions": true,
+            "name": "[update-salt-formula] Update pillar file",
+            "refId": "5",
+            "requisiteStageRefIds": [
+                "2",
+                "4"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "actions": [
+                {
+                    "actionId": "b639c07e-3cb5-493d-b427-0ddf8ae14475",
+                    "actionName": "Wait PR",
+                    "actionType": "waitPullRequest",
+                    "source": "priorAction",
+                    "sourceActionId": "57e56030-2afa-45c6-b11b-1df76aebaa03"
+                }
+            ],
+            "completeOtherBranchesThenFail": false,
+            "continuePipeline": true,
+            "failPipeline": false,
+            "name": "[update-salt-formula] Wait for PR merged",
+            "refId": "6",
+            "requisiteStageRefIds": [
+                "5"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "failOnFailedExpressions": false,
+            "name": "[update-salt-formula] Get commit to check",
+            "refId": "7",
+            "requisiteStageRefIds": [
+                "8"
+            ],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "saltBranchLastCommit",
+                    "value": "${saltBranchState[\"latestCommit\"]}"
+                }
+            ]
+        },
+        {
+            "name": "[update-salt-formula] Check commit info",
+            "preconditions": [
+                {
+                    "context": {
+                        "expression": "saltBranchState != null",
+                        "failureMessage": "Failed to get commit hash"
+                    },
+                    "failPipeline": true,
+                    "type": "expression"
+                }
+            ],
+            "refId": "8",
+            "requisiteStageRefIds": [
+                "6"
+            ],
+            "type": "checkPreconditions"
+        }
+    ],
+    "triggers": []
+}

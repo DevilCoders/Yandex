@@ -1,0 +1,60 @@
+{% set config = mongodb.config.get(srv) %}
+{% set enable_flag = 'ENABLE_' + srv.upper() %}
+[Unit]
+Description=MongoDB Database Server ({{config._srv_name}})
+After=network.target
+Documentation=https://docs.mongodb.org/manual
+
+[Service]
+User={{mongodb.user}}
+Group={{mongodb.group}}
+EnvironmentFile=-/etc/default/{{config._srv_name}}
+Environment="WD_STOP_FILE=/var/run/wd-{{config._srv_name}}.stop"
+ExecStartPre=!/usr/bin/touch ${WD_STOP_FILE}
+ExecStartPre=!/usr/bin/touch {{config.processManagement.pidFilePath}}
+ExecStartPre=!/bin/chown {{mongodb.user}}:{{mongodb.group}} {{config.processManagement.pidFilePath}}
+{% if srv == 'mongos' %}
+ExecStart=/usr/bin/mongos --config {{mongodb.config_prefix}}/{{config._srv_name}}.conf
+{% else %}
+ExecStart=!/usr/local/yandex/mongoctl.py --action start --user {{mongodb.user}} --config /etc/yandex/mongoctl-{{srv}}.conf --pid-file {{config.processManagement.pidFilePath}} /usr/bin/mongod --config {{mongodb.config_prefix}}/{{config._srv_name}}.conf
+ExecStartPost=-!/usr/bin/mdb-mongo-set reconfig --show-host
+Type=forking
+TimeoutStartSec=36000
+{% endif %}
+PIDFile={{config.processManagement.pidFilePath}}
+Restart=always
+
+ExecReload=-/usr/bin/touch /tmp/{{config._srv_name}}-reloaded
+
+ExecStop=!/usr/local/yandex/mongoctl.py --action stop --config /etc/yandex/mongoctl-mongod.conf --pid-file {{config.processManagement.pidFilePath}} --timeout {{mongodb.shutdownTimeout}}
+ExecStopPost=-/bin/rm -f /tmp/{{config._srv_name}}-reloaded
+
+# file size
+LimitFSIZE=infinity
+{% if salt.pillar.get('data:database_slice:enable', False) and salt.dbaas.is_dataplane() %}
+Slice=database.slice
+{% else %}
+# cpu time
+LimitCPU=infinity
+# virtual memory size
+LimitAS=infinity
+{% endif %}
+# open files
+#LimitNOFILE=64000
+LimitNOFILE=infinity
+# processes/threads
+#LimitNPROC=64000
+LimitNPROC=infinity
+# locked memory
+LimitMEMLOCK=infinity
+# total threads (user+kernel)
+TasksMax=infinity
+TasksAccounting=false
+# Disabled OOM-killer for mongod process
+OOMScoreAdjust=-900
+
+# Recommended limits for for mongod as specified in
+# http://docs.mongodb.org/manual/reference/ulimit/#recommended-settings
+
+[Install]
+WantedBy=multi-user.target

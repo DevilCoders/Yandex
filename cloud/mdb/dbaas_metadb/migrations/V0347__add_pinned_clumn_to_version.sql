@@ -1,0 +1,4 @@
+
+ALTER TABLE dbaas.versions ADD COLUMN pinned BOOLEAN DEFAULT FALSE;
+ALTER TABLE dbaas.versions_revs ADD COLUMN pinned BOOLEAN DEFAULT FALSE;
+

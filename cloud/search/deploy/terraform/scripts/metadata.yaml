@@ -1,0 +1,62 @@
+#cloud-config
+users:
+  - name: root
+    lock-passwd: false
+    passwd: $6$AmLQ4fU3$/0kqz7HlZRatHL6wCvgoqTed6JdHdNAStxKF2x0fCgRSQGqnIWvpPtazGN.RtgAZpdWvPBUnt/k2aBrUyGInW/
+apt:
+  preserve_sources_list: false
+  sources_list: |
+    deb http://mirror.yandex.ru/ubuntu bionic main restricted universe multiverse
+    deb http://mirror.yandex.ru/ubuntu bionic-security main restricted universe multiverse
+    deb http://mirror.yandex.ru/ubuntu bionic-updates main restricted universe multiverse
+bootcmd:
+  - [ rm, -f, /etc/resolv.conf ]
+  - [ bash, -c, 'echo -e "nameserver 2a02:6b8::1:1\nnameserver 2a02:6b8:0:3400::1" > /etc/resolv.conf' ]
+  - [ bash, -c, 'systemctl disable --no-block ${service_name}.service ||:' ]
+  - [ bash, -c, 'systemctl stop --no-block ${service_name}.service ||:' ]
+  - [ bash, -c, 'echo -e ''${per_boot_sh}'' > /var/lib/cloud/scripts/per-boot/update_${service_name}.sh' ]
+  - [ chmod, '0755', '/var/lib/cloud/scripts/per-boot/update_${service_name}.sh' ]
+  - [ bash, -c, 'echo -e ''${update_monitoring_sh}'' > /var/lib/cloud/scripts/per-boot/update_monitoring.sh' ]
+  - [ chmod, '0755', '/var/lib/cloud/scripts/per-boot/update_monitoring.sh' ]
+runcmd:
+  - [ bash, -c, 'export FQDN="$(hostname)${domain}" ; echo "$FQDN" > /etc/hostname' ]
+  - [ /bin/hostname, -F, /etc/hostname ]
+  - [ bash, -c, 'rm -f /etc/netplan/50-cloud-init.yaml' ]
+  - [ bash, -c, 'echo "service =  https://${self_dns_api}" >> /etc/yandex/selfdns-client/default.conf' ]
+  - [ bash, -c, 'sed -i /etc/yandex/selfdns-client/plugins/default -e ''/echo.*IPV4_ADDRESS/s/echo \"/echo >\/dev\/null \"/''' ]
+  - [ '/var/lib/cloud/scripts/per-boot/update_${service_name}.sh' ]
+  - [ '/var/lib/cloud/scripts/per-boot/update_monitoring.sh' ]
+  - [ bash, -c, 'selfdns-client --debug --terminal' ]
+growpart:
+  mode: auto
+  devices: ['/']
+  ignore_growroot_disabled: false
+write_files:
+  - path: /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
+    content: 'network: {config: disabled}'
+  - path: /etc/networkd-dispatcher/routable.d/10-route
+    permissions: '0755'
+    owner: 'root:root'
+    content: |
+      #!/bin/sh
+      /sbin/ip -6 link set dev eth0 mtu 8950
+      exit 0
+disk_setup:
+  /dev/vdb:
+    table_type: gpt
+    layout: True
+    overwrite: False
+  /dev/vdc:
+    table_type: gpt
+    layout: True
+    overwrite: False
+fs_setup:
+  - device: /dev/vdb
+    partition: 1
+    filesystem: ext4
+  - device: /dev/vdc
+    partition: 1
+    filesystem: ext4
+mounts:
+  - [ /dev/vdb1, /media/yc, auto, "errors=remount-ro", "0", "1" ]
+  - [ /dev/vdc1, /var/log/yc, auto, "errors=remount-ro", "0", "1" ]

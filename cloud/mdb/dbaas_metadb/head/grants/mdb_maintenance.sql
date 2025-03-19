@@ -1,0 +1,8 @@
+GRANT USAGE ON SCHEMA dbaas TO mdb_maintenance;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA dbaas TO mdb_maintenance;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA dbaas TO mdb_maintenance;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA dbaas TO mdb_maintenance;
+GRANT USAGE ON SCHEMA code TO mdb_maintenance;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA code TO mdb_maintenance;
+
+GRANT CONNECT ON DATABASE dbaas_metadb TO mdb_maintenance;

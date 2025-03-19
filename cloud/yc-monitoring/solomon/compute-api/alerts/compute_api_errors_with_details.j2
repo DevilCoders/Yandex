@@ -1,0 +1,57 @@
+{% extends "../../base/alert.j2" %}
+
+{% set notificationChannels = ["compute_api_duty_telegram", "juggler"] if env in ["prod", "preprod"] else ["juggler"] %}
+{% set windowSecs = 600 %}
+{% set checkExpression = "" %}
+{% set repeatNotifySecs = 3600 %}
+
+{% set resolvedEmptyPolicy = "RESOLVED_EMPTY_MANUAL" %}
+
+{% set service = 'compute_head' %}
+{% set internalErrors = "Unknown|DeadlineExceeded|Unimplemented|Internal|Unavailable|DataLoss" %}
+{% set description = "https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-api-errors-with-details" %}
+
+{% macro prog() %}
+let error_graph = {
+    project='{{ project_id }}',
+    cluster='cloud_{{ env }}_head',
+    host='cluster',
+    service='{{ service }}',
+    sensor='grpc_handled',
+    grpc_method!='All',
+    grpc_service!='All',
+    grpc_code='{{ internalErrors }}'};
+ok_if(size(error_graph) == 0);
+
+let api_errors = group_lines('sum', diff(integrate_fn(error_graph)));
+let error_graph = '';
+
+let total = group_lines('sum', diff(integrate_fn({
+    project='{{ project_id }}',
+    cluster='cloud_{{ env }}_head',
+    host='cluster',
+    service='{{ service }}',
+    sensor='grpc_handled',
+    grpc_method!='All',
+    grpc_service!='All'})));
+ok_if(sum(api_errors) < {{ min_error_count }});
+
+let errors = sum(api_errors) * 100 / sum(total);
+let readable = to_fixed(errors, 2);
+alarm_if(errors > {{ alarm }});
+warn_if(errors > {{ warn }});
+{% endmacro %}
+
+{% block main %}
+    "name": "Alert with details on compute API errors @{{ env | upper }}",
+    "groupByLabels": ["grpc_service", "grpc_method"],
+    "annotations": {
+        "service": "compute-head-errors-detailed",
+        "tags": "compute-head-errors-detailed",
+        "host": "yc_compute_head_{{ env }}_[[ labels.grpc_service ]]-[[ labels.grpc_method ]]",
+        "error_part": "[[expression.readable]]",
+        "description": "{{ description }}"
+    },
+    "description": "Notifies about API failed with critical internal error\n\nSee {{ description }} for instructions.",
+    "type": {{ type_expression() }}
+{% endblock %}

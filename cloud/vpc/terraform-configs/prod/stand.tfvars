@@ -1,0 +1,9 @@
+ycp_profile = "prod"
+environment = "prod"
+yc_endpoint = "api.cloud.yandex.net:443"
+cr_endpoint = "cr.yandex"
+hc_network_ipv6 = "2a0d:d6c0:2:ba::/80"
+logbroker_endpoint = "lb.etn03iai600jur7pipla.ydb.mdb.yandexcloud.net"
+logbroker_database = "/global/b1gvcqr959dbmi1jltep/etn03iai600jur7pipla"
+region_id = "ru-central1"
+availability_zones = ["ru-central1-a", "ru-central1-b", "ru-central1-c"]

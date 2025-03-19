@@ -1,0 +1,25 @@
+{% extends "../../base/dashboard.j2" %}
+
+{% macro render_row_azs(title, metric, metric_group, asc="") %}
+{
+  {% set base_query = "l.metric_group=" + metric_group + "&l.metric=" + metric + "&graph=auto&stack=false" + asc + "&downsamplingAggr=max&filter=top&filterBy=max&filterLimit=25" %}
+  "panels": [
+    {% for az in zones_by_env[env] %}
+        {{ render_panel(title=title + " @ " + az.prefix|upper,
+                 cluster="cloud_" + env + "_compute",
+                 service="oct_vrouter", query="l.host=" + compute_node_selector(az.prefix) + "&" + base_query) }}
+        {% if not loop.last %},{% endif %}
+    {% endfor %}
+  ]
+}
+{% endmacro %}
+
+
+{% block rows %}
+[
+    {{ render_row_azs("active_flows", "flow_active", "FlowStats", "&asc=false") }},
+    {{ render_row_azs("sampling_threshold", "sampling_threshold", "FlowStatsCollectionParams") }},
+    {{ render_row_azs("flow export rate", "flow_export_rate", "FlowStatsCollectionParams") }},
+    {{ render_row_azs("flow export drops", "flow_export_drops_per_second", "FlowStats") }}
+]
+{% endblock %}

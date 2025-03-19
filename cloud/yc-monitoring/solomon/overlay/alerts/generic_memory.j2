@@ -1,0 +1,40 @@
+{% extends "../../base/alert.j2" %}
+
+{% set is_compute_node = compute_node|default(False) %}
+{% set is_oct_ctrl = is_oct_ctrl|default(False) %}
+
+{% macro prog() %}
+{# Note that Solomon graph uses SI units, Giga will be counted as 10^9 in there #}
+let Gb = 1024 * 1024 * 1024;
+
+let rss_gb = avg({
+  project='{{ project_id }}',
+  cluster='{{ "cloud_" ~ env ~ ("_compute" if is_compute_node else "_oct") }}',
+  service='{{ "oct_vrouter" if is_compute_node else "oct_ctrl_cgroup_metrics" if is_oct_ctrl else "oct_head_cgroup_metrics" }}',
+  metric_group='Memory',
+  metric='rss',
+  unit='{{ unit }}'
+}) / Gb;
+
+let is_red = rss_gb > {{ alarm_limit }};
+let is_yellow = rss_gb > {{ warn_limit }};
+
+alarm_if(is_red);
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+    "name": "{{ unit }} memory @ {{ env }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "host": "{{ compute_node_fqdn() if is_compute_node else svm_fqdn() }}",
+        "tags": "Solomon",
+        "rss_gb": "[[expression.rss_gb]]",
+        "crit_rss_gb": "{{ alarm_limit }}",
+        "warn_rss_gb": "{{ warn_limit }}",
+        "service": "{{ unit }}-memory",
+        "description": "Memory usage (RSS). If goes WARN/CRIT, check for memory leaks or overload. As a workaround, safe-restart/restart of '{{ unit }}' may help."
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

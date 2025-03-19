@@ -1,0 +1,57 @@
+{% extends "../../base/alert.j2" %}
+
+{% set notificationChannels = ["compute_node_duty_telegram"] if env in ["prod", "preprod", "testing"] else [] %}
+{% set windowSecs = 600 %}
+{% set checkExpression = "" %}
+
+{# This following parameters are needed because we monitor errors by SXid, and if there are no errors,there are no metrics #}
+{% set resolvedEmptyPolicy = "RESOLVED_EMPTY_MANUAL" %}
+{% set noPointsPolicy = "NO_POINTS_MANUAL" %}
+
+{% macro prog() %}
+
+// Note: SXids in selector happen when resetting card from inside VM
+let graph_warn = {
+    project='{{ project_id }}',
+    cluster='cloud_{{ env }}_compute',
+    service='gpu_servicevm', sensor='nvswitch_errors', sxid='19084|20034|22013'
+};
+
+let graph_crit = {
+    project='{{ project_id }}',
+    cluster='cloud_{{ env }}_compute',
+    service='gpu_servicevm', sensor='nvswitch_errors', sxid!='19084|20034|22013'
+};
+
+let by_host_warn = sum(graph_warn) by host;
+let by_host_crit = sum(graph_crit) by host;
+let data_warn = constant_line(0, 120s) + group_by_time(120s, 'last', by_host_warn);
+let data_crit = constant_line(0, 120s) + group_by_time(120s, 'last', by_host_crit);
+
+let warns_delta = group_lines('sum', drop_below(diff(data_warn), 0));
+let errors_delta = group_lines('sum', drop_below(diff(data_crit), 0));
+
+// hide from plot
+let data_warn = '';
+let data_crit = '';
+let graph_warn = '';
+let graph_crit = '';
+
+let errs = sum(errors_delta);
+let warns = sum(warns_delta);
+alarm_if(errs >= 1);
+warn_if(warns >= 1);
+{% endmacro %}
+
+{% set description = "https://docs.yandex-team.ru/yc-monitoring/compute-node/gpu-servicevm-nvswitch-errors" %}
+
+{% block main %}
+    "name": "Alert on FabricManager NVSwitch errors reported from GPU ServiceVM @{{ env | upper }}",
+    "groupByLabels": ["host", "host_bdf"],
+    "annotations": {
+        "host": "[[labels.host]]",
+        "description": "{{ description }}"
+    },
+    "description": "{{ description }}",
+    "type": {{ type_expression() }}
+{% endblock %}

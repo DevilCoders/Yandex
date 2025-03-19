@@ -1,0 +1,67 @@
+service_account_id: ajecqbab27og73umh5r9 # iot-deployer
+name: iot-migrator
+description: IG-managed IoT migrator
+scale_policy:
+  fixed_scale:
+    size: 1
+deploy_policy:
+  max_unavailable: 1
+  max_expansion: 0
+allocation_policy:
+  zones:
+    - zone_id: ru-central1-a
+    - zone_id: ru-central1-b
+    - zone_id: ru-central1-c
+instance_template:
+  name: iot-migrator-{instance.index}
+  hostname: iot-migrator-{instance.index}
+  platform_id: standard-v1
+  service_account_id: ajedmptrdu99b4q7j7sl # migrator
+  labels:
+    yandex-dns: ig
+    conductor-group: iot-migrator
+    layer: iaas
+    abc_svc: ycmqtt
+    env: prod
+    environment: prod
+  resources_spec:
+    memory: 2G
+    cores: 2
+    core_fraction: 100
+  boot_disk_spec:
+    mode: READ_WRITE
+    disk_spec:
+      image_id: ${IMAGE_ID}
+      type_id: network-ssd
+      size: 10g
+  secondary_disk_specs:
+    - mode: READ_WRITE
+      device_name: data
+      disk_spec:
+        type_id: network-hdd
+        size: 10g
+  network_interface_specs:
+    - subnet_ids: ['e9b9e47n23i7a9a6iha7', 'e2lt4ehf8hf49v67ubot', 'b0c7crr1buiddqjmuhn7']
+      primary_v4_address_spec: {}
+      primary_v6_address_spec: {}
+  metadata:
+    osquery_tag: ycloud-svc-iot
+    user-data: |
+      #cloud-config
+      disk_setup:
+        /dev/disk/by-id/virtio-data:
+          table_type: mbr
+          layout: [80, 20]
+          overwrite: false
+      fs_setup:
+        - filesystem: ext4
+          device: /dev/disk/by-id/virtio-data
+          partition: 1
+          overwrite: false
+        - filesystem: ext4
+          device: /dev/disk/by-id/virtio-data
+          partition: 2
+          overwrite: false
+      mounts:
+        - ["/dev/disk/by-id/virtio-data-part1", "/var/log", "auto", "defaults", "0", "0"]
+        - ["/dev/disk/by-id/virtio-data-part2", "/data", "auto", "defaults", "0", "0"]

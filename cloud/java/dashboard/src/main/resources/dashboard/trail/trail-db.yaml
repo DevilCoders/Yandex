@@ -1,0 +1,75 @@
+uid: trail-db
+refresh: 1m
+title: Audit Trails DB
+
+tags:
+  - yc-trails
+  - yc-audit-trails
+links:
+  - { title: 'Dashboards', tags: [ yc-trails ] }
+
+variables:
+  ui:
+    cluster:
+      values:
+        - yandexcloud_prod_global
+        - yandexcloud_preprod_global
+      titles:
+        - prod
+        - preprod
+    database:
+      values:
+        - /global/b1gm277magvimb2gv0ld/etn01t6c3eilhl31nl7j
+        - /pre-prod_global/aoedsmvctptsmbkj4g90/cc803kmei33k779pquc5
+      titles:
+        - prod
+        - preprod
+  replacement:
+    !include ../include/errors.yaml
+
+
+graphDefaults:
+  datasource: 'Solomon'
+  width: 8
+  height: 6
+
+queryDefaults:
+  dropNan: false
+  labels: ''
+  defaultTimeWindow: $__interval
+
+rows:
+  - title: 'Common'
+    queryDefaults: { labels: 'project=kikimr, service=tablets, host=cluster, slot=cluster, category=executor, type=DataShard, cluster=${cluster}, database=${database}' }
+    panels:
+      - type: graph
+        title: Datashard High CPU Usage
+        queries:
+          - params: { labels: 'sensor=HIST(ConsumedCPU), range=70%|80%|90%|100%' }
+            select: { }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: Datashard CPU Usage Histogram
+        queryDefaults: { labels: 'sensor=HIST(ConsumedCPU)' }
+        queries:
+          - select: { group_by_labels: [ "sum", "bin" ], histogram_percentile: [ "50", "bin" ], math: [ / 10000], alias: "p50" }
+            groupByTime: { max: default }
+          - select: { group_by_labels: [ "sum", "bin" ], histogram_percentile: [ "75", "bin" ], math: [ / 10000], alias: "p75" }
+            groupByTime: { max: default }
+          - select: { group_by_labels: [ "sum", "bin" ], histogram_percentile: [ "90", "bin" ], math: [ / 10000], alias: "p90" }
+            groupByTime: { max: default }
+          - select: { group_by_labels: [ "sum", "bin" ], histogram_percentile: [ "99", "bin" ], math: [ / 10000], alias: "p99" }
+            groupByTime: { max: default }
+          - select: { group_by_labels: [ "sum", "bin" ], histogram_percentile: [ "99.9", "bin" ], math: [ / 10000], alias: "p99.9" }
+            groupByTime: { max: default }
+        yAxes: [ { min: 0, format: percent } ]
+
+      - type: graph
+        title: DB Size
+        queries:
+          - params: { labels: 'sensor=SUM(DbDataBytes)' }
+            select: { }
+        yAxes: [ { min: 0, format: decbytes } ]
+
+

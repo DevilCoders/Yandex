@@ -1,0 +1,25 @@
+domain ip6 {
+    table mangle {
+        chain OUTPUT {
+            mod owner uid-owner 'clickhouse' MARK set-mark 4;
+
+{% for host in salt['pillar.get']('data:access:user_hosts', []) %}
+            mod owner uid-owner 'clickhouse'
+            mod tcp proto tcp daddr '{{ host.fqdn }}' dport {{ host.port }}
+            MARK set-mark 8;
+{% endfor %}
+
+            # Route traffic to MDS_INT_NETS through eth1. It's used to access S3 bypassing balancer
+            # (https://wiki.yandex-team.ru/mds/s3-api/faq/#kakzalivatdannyeminujabalanceer).
+            mod owner uid-owner 'clickhouse'
+            mod u32 u32 "0x20&0xffffffff=0x41b9"
+            MARK set-mark 8;
+
+{% for project_id in salt.mdb_network.get_external_project_ids(exclude_user_project_id=true) %}
+            mod owner uid-owner 'clickhouse'
+            mod u32 u32 "0x20&0xffffffff={{ project_id }}"
+            MARK set-mark 8;
+{% endfor %}
+        }
+    }
+}

@@ -1,0 +1,35 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro prog() %}
+{# Note that Solomon graph uses SI units, Giga will be counted as 10^9 in there #}
+let Gb = 1024 * 1024 * 1024;
+
+let mem_available = avg({
+    cluster='cloud_{{ env }}_{{ unit }}',
+    service='sys',
+    host!='cluster',
+    path='/Memory/MemAvailable'
+}) / Gb;
+
+let is_red = mem_available < {{ alarm_limit }};
+let is_yellow = mem_available < {{ warn_limit }};
+
+alarm_if(is_red);
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+    "name": "{{ unit }} memory-available @ {{ env }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "host": "{{ svm_fqdn() }}",
+        "tags": "Solomon",
+        "mem_available_gb": "[[expression.mem_available]]",
+        "crit_avail_gb": "{{ alarm_limit }}",
+        "warn_avail_gb": "{{ warn_limit }}",
+        "service": "{{ unit }}-memory-available",
+        "description": "{{ unit }} svm memory available (free + cached). If goes WARN/CRIT, check for services mem overload or configure svm total memory"
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

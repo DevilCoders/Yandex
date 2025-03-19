@@ -1,0 +1,117 @@
+{
+  "variables": {
+    "folder_id": "{{env `FOLDER_ID`}}",
+    "subnet_id": "{{env `SUBNET_ID`}}",
+    "zone_id": "{{env `ZONE_ID`}}",
+    "commit_author": "{{env `COMMIT_AUTHOR`}}",
+    "service_account_id": "{{env `SERVICE_ACCOUNT_ID`}}",
+    "gsid": "1000"
+  },
+  "builders": [
+    {
+      "type": "yandex",
+      "source_image_family": "ubuntu-2004-lts",
+      "source_image_folder_id": "standard-images",
+
+      "zone": "{{user `zone_id`}}",
+      "folder_id": "{{user `folder_id`}}",
+      "subnet_id": "{{user `subnet_id`}}",
+      "disk_type": "network-nvme",
+      "service_account_id": "{{user `service_account_id`}}",
+
+      "labels": {
+        "skip_update_ssh_keys": "true"
+      },
+      "metadata": {
+        "gsid": "{{user `GSID`}}"
+      },
+
+      "use_ipv4_nat": true,
+      "use_ipv6": true,
+
+      "image_name": "yc-vpc-base-{{isotime | clean_resource_name}}",
+      "image_family": "yc-vpc-base",
+      "image_description": "Base image for YC VPC team. Supports two network interfaces.",
+      "image_labels": {
+        "commit_author": "{{user `commit_author`}}",
+        "version": "1"
+      },
+
+      "ssh_username": "ubuntu"
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "shell",
+      "inline": [
+        "sudo sed -i '1i nameserver 2a02:6b8::1:1' /etc/resolv.conf",
+        "echo 'Content of /etc/resolv.conf:' ; cat /etc/resolv.conf",
+        "echo 'Content of /etc/hosts:' ; cat /etc/hosts"
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "echo \"Image prepared by Packer at: $(date --rfc-3339 sec)\" | sudo tee /etc/image_description",
+        "echo \"Unique image ID: {{uuid}}\"       | sudo tee -a /etc/image_description",
+        "echo \"Create timestamp: {{timestamp}}\" | sudo tee -a /etc/image_description",
+        "sudo apt-key adv --keyserver keyserver.ubuntu.com --recv 7FCD11186050CD1A",
+        "echo 'deb http://common.dist.yandex.ru/common stable/all/'                | sudo tee -a /etc/apt/sources.list.d/common-stable.list",
+        "echo 'deb http://common.dist.yandex.ru/common stable/amd64/'              | sudo tee -a /etc/apt/sources.list.d/common-stable.list",
+        "echo 'deb http://yandex-cloud.dist.yandex.ru/yandex-cloud stable/all/'    | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-stable.list",
+        "echo 'deb http://yandex-cloud.dist.yandex.ru/yandex-cloud stable/amd64/'  | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-stable.list",
+        "echo 'deb http://yandex-cloud.dist.yandex.ru/yandex-cloud testing/all/'   | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-testing.list",
+        "echo 'deb http://yandex-cloud.dist.yandex.ru/yandex-cloud testing/amd64/' | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-testing.list",
+        "echo 'deb http://yandex-cloud-focal-secure.dist.yandex.ru/yandex-cloud-focal-secure stable/all/' | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-focal-secure-stable.list",
+        "echo 'deb http://yandex-cloud-focal-secure.dist.yandex.ru/yandex-cloud-focal-secure stable/amd64/' | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-focal-secure-stable.list",
+        "echo 'deb http://yandex-cloud-focal-secure.dist.yandex.ru/yandex-cloud-focal-secure testing/all/' | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-focal-secure-testing.list",
+        "echo 'deb http://yandex-cloud-focal-secure.dist.yandex.ru/yandex-cloud-focal-secure testing/amd64/' | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-focal-secure-testing.list",
+        "echo '169.254.169.254 metadata.google.internal' | sudo tee -a /etc/hosts"
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "export DEBIAN_FRONTEND=noninteractive",
+        "sudo systemctl mask unattended-upgrades.service",
+        "sudo systemctl stop unattended-upgrades.service",
+        "while pgrep unattended; do sleep 1; done;",
+        "while lsof /var/lib/dpkg/lock-frontend; do sleep 1; done;"
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "sudo apt-add-repository universe",
+        "echo cloud-init hold | sudo dpkg --set-selections",
+        "sudo apt-get update",
+        "sudo apt-get upgrade -y --allow-unauthenticated --option=Dpkg::Options::=--force-confold"
+      ]
+    },
+    {
+      "type": "salt-masterless",
+      "bootstrap_args": "stable 3004",
+      "local_state_tree": "{{template_dir}}/../salt",
+      "local_pillar_roots": "{{template_dir}}/../salt/pillar",
+      "grains_file": "{{template_dir}}/grains",
+      "log_level": "info"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'Purge Salt packages'",
+        "sudo apt-get -y purge salt-common salt-minion",
+        "sudo rm -rf /srv/salt",
+        "sudo rm -rf /srv/pillar",
+        "sudo rm -rf /var/cache/salt",
+        "sudo rm -rf /var/lib/cloud",
+        "sudo rm -ff /var/lib/dhcp/*.leases",
+        "sudo systemctl unmask unattended-upgrades.service",
+        "sudo systemctl start unattended-upgrades.service",
+        "echo 'List installed packages and versions'",
+        "dpkg -l",
+        "ls -al /var/lib/dpkg/"
+      ]
+    }
+  ]
+}

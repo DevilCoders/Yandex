@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.k8s.v1.inner;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+import "yandex/cloud/priv/k8s/v1/inner/common.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/k8s/v1/inner;k8s";
+option java_outer_classname = "PMKINGMGS";
+
+// NodeGroupMigration is a mass node group upgrade
+service NodeGroupMigrationService {
+    // Create or update node group migration specification
+    rpc Upsert (UpsertNodeGroupMigrationRequest) returns (google.protobuf.Empty);
+    rpc List (ListNodeGroupMigrationRequest) returns (ListNodeGroupMigrationResponse);
+    rpc Delete (DeleteNodeGroupMigrationRequest) returns (google.protobuf.Empty);
+    rpc ListRaw (ListRawNodeGroupMigrationRequest) returns (ListRawNodeGroupMigrationResponse);
+}
+
+// NodeGroupMigration represents a mass upgrade that is performed for node groups of the specified
+// ReleaseChannel (including both major version and channel) to the desired_version (including
+// revision).
+message NodeGroupMigration {
+    // release_channel is the primary key of the migration table
+    ReleaseChannel release_channel = 1 [(required) = true];
+    // It's possible to specify desired_version.major_version distinct from release_channel.major_version
+    // for deprecation upgrades
+    Version desired_version = 2 [(required) = true];
+    // Limit on the total number of node-groups with the desired version. This is best effort
+    // only, since clusters could be created and deleted at will.
+    int64 limit = 3 [(value) = ">=0"];
+
+    enum Status {
+        STATUS_UNSPECIFIED = 0;
+        MIGRATING = 1;
+        NO_VALID_TARGETS = 2;
+    }
+    Status status = 4;
+
+    message NodeGroupUpgradeStates {
+        int64 upgrading = 1;
+        int64 can_upgrade_now = 2;
+        int64 not_now = 3;
+        int64 actual = 4;
+        int64 invalid = 5;
+    }
+    NodeGroupUpgradeStates ng_upgrade_states = 5;
+
+    // startedAt is a timestamp of migration start.
+    google.protobuf.Timestamp started_at = 6;
+}
+
+message RawNodeGroupMigration {
+    // release_channel is the primary key of the migration table
+    ReleaseChannel release_channel = 1 [(required) = true];
+    // It's possible to specify desired_version.major_version distinct from release_channel.major_version
+    // for deprecation upgrades
+    Version desired_version = 2 [(required) = true];
+    // Limit on the total number of node-groups with the desired version. This is best effort
+    // only, since clusters could be created and deleted at will.
+    int64 limit = 3 [(value) = ">=0"];
+    // startedAt is a timestamp of migration start.
+    google.protobuf.Timestamp started_at = 4;
+}
+
+message UpsertNodeGroupMigrationRequest {
+    // release_channel is the primary key of the migration table: if a migration for the
+    // release_channel exists, its parameters (desired_version and limit) are replaced
+    ReleaseChannel release_channel = 1 [(required) = true];
+    Version desired_version = 3 [(required) = true];
+    int64 limit = 4 [(value) = ">=0"];
+}
+
+message ListNodeGroupMigrationRequest {}
+
+message ListNodeGroupMigrationResponse {
+    repeated NodeGroupMigration migrations = 1;
+}
+
+message ListRawNodeGroupMigrationRequest {}
+
+message ListRawNodeGroupMigrationResponse {
+    repeated RawNodeGroupMigration migrations = 1;
+}
+
+message DeleteNodeGroupMigrationRequest {
+    ReleaseChannel release_channel = 1 [(required) = true];
+}

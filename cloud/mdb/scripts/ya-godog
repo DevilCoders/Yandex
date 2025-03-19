@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+set -e
+[[ -n "$DEBUG" ]] && [[ "$DEBUG" != "0" ]] && set -x
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help|help)           help=1; shift; break;;
+        --feature|--feature-path) feature_path="$2"; shift 2;;
+        --tags)                   tags="$2"; shift 2;;
+        --)                       shift; break;;
+        *)                        break;;
+    esac
+done
+
+if [[ "$help" == 1 ]]; then
+    cat <<EOF
+Runner of godog tests in Arcadia. It allows to configure test run configuration
+through command-line arguments rather than environment variables.
+
+Usage: `basename $0` [<option>] ... [<ya_make_option>] ...
+  <ya_make_option> ...                Options to pass to 'ya make'.
+  --feature, --feature-path <path>    Run tests from the specified feature only. The value is passed through
+                                      GODOG_FEATURE_PATHS variable.
+  --tags <tag_expression>             Tag expression to filter tests to run. The value is passed through
+                                      GODOG_TAGS variable.
+  -h, --help                          Show this help message and exit.
+
+Examples:
+- Run all ClickHouse tests from backups.feature in wgrpcrgrpc mode.
+  cloud/mdb/mdb-internal-api/functest$ ya-godog --feature features/clickhouse/mdb/backups.feature tests/clickhouse/wgrpcrgrpc/
+
+- Run all MongoDB tests.
+  cloud/mdb/mdb-internal-api/functest$ ya-godog tests/mongodb/
+EOF
+    exit 0
+fi
+
+if [[ -n "$tags" ]]; then
+    export GODOG_TAGS="$tags"
+fi
+
+if [[ -n "$feature_path" ]]; then
+    export GODOG_FEATURE_PATHS=$(realpath "$feature_path")
+fi
+
+ya make -tt "$@"

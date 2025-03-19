@@ -1,0 +1,157 @@
+use hahn;
+PRAGMA yt.InferSchema = '1';
+PRAGMA File('libcrypta_identifier_udf.so', 'yt://hahn/home/crypta/public/udfs/stable/libcrypta_identifier_udf.so');
+PRAGMA Udf('libcrypta_identifier_udf.so');
+
+$accounts_tbl = '//home/logfeller/logs/yc-billing-export-billing-accounts/1h';
+$monetary_grants_table = '//home/logfeller/logs/yc-billing-export-monetary-grants/1h';
+$cloud_owners_tbl = '//home/cloud_analytics/import/iam/cloud_owners/1h';
+
+$date_format = '%Y-%m-%dT%H:%M:%S+00:00';
+
+$to_double = ($amount) -> {
+    RETURN CAST($amount AS Double);
+};
+
+$email_to_canonical = ($email) -> {
+    RETURN Identifiers::NormalizeEmail($email);
+};
+
+DEFINE SUBQUERY $last_non_empty_table($path) AS
+    $max_path = (
+        SELECT MAX(Path) AS Path
+        FROM FOLDER($path, 'row_count')
+        WHERE Type = 'table'
+            AND Yson::LookupInt64(Attributes, 'row_count') > 0
+    );
+    SELECT * FROM CONCAT($max_path);
+END DEFINE;
+
+$first_ending_grants_end_time = (
+SELECT 
+    billing_account_id,
+    MIN(end_time) as end_time
+FROM (
+    SELECT
+        billing_account_id,
+        end_time
+    FROM
+        $last_non_empty_table($monetary_grants_table)
+    WHERE
+        end_time > DateTime::ToSeconds(YQL::CurrentUtcTimestamp())
+    )
+GROUP BY
+    billing_account_id
+);
+
+
+$ba_grants = (
+    SELECT 
+    a.billing_account_id as billing_account_id,
+    a.initial_amount as initial_amount,
+    b.end_time as end_time
+    FROM
+        $last_non_empty_table($monetary_grants_table) as a
+    INNER JOIN
+        $first_ending_grants_end_time as b
+    ON a.billing_account_id = b.billing_account_id AND a.end_time = b.end_time
+
+);
+
+
+
+$ba = (
+SELECT
+    a.id AS billing_account_id,
+    IF(a.state != 'suspended', 
+          a.state,
+          IF (Yson::LookupString(
+                Yson::ParseJson(
+                    Yson::ConvertToString(metadata)
+                ), 
+                'block_reason'
+                ) IS NULL, 
+             YQL::Concat(a.state, '_unknown'),
+              YQL::Concat(a.state, 
+                YQL::Concat( '_',
+                  Yson::LookupString(
+                    Yson::ParseJson(
+                        Yson::ConvertToString(metadata)
+                    ), 
+                    'block_reason'
+                    )
+                  )
+          )
+       )
+       ) AS state_extended,
+       COALESCE(c.segment, 'mass') as segment,
+       COALESCE(c.sales, 'unknown') as sales_person,
+       COALESCE(c.crm_client_name, COALESCE(b.LONGNAME, YQL::Concat(e.first_name, YQL::Concat(" ", e.last_name)))) as client_name,
+       IF(Yson::LookupBool(Yson::ParseJson(Yson::ConvertToString(feature_flags)),'isv'), 1, 0) as isv,
+       IF(Yson::LookupBool(Yson::ParseJson(Yson::ConvertToString(feature_flags)),'var'), 1, 0) as var,
+       CAST(d.initial_amount AS Double) as first_ending_grant_initial_amount,
+       d.end_time as first_ending_grant_end_time,
+       master_account_id
+FROM
+    $last_non_empty_table($accounts_tbl) as a
+LEFT JOIN
+    `//home/cloud_analytics/import/balance/latest` as b
+ON a.person_id = b.ID
+LEFT JOIN (
+  SELECT 
+    billing_account_id,
+    LIST(segment){0} AS segment,
+    LIST(sales){0} AS sales,
+    LIST(crm_client_name){0} AS crm_client_name
+  FROM 
+    `//home/cloud_analytics/import/wiki/clients_segments`
+  WHERE
+    billing_account_id != 'not_created'
+  GROUP BY
+    billing_account_id
+    ) as c
+ON a.id = c.billing_account_id
+LEFT JOIN (
+    SELECT 
+        billing_account_id,
+        LIST(initial_amount){0} as initial_amount,
+        LIST(end_time){0} as end_time
+    FROM
+        $ba_grants
+    GROUP BY billing_account_id
+)as d
+ON a.id = d.billing_account_id
+LEFT JOIN (
+    SELECT 
+        passport_uid,
+        LIST(first_name){0} as first_name,
+        LIST(last_name){0} as last_name
+    FROM
+        $last_non_empty_table($cloud_owners_tbl)
+    GROUP BY 
+        passport_uid
+        ) as e 
+ON a.owner_id = e.passport_uid
+);
+
+INSERT INTO `//home/cloud_analytics/export/billing/ba` WITH TRUNCATE
+SELECT
+  a.billing_account_id as billing_account_id, 
+  YQL::Concat(date, " 00:00:00") as date,
+  state,
+  block_reason,
+  sales_name as sales_person,
+  if(isv=1, 'isv', if(var=1, 'var', segment)) as segment,
+  client_name,
+  isv,
+  var,
+  first_ending_grant_initial_amount,
+  first_ending_grant_end_time,
+  a.master_account_id as master_account_id
+FROM `//home/cloud_analytics/cooking_cubes/acquisition_cube/sources/ba_hist` as a
+LEFT JOIN $ba as b 
+ON a.billing_account_id = b.billing_account_id
+
+
+
+

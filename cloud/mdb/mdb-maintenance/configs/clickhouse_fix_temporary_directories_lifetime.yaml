@@ -1,0 +1,22 @@
+info: Cluster maintenance
+clusters_selection:
+  db: >-
+    SELECT
+      cid
+    FROM dbaas.clusters c JOIN dbaas.pillar p USING(cid) WHERE
+      c.type = 'clickhouse_cluster'
+      AND c.status = 'RUNNING'
+      AND p.value #> '{data,unmanaged,restart_to_fix_temporary_directories_lifetime}' = 'true'
+pillar_change: >-
+  UPDATE dbaas.pillar p
+     SET value = value #- '{data,unmanaged,restart_to_fix_temporary_directories_lifetime}'
+   WHERE
+     p.cid = :cid
+worker:
+  operation_type: clickhouse_cluster_modify
+  task_type: clickhouse_cluster_maintenance
+  task_args:
+    restart: true
+  timeout: 4h
+max_delay_days: 21
+min_days: 7

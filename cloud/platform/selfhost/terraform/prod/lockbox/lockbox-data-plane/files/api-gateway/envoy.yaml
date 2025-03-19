@@ -1,0 +1,198 @@
+node:
+  id: any
+  cluster: api_gateway
+  locality:
+    region: ru-central1
+    zone: any
+
+admin:
+  access_log_path: /var/log/envoy/admin_access.log
+  address:
+    socket_address: { address: 127.0.0.1, port_value: 9901 }
+
+# As recommended in https://www.envoyproxy.io/docs/envoy/latest/configuration/best_practices/edge
+overload_manager:
+  refresh_interval: 0.25s
+  resource_monitors:
+  - name: "envoy.resource_monitors.fixed_heap"
+    typed_config:
+      "@type": type.googleapis.com/envoy.config.resource_monitor.fixed_heap.v2alpha.FixedHeapConfig
+      max_heap_size_bytes: 268435456 # 256 Mb
+  actions:
+  - name: "envoy.overload_actions.shrink_heap"
+    triggers:
+    - name: "envoy.resource_monitors.fixed_heap"
+      threshold:
+        value: 0.95
+  - name: "envoy.overload_actions.stop_accepting_requests"
+    triggers:
+    - name: "envoy.resource_monitors.fixed_heap"
+      threshold:
+        value: 0.98
+
+stats_config:
+  use_all_default_tags: true
+
+#stats_sinks:
+#  - name: envoy.statsd
+#    config:
+#      address:
+#        socket_address: { address: 127.0.0.1, port_value: 9125 }
+
+#tracing:
+#  http:
+#    name: envoy.dynamic.ot
+#    typed_config:
+#      "@type": type.googleapis.com/envoy.config.trace.v2.DynamicOtConfig
+#      library: /usr/local/lib/libjaegertracing_plugin.so
+#      config:
+#        service_name: api-gateway-preprod
+#        sampler: { type: const, param: 1 }
+#        reporter: { localAgentHostPort: 127.0.0.1:5775 }
+
+dynamic_resources:
+  lds_config:
+    api_config_source:
+      api_type: GRPC
+      grpc_services:
+        envoy_grpc:
+          cluster_name: xds_cluster
+  cds_config:
+    api_config_source:
+      api_type: GRPC
+      grpc_services:
+        envoy_grpc:
+          cluster_name: xds_cluster
+
+static_resources:
+  listeners:
+    - address:
+        socket_address: { address: "::", port_value: 444 }
+      filter_chains:
+        - filters:
+          - name: envoy.http_connection_manager
+            config:
+              stat_prefix: healthcheck
+              codec_type: AUTO
+              delayed_close_timeout: 0.1s
+              http_protocol_options:
+                accept_http_10: true
+              route_config:
+                name: healthcheck_route
+                virtual_hosts:
+                  - name: healthcheck_service
+                    domains: ["*"]
+                    routes:
+                      - match: { prefix: "/" }
+                        direct_response:
+                          status: 200
+              http_filters:
+                - name: envoy.health_check
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.config.filter.http.health_check.v2.HealthCheck
+                    pass_through_mode: false
+                    cluster_min_healthy_percentages:
+                      gateway_healthcheck: { value: 100 }
+                      private_envoy_healthcheck: { value: 100 }
+                - name: envoy.router
+
+    - address:
+        socket_address: { address: "0.0.0.0", port_value: 444 }
+      filter_chains:
+        - filters:
+          - name: envoy.http_connection_manager
+            config:
+              stat_prefix: healthcheck
+              codec_type: AUTO
+              delayed_close_timeout: 0.1s
+              http_protocol_options:
+                accept_http_10: true
+              route_config:
+                name: healthcheck_route
+                virtual_hosts:
+                  - name: healthcheck_service
+                    domains: ["*"]
+                    routes:
+                      - match: { prefix: "/" }
+                        direct_response:
+                          status: 200
+              http_filters:
+                - name: envoy.health_check
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.config.filter.http.health_check.v2.HealthCheck
+                    pass_through_mode: false
+                    cluster_min_healthy_percentages:
+                      gateway_healthcheck: { value: 100 }
+                      private_envoy_healthcheck: { value: 100 }
+                - name: envoy.router
+
+  clusters:
+    - name: xds_cluster
+      connect_timeout: 0.25s
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      http2_protocol_options: {}
+      load_assignment:
+        cluster_name: xds_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 4435
+
+    - name: als
+      connect_timeout: 0.25s
+      http2_protocol_options: {}
+      type: STATIC
+      hosts:
+        - socket_address:
+            address: 127.0.0.1
+            port_value: 4436
+
+    - name: gateway
+      connect_timeout: 0.25s
+      common_http_protocol_options:
+        idle_timeout: 60s
+      http2_protocol_options: {}
+      type: STATIC
+      lb_policy: ROUND_ROBIN
+      circuit_breakers:
+        thresholds: [{max_requests: 1000}]
+      hosts: [{ socket_address: { address: 127.0.0.1, port_value: 9894 }}]
+
+    - name: gateway_healthcheck
+      connect_timeout: 0.25s
+      common_http_protocol_options:
+        idle_timeout: 60s
+      type: STATIC
+      lb_policy: ROUND_ROBIN
+      circuit_breakers:
+        thresholds: [{max_requests: 1000}]
+      hosts: [{ socket_address: { address: 127.0.0.1, port_value: 9895 }}]
+
+    - name: private_envoy_healthcheck
+      connect_timeout: 0.25s
+      common_http_protocol_options:
+        idle_timeout: 60s
+      type: STATIC
+      lb_policy: ROUND_ROBIN
+      health_checks:
+        timeout: 0.5s
+        interval: 0.5s
+        no_traffic_interval: 0.5s
+        healthy_threshold: 2
+        unhealthy_threshold: 2
+        http_health_check:
+          path: "/"
+      # Private envoy listens only on IPv6
+      hosts: [{ socket_address: { address: ::1, port_value: 8444 }}]
+
+  secrets:
+    - name: frontend_certs
+      tls_certificate:
+        certificate_chain:
+          filename: /run/envoy/envoy.crt
+        private_key:
+          filename: /run/envoy/envoy.key

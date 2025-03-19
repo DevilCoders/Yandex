@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.vpc.v1.node;
+
+import "yandex/cloud/priv/validation.proto";
+import "yandex/cloud/priv/vpc/v1/node/common.proto";
+import "yandex/cloud/priv/vpc/v1/node/micro_operation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/vpc/v1/node;node";
+option java_outer_classname = "PVNPS";
+
+// Simple external-facing (for vpc-api) port service proxy. When called:
+//   - Asks location_service about current location of port (except Create/Delete)
+//   - Dispatches calls to inner PortService based on location data or
+//     location specified in request
+//
+// Called by vpc-api:
+//  - On deallocated instance start - Create()
+//  - On instance deallocation - Delete()
+//  - On migration - Create() followed by Delete()
+//  - On any update regarding port - Update()
+service PortService {
+  rpc Create(LocalMultiPortRequest) returns (OperationState);
+  rpc Delete(LocalMultiPortRequest) returns (OperationState);
+  rpc Update(PortRequest) returns (OperationState);
+
+  // Special mode of port deletion when location is not available (due to dead hardware)
+  // Called by vpc-api during force-deallocation of instance
+  // Locations of port (and all its subscriptions) are deleted by vpc-control
+  // Ongoing operations shouldn't be touched, though, as they should eventually
+  // die with ERROR/UNAVAILABLE.
+  rpc ForceDelete(LocalMultiPortRequest) returns (OperationState);
+}
+
+message LocalMultiPortRequest {
+  string operation_id = 1 [(required) = true];
+  repeated PortIdentifier port_identifiers = 2 [(size) = "1-1000"];
+  Location location = 3;
+}
+
+message PortRequest {
+  string operation_id = 1 [(required) = true];
+  PortIdentifier port_identifier = 2 [(required) = true];
+}
+
+message MovePortsRequest {
+  repeated PortIdentifier port_identifiers = 1 [(size) = "1-1000"];
+  string cloud_id = 2 [(required) = true];
+  string folder_id = 3 [(required) = true];
+}

@@ -1,0 +1,10 @@
+RECURSE(
+    cms
+    dbm
+    deploy
+    iam
+    katan
+    main
+    meta
+    mlock
+)

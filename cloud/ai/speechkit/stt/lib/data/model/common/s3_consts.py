@@ -1,0 +1,7 @@
+data_bucket = 'cloud-ai-data'
+toloka_bucket = 'cloud-ai-toloka'
+mds_bucket = 'yc-ai-toloka'
+cloud_endpoint = 'storage.yandexcloud.net'
+mds_endpoint = 's3.mds.yandex.net'
+cloud_url = f'https://{cloud_endpoint}'
+mds_url = f'https://{mds_endpoint}'

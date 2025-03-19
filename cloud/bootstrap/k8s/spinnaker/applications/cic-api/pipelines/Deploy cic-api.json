@@ -1,0 +1,858 @@
+{
+    "appConfig": {},
+    "application": "cic-api",
+    "id": "2f0f2616-d5b9-4e8b-b1d9-d0346ce8659c",
+    "index": 0,
+    "keepWaitingPipelines": false,
+    "limitConcurrent": true,
+    "name": "Deploy cic-api",
+    "parameterConfig": [
+        {
+            "default": "",
+            "description": "Build from https://teamcity.aw.cloud.yandex.net/viewType.html?buildTypeId=CiC_API_ConfigPlane_Helm\u0026branch_Helm=%3Cdefault%3E\u0026tab=buildTypeStatusDiv",
+            "hasOptions": false,
+            "label": "Helm build vesion",
+            "name": "helmVersion",
+            "options": [],
+            "pinned": true,
+            "required": true
+        }
+    ],
+    "spelEvaluator": "v4",
+    "stages": [
+        {
+            "failOnFailedExpressions": true,
+            "name": "Configure context",
+            "refId": "1",
+            "requisiteStageRefIds": [],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "spinnakerExecutionURL",
+                    "value": "https://spinnaker.cloud.yandex.net/#/applications/cic-api/executions/${trigger.executionId}"
+                },
+                {
+                    "key": "spinnakerExecutionMD",
+                    "value": "[${trigger.executionId}](https://spinnaker.cloud.yandex.net/#/applications/cic-api/executions/${trigger.executionId})"
+                },
+                {
+                    "key": "today",
+                    "value": "${new java.text.SimpleDateFormat(\"dd.MM.yyyy\").format(new java.util.Date())}"
+                },
+                {
+                    "key": "triggerUserLogin",
+                    "value": "${trigger.user.replace(\"@yandex-team.ru\", \"\")}"
+                }
+            ]
+        },
+        {
+            "components": "CloudInterconnectAPI",
+            "description": "Helm version: `${parameters.helmVersion}` Spinnaker execution: ${spinnakerExecutionMD}",
+            "followers": "${triggerUserLogin}",
+            "name": "Create Release Startrek ticket",
+            "outputVariable": "startrekTicketId",
+            "queue": "CLOUD",
+            "refId": "2",
+            "requisiteStageRefIds": [
+                "1"
+            ],
+            "summary": "[ ${new java.text.SimpleDateFormat(\"dd.MM.yyyy\").format(new java.util.Date())} ] [ Deploy ] CloudInterconnectAPI : cic-api",
+            "ticketType": "release",
+            "type": "createStartrekTicket"
+        },
+        {
+            "description": "Started by: ${triggerUserLogin} Execution: ${spinnakerExecutionURL}",
+            "environmentId": "5726",
+            "eventType": "maintenance",
+            "myt": true,
+            "name": "Create Infra event",
+            "refId": "3",
+            "requisiteStageRefIds": [
+                "2"
+            ],
+            "sas": true,
+            "sendNotifications": true,
+            "serviceId": 3680,
+            "severity": "major",
+            "tickets": "${createStartrekTicketKey}",
+            "title": "Release",
+            "type": "createInfraEvent",
+            "vla": true
+        },
+        {
+            "failOnFailedExpressions": true,
+            "name": "Branch name",
+            "refId": "4",
+            "requisiteStageRefIds": [
+                "3"
+            ],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "branchName",
+                    "value": "release-${createStartrekTicketKey}-testing"
+                }
+            ]
+        },
+        {
+            "actions": [
+                {
+                    "actionId": "cab37f31-ec40-4717-b3d2-51341c07e67c",
+                    "actionName": "Create branch",
+                    "actionType": "createBranch",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branchName": "${branchName}",
+                    "project": "cloud",
+                    "repo": "k8s-deploy",
+                    "startPoint": "master"
+                },
+                {
+                    "actionId": "422128fa-324f-4233-85a9-b146dff4d20f",
+                    "actionName": "Bump VLA",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "version: (.+)",
+                            "replacement": "version: ${parameters.helmVersion}"
+                        }
+                    ],
+                    "commitMessage": "Bump helm version for TESTING VLA (ru-central1-a)",
+                    "filePath": "testing/ru-central1-a-svm/helmfiles/vpc-api/cic-api/helmfile.yaml",
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                },
+                {
+                    "actionId": "6d1ff86d-94d2-43bb-a8eb-d4402b79776a",
+                    "actionName": "Bump SAS",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "version: (.+)",
+                            "replacement": "version: ${parameters.helmVersion}"
+                        }
+                    ],
+                    "commitMessage": "Bump helm version for TESTING SAS (ru-central1-b)",
+                    "filePath": "testing/ru-central1-b-svm/helmfiles/vpc-api/cic-api/helmfile.yaml",
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                },
+                {
+                    "actionId": "da6fa679-15c9-44f1-8f9a-cf13b251ec3d",
+                    "actionName": "Bump MYT",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "version: (.+)",
+                            "replacement": "version: ${parameters.helmVersion}"
+                        }
+                    ],
+                    "commitMessage": "Bump helm version for TESTING MYT (ru-central1-c)",
+                    "filePath": "testing/ru-central1-c-svm/helmfiles/vpc-api/cic-api/helmfile.yaml",
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                },
+                {
+                    "actionId": "e13cf689-406c-4fc2-95ba-0572504b3f2b",
+                    "actionName": "Create PR",
+                    "actionType": "createPullRequest",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "description": "Automatic bump cic-api helm version for TESTING to ${parameters.helmVersion} via Spinnaker execution: ${spinnakerExecutionMD}",
+                    "findExisting": true,
+                    "fromRef": "${branchName}",
+                    "outputVariable": "bitbucketPR",
+                    "project": "cloud",
+                    "repo": "k8s-deploy",
+                    "reviewers": [
+                        "${triggerUserLogin}"
+                    ],
+                    "title": "${createStartrekTicketKey} Bump cic-api TESTING to ${parameters.helmVersion}",
+                    "toRef": "master"
+                }
+            ],
+            "name": "Bump helm version",
+            "refId": "5",
+            "requisiteStageRefIds": [
+                "4"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "attempts": 3,
+            "buildConfigurationId": "ConfigPlane_GenerateK8sManifests",
+            "buildParameters": [],
+            "logicalBranchName": "${branchName}",
+            "name": "Generate manifests",
+            "refId": "6",
+            "requisiteStageRefIds": [
+                "5"
+            ],
+            "tcProfile": "aw",
+            "type": "teamcityBuild"
+        },
+        {
+            "actions": [
+                {
+                    "actionId": "405835ea-eeaa-4305-b6c1-2afb69981e11",
+                    "actionName": "Wait for PR merge",
+                    "actionType": "waitPullRequest",
+                    "source": "priorAction",
+                    "sourceActionId": "e13cf689-406c-4fc2-95ba-0572504b3f2b"
+                }
+            ],
+            "name": "Wait PR merge",
+            "refId": "7",
+            "requisiteStageRefIds": [
+                "6"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "account": "vpc-api-rc1a-testing-k8s",
+            "cloudProvider": "kubernetes",
+            "manifestArtifact": {
+                "artifactAccount": "bb.yandex-team.ru",
+                "id": "121a759b-7739-4c70-acfb-1af06a17c9d7",
+                "reference": "https://bb.yandex-team.ru/projects/CLOUD/repos/k8s-deploy/raw/testing/ru-central1-a-svm/manifests/vpc-api/cic-api/templates/cic-api.yaml",
+                "type": "bitbucket/file"
+            },
+            "moniker": {
+                "app": "cic-api"
+            },
+            "name": "Deploy k8s TESTING VLA",
+            "namespaceOverride": "",
+            "refId": "10",
+            "requisiteStageRefIds": [
+                "7"
+            ],
+            "skipExpressionEvaluation": true,
+            "source": "artifact",
+            "trafficManagement": {
+                "enabled": false,
+                "options": {
+                    "enableTraffic": false
+                }
+            },
+            "type": "deployManifest"
+        },
+        {
+            "account": "vpc-api-rc1b-testing-k8s",
+            "cloudProvider": "kubernetes",
+            "manifestArtifact": {
+                "artifactAccount": "bb.yandex-team.ru",
+                "id": "121a759b-7739-4c70-acfb-1af06a17c9d7",
+                "reference": "https://bb.yandex-team.ru/projects/CLOUD/repos/k8s-deploy/raw/testing/ru-central1-b-svm/manifests/vpc-api/cic-api/templates/cic-api.yaml",
+                "type": "bitbucket/file"
+            },
+            "moniker": {
+                "app": "cic-api"
+            },
+            "name": "Deploy k8s TESTING SAS",
+            "namespaceOverride": "",
+            "refId": "11",
+            "requisiteStageRefIds": [
+                "10"
+            ],
+            "skipExpressionEvaluation": true,
+            "source": "artifact",
+            "trafficManagement": {
+                "enabled": false,
+                "options": {
+                    "enableTraffic": false
+                }
+            },
+            "type": "deployManifest"
+        },
+        {
+            "account": "vpc-api-rc1c-testing-k8s",
+            "cloudProvider": "kubernetes",
+            "manifestArtifact": {
+                "artifactAccount": "bb.yandex-team.ru",
+                "id": "121a759b-7739-4c70-acfb-1af06a17c9d7",
+                "reference": "https://bb.yandex-team.ru/projects/CLOUD/repos/k8s-deploy/raw/testing/ru-central1-c-svm/manifests/vpc-api/cic-api/templates/cic-api.yaml",
+                "type": "bitbucket/file"
+            },
+            "moniker": {
+                "app": "cic-api"
+            },
+            "name": "Deploy k8s TESTING MYT",
+            "namespaceOverride": "",
+            "refId": "12",
+            "requisiteStageRefIds": [
+                "11"
+            ],
+            "skipExpressionEvaluation": true,
+            "source": "artifact",
+            "trafficManagement": {
+                "enabled": false,
+                "options": {
+                    "enableTraffic": false
+                }
+            },
+            "type": "deployManifest"
+        },
+        {
+            "name": "Switch ticket to TESTING",
+            "refId": "13",
+            "requisiteStageRefIds": [
+                "12"
+            ],
+            "ticketId": "${createStartrekTicketKey}",
+            "transition": "tesingInDev",
+            "type": "executeTransition"
+        },
+        {
+            "name": "Close Infra event",
+            "refId": "14",
+            "requisiteStageRefIds": [
+                "13"
+            ],
+            "type": "closeInfraEvent"
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Ready to PREPROD?",
+            "notifications": [],
+            "refId": "15",
+            "requisiteStageRefIds": [
+                "14"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "description": "Started by: ${triggerUserLogin} Execution: ${spinnakerExecutionURL}",
+            "environmentId": "5725",
+            "eventType": "maintenance",
+            "myt": true,
+            "name": "Create Infra event",
+            "refId": "16",
+            "requisiteStageRefIds": [
+                "15"
+            ],
+            "sas": true,
+            "sendNotifications": true,
+            "serviceId": 3680,
+            "severity": "major",
+            "tickets": "${createStartrekTicketKey}",
+            "title": "Release",
+            "type": "createInfraEvent",
+            "vla": true
+        },
+        {
+            "failOnFailedExpressions": true,
+            "name": "Branch name",
+            "refId": "17",
+            "requisiteStageRefIds": [
+                "16"
+            ],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "branchName",
+                    "value": "release-${createStartrekTicketKey}-preprod"
+                }
+            ]
+        },
+        {
+            "actions": [
+                {
+                    "actionId": "cab37f31-ec40-4717-b3d2-51341c07e67c",
+                    "actionName": "Create branch",
+                    "actionType": "createBranch",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branchName": "${branchName}",
+                    "project": "cloud",
+                    "repo": "k8s-deploy",
+                    "startPoint": "master"
+                },
+                {
+                    "actionId": "422128fa-324f-4233-85a9-b146dff4d20f",
+                    "actionName": "Bump VLA",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "version: (.+)",
+                            "replacement": "version: ${parameters.helmVersion}"
+                        }
+                    ],
+                    "commitMessage": "Bump helm version for PREPROD VLA (ru-central1-a)",
+                    "filePath": "preprod/ru-central1-a-svm/helmfiles/vpc-api/cic-api/helmfile.yaml",
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                },
+                {
+                    "actionId": "6d1ff86d-94d2-43bb-a8eb-d4402b79776a",
+                    "actionName": "Bump SAS",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "version: (.+)",
+                            "replacement": "version: ${parameters.helmVersion}"
+                        }
+                    ],
+                    "commitMessage": "Bump helm version for PREPROD SAS (ru-central1-b)",
+                    "filePath": "preprod/ru-central1-b-svm/helmfiles/vpc-api/cic-api/helmfile.yaml",
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                },
+                {
+                    "actionId": "da6fa679-15c9-44f1-8f9a-cf13b251ec3d",
+                    "actionName": "Bump MYT",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "version: (.+)",
+                            "replacement": "version: ${parameters.helmVersion}"
+                        }
+                    ],
+                    "commitMessage": "Bump helm version for PREPROD MYT (ru-central1-c)",
+                    "filePath": "preprod/ru-central1-c-svm/helmfiles/vpc-api/cic-api/helmfile.yaml",
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                },
+                {
+                    "actionId": "e13cf689-406c-4fc2-95ba-0572504b3f2b",
+                    "actionName": "Create PR",
+                    "actionType": "createPullRequest",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "description": "Automatic bump cic-api helm version for PREPROD to ${parameters.helmVersion} via Spinnaker execution: ${spinnakerExecutionMD}",
+                    "findExisting": true,
+                    "fromRef": "${branchName}",
+                    "outputVariable": "bitbucketPR",
+                    "project": "cloud",
+                    "repo": "k8s-deploy",
+                    "reviewers": [
+                        "${triggerUserLogin}"
+                    ],
+                    "title": "${createStartrekTicketKey} Bump cic-api PREPROD to ${parameters.helmVersion}",
+                    "toRef": "master"
+                }
+            ],
+            "name": "Bump helm version",
+            "refId": "18",
+            "requisiteStageRefIds": [
+                "17"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "attempts": 3,
+            "buildConfigurationId": "ConfigPlane_GenerateK8sManifests",
+            "buildParameters": [],
+            "logicalBranchName": "${branchName}",
+            "name": "Generate manifests",
+            "refId": "19",
+            "requisiteStageRefIds": [
+                "18"
+            ],
+            "tcProfile": "aw",
+            "type": "teamcityBuild"
+        },
+        {
+            "actions": [
+                {
+                    "actionId": "405835ea-eeaa-4305-b6c1-2afb69981e11",
+                    "actionName": "Wait for PR merge",
+                    "actionType": "waitPullRequest",
+                    "source": "priorAction",
+                    "sourceActionId": "e13cf689-406c-4fc2-95ba-0572504b3f2b"
+                }
+            ],
+            "name": "Wait PR merge",
+            "refId": "20",
+            "requisiteStageRefIds": [
+                "19"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "account": "vpc-api-rc1a-preprod-k8s",
+            "cloudProvider": "kubernetes",
+            "manifestArtifact": {
+                "artifactAccount": "bb.yandex-team.ru",
+                "id": "121a759b-7739-4c70-acfb-1af06a17c9d7",
+                "reference": "https://bb.yandex-team.ru/projects/CLOUD/repos/k8s-deploy/raw/preprod/ru-central1-a-svm/manifests/vpc-api/cic-api/templates/cic-api.yaml",
+                "type": "bitbucket/file"
+            },
+            "moniker": {
+                "app": "cic-api"
+            },
+            "name": "Deploy k8s PREPROD VLA",
+            "namespaceOverride": "",
+            "refId": "21",
+            "requisiteStageRefIds": [
+                "20"
+            ],
+            "skipExpressionEvaluation": true,
+            "source": "artifact",
+            "trafficManagement": {
+                "enabled": false,
+                "options": {
+                    "enableTraffic": false
+                }
+            },
+            "type": "deployManifest"
+        },
+        {
+            "account": "vpc-api-rc1b-preprod-k8s",
+            "cloudProvider": "kubernetes",
+            "manifestArtifact": {
+                "artifactAccount": "bb.yandex-team.ru",
+                "id": "121a759b-7739-4c70-acfb-1af06a17c9d7",
+                "reference": "https://bb.yandex-team.ru/projects/CLOUD/repos/k8s-deploy/raw/preprod/ru-central1-b-svm/manifests/vpc-api/cic-api/templates/cic-api.yaml",
+                "type": "bitbucket/file"
+            },
+            "moniker": {
+                "app": "cic-api"
+            },
+            "name": "Deploy k8s PREPROD SAS",
+            "namespaceOverride": "",
+            "refId": "22",
+            "requisiteStageRefIds": [
+                "21"
+            ],
+            "skipExpressionEvaluation": true,
+            "source": "artifact",
+            "trafficManagement": {
+                "enabled": false,
+                "options": {
+                    "enableTraffic": false
+                }
+            },
+            "type": "deployManifest"
+        },
+        {
+            "account": "vpc-api-rc1c-preprod-k8s",
+            "cloudProvider": "kubernetes",
+            "manifestArtifact": {
+                "artifactAccount": "bb.yandex-team.ru",
+                "id": "121a759b-7739-4c70-acfb-1af06a17c9d7",
+                "reference": "https://bb.yandex-team.ru/projects/CLOUD/repos/k8s-deploy/raw/preprod/ru-central1-c-svm/manifests/vpc-api/cic-api/templates/cic-api.yaml",
+                "type": "bitbucket/file"
+            },
+            "moniker": {
+                "app": "cic-api"
+            },
+            "name": "Deploy k8s PREPROD MYT",
+            "namespaceOverride": "",
+            "refId": "23",
+            "requisiteStageRefIds": [
+                "22"
+            ],
+            "skipExpressionEvaluation": true,
+            "source": "artifact",
+            "trafficManagement": {
+                "enabled": false,
+                "options": {
+                    "enableTraffic": false
+                }
+            },
+            "type": "deployManifest"
+        },
+        {
+            "name": "Switch ticket to PREPROD",
+            "refId": "24",
+            "requisiteStageRefIds": [
+                "23"
+            ],
+            "ticketId": "${createStartrekTicketKey}",
+            "transition": "testingAtRc",
+            "type": "executeTransition"
+        },
+        {
+            "name": "Close Infra event",
+            "refId": "25",
+            "requisiteStageRefIds": [
+                "24"
+            ],
+            "type": "closeInfraEvent"
+        },
+        {
+            "description": "Started by: ${triggerUserLogin} Execution: ${spinnakerExecutionURL}",
+            "environmentId": "5724",
+            "eventType": "maintenance",
+            "myt": true,
+            "name": "Create Infra event",
+            "refId": "26",
+            "requisiteStageRefIds": [
+                "36"
+            ],
+            "sas": true,
+            "sendNotifications": true,
+            "serviceId": 3680,
+            "severity": "major",
+            "tickets": "${createStartrekTicketKey}",
+            "title": "Release",
+            "type": "createInfraEvent",
+            "vla": true
+        },
+        {
+            "failOnFailedExpressions": true,
+            "name": "Branch name",
+            "refId": "27",
+            "requisiteStageRefIds": [
+                "26"
+            ],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "branchName",
+                    "value": "release-${createStartrekTicketKey}-prod"
+                }
+            ]
+        },
+        {
+            "actions": [
+                {
+                    "actionId": "cab37f31-ec40-4717-b3d2-51341c07e67c",
+                    "actionName": "Create branch",
+                    "actionType": "createBranch",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branchName": "${branchName}",
+                    "project": "cloud",
+                    "repo": "k8s-deploy",
+                    "startPoint": "master"
+                },
+                {
+                    "actionId": "422128fa-324f-4233-85a9-b146dff4d20f",
+                    "actionName": "Bump VLA",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "version: (.+)",
+                            "replacement": "version: ${parameters.helmVersion}"
+                        }
+                    ],
+                    "commitMessage": "Bump helm version for PROD VLA (ru-central1-a)",
+                    "filePath": "prod/ru-central1-a-svm/helmfiles/vpc-api/cic-api/helmfile.yaml",
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                },
+                {
+                    "actionId": "6d1ff86d-94d2-43bb-a8eb-d4402b79776a",
+                    "actionName": "Bump SAS",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "version: (.+)",
+                            "replacement": "version: ${parameters.helmVersion}"
+                        }
+                    ],
+                    "commitMessage": "Bump helm version for PROD SAS (ru-central1-b)",
+                    "filePath": "prod/ru-central1-b-svm/helmfiles/vpc-api/cic-api/helmfile.yaml",
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                },
+                {
+                    "actionId": "da6fa679-15c9-44f1-8f9a-cf13b251ec3d",
+                    "actionName": "Bump MYT",
+                    "actionType": "editFile",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "branch": "${branchName}",
+                    "changes": [
+                        {
+                            "changeType": "regexReplace",
+                            "expression": "version: (.+)",
+                            "replacement": "version: ${parameters.helmVersion}"
+                        }
+                    ],
+                    "commitMessage": "Bump helm version for PROD MYT (ru-central1-c)",
+                    "filePath": "prod/ru-central1-c-svm/helmfiles/vpc-api/cic-api/helmfile.yaml",
+                    "project": "cloud",
+                    "repo": "k8s-deploy"
+                },
+                {
+                    "actionId": "e13cf689-406c-4fc2-95ba-0572504b3f2b",
+                    "actionName": "Create PR",
+                    "actionType": "createPullRequest",
+                    "bitbucketProfile": "bb.yandex-team.ru",
+                    "description": "Automatic bump cic-api helm version for PROD to ${parameters.helmVersion} via Spinnaker execution: ${spinnakerExecutionMD}",
+                    "findExisting": true,
+                    "fromRef": "${branchName}",
+                    "outputVariable": "bitbucketPR",
+                    "project": "cloud",
+                    "repo": "k8s-deploy",
+                    "reviewers": [
+                        "${triggerUserLogin}"
+                    ],
+                    "title": "${createStartrekTicketKey} Bump cic-api PROD to ${parameters.helmVersion}",
+                    "toRef": "master"
+                }
+            ],
+            "name": "Bump helm version",
+            "refId": "28",
+            "requisiteStageRefIds": [
+                "27"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "attempts": 3,
+            "buildConfigurationId": "ConfigPlane_GenerateK8sManifests",
+            "buildParameters": [],
+            "logicalBranchName": "${branchName}",
+            "name": "Generate manifests",
+            "refId": "29",
+            "requisiteStageRefIds": [
+                "28"
+            ],
+            "tcProfile": "aw",
+            "type": "teamcityBuild"
+        },
+        {
+            "actions": [
+                {
+                    "actionId": "405835ea-eeaa-4305-b6c1-2afb69981e11",
+                    "actionName": "Wait for PR merge",
+                    "actionType": "waitPullRequest",
+                    "source": "priorAction",
+                    "sourceActionId": "e13cf689-406c-4fc2-95ba-0572504b3f2b"
+                }
+            ],
+            "name": "Wait PR merge",
+            "refId": "30",
+            "requisiteStageRefIds": [
+                "29"
+            ],
+            "type": "bitbucket"
+        },
+        {
+            "account": "vpc-api-rc1a-prod-k8s",
+            "cloudProvider": "kubernetes",
+            "manifestArtifact": {
+                "artifactAccount": "bb.yandex-team.ru",
+                "id": "121a759b-7739-4c70-acfb-1af06a17c9d7",
+                "reference": "https://bb.yandex-team.ru/projects/CLOUD/repos/k8s-deploy/raw/prod/ru-central1-a-svm/manifests/vpc-api/cic-api/templates/cic-api.yaml",
+                "type": "bitbucket/file"
+            },
+            "moniker": {
+                "app": "cic-api"
+            },
+            "name": "Deploy k8s PROD VLA",
+            "namespaceOverride": "",
+            "refId": "31",
+            "requisiteStageRefIds": [
+                "30"
+            ],
+            "skipExpressionEvaluation": true,
+            "source": "artifact",
+            "trafficManagement": {
+                "enabled": false,
+                "options": {
+                    "enableTraffic": false
+                }
+            },
+            "type": "deployManifest"
+        },
+        {
+            "account": "vpc-api-rc1b-prod-k8s",
+            "cloudProvider": "kubernetes",
+            "manifestArtifact": {
+                "artifactAccount": "bb.yandex-team.ru",
+                "id": "121a759b-7739-4c70-acfb-1af06a17c9d7",
+                "reference": "https://bb.yandex-team.ru/projects/CLOUD/repos/k8s-deploy/raw/prod/ru-central1-b-svm/manifests/vpc-api/cic-api/templates/cic-api.yaml",
+                "type": "bitbucket/file"
+            },
+            "moniker": {
+                "app": "cic-api"
+            },
+            "name": "Deploy k8s PROD SAS",
+            "namespaceOverride": "",
+            "refId": "32",
+            "requisiteStageRefIds": [
+                "31"
+            ],
+            "skipExpressionEvaluation": true,
+            "source": "artifact",
+            "trafficManagement": {
+                "enabled": false,
+                "options": {
+                    "enableTraffic": false
+                }
+            },
+            "type": "deployManifest"
+        },
+        {
+            "account": "vpc-api-rc1c-prod-k8s",
+            "cloudProvider": "kubernetes",
+            "manifestArtifact": {
+                "artifactAccount": "bb.yandex-team.ru",
+                "id": "121a759b-7739-4c70-acfb-1af06a17c9d7",
+                "reference": "https://bb.yandex-team.ru/projects/CLOUD/repos/k8s-deploy/raw/prod/ru-central1-c-svm/manifests/vpc-api/cic-api/templates/cic-api.yaml",
+                "type": "bitbucket/file"
+            },
+            "moniker": {
+                "app": "cic-api"
+            },
+            "name": "Deploy k8s PROD MYT",
+            "namespaceOverride": "",
+            "refId": "33",
+            "requisiteStageRefIds": [
+                "32"
+            ],
+            "skipExpressionEvaluation": true,
+            "source": "artifact",
+            "trafficManagement": {
+                "enabled": false,
+                "options": {
+                    "enableTraffic": false
+                }
+            },
+            "type": "deployManifest"
+        },
+        {
+            "name": "Switch ticket to PROD",
+            "refId": "34",
+            "requisiteStageRefIds": [
+                "33"
+            ],
+            "ticketId": "${createStartrekTicketKey}",
+            "transition": "released",
+            "type": "executeTransition"
+        },
+        {
+            "name": "Close Infra event",
+            "refId": "35",
+            "requisiteStageRefIds": [
+                "34"
+            ],
+            "type": "closeInfraEvent"
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Ready to PROD?",
+            "notifications": [],
+            "refId": "36",
+            "requisiteStageRefIds": [
+                "25"
+            ],
+            "type": "manualJudgment"
+        }
+    ],
+    "triggers": []
+}

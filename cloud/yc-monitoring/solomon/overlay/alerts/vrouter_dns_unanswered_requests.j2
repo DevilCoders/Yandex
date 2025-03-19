@@ -1,0 +1,72 @@
+{% extends "../../base/alert.j2" %}
+
+{% set delaySecs = 30 %}
+
+{% macro prog() %}
+let requests =
+{
+  project='{{ project_id }}',
+  cluster='cloud_{{ env }}_compute',
+  service='oct_vrouter',
+  host='*',
+  metric_group='DnsInfo',
+  metric='dns_requests_per_second'
+};
+
+let resolved =
+{
+  project='{{ project_id }}',
+  cluster='cloud_{{ env }}_compute',
+  service='oct_vrouter',
+  host='*',
+  metric_group='DnsInfo',
+  metric='dns_resolved_per_second'
+};
+
+let failures =
+{
+  project='{{ project_id }}',
+  cluster='cloud_{{ env }}_compute',
+  service='oct_vrouter',
+  host='*',
+  metric_group='DnsInfo',
+  metric='dns_failures_per_second'
+};
+
+let unsupported =
+{
+  project='{{ project_id }}',
+  cluster='cloud_{{ env }}_compute',
+  service='oct_vrouter',
+  host='*',
+  metric_group='DnsInfo',
+  metric='dns_unsupported_per_second'
+};
+
+let diff_series = requests - resolved - failures - unsupported;
+let max_diff_series = group_lines('max', diff_series);
+let max_diff = abs(max(max_diff_series));
+
+let max_request_series = group_lines('max', requests);
+let max_request = abs(max(max_diff_series));
+
+let is_red = max_diff < 0.05 * max_request;
+{% endmacro %}
+
+
+{% block main %}
+    "name": "vrouter dns-unanswered-requests @ {{ env }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "host": "{{ compute_node_fqdn() }}",
+        "dashboard": "{{ compute_node_network_metrics_url() }}",
+        "tags": "Solomon",
+        "unanswered_requests": "[[expression.max_diff]]",
+        "total_requests": "[[expression.max_request]]",
+        "service": "dns-unanswered-requests",
+        "description": "See {{ solomon_endpoint }}/?project={{ project_id }}&dashboard=compute_node_dns_{{ env }}"
+    },
+    "description": "See {{ solomon_endpoint }}/?project={{ project_id }}&dashboard=compute_node_dns_{{ env }}",
+
+    "type": {{ type_expression() }}
+{% endblock %}

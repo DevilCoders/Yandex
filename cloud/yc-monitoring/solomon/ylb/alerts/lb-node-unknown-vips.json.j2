@@ -1,0 +1,31 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro svm_fqdn() -%}
+	[[labels.host]].{{ svm_domains[env] }}
+{%- endmacro %}
+
+{% macro prog() %}
+let unknown_vips = group_lines('sum', {
+	cluster='cloud_{{ env }}_ylb',
+	service='loadbalancer_node',
+	name='gobgp_unknown_not_announced_vips|gobgp_unknown_not_withdrawn_vips'
+	});
+
+let description = 'lb-node got rule with unknown vip';
+let is_red = max(unknown_vips) > 0;
+alarm_if(is_red);
+{% endmacro %}
+
+{% block main %}
+	"id": "{{ id }}",
+	"name": "{{ name }}",
+	"description": "",
+	"groupByLabels": ["host"],
+	"annotations": {
+		"details": "[[expression.description]]",
+		"host": "{{ svm_fqdn() }}",
+		"service": "{{ serviceName }}",
+		"wiki": "https://docs.yandex-team.ru/yc-monitoring/cgw/{{ serviceName }}"
+	},
+	"type": {{ type_expression() }}
+{% endblock %}

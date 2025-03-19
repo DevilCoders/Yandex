@@ -1,0 +1,32 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro prog() %}
+let processed_file_delay = avg({
+  project='{{ project_id }}',
+  cluster='{{ "cloud_" ~ env ~ "_compute" }}',
+  service='network-flow-collector-sys',
+  name='processed_file_delay'
+});
+
+let is_red = processed_file_delay > {{ crit_delay }};
+let is_yellow = processed_file_delay > {{ warn_delay }};
+
+alarm_if(is_red);
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+    "name": "yc-network-flow-collector-stuck @ {{ env }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "host": "{{ compute_node_fqdn() }}",
+        "tags": "Solomon",
+        "processed_file_delay": "[[expression.processed_file_delay]] sec",
+        "crit_delay": "{{ crit_delay }}",
+        "warn_delay": "{{ warn_delay }}",
+        "service": "yc-network-flow-collector-stuck",
+        "description": "Probably https://st.yandex-team.ru/CLOUD-82283. Please restart yc-network-flow-collector."
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

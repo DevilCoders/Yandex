@@ -1,0 +1,40 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: metastore-db-init
+spec:
+  template:
+    spec:
+      volumes:
+        - name: metastore-site-volume
+          configMap:
+            name: metastore-site-configmap
+      nodeSelector:
+        yandex.cloud/node-group-id: NODE_GROUP_ID
+      containers:
+      - name: metastore
+        image: cr.yandex/crp1ctmeteesp965qmg5/metastore-server@sha256:b29ce3694b875a303ededc83c52590a7f95f79e09eab6ffa0cf803abe6124426
+        command:
+          - /bin/bash
+          - -c
+        args:
+          - "/opt/metastore/bin/schematool -dbType postgres -validate -passWord $METADB_PASSWORD -userName $METADB_USERNAME || /opt/metastore/bin/schematool -dbType postgres -initSchema -passWord $METADB_PASSWORD -userName $METADB_USERNAME"
+        volumeMounts:
+          - name: metastore-site-volume
+            mountPath: /opt/metastore/conf
+        env:
+          - name: HADOOP_HOME
+            value: "/opt/hadoop"
+          - name: METADB_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: metastore-secret
+                key: username
+          - name: METADB_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: metastore-secret
+                key: password
+
+      restartPolicy: Never
+  backoffLimit: 0

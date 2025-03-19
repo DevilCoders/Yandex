@@ -1,0 +1,68 @@
+boot_disk_spec:
+  disk_spec:
+    image_id: fd8d4n68dp3a40q0f96v # yandexcloud/service-images/ubuntu1604-base-stable
+    size: 107374182400 # 100GB
+  mode: READ_WRITE
+cauth: true
+dry_run: false
+folder_id: "b1gg20u7ddqpr2fbf3mb" # yc-infra-appendix/appendix
+fqdn: "bootstrap-private-gpn-vla1.svc.cloud.yandex.net"
+metadata:
+  user-data: |
+    #cloud-config
+    bootcmd:
+      - [ rm, -f, /etc/resolv.conf ]
+      - [ bash, -c, 'echo -e "nameserver 2a02:6b8::1:1\nnameserver 2a02:6b8:0:3400::1" > /etc/resolv.conf' ]
+    runcmd:
+    - [ bash, -c, echo bootstrap-private-gpn-vla1.svc.cloud.yandex.net | sudo tee /etc/hostname | sudo xargs hostname ]
+    - [ sed, -i, -e, 's/token = .*/token = ${selfdns_token}/', /etc/yandex/selfdns-client/default.conf ]
+    - [ cloud-init-per, once, selfdns_service, bash, -c, 'echo -e "service = https://selfdns-api.cloud.yandex.net" >> /etc/yandex/selfdns-client/default.conf' ]
+    - [ /usr/sbin/ensure-selfdns, ${selfdns_token} ]
+    growpart:
+      mode: auto
+      devices: ['/']
+      ignore_growroot_disabled: false
+    package_update: true
+    packages:
+    - yandex-selfdns-client
+    - config-caching-dns
+    - [salt-common, 2017.7.2-yandex1]
+    - [salt-minion, 2017.7.2-yandex1]
+    - [salt-yandex-components, 2017.7.2-yandex1]
+    - [yc-secret-agent, 0.1.1-4279.191029]
+    write_files:
+    - content: |
+        server: secrets.cloud.yandex.net:8888
+        agent_private_key: /etc/yc/secret-agent/keys/agent_private_key.pem
+        agent_public_key: /etc/yc/secret-agent/keys/agent_public_key.pem
+        secrets_dir: /usr/share/yc-secrets
+      path: /etc/yc/secret-agent/secret-agent.config.yaml
+    - content: |
+        Host bb.yandex-team.ru
+            IdentityFile ~/.ssh/robot-yc-bitbucket.key
+      path: /root/.ssh/config
+    - content: |
+        pillar_roots:
+          base:
+            - /srv/salt/pillar
+      path: /etc/salt/minion.d/file_roots.conf
+name: "bootstrap-private-gpn-vla1"
+platform_id: "standard-v2"
+resources_spec:
+  core_fraction: 100
+  cores: 4
+  memory: 8589934592 # 8GB
+secondary_disk_specs:
+- disk_spec:
+    size: 214748364800 # 200GB
+  mode: READ_WRITE
+zone_id: ru-central1-a
+scheduling_policy:
+  deny_deallocation: false
+  start_without_compute: true
+network_interface_specs:
+- subnet_id: e9b9daf08iffl6ao2h2v  # dmz private-cloud subnet
+  primary_v4_address_spec: {}
+  primary_v6_address_spec: {}
+- subnet_id: e9bheh9m8mtc8i8m0gbv  # interconnect subnet
+  primary_v6_address_spec: {}

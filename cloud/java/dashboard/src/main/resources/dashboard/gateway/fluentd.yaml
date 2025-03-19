@@ -1,0 +1,82 @@
+uid: zznVLsJZk
+title:  Fluentd Stats
+tags: [ 'ycp', 'ycp-infra', 'ycp-fluentd', 'ycp-drilldown' ]
+
+variables:
+  ui:
+    cluster: { values: [prod, preprod] }
+    service:
+      multi: true
+      values:
+      - api-router
+      - cpl
+      - dpl01
+      - api-gateway
+      - ai-gateway
+      - mdb-gateway
+      - xds
+      - k8sapi
+      - mk8s-controller
+      - mk8s-master
+      - mk8s-etcd
+      - als
+      titles:
+      - API-ROUTER
+      - CPL-ROUTER
+      - DPL01-ROUTER
+      - API-GATEWAY
+      - AI-GATEWAY
+      - MDB-GATEWAY
+      - XDS
+      - K8SAPI
+      - K8S-CONTROLLER
+      - K8S-MASTER
+      - K8S-ETCD
+      - ALS
+
+graphDefaults: { width: 6, height: 5, datasource: 'Solomon Cloud' }
+queryDefaults: { labels: 'project=platform, cluster=cloud_${cluster}_${service}, service=fluentd_ma, host!=cluster' }
+
+rows:
+  - title: $service
+    uiRepeat: service
+    panels:
+      - type: graph
+        title: 'flush time ( $cluster )'
+        templates:
+          - { name: patchSelect, before: last, add: { asap: [] } }
+        display: { fill: 0 }
+        yAxes: [ { min: 0, decimals: 1, format: ms } ]
+        queryDefaults: { dropNan: true }
+        queries:
+          - params: { labels: 'name=fluentd_output_status_flush_time_count' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: "0", group_by_labels: [sum, host]}
+
+      - type: graph
+        title: 'container records ($cluster)'
+        templates:
+          - { name: patchSelect, before: last, add: { asap: [] } }
+        display: { fill: 0 }
+        yAxes: [ { min: 0, decimals: 1 } ]
+        queryDefaults: { dropNan: true }
+        queries:
+          - params: {labels: 'name=fluentd_input_container_records_total'}
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: "0", group_lines: [sum], alias: input records  }
+          - params: {labels: 'name=fluentd_stdout_records_total'}
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: "0", group_lines: [sum], alias: stdout records  }
+          - params: {labels: 'name=fluentd_stderr_records_total'}
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: "0", group_lines: [sum], alias: stderr records  }
+
+      - type: graph
+        title: 'slow flush count ($cluster)'
+        display: { fill: 0 }
+        yAxes: [ { min: 0, decimals: 1 } ]
+        queryDefaults: { dropNan: true }
+        queries:
+          - params: { labels: 'name=fluentd_output_status_slow_flush_count' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: "0", group_by_labels: [sum, host]}

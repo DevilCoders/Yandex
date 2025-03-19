@@ -1,0 +1,37 @@
+#!/bin/sh
+
+# summary of how this script can be called:
+# * <postinst> `configure' <most-recently-configured-version>
+# * <old-postinst> `abort-upgrade' <new version>
+# * <conflictor's-postinst> `abort-remove' `in-favour' <package> <new-version>
+# * <postinst> `abort-remove'
+# * <deconfigured's-postinst> `abort-deconfigure' `in-favour'
+#   <failed-install-package> <version> `removing'
+#   <conflicting-package> <version>
+#
+# for details, see dh_installdeb(1) or http://www.debian.org/doc/debian-policy/
+
+set -e
+
+case "$1" in
+    configure)
+        adduser --system --group --home /var/run/yc-bootstrap --disabled-password --disabled-login yc-bootstrap || true
+        sudo -u yc-bootstrap mkdir -p /var/run/yc-bootstrap/.postgresql || true
+        sudo -u yc-bootstrap wget "https://crls.yandex.net/allCAs.pem" -O /var/run/yc-bootstrap/.postgresql/root.crt || true
+        sudo -u yc-bootstrap chmod 0600 /var/run/yc-bootstrap/.postgresql/root.crt
+        chown yc-bootstrap /var/log/yc/bootstrap/api
+        systemctl daemon-reload || true
+        systemctl enable yc-bootstrap-api || true
+        systemctl start yc-bootstrap-api.service || true
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+
+    *)
+        echo "postinst called with unknown argument '$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

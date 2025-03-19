@@ -1,0 +1,98 @@
+---
+- hosts: localhost
+  gather_facts: false
+  pre_tasks:
+    - juggler_facts: jserver_api={{ jserver_api }}
+      tags:
+        - always
+  post_tasks:
+    - juggler_cleanup:
+
+  tasks:
+    ################################## DATABASE ###################################
+    - name: logging__prod
+      include_role:
+        name: logging
+      vars:
+        app: logging
+        env: prod
+        cgroup: "{{v.conductor_group}}"
+        unreachable_host: "{{v.conductor_group}}"
+        service_responsibles: "{{responsibles.serverless}}"
+        tags:
+          - "yc-logging"
+          - "yc-logging-{{ env }}-app"
+          - "yc-logging-{{ env }}-app-{{ v.tag_suffix }}"
+          - "yc-notify" #will be notified (via call) about these checks
+      loop_control:
+        loop_var: v
+      with_items:
+        - conductor_group: cloud_prod_logging_cpl
+          tag_suffix: cpl
+        - conductor_group: cloud_prod_logging_ingester
+          tag_suffix: ingester
+        - conductor_group: cloud_prod_logging_reader
+          tag_suffix: reader
+        - conductor_group: cloud_prod_logging_sender
+          tag_suffix: sender
+
+    ################################### INFRA #####################################
+    - name: logging-infra__prod
+      include_role:
+        name: infra
+      vars:
+        host: logging-prod
+        env: prod
+        service: "{{v.service}}"
+        service_responsibles: "{{responsibles.serverless}}"
+        tags:
+          - "yc-logging"
+          - "yc-logging-{{ env }}"
+          - "yc-logging-{{ env }}-infra"
+          - "yc-logging-{{ env }}-infra-{{ v.service }}"
+        flap: { stable: 0, critical: 0 }
+      loop_control:
+        loop_var: v
+      with_items:
+        - service: minor-maintenance
+        - service: minor-issue
+        - service: major-maintenance
+        - service: major-issue
+
+    #################################### E2E ######################################
+    - name: logging-e2e__prod
+      juggler_check: ""
+      args: "{{ default_check | hash_merge( default_timed_limits, item ) }}"
+      vars:
+        app: e2e
+        env: prod
+        namespace: ycloud
+        children:
+          - teamcity-yc-logging:e2e-prod-yc-logging
+        tags: "{{ item.tags }}"
+      with_items:
+        - service: e2e-prod-yc-logging
+          host: yc-logging-teamcity
+          ttl: 9000
+          tags:
+            - "yc-logging-teamcity"
+            - "yc-logging-teamcity-{{ env }}"
+            - "yc-logging-teamcity-{{ env }}-e2e"
+
+      #################################### TRAIL ######################################
+    - name: logging-trail__preprod
+      include_role:
+        name: serverless-trail
+      vars:
+        project: "logging"
+        app: "app"
+        env: "preprod"
+        eventType: "logging"
+    - name: logging-trail__prod
+      include_role:
+        name: serverless-trail
+      vars:
+        project: "logging"
+        app: "app"
+        env: "prod"
+        eventType: "logging"

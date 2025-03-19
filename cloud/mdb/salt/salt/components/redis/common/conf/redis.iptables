@@ -1,0 +1,39 @@
+{% set management_iface = 'eth1' %}
+{% set public_ports = salt.mdb_redis.get_public_ports() %}
+
+table filter {
+{% if public_ports %}
+    chain INPUT {
+        policy DROP;
+
+        interface eth0 {
+            proto tcp dport ( {{ public_ports|join(' ') }} ) ACCEPT;
+        }
+    }
+{% endif %}
+
+    chain OUTPUT {
+        policy ACCEPT;
+        mod state state (ESTABLISHED RELATED) ACCEPT;
+        daddr 169.254.169.254 mod owner uid-owner 'redis' REJECT reject-with icmp-net-unreachable;
+        outerface {{management_iface}} {
+            mod owner uid-owner 'redis' REJECT reject-with icmp-net-unreachable;
+        }
+    }
+}
+
+domain ip6 {
+    table filter {
+        chain OUTPUT {
+            policy ACCEPT;
+            mod state state (ESTABLISHED RELATED) ACCEPT;
+            outerface {{management_iface}} {
+                # The last match wins.
+{% for host in salt['pillar.get']('data:access:management_hosts', []) %}
+                daddr '{{ host.fqdn }}' proto tcp dport {{host.port}} ACCEPT;
+{% endfor %}
+                mod owner uid-owner 'redis' REJECT reject-with icmp-net-unreachable;
+            }
+        }
+    }
+}

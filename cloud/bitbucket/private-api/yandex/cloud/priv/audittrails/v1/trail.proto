@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.audittrails.v1;
+
+import "google/protobuf/timestamp.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/audittrails/v1;audittrails";
+option java_outer_classname = "PAT";
+
+message Trail {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    ACTIVE = 1;
+    ERROR = 2;
+  }
+
+  string id = 1;
+  string folder_id = 2;
+  google.protobuf.Timestamp created_at = 3;
+  google.protobuf.Timestamp updated_at = 4;
+  string name = 5;
+  string description = 6;
+  map<string, string> labels = 7;
+  Destination destination = 8;
+  string service_account_id = 9 [(length) = "<=50"];
+  Status status = 10;
+  Filter filter = 11;
+
+  message Destination {
+    oneof destination {
+      option (exactly_one) = true;
+      ObjectStorage object_storage = 1;
+      CloudLogging cloud_logging = 3;
+      DataStream data_stream = 4;
+    }
+  }
+
+  message ObjectStorage {
+    string bucket_id = 1 [(length) = "3-63"];
+    string object_prefix = 2;
+  }
+
+  message CloudLogging {
+    oneof destination {
+      string log_group_id = 1 [(length) = "<=64"];
+      string folder_id = 2 [(length) = "<=64"];
+    }
+  }
+
+  message DataStream {
+    string database_id = 1;
+    string stream_name = 2;
+  }
+
+  message Filter {
+    PathFilter path_filter = 1 [(required) = true];
+  }
+
+  message PathFilter {
+      PathFilterElement root = 1 [(required) = true];
+  }
+
+  message PathFilterElement {
+    oneof element {
+      option (exactly_one) = true;
+      PathFilterElementAny any_filter = 1;
+      PathFilterElementSome some_filter = 2;
+    }
+  }
+
+  message PathFilterElementAny {
+      Resource resource = 1 [(required) = true];
+  }
+
+  message PathFilterElementSome {
+    Resource resource = 1 [(required) = true];
+    repeated PathFilterElement filters = 2 [(size)=">0"];
+  }
+
+  message Resource {
+    string id = 1 [(required) = true, (length) = "<=64"];
+    string type = 2 [(required) = true, (length) = "<=50"];
+  }
+}

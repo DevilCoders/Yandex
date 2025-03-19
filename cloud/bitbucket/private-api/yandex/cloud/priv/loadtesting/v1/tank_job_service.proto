@@ -1,0 +1,269 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.loadtesting.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/field_mask.proto";
+import "yandex/cloud/priv/validation.proto";
+import "yandex/cloud/api/operation.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+import "yandex/cloud/priv/loadtesting/v1/tank_job.proto";
+import "yandex/cloud/priv/loadtesting/v1/storage.proto";
+
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/loadtesting/v1;loadtesting";
+option java_outer_classname = "PTJS";
+
+
+service TankJobService {
+  rpc Get (GetTankJobRequest) returns (TankJob);
+  rpc List (ListTankJobsRequest) returns (ListTankJobsResponse);
+
+  rpc Create (CreateTankJobRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "CreateTankJobMetadata"
+      response: "TankJob"
+    };
+  };
+  rpc Update (UpdateTankJobRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateTankJobMetadata"
+      response: "TankJob"
+    };
+  };
+  rpc Stop (StopTankJobRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "StopTankJobMetadata"
+      response: "TankJob"
+    };
+  };
+  rpc Delete (DeleteTankJobRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeleteTankJobMetadata"
+      response: "google.protobuf.Empty"
+    };
+  };
+
+  rpc GetCreateForm(FormRequest) returns (FormResponse);
+  rpc GetConfig (GetConfigRequest) returns (GetConfigResponse);
+  rpc ValidateConfig (ValidateConfigRequest) returns (ValidateConfigResponse);
+  rpc UploadConfig (UploadConfigRequest) returns (UploadFileResponse);
+  rpc GetGenerators (GetGeneratorsRequest) returns (GetGeneratorsResponse);
+  rpc UploadAmmo (UploadAmmoRequest) returns (UploadFileResponse);
+  rpc GetFolderStats (GetFolderStatsRequest) returns (FolderStats);
+  rpc GetReport (GetReportRequest) returns (TankReport);
+  rpc GetChart (GetChartRequest) returns (TankChart);
+
+}
+
+
+message GetTankJobRequest {
+  string id = 1 [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.length) = "<=50"];
+}
+
+message ListTankJobsRequest {
+  string folder_id = 1 [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.length) = "<=50"];
+  int64 page_size = 2 [(yandex.cloud.priv.value) = "0-1000"];
+  string page_token = 3 [(yandex.cloud.priv.length) = "<=100"];
+  string filter = 4 [(yandex.cloud.priv.length) = "<=1000"];
+}
+
+message ListTankJobsResponse {
+  string folder_id = 1;
+  repeated TankJob tank_jobs = 2;
+  string next_page_token = 3;
+}
+
+message CreateTankJobRequest {
+//  The rest
+
+  string folder_id = 1 [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.length) = "<=50"];
+  string name = 2  [(yandex.cloud.priv.pattern) = "|[a-z][-a-z0-9]{1,61}[a-z0-9]"];
+  string description = 3 [(yandex.cloud.priv.length) = "<=256"];
+  map<string, string> labels = 4 [(yandex.cloud.priv.size) = "<=64", (yandex.cloud.priv.length) = "<=63",
+    (yandex.cloud.priv.pattern) = "[-_0-9a-z]*", (yandex.cloud.priv.map_key).length = "1-63",
+    (yandex.cloud.priv.map_key).pattern = "[a-z][-_0-9a-z]*"];
+
+  TankJob.Generator generator = 5;
+  string tank_instance_id = 6 [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.length) = "<=50"];
+
+  // Fields for TankConfig creation. These fields have the higher priority than yaml config.
+  // These fields are taken from Form
+  string target_address = 7 [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.length) = "<=50"];
+  int64 target_port = 8;
+  string target_version = 9 [(yandex.cloud.priv.length) = "<=50"];
+  int64 instances = 10;
+  Schedule load_schedule = 11;
+
+  string config = 12 [(yandex.cloud.priv.required) = true];
+  string ammo_id = 13 [(yandex.cloud.priv.length) = "<=50"];
+  repeated string ammo_urls = 14 [(yandex.cloud.priv.length) = "<=1024"];
+  repeated string ammo_headers = 15;
+  AmmoType ammo_type = 16;
+  bool ssl = 17;
+
+  int64 imbalance_point = 18;
+  int64 imbalance_ts = 19;
+
+  string logging_log_group_id = 20;
+
+  repeated Autostop autostops = 21;
+
+  StorageObject test_data = 22;
+}
+
+message CreateTankJobMetadata {
+  string id = 1;
+}
+
+message UpdateTankJobRequest {
+  string id = 1 [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.length) = "<=50"];
+  google.protobuf.FieldMask update_mask = 2;
+  string name = 3 [(yandex.cloud.priv.pattern) = "|[a-z][-a-z0-9]{1,61}[a-z0-9]"];
+  string description = 4 [(yandex.cloud.priv.length) = "<=256"];
+  map<string, string> labels = 5 [(yandex.cloud.priv.size) = "<=64", (yandex.cloud.priv.length) = "<=63",
+    (yandex.cloud.priv.pattern) = "[-_0-9a-z]*", (yandex.cloud.priv.map_key).length = "1-63",
+    (yandex.cloud.priv.map_key).pattern = "[a-z][-_0-9a-z]*"];
+  bool favorite = 6;
+  string target_version = 7 [(yandex.cloud.priv.length) = "<=50"];
+  int64 imbalance_point = 8;
+  int64 imbalance_ts = 9;
+  string imbalance_comment = 10;
+  google.protobuf.Timestamp imbalance_at = 11;
+}
+
+message UpdateTankJobMetadata {
+  string id = 1;
+}
+
+message StopTankJobRequest {
+  string id = 1  [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.length) = "<=50"];
+}
+
+message StopTankJobMetadata {
+  string id = 1;
+}
+
+message DeleteTankJobRequest {
+  string id = 1  [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.length) = "<=50"];
+}
+
+message DeleteTankJobMetadata {
+  string id = 1;
+}
+
+message GetReportRequest {
+  string job_id = 1  [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.length) = "<=50"];
+}
+
+message GetChartRequest {
+  string job_id = 1  [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.length) = "<=50"];
+  string chart_type = 2 [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.length) = "<=50"];
+}
+
+message GetConfigRequest {
+  string job_id = 1  [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.length) = "<=50"];
+}
+
+message GetConfigResponse {
+  string config = 1 [(yandex.cloud.priv.required) = true];
+}
+
+message ValidateConfigRequest {
+  string config = 1  [(yandex.cloud.priv.required) = true];
+  string folder_id = 2 [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.length) = "<=50"];
+}
+
+message ValidateConfigResponse {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    OK = 1;
+    FAILED = 2;
+  }
+
+  Status status = 1;
+  repeated string errors = 2;
+}
+
+message UploadConfigRequest {
+  string filename = 1 [(yandex.cloud.priv.length) = "<=50"];
+  string folder_id = 2 [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.length) = "<=50"];
+  bytes config = 3;
+}
+
+message UploadAmmoRequest {
+  string filename = 1 [(yandex.cloud.priv.length) = "<=50"];
+  string folder_id = 2 [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.length) = "<=50"];
+  bytes ammo = 3;
+}
+
+message UploadFileResponse {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    OK = 1;
+    FAILED = 2;
+  }
+  string id = 1;
+  string filename = 2;
+  google.protobuf.Timestamp created_at = 3;
+  Status status = 4;
+  repeated string errors = 5;
+}
+
+message GetGeneratorsRequest {
+  string folder_id = 1 [(yandex.cloud.priv.required) = true, (yandex.cloud.priv.length) = "<=50"];
+}
+
+message GetGeneratorsResponse {
+  repeated string generator_name = 1;
+}
+
+message FormRequest {
+    TankJob.Generator generator = 1;
+    string folder_id = 2;
+}
+
+message FormResponse {
+  enum FormItemType {
+    FORM_ITEM_TYPE_UNSPECIFIED = 0;
+    STRING = 1;
+    INT64 = 2;
+    OBJECT = 3;
+    ARRAY = 4;
+    SECRET = 5;
+    BOOL = 6;
+    ENUM = 7;
+    NUMBER = 8;
+  }
+  message ViewSpec {
+    string label = 1;
+    string help = 2;
+    string type = 3;
+    bool disabled = 4;
+    repeated string order = 5;
+  }
+  message FormItem {
+    ViewSpec view_spec = 1;
+    bool required = 2;
+    map<string,FormItem> properties = 4;
+    string value = 6;
+    FormItemType type = 7;
+    repeated string enum = 10;
+    map<string,string> description = 11;
+    FormItem items = 12;
+    double minimum = 13;
+    double maximum = 14;
+  }
+  string generator_type = 1;
+  map<string,FormItem> result_spec = 2;
+}
+
+message GetFolderStatsRequest {
+  string folder_id = 1 [(required) = true, (length) = "<=50"];
+}
+
+message FolderStats {
+  // Show the amount of resources for given folder.
+  int64 tanks_count = 1;
+  int64 jobs_count = 2;
+}

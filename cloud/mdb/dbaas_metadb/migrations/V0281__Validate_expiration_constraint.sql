@@ -1,0 +1,1 @@
+ALTER TABLE dbaas.pillar VALIDATE CONSTRAINT check_host_cert_expiration_valid_timestamp_with_tz;

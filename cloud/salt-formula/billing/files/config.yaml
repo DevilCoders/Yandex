@@ -1,0 +1,85 @@
+{%- from 'billing/map.jinja' import kikimr_endpoint, identity_endpoint, as_endpoint, billing with context %}
+
+flask:
+  host: '::'
+  port: 6465
+
+passport:
+  e2e_passport_uid: {{ billing.passport.e2e_passport_uid }}
+
+endpoints:
+  balance_api:
+    server_url: {{ billing.balance_api.server_url }}
+    tvm_destination: "{{ billing.balance_api.tvm_destination }}"
+{% if billing.get('notifications', {}).get('enabled', False) %}
+  notifications:
+    enabled: True
+    server_url: {{ billing.notifications.server_url }}
+{% endif %}
+  balance:
+    default_operator_uid: {{ billing.balance.default_operator_uid }}
+    manager_uid: {{ billing.balance.manager_uid }}
+    server_url: {{ billing.balance.url }}
+    firm_id: {{ billing.balance.firm_id }}
+    service_id: {{ billing.balance.service_id }}
+    payment_product_id: {{ billing.balance.payment_product_id }}
+    use_tvm: {{ billing.balance.get('use_tvm', false) }}
+    tvm_destination: {{ billing.balance.get('balance_tvm_client_id', '') }}
+    timeout: {{ billing.balance.get('timeout', 30) }}
+  kikimr:
+    billing:
+      host: {{ kikimr_endpoint.host }}
+      root: {{ kikimr_endpoint.root }}
+      database: {{ kikimr_endpoint.database }}
+  access_service:
+    enabled: true
+    url: {{ as_endpoint.host }}:{{ as_endpoint.port }}
+
+  identity:
+    url: http://{{ identity_endpoint.host }}:{{ identity_endpoint.port }}/public
+  identity_private:
+    url: http://{{ identity_endpoint.host }}:{{ identity_endpoint.port }}
+
+  s3:
+    private_api: {{ billing.s3.private_api }}
+    url: {{ billing.s3.endpoint_url }}
+    endpoint_url: {{ billing.s3.endpoint_url }}
+    reports_bucket: {{ billing.s3.reports_bucket }}
+
+{% if billing.get('tvm', {}) %}
+  tvm:
+    url: {{ billing.tvm.url }}
+    client_id: {{ billing.tvm.client_id }}
+    timeout: 10
+{% endif %}
+
+main:
+  id_prefix: {{ billing.id_prefix }}
+  auth_enabled: {{ billing.api.get('auth_enabled', True) }}
+  tvm_enabled: {{ billing.api.get('tvm_enabled', True) }}
+  tvm_allowed_services: {{ billing.api.get('tvm_allowed_services', []) }}
+  billing_account_cardinality: {{ billing.billing_account_cardinality }}
+  monetary_grants:
+    idempotency: {{ billing.monetary_grants.idempotency }}
+    default_grants_enabled: {{ billing.monetary_grants.default_grants_enabled }}
+    grants_by_passport_enabled: {{ billing.monetary_grants.grants_by_passport_enabled }}
+
+{% if billing.logbroker.get('export', {}).get('enabled', False) %}
+logbroker_export:
+  host: {{ billing.logbroker.host }}
+  port: {{ billing.logbroker.port }}
+  producer: {{ billing.logbroker.export.producer }}
+  auth:
+    enabled: True
+    client_id: {{ billing.tvm.client_id }}
+    destination: {{ billing.logbroker.export.destination }}
+{% endif %}
+
+{% if billing.get('queue', {}) %}
+queue:
+  name: {{ billing.queue.get('name', 'billing') }}
+  backend: {{ billing.queue.backend }}
+  default_partitions: {{ billing.queue.get('default_partitions', 15) }}
+  queue_partitions: {{ billing.queue.get('queue_partitions', {}) }}
+  worker: {{ billing.queue.get('worker', []) }}
+{% endif %}

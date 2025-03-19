@@ -1,0 +1,617 @@
+{
+    "appConfig": {},
+    "application": "bootstrap",
+    "id": "272e183d-10d0-4d62-ab6a-865fa313d591",
+    "index": 0,
+    "keepWaitingPipelines": false,
+    "limitConcurrent": true,
+    "name": "release",
+    "parameterConfig": [
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "Use existing release ticket",
+            "name": "releaseTicket",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": false,
+            "required": false
+        },
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "yc-ci version",
+            "name": "newVersion",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": false,
+            "required": false
+        }
+    ],
+    "spelEvaluator": "v4",
+    "stages": [
+        {
+            "failOnFailedExpressions": true,
+            "name": "Configure context",
+            "refId": "1",
+            "requisiteStageRefIds": [
+                "6",
+                "7"
+            ],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "now",
+                    "value": "${new java.text.SimpleDateFormat(\"dd.MM.yyyy-HH:mm:ss\").format(new java.util.Date())}"
+                },
+                {
+                    "key": "triggerUserLogin",
+                    "value": "${trigger.user.replace(\"@yandex-team.ru\", \"\")}"
+                },
+                {
+                    "key": "spinnakerExecutionURL",
+                    "value": "https://spinnaker.cloud.yandex.net/#/applications/kten-namespaces/executions/${execution.Id}"
+                }
+            ]
+        },
+        {
+            "components": "Selfhost",
+            "description": "Release yc-ci ${newVersion} by Spinnaker [pipeline](${spinnakerExecutionURL})\n",
+            "followers": "${triggerUserLogin}",
+            "name": "Create release ticket",
+            "outputVariable": "releaseTicket",
+            "queue": "CLOUD",
+            "refId": "2",
+            "requisiteStageRefIds": [
+                "1"
+            ],
+            "stageEnabled": {
+                "expression": "${ parameters.releaseTicket == \"\" }",
+                "type": "expression"
+            },
+            "summary": "[ ${now} ] [ Deploy ] release yc-bootstrap ${newVersion}",
+            "ticketType": "release",
+            "type": "createStartrekTicket"
+        },
+        {
+            "failOnFailedExpressions": true,
+            "name": "Use existing ticket",
+            "refId": "3",
+            "requisiteStageRefIds": [
+                "1"
+            ],
+            "stageEnabled": {
+                "expression": "${ parameters.useReleaseTicket != \"\" }",
+                "type": "expression"
+            },
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "releaseTicket",
+                    "value": "${parameters.releaseTicket}"
+                }
+            ]
+        },
+        {
+            "failPipeline": true,
+            "instructions": "ssh  duploader.yandex.net \"sudo bmove -c testing yandex-cloud-focal yc-ci-remote ${newVersion} yandex-cloud-secure\"",
+            "judgmentInputs": [],
+            "name": "bmove to focal",
+            "notifications": [],
+            "refId": "4",
+            "requisiteStageRefIds": [
+                "2",
+                "3"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "buildConfigurationId": "Cloud_Selfhost_GetLatestTestedYcCi",
+            "name": "GetLatestTestedYcCi",
+            "parseArtifacts": [
+                {
+                    "artifactPath": "version.json",
+                    "outputVariable": "ycCiVersionArtifactFromTC"
+                }
+            ],
+            "queueAtTop": true,
+            "refId": "5",
+            "requisiteStageRefIds": [],
+            "stageEnabled": {
+                "expression": "${ parameters.newVersion == \"\" }",
+                "type": "expression"
+            },
+            "tcProfile": "yandex",
+            "type": "teamcityBuild"
+        },
+        {
+            "completeOtherBranchesThenFail": false,
+            "continuePipeline": true,
+            "failOnFailedExpressions": true,
+            "failPipeline": false,
+            "name": "GetYcCiVersion",
+            "refId": "6",
+            "requisiteStageRefIds": [
+                "5"
+            ],
+            "stageEnabled": {
+                "expression": "${ parameters.newVersion == \"\" }",
+                "type": "expression"
+            },
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "newVersion",
+                    "value": "${ycCiVersionArtifactFromTC[\"version\"]}"
+                }
+            ]
+        },
+        {
+            "failOnFailedExpressions": true,
+            "name": "Use specified version",
+            "refId": "7",
+            "requisiteStageRefIds": [],
+            "stageEnabled": {
+                "expression": "${ parameters.newVersion != \"\" }",
+                "type": "expression"
+            },
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "newVersion",
+                    "value": "${parameters.newVersion}"
+                }
+            ]
+        },
+        {
+            "failPipeline": true,
+            "instructions": "pssh C@cloud_bootstrap_dev \"uname; sudo apt-get update \u0026\u0026 sudo apt-get install -y --allow-downgrades yc-ci=${newVersion}\"",
+            "judgmentInputs": [],
+            "name": "Deploy to C@cloud_bootstrap_dev",
+            "notifications": [],
+            "refId": "8",
+            "requisiteStageRefIds": [
+                "4"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "buildConfigurationId": "Cloud_PullRequestsCheck_SaltFormula",
+            "buildParameters": [
+                {
+                    "key": "env.CI_CUSTOM_VERSION",
+                    "value": "${newVersion}"
+                }
+            ],
+            "logicalBranchName": "",
+            "name": "salt-formula PR check",
+            "refId": "9",
+            "requisiteStageRefIds": [
+                "4"
+            ],
+            "tcProfile": "yandex",
+            "type": "teamcityBuild"
+        },
+        {
+            "buildConfigurationId": "Cloud_PullRequestsCheck_SaltFormulaK8s",
+            "buildParameters": [
+                {
+                    "key": "env.CI_CUSTOM_VERSION",
+                    "value": "${newVersion}"
+                }
+            ],
+            "completeOtherBranchesThenFail": false,
+            "continuePipeline": true,
+            "failPipeline": false,
+            "logicalBranchName": "",
+            "name": "salt-formula-k8s PR check",
+            "refId": "10",
+            "requisiteStageRefIds": [
+                "4"
+            ],
+            "tcProfile": "yandex",
+            "type": "teamcityBuild"
+        },
+        {
+            "application": "bootstrap",
+            "failPipeline": true,
+            "name": "Update yc-ci version in salt-formula",
+            "pipeline": "e01e9699-20ed-42aa-ab7b-18cfc72b2c7a",
+            "pipelineParameters": {
+                "newVersion": "${newVersion}",
+                "releaseTicket": "${releaseTicket}"
+            },
+            "refId": "11",
+            "requisiteStageRefIds": [
+                "4"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "buildConfigurationId": "Cloud_Selfhost_GetSaltFormulaBuildForHead",
+            "name": "Get fresh salt-formula build",
+            "parseArtifacts": [
+                {
+                    "artifactPath": "version.json",
+                    "outputVariable": "saltFormulaVersionArtifactFromTC"
+                }
+            ],
+            "queueAtTop": true,
+            "refId": "13",
+            "requisiteStageRefIds": [
+                "11"
+            ],
+            "tcProfile": "yandex",
+            "type": "teamcityBuild"
+        },
+        {
+            "completeOtherBranchesThenFail": false,
+            "continuePipeline": true,
+            "failOnFailedExpressions": true,
+            "failPipeline": false,
+            "name": "Get fresh salt-formula version",
+            "refId": "14",
+            "requisiteStageRefIds": [
+                "13"
+            ],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "saltFormula",
+                    "value": "${saltFormulaVersionArtifactFromTC[\"version\"]}"
+                }
+            ]
+        },
+        {
+            "failPipeline": true,
+            "instructions": "Check that e2e in testing are fresh(\u003c1h) and green\nhttps://juggler.yandex-team.ru/raw_events/?query=host%3Dbootstrap-*.svc.cloud-preprod.yandex.net%26service%3Dbootstrap-e2e\u0026project=ycloud\u0026last=1DAY\non bootstrap.cloud.yandex.net:\nyc-bootstrap --template pre-prod.yaml --ticket-id ${releaseTicket} --filter \"%bootstrap\" --batch-size 10 --apply - update-cluster --salt-role bootstrap --salt-state bootstrap.e2e_tests.run_infrequently",
+            "judgmentInputs": [],
+            "name": "Check PREPROD",
+            "notifications": [],
+            "refId": "17",
+            "requisiteStageRefIds": [
+                "40"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "failPipeline": true,
+            "instructions": "docker pull cr.yandex/yc-bootstrap/yc-ci:${newVersion}\ndocker tag cr.yandex/yc-bootstrap/yc-ci:${newVersion} cr.yandex/yc-bootstrap/yc-ci:stable\ndocker push cr.yandex/yc-bootstrap/yc-ci:stable",
+            "judgmentInputs": [],
+            "name": "update ci in docker",
+            "notifications": [],
+            "refId": "19",
+            "requisiteStageRefIds": [
+                "22"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "failPipeline": true,
+            "instructions": "pssh bootstrap.cloud.yandex.net \"sudo apt-get update \u0026\u0026 sudo apt-get install --allow-downgrades yc-ci=${newVersion}\"",
+            "judgmentInputs": [],
+            "name": "Deploy to HW host",
+            "notifications": [],
+            "refId": "21",
+            "requisiteStageRefIds": [
+                "22"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "failPipeline": true,
+            "instructions": "/duty infra \"Goin to update yc-ci to ${newVersion}",
+            "judgmentInputs": [],
+            "name": "Announce in Cloud Deploy Workgroup",
+            "notifications": [],
+            "refId": "22",
+            "requisiteStageRefIds": [
+                "9",
+                "10",
+                "38"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "failPipeline": true,
+            "instructions": "pssh bootstrap.cloud.yandex.net\n# on bootstrap.cloud.yandex.net:\ntmux\nTICKET_ID=\u003cticket_id\u003e\nyc-bootstrap --template=\"prod.yaml\" --filter=\"bootstrap-e2e-hw-vla1.svc.cloud.yandex.net\" --ticket-id \"${TICKET_ID}\" --apply add-svms\nyc-bootstrap --template=\"prod.yaml\" --filter=\"bootstrap-e2e-hw-vla1.svc.cloud.yandex.net\" --ticket-id \"${TICKET_ID}\" --apply update-cluster --salt-role bootstrap-e2e --salt-state roles.bootstrap-e2e\nsudo -i /root/ycp/bin/ycp --profile prod compute instance delete bootstrap-e2e-hw-vla1.svc.cloud.yandex.net",
+            "judgmentInputs": [],
+            "name": "Run e2e on prod HW",
+            "notifications": [],
+            "refId": "23",
+            "requisiteStageRefIds": [
+                "21"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "failPipeline": true,
+            "instructions": "/duty infra \"Goin to update yc-ci to ${newVersion}",
+            "judgmentInputs": [],
+            "name": "Announce in Engineering Infra Private",
+            "notifications": [],
+            "refId": "24",
+            "requisiteStageRefIds": [
+                "23",
+                "19"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "application": "bootstrap",
+            "failPipeline": true,
+            "name": "Update salt version in TESTING",
+            "pipeline": "4d29a81d-878c-4a4a-9924-21a0483e7bce",
+            "pipelineParameters": {
+                "releaseTicket": "${releaseTicket}",
+                "saltFormulaVersion": "${saltFormula}",
+                "stand": "testing"
+            },
+            "refId": "25",
+            "requisiteStageRefIds": [
+                "14",
+                "8"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "bootstrap",
+            "failPipeline": true,
+            "name": "Apply TESTING-A(VLA)",
+            "pipeline": "fd02c5f5-3067-408c-bef2-df74ec56e0cf",
+            "pipelineParameters": {
+                "az": "a",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "testing"
+            },
+            "refId": "26",
+            "requisiteStageRefIds": [
+                "25"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "failPipeline": true,
+            "instructions": "Check that e2e in testing are fresh(\u003c1h) and green\nhttps://juggler.yandex-team.ru/raw_events/?query=host%3Dbootstrap-*.svc.cloud-testing.yandex.net%26service%3Dbootstrap-e2e\u0026project=ycloud\u0026last=1DAY\non bootstrap.cloud.yandex.net:\nyc-bootstrap --template testing.yaml --ticket-id ${releaseTicket} --filter \"%bootstrap\" --batch-size 10 --apply - update-cluster --salt-role bootstrap --salt-state bootstrap.e2e_tests.run_infrequently",
+            "judgmentInputs": [],
+            "name": "Check TESTING",
+            "notifications": [],
+            "refId": "27",
+            "requisiteStageRefIds": [
+                "39"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "application": "bootstrap",
+            "failPipeline": true,
+            "name": "Apply TESTING-B(SAS)",
+            "pipeline": "fd02c5f5-3067-408c-bef2-df74ec56e0cf",
+            "pipelineParameters": {
+                "az": "b",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "testing"
+            },
+            "refId": "28",
+            "requisiteStageRefIds": [
+                "25"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "bootstrap",
+            "failPipeline": true,
+            "name": "Apply TESTING-C(MYT)",
+            "pipeline": "fd02c5f5-3067-408c-bef2-df74ec56e0cf",
+            "pipelineParameters": {
+                "az": "c",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "testing"
+            },
+            "refId": "29",
+            "requisiteStageRefIds": [
+                "25"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "bootstrap",
+            "failPipeline": true,
+            "name": "Apply PREPROD-A(VLA)",
+            "pipeline": "fd02c5f5-3067-408c-bef2-df74ec56e0cf",
+            "pipelineParameters": {
+                "az": "a",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "preprod"
+            },
+            "refId": "30",
+            "requisiteStageRefIds": [
+                "33"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "bootstrap",
+            "failPipeline": true,
+            "name": "Apply PREPROD-B(SAS)",
+            "pipeline": "fd02c5f5-3067-408c-bef2-df74ec56e0cf",
+            "pipelineParameters": {
+                "az": "b",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "preprod"
+            },
+            "refId": "31",
+            "requisiteStageRefIds": [
+                "33"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "bootstrap",
+            "failPipeline": true,
+            "name": "Apply PREPROD-C(MYT)",
+            "pipeline": "fd02c5f5-3067-408c-bef2-df74ec56e0cf",
+            "pipelineParameters": {
+                "az": "c",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "preprod"
+            },
+            "refId": "32",
+            "requisiteStageRefIds": [
+                "33"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "bootstrap",
+            "failPipeline": true,
+            "name": "Update salt version in PREPROD",
+            "pipeline": "4d29a81d-878c-4a4a-9924-21a0483e7bce",
+            "pipelineParameters": {
+                "releaseTicket": "${releaseTicket}",
+                "saltFormulaVersion": "${saltFormula}",
+                "stand": "preprod"
+            },
+            "refId": "33",
+            "requisiteStageRefIds": [
+                "27"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "bootstrap",
+            "failPipeline": true,
+            "name": "Update salt version in PROD",
+            "pipeline": "4d29a81d-878c-4a4a-9924-21a0483e7bce",
+            "pipelineParameters": {
+                "releaseTicket": "${releaseTicket}",
+                "saltFormulaVersion": "${saltFormula}",
+                "stand": "prod"
+            },
+            "refId": "34",
+            "requisiteStageRefIds": [
+                "17"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "bootstrap",
+            "failPipeline": true,
+            "name": "Apply PROD-A(VLA)",
+            "pipeline": "fd02c5f5-3067-408c-bef2-df74ec56e0cf",
+            "pipelineParameters": {
+                "az": "a",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "prod"
+            },
+            "refId": "35",
+            "requisiteStageRefIds": [
+                "34"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "bootstrap",
+            "failPipeline": true,
+            "name": "Apply PROD-B(SAS)",
+            "pipeline": "fd02c5f5-3067-408c-bef2-df74ec56e0cf",
+            "pipelineParameters": {
+                "az": "b",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "prod"
+            },
+            "refId": "36",
+            "requisiteStageRefIds": [
+                "34"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "bootstrap",
+            "failPipeline": true,
+            "name": "Apply PROD-C(MYT)",
+            "pipeline": "fd02c5f5-3067-408c-bef2-df74ec56e0cf",
+            "pipelineParameters": {
+                "az": "c",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "prod"
+            },
+            "refId": "37",
+            "requisiteStageRefIds": [
+                "34"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "failPipeline": true,
+            "instructions": "Check that e2e in testing are fresh(\u003c1h) and green\nhttps://juggler.yandex-team.ru/raw_events/?query=host%3Dbootstrap-*.svc.cloud.yandex.net%26service%3Dbootstrap-e2e\u0026project=ycloud\u0026last=1DAY\non bootstrap.cloud.yandex.net:\nyc-bootstrap --template prod.yaml --ticket-id ${releaseTicket} --filter \"%bootstrap\" --batch-size 10 --apply - update-cluster --salt-role bootstrap --salt-state bootstrap.e2e_tests.run_infrequently",
+            "judgmentInputs": [],
+            "name": "Check PROD",
+            "notifications": [],
+            "refId": "38",
+            "requisiteStageRefIds": [
+                "41"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "name": "Wait for e2e to run in TESTING",
+            "refId": "39",
+            "requisiteStageRefIds": [
+                "26",
+                "28",
+                "29"
+            ],
+            "type": "wait",
+            "waitTime": 3600
+        },
+        {
+            "name": "Wait for e2e to run in PREPROD",
+            "refId": "40",
+            "requisiteStageRefIds": [
+                "30",
+                "31",
+                "32"
+            ],
+            "type": "wait",
+            "waitTime": 3600
+        },
+        {
+            "name": "Wait for e2e to run in PROD",
+            "refId": "41",
+            "requisiteStageRefIds": [
+                "35",
+                "36",
+                "37"
+            ],
+            "type": "wait",
+            "waitTime": 3600
+        }
+    ],
+    "triggers": [
+        {
+            "enabled": true
+        }
+    ]
+}

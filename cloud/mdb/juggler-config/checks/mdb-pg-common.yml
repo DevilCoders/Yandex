@@ -1,0 +1,117 @@
+- juggler_check:
+  args: "{{ pg_common_checks | hash_merge( unreach_pass, item ) }}"
+  with_items:
+    - service: pg-ping
+      refresh_time: 60
+      children:
+        service: pg_ping
+
+- juggler_check:
+  args: "{{ dict() | hash_replace(pg_common_checks, dict(aggregator='logic_or', aggregator_kwargs=dict(mode='WARN'))) | hash_merge( pg_unreach_pass, item ) }}"
+  with_items:
+    - service: pg-autoconf
+      refresh_time: 300
+      children:
+        service: pg_autoconf
+
+- juggler_check:
+  args: "{{ dict() | hash_replace(pg_common_checks, dict(aggregator='logic_or', aggregator_kwargs=dict(mode='WARN'))) | hash_merge( pg_unreach_pass, item ) }}"
+  with_items:
+    - service: pg-s3-backup-age
+      refresh_time: 1200
+      ttl: 7200
+      notifications: "{{ notifications_worktime }}"
+      children:
+        service: pg_s3_backup_age
+
+- juggler_check:
+  args: "{{ pg_common_checks | hash_merge( pg_unreach_pass, item ) }}"
+  with_items:
+    - service: bouncer-ping
+      refresh_time: 60
+      children:
+        service: bouncer_ping
+
+- juggler_check:
+  args: "{{ pg_common_checks | hash_merge( pg_unreach_pass, item ) }}"
+  with_items:
+    - service: pg-replication-alive
+      flap:
+        stable: 300
+        critical: 600
+      refresh_time: 60
+      children:
+        service: pg_replication_alive
+
+- juggler_check:
+  args: "{{ pg_common_checks | hash_merge( pg_unreach_pass, item ) }}"
+  with_items:
+    - service: pg-replication-lag
+      flap:
+        stable: 300
+        critical: 600
+      refresh_time: 60
+      children:
+        service: pg_replication_lag
+
+- juggler_check:
+  args: "{{ pg_common_checks | hash_merge( pg_unreach_pass, item ) }}"
+  with_items:
+    - service: pg-xlog-files
+      refresh_time: 180
+      meta:
+        urls:
+          - {title: "How to handle?", url: "https://wiki.yandex-team.ru/mdb/internal/operations/duty-howto/handling-alerts/pgxlogfiles/", type: "mdb"}
+      notifications: "{{ notifications_worktime }}"
+      children:
+        service: pg_xlog_files
+
+- juggler_check:
+  args: "{{ pg_common_checks | hash_merge( pg_unreach_pass, item ) }}"
+  with_items:
+    - service: pgsync
+      flap:
+        stable: 180
+        critical: 600
+      refresh_time: 60
+      children:
+        service: pgsync
+
+- juggler_check:
+  args: "{{ pg_common_checks | hash_merge( pg_unreach_pass, item ) }}"
+  with_items:
+    - service: tls
+      notifications: "{{ notifications_worktime }}"
+      refresh_time: 3600
+      ttl: 14400
+      meta:
+        urls:
+          - {title: "How to handle?", url: "https://wiki.yandex-team.ru/mdb/internal/operations/duty-howto/handling-alerts/tls/", type: "mdb"}
+      children:
+        service: tls
+      aggregator_kwargs:
+        nodata_mode: skip
+
+- juggler_check:
+  args: "{{ pg_emergency | hash_merge( pg_space_pass, item ) }}"
+  with_items:
+    - service: pg-corruption
+      notifications: "{{ notifications_worktime }}"
+      refresh_time: 180
+      flap:
+        stable: 600
+        critical: 900
+      children:
+        service: pg_corruption
+      aggregator_kwargs:
+        nodata_mode: skip
+
+- juggler_check:
+  args: "{{ pg_emergency | hash_merge( pg_space_pass, item ) }}"
+  with_items:
+    - service: pg-vacuum
+      refresh_time: 300
+      children:
+        service: pg_vacuum
+      aggregator_kwargs:
+        nodata_mode: skip

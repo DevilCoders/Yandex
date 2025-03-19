@@ -1,0 +1,44 @@
+{% extends "../../../base/alert.j2" %}
+
+{% set description = "Difference version in salt." %}
+
+{% macro prog() %}
+let data = {
+	cluster='{{ cluster }}',
+	service='bootstrap',
+	stand_name='{{ env }}',
+	bootstrap_role='{{ bootstrap_role }}',
+	salt_formula_version='*',
+	host!='all',
+	dc='{{ dc }}',
+	salt_role='{{ salt_role }}'
+};
+
+let versions = series_sum(['salt_formula_version'], data);
+let c_vers = size(drop_empty_lines(versions));
+
+let is_red = c_vers > 1;
+alarm_if(is_red);
+
+let is_yellow = c_vers == 0;
+warn_if(is_yellow);
+
+let description = 'There are ' + to_fixed(c_vers, 0) + ' versions of salt-role {{ salt_role }} on bootstrap role {{ bootstrap_role }}';
+
+{% endmacro %}
+
+{% block main %}
+	"name": "{{ name }}",
+	"description": "{{ description }}",
+	"type": {{ type_expression() }},
+	"annotations": {
+		"service": "{{ serviceName }}",
+		"wiki": "https://docs.yandex-team.ru/yc-monitoring/cgw/{{ serviceName }}",
+		"host": "{{ host }}",
+		"details": "[[expression.description]]",
+		"dc": "{{ dc }}",
+		"role": "{{ bootstrap_role }}",
+		"stand": "{{ env }}",
+		"tags": "{{ tags }}, yc-{{ env }}, salt-versions-diff"
+	}
+{% endblock %}

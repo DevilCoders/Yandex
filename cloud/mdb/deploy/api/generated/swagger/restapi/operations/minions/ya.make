@@ -1,0 +1,40 @@
+GO_LIBRARY()
+
+OWNER(g:mdb)
+
+SRCS(
+    create_minion.go
+    create_minion_parameters.go
+    create_minion_responses.go
+    create_minion_urlbuilder.go
+    delete_minion.go
+    delete_minion_parameters.go
+    delete_minion_responses.go
+    delete_minion_urlbuilder.go
+    get_minion.go
+    get_minion_master.go
+    get_minion_master_parameters.go
+    get_minion_master_responses.go
+    get_minion_master_urlbuilder.go
+    get_minion_parameters.go
+    get_minion_responses.go
+    get_minion_urlbuilder.go
+    get_minions_list.go
+    get_minions_list_parameters.go
+    get_minions_list_responses.go
+    get_minions_list_urlbuilder.go
+    register_minion.go
+    register_minion_parameters.go
+    register_minion_responses.go
+    register_minion_urlbuilder.go
+    unregister_minion.go
+    unregister_minion_parameters.go
+    unregister_minion_responses.go
+    unregister_minion_urlbuilder.go
+    upsert_minion.go
+    upsert_minion_parameters.go
+    upsert_minion_responses.go
+    upsert_minion_urlbuilder.go
+)
+
+END()

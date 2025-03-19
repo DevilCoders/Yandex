@@ -1,0 +1,28 @@
+{% extends "base_alert.j2" %}
+
+{% set windowSecs = 300 %}
+{% set checkExpression = "" %}
+{% set repeatNotifySecs = 3600 %}
+{% set description = "https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-head-private-latency" %}
+
+{% macro prog() %}
+let latency = histogram_percentile(90, 'bin', group_by_time(20s, 'max', {project='{{ project_id }}', cluster='cloud_{{ env }}_head', sensor='private_http_latency', service='compute_head', http_status_code='All', http_method='All'}));
+let max_latency=max(latency);
+let latency_seconds = to_fixed(max_latency,3);
+alarm_if(max_latency > 10);
+warn_if(max_latency > 3);
+{% endmacro %}
+
+{% block main %}
+    "name": "Alert on compute private API latency @{{ env | upper }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "service": "compute-head-private-latency",
+        "host": "{{ svm_fqdn() }}",
+        "latency_seconds": "[[expression.latency_seconds]]",
+        "description": "{{ description }}"
+    },
+    "description": "Notifies about slow API responses\n\nSee {{ description }} for instructions.",
+    "type": {{ type_expression() }}
+{% endblock %}
+

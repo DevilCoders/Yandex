@@ -1,0 +1,559 @@
+uid: ycDnsRecursor
+refresh: 1m
+title: DNS Recursor
+
+tags: [ 'ycp', 'ycp-dns', 'ycp-dns-recursor', 'ycp-duty', 'ycp-top', 'ycp-drilldown' ]
+
+links:
+  - { tags: [ 'ycp-dns' ] }
+  - { title: 'SLO', vars: false, url: 'https://grafana.private-api.ycp.cloud.yandex.net/d/7j62UsGGk/dns' }
+  - { title: 'V-routers Summary', vars: false, url: 'https://solomon.yandex-team.ru/?project=yandexcloud&dashboard=compute_node_dns_${cluster}' }
+  - { title: 'User vm health', vars: false, url: 'https://solomon.yandex-team.ru/?project=yandexcloud&cluster=cloud_${cluster}_compute&service=compute&dashboard=compute-instance-health&l.instance_id=ef3ba66b6vm1fnloilto&b=1h&e=' }
+
+variables:
+  ui:
+    cluster:
+      values: [ prod, preprod ]
+    zone:
+      values: [ '*', 'myt', 'sas', 'vla', 'ru-gpn-spb99' ]
+  uiQuery:
+    slice:
+      includeAllValue: '-*-'
+      labels: 'host!=cluster'
+      label: 'host'
+      regex: '^\w+-\w+(-main-|-canary-|-)\w+-\w+\d+$'
+    number:
+      inheritLabels: false
+      includeAllValue: "*"
+      labels: 'project=dns, cluster=${cluster}, service=dns-recursor, host!=cluster'
+      label: 'host'
+      regex: '^\w+-\w+-\w+-\w+?(\d+)$'
+  replacement:
+    host: 'dns-recursor${slice}*-${zone}${number}'
+    !include ../include/errors.yaml
+
+graphDefaults:
+  datasource: 'Solomon Cloud'
+  width: 8
+  height: 6
+
+queryDefaults:
+  defaultTimeWindow: 15s
+  dropNan: true
+  labels: 'project=dns, service=dns-recursor, cluster=${cluster}, host=@host'
+
+rows:
+  - title: Golden signals
+    graphDefaults: { width: 8 }
+    panels:
+      - type: graph
+        templates: { name: rps }
+        title: RPS
+        description: 'Queries received RPS by all unbound threads.'
+        queries:
+          - params: { labels: 'name=unbound_queries_total' }
+      - type: graph
+        title: 'Response time'
+        description: 'Query response time.'
+        templates: { name: percentile, groupLines: true, format: solomon, levels: [ "50", "75", "90", "95", "99", "99.9", "100" ] }
+        yAxes: [ { format: s, decimals: 1 } ]
+        queries:
+          - params: { labels: 'name=unbound_response_time_seconds' }
+      - type: graph
+        title: Bad answers RPS
+        description: 'Bad answers RPS like SERVFAIL and bogus ones'
+        queries:
+          - params: { labels: 'name=unbound_answer_rcodes_total,rcode=SERVFAIL' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_lines: [ 'sum' ], alias: 'SERVFAIL' }
+          - params: { labels: 'name=unbound_answers_bogus_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_lines: [ 'sum' ], alias: 'Bogus (SERVFAIL)' }
+          - params: { labels: 'name=unbound_rrset_bogus_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_lines: [ 'sum' ], alias: 'RRset bogus' }
+        display: { decimals: 1, empty: false, stack: false }
+        draw: [ { alias: 'SERVFAIL', color: red, at: left },
+                { alias: 'Bogus (SERVFAIL)', color: red, at: right },
+                { alias: 'RRset bogus', color: red, at: right }
+        ]
+      - type: graph
+        title: Miss/Hit ratio
+        description: 'Ratio of missed queries over all queries: misses/(misses + hits)'
+        queries:
+          - expr: "alias(
+                      group_lines('sum', non_negative_derivative(drop_nan(group_by_time(15s, 'max', {@labels, name=unbound_cache_misses_total}))))
+                      / (
+                          group_lines('sum', non_negative_derivative(drop_nan(group_by_time(15s, 'max', {@labels, name=unbound_cache_hits_total}))))
+                          +
+                          group_lines('sum', non_negative_derivative(drop_nan(group_by_time(15s, 'max', {@labels, name=unbound_cache_misses_total}))))
+                      ),
+                  'miss ratio')"
+        yAxes: [ { format: percentunit } ]
+        draw: [ { alias: 'miss ratio', color: red } ]
+      - type: graph
+        title: la5
+        queryDefaults:
+          labels: 'project=dns, service=node-exporter_ma, cluster=${cluster}, host=@host'
+        queries:
+          - params: { labels: 'name=node_load5|system_n_cpus' }
+            select: { group_lines: [ 'max' ], alias: 'max' }
+          - params: { labels: 'name=node_load5|system_n_cpus' }
+            select: { group_lines: [ 'min' ], alias: 'min' }
+        display: { empty: false }
+      - type: graph
+        title: Memory
+        queryDefaults:
+          labels: 'project=dns, service=node-exporter_ma, cluster=${cluster}, host=@host'
+        queries:
+          - params: { labels: 'name=node_memory_AnonPages_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "99", alias: AnonPages_bytes p99 }
+          - params: { labels: 'name=node_memory_Cached_bytes|node_memory_Buffers_bytes|node_memory_Writeback_bytes|node_memory_Dirty_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "99", alias: Cached+Buffers+Writeback+Dirty_bytes p99 }
+          - params: { labels: 'name=node_memory_Slab_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "99", alias: Slab_bytes p99 }
+          - params: { labels: 'name=node_memory_SUnreclaim_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "99", alias: SUnreclaim_bytes p99 }
+        yAxes: [ { format: decbytes, decimals: 1 } ]
+        display: { legend: false, fill: 0 }
+
+  - title: Main
+    panels:
+      - type: graph
+        title: 'RPS'
+        description: 'Queries received RPS by all unbound threads.'
+        queries:
+          - params: { labels: 'name=unbound_queries_total' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], non_negative_derivative: [ ], alias: '{{host}}' }
+        display: { decimals: 1, empty: false, stack: true }
+      - type: graph
+        title: 'Total queries by type'
+        description: 'Total number of queries with a given query type'
+        queries:
+          - params: { labels: 'name=unbound_query_types_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, type ], alias: '{{type}}' }
+        display: { decimals: 1, empty: false, sort: decreasing }
+      - type: graph
+        title: 'Cache misses'
+        description: ''
+        queries:
+          - params: { labels: 'name=unbound_cache_misses_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ],  group_by_labels: [ sum, host ], alias: '{{host}}' }
+        display: { decimals: 1, empty: false, stack: true }
+      - type: graph
+        title: 'Response time'
+        description: 'Query response time.'
+        templates: { name: percentile, groupLines: true, format: solomon, levels: [ "50", "75", "90", "95", "99", "99.9", "100" ] }
+        yAxes: [ { format: s, decimals: 1 } ]
+        queries:
+          - params: { labels: 'name=unbound_response_time_seconds' }
+      - type: graph
+        title: 'Total answers by rcode'
+        description: 'Total number of answers by rcode'
+        queries:
+          - params: { labels: 'name=unbound_answer_rcodes_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, rcode ], alias: '{{rcode}}' }
+          - params: { labels: 'name=unbound_answers_secure_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_lines: [ 'sum' ], alias: 'Secure (AD)' }
+          - params: { labels: 'name=unbound_answers_bogus_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_lines: [ 'sum' ], alias: 'Bogus (SERVFAIL)' }
+          - params: { labels: 'name=unbound_rrset_bogus_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_lines: [ 'sum' ], alias: 'RRset bogus' }
+        display: { decimals: 1, empty: false, sort: decreasing }
+      - type: graph
+        title: 'Cache hits'
+        description: ''
+        queries:
+          - params: { labels: 'name=unbound_cache_hits_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, host ], alias: '{{host}}' }
+        display: { decimals: 1, empty: false, stack: true }
+      - type: graph
+        title: 'Cached messages size'
+        description: 'Messages memory in use by caches.'
+        queries:
+          - params: { labels: 'name=unbound_memory_caches_bytes, cache=message' }
+            groupByTime: { max: 'default' }
+            select: { alias: '{{host}}' }
+        display: { decimals: 1, empty: false }
+        yAxes: [ { format: bytes } ]
+      - type: graph
+        title: 'Cached rrset size'
+        description: 'RRSET memory in use by caches.'
+        queries:
+          - params: { labels: 'name=unbound_memory_caches_bytes, cache=rrset' }
+            groupByTime: { max: 'default' }
+            select: { alias: '{{host}}' }
+        display: { decimals: 1, empty: false }
+        yAxes: [ { format: bytes } ]
+      - type: graph
+        title: 'Cached entries count'
+        description: 'The number of cached entries'
+        queries:
+          - params: { labels: 'name=unbound_cache_count_total' }
+            groupByTime: { max: 'default' }
+            select: { alias: '{{host}}-{{type}}' }
+        display: { decimals: 1, empty: false, stack: false }
+  - title: Host
+    queryDefaults:
+      labels: 'project=dns, service=node-exporter_ma, cluster=${cluster}, host=@host'
+    panels:
+      - type: graph
+        title: 'eth0: total bytes/s'
+        params: { width: 6 }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=node_network_receive_bytes_total, device=eth0' }
+            select: { non_negative_derivative: [ ], group_lines: [ 'sum' ], alias: 'rx' }
+          - params: { labels: 'name=node_network_transmit_bytes_total, device=eth0' }
+            select: { non_negative_derivative: [ ], group_lines: [ 'sum' ], alias: 'tx', math: "* -1" }
+        yAxes: [ { format: Bps } ]
+
+      - type: graph
+        title: 'eth0: total packets/s'
+        params: { width: 6 }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=node_network_receive_packets_total, device=eth0' }
+            select: { non_negative_derivative: [ ], group_lines: [ 'sum' ], alias: 'rx' }
+          - params: { labels: 'name=node_network_transmit_packets_total, device=eth0' }
+            select: { non_negative_derivative: [ ], group_lines: [ 'sum' ], alias: 'tx', math: "* -1" }
+        yAxes: [ { format: pps } ]
+
+      - type: graph
+        title: 'la1'
+        description: 'Load Average – скользящее среднее System Load за 1m: https://en.wikipedia.org/wiki/Load_(computing)'
+        params: { width: 6 }
+        queries:
+          - params: { labels: 'name=node_load1|system_n_cpus' }
+            select: { group_lines: [ 'max' ], alias: 'max' }
+          - params: { labels: 'name=node_load1|system_n_cpus' }
+            select: { group_lines: [ 'min' ], alias: 'min' }
+        display: { empty: false }
+        yAxes: [ { format: short, min: 0 } ]
+
+      - type: graph
+        title: 'la15'
+        description: 'Load Average – скользящее среднее System Load за 15m: https://en.wikipedia.org/wiki/Load_(computing)'
+        params: { width: 6 }
+        queries:
+          - params: { labels: 'name=node_load15|system_n_cpus' }
+            select: { group_lines: [ 'max' ], alias: 'max' }
+          - params: { labels: 'name=node_load15|system_n_cpus' }
+            select: { group_lines: [ 'min' ], alias: 'min' }
+        display: { empty: false }
+        yAxes: [ { format: short, min: 0 } ]
+
+      - type: graph
+        title: 'CPU (mode - overall)'
+        params: { width: 6 }
+        templates:
+          - { name: patchSelect, before: last, add: { moving_avg: [ 30s ] } }
+        display: { legend: false, fill: 0 }
+        yAxes: [ { format: percentunit, decimals: 1 } ]
+        queryDefaults:
+          labels: 'name=node_cpu_seconds_total, cpu=*'
+        queries:
+          - params: { labels: 'mode=user' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, host ], percentile_group_lines: "50", alias: user p50 }
+          - params: { labels: 'mode=user' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, host ],  percentile_group_lines: "99", alias: user p99 }
+          - params: { labels: 'mode=system' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, host ], percentile_group_lines: "50", alias: system p50 }
+          - params: { labels: 'mode=system' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, host ], percentile_group_lines: "99", alias: system p99 }
+          - params: { labels: 'mode=iowait' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, host ],  percentile_group_lines: "50", alias: iowait p50 }
+          - params: { labels: 'mode=iowait' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, host ],  percentile_group_lines: "99", alias: iowait p99 }
+          - params: { labels: 'mode=steal' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, host ],  percentile_group_lines: "50", alias: steal p50 }
+          - params: { labels: 'mode=steal' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, host ],  percentile_group_lines: "99", alias: steal p99 }
+      - type: graph
+        title: 'Memory'
+        params: { width: 6 }
+        display: { legend: false, fill: 0 }
+        yAxes: [ { format: decbytes, decimals: 1 } ]
+        queries:
+          - params: { labels: 'name=node_memory_AnonPages_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "50", alias: AnonPages_bytes p50 }
+          - params: { labels: 'name=node_memory_AnonPages_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "99", alias: AnonPages_bytes p99 }
+          - params: { labels: 'name=node_memory_Cached_bytes|node_memory_Buffers_bytes|node_memory_Writeback_bytes|node_memory_Dirty_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "50", alias: Cached+Buffers+Writeback+Dirty_bytes p50 }
+          - params: { labels: 'name=node_memory_Cached_bytes|node_memory_Buffers_bytes|node_memory_Writeback_bytes|node_memory_Dirty_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "99", alias: Cached+Buffers+Writeback+Dirty_bytes p99 }
+          - params: { labels: 'name=node_memory_Slab_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "50", alias: Slab_bytes p50 }
+          - params: { labels: 'name=node_memory_Slab_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "99", alias: Slab_bytes p99 }
+          - params: { labels: 'name=node_memory_SUnreclaim_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "50", alias: SUnreclaim_bytes p50 }
+          - params: { labels: 'name=node_memory_SUnreclaim_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "99", alias: SUnreclaim_bytes p99 }
+      - type: graph
+        title: 'IO'
+        params: { width: 6 }
+        templates:
+          - { name: patchSelect, before: last, add: { moving_avg: [ 1m ] } }
+        display: { legend: false, fill: 0 }
+        yAxes: [ { format: s, decimals: 1 } ]
+        queryDefaults:
+          labels: 'device=*'
+        queries:
+          - params: { labels: 'name=node_disk_read_time_seconds_total' }
+            groupByTime: { max: 'default' }
+            select: { diff: [ ], drop_below: "0", group_by_labels: [ sum, host ], percentile_group_lines: "50", alias: disk_read_time_seconds p50 }
+          - params: { labels: 'name=node_disk_read_time_seconds_total' }
+            groupByTime: { max: 'default' }
+            select: { diff: [ ], drop_below: "0", group_by_labels: [ sum, host ], percentile_group_lines: "99", alias: disk_read_time_seconds p99 }
+          - params: { labels: 'name=node_disk_write_time_seconds_total' }
+            groupByTime: { max: 'default' }
+            select: { diff: [ ], drop_below: "0", group_by_labels: [ sum, host ], percentile_group_lines: "50", alias: disk_write_time_seconds p50 }
+          - params: { labels: 'name=node_disk_write_time_seconds_total' }
+            groupByTime: { max: 'default' }
+            select: { diff: [ ], drop_below: "0", group_by_labels: [ sum, host ], percentile_group_lines: "99", alias: disk_write_time_seconds p99 }
+
+      - type: graph
+        title: 'Sockets in use (max by hosts)'
+        params: { width: 6 }
+        display: { legend: false, fill: 0, sort: decreasing }
+        queries:
+          - params: { labels: 'name=node_sockstat_*_inuse' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ 'max', 'name' ], alias: '{{name}}' }
+
+  - title: Queries and other
+    collapsed: true
+    panels:
+      - type: graph
+        title: 'Total queries by type'
+        description: 'Total number of queries with a given query type'
+        queries:
+          - params: { labels: 'name=unbound_query_types_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, type ], alias: '{{type}}' }
+        display: { decimals: 1, empty: false, sort: decreasing }
+      - type: graph
+        title: 'Total answers by rcode'
+        description: 'Total number of answers by rcode'
+        queries:
+          - params: { labels: 'name=unbound_answer_rcodes_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, rcode ], alias: '{{rcode}}' }
+          - params: { labels: 'name=unbound_answers_secure_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_lines: [ 'sum' ], alias: 'Secure (AD)' }
+          - params: { labels: 'name=unbound_answers_bogus_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_lines: [ 'sum' ], alias: 'Bogus (SERVFAIL)' }
+          - params: { labels: 'name=unbound_rrset_bogus_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_lines: [ 'sum' ], alias: 'RRset bogus' }
+        display: { decimals: 1, empty: false, sort: decreasing }
+      - type: graph
+        title: 'Total queries by flag'
+        description: 'Total number of queries that had a given flag set in the header'
+        queries:
+          - params: { labels: 'name=unbound_query_flags_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, flag ], alias: '{{flag}}' }
+          - params: { labels: 'name=unbound_query_edns_present_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_lines: [ 'sum' ], alias: 'EDNS OPT' }
+          - params: { labels: 'name=unbound_query_edns_DO_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_lines: [ 'sum' ], alias: 'DO (DNSSEC OK)' }
+        display: { decimals: 1, empty: false, stack: false }
+      - type: graph
+        title: 'Total queries by opcode'
+        description: 'Total number of queries with a given query opcode'
+        queries:
+          - params: { labels: 'name=unbound_query_opcodes_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, opcode ], alias: '{{opcode}}' }
+        display: { decimals: 1, empty: false, stack: false }
+      - type: graph
+        title: 'Total queries by class'
+        description: 'Total number of queries with a given query class'
+        queries:
+          - params: { labels: 'name=unbound_query_classes_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, class ], alias: '{{class}}' }
+        display: { decimals: 1, empty: false, stack: false }
+      - type: graph
+        title: 'EDNS OPT queries'
+        description: 'Total number of queries that had an EDNS OPT record present at the selected time range.'
+        queries:
+          - params: { labels: 'name=unbound_query_edns_present_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ] }
+        display: { decimals: 1, empty: false }
+      - type: graph
+        title: 'Incoming TCP queries'
+        description: 'Total number of queries that were made using TCP towards the Unbound server at the selected time range.'
+        queries:
+          - params: { labels: 'name=unbound_query_tcp_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ] }
+        display: { decimals: 1, empty: false }
+      - type: graph
+        title: 'Outgoing TCP queries'
+        description: 'Total number of queries that were made using TCP towards the Unbound server  at the selected time range.'
+        queries:
+          - params: { labels: 'name=unbound_query_tcp_out_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ] }
+        display: { decimals: 1, empty: false }
+      - type: graph
+        title: 'Rate limited queries'
+        description: 'Total number of queries that had been rate limited at the selected time range.'
+        queries:
+          - params: { labels: 'name=unbound_query_ratelimited_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ] }
+        display: { decimals: 1, empty: false }
+      - type: graph
+        title: 'Incoming TLS queries'
+        description: 'Total number of queries that were made using TLS towards the Unbound server at the selected time range.'
+        queries:
+          - params: { labels: 'name=unbound_query_tls_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ] }
+        display: { decimals: 1, empty: false }
+      - type: graph
+        title: 'TLS resumption queries'
+        description: 'Total number of queries that were made using TLS resumption at the selected time range.'
+        queries:
+          - params: { labels: 'name=unbound_query_tls_resume_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ] }
+        display: { decimals: 1, empty: false }
+      - type: graph
+        title: 'IPv6 queries'
+        description: 'Total number of queries that were made using IPv6 towards the Unbound server at the selected time range.'
+        queries:
+          - params: { labels: 'name=unbound_query_ipv6_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ] }
+        display: { decimals: 1, empty: false, stack: true }
+      - type: graph
+        title: 'Secure answers'
+        description: 'Total amount of answers that were secure (AD) at the selected time range.'
+        queries:
+          - params: { labels: 'name=unbound_answers_secure_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ] }
+        display: { decimals: 1, empty: false, stack: true }
+      - type: graph
+        title: 'Bogus answers'
+        description: 'Total amount of answers that were bogus (withheld as SERVFAIL) at the selected time range.'
+        queries:
+          - params: { labels: 'name=unbound_answers_bogus_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ] }
+        display: { decimals: 1, empty: false }
+      - type: graph
+        title: 'Threads'
+        description: 'The number of threads created to serve clients.'
+        queries:
+          - params: { labels: 'name=unbound_num_threads' }
+            groupByTime: { max: 'default' }
+            select: { }
+        display: { decimals: 1, empty: false, stack: true }
+      - type: graph
+        title: 'Unwanted queries'
+        description: 'Total number of queries that were refused or dropped because they failed the access control settings RPS.'
+        queries:
+          - params: { labels: 'name=unbound_unwanted_queries_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ] }
+        display: { decimals: 1, empty: false }
+      - type: graph
+        title: 'Unwanted replies'
+        description: 'Total number of replies that were unwanted or unsolicited  RPS.
+                      A sharp increase in unwanted traffic indicates a possible spoof run in progress.'
+        queries:
+          - params: { labels: 'name=unbound_unwanted_replies_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ] }
+        display: { decimals: 1, empty: false }
+      - type: graph
+        title: 'EDNS OPT + DNSSEC OK queries'
+        description: 'Total number of queries that had an EDNS OPT record with the DO (DNSSEC OK) bit set present at the selected time range.'
+        queries:
+          - params: { labels: 'name=unbound_query_edns_DO_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ] }
+        display: { decimals: 1, empty: false }
+      - type: graph
+        title: 'Modules size'
+        description: 'Memory in use by modules'
+        queries:
+          - params: { labels: 'name=unbound_memory_modules_bytes' }
+            groupByTime: { max: 'default' }
+            select: { alias: '{{host}}-{{module}}' }
+        display: { decimals: 1, empty: false }
+      - type: graph
+        title: 'Stream wait buffers size'
+        description: ' The number of bytes in the stream wait buffers'
+        queries:
+          - params: { labels: 'name=unbound_memory_stream_wait_count' }
+            groupByTime: { max: 'default' }
+            select: { alias: '{{host}}' }
+        display: { decimals: 1, empty: false }
+      - type: graph
+        title: 'Request list size'
+        description: 'Current size of the request list, including internally generated queries'
+        queries:
+          - params: { labels: 'name=unbound_request_list_current_all' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], alias: '{{host}}-all' }
+          - params: { labels: 'name=unbound_request_list_current_user' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], alias: '{{host}}-user' }
+        display: { decimals: 1, empty: false }
+      - type: graph
+        title: 'Total exceeded queries'
+        description: 'Number of queries that were dropped because the request list was full'
+        queries:
+          - params: { labels: 'name=unbound_request_list_exceeded_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ] }
+        display: { decimals: 1, empty: false }
+      - type: graph
+        title: 'Total overwritten queries'
+        description: 'Total number of requests in the request list that were overwritten by newer entries'
+        queries:
+          - params: { labels: 'name=unbound_request_list_overwritten_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ] }
+        display: { decimals: 1, empty: false }

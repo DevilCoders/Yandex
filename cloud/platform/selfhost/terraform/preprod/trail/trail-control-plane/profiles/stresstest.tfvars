@@ -1,0 +1,11 @@
+ipv4_addresses = [""]
+ipv6_addresses = [""]
+yc_instance_group_size = 1
+yc_folder = "aoebkbob87uggqiadh8h"
+ydb_tablespace = "stresstest/"
+app_log_level = "info"
+name_prefix = "stresstest-preprod-control-plane"
+hostname_prefix = "stresstest-cpl"
+instance_cores = 4
+instance_core_fraction = 100
+instance_memory = 16

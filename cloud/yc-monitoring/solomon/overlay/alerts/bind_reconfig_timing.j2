@@ -1,0 +1,31 @@
+{% extends "../../base/alert.j2" %}
+
+{% set threshold = 18 %} # seconds
+{% set windowSecs = 3600 %}
+
+{% block main %}
+    "name": "oct bind reconfig timing @ {{ env }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "tags": "Solomon",
+        "host": "{{ svm_fqdn() }}",
+        "service": "oct-bind-reconfig-timing"
+    },
+    "description": "20 секунд — интервал между запусками реконфигурации contrail-named на соседних головах. Если время реконфигурации превышает 20 секунд, то она может запуститься на двух головах одновременно, что ведёт к проблемам. Возможно, надо запустить дематериализацию сетей или увеличить интервал реконфигруации.",
+    "type": {
+        "threshold": {
+          "selectors": "{project='{{ project_id }}', cluster='cloud_{{ env }}_oct', service='oct_named_reconfig', host='*', timer='reconfig', metric='time'}",
+          "timeAggregation": "LAST_NON_NAN",
+          "predicate": "GT",
+          "threshold": {{ threshold }},
+          "predicateRules": [
+            {
+              "thresholdType": "LAST_NON_NAN",
+              "comparison": "GT",
+              "threshold": {{ threshold }},
+              "targetStatus": "ALARM"
+            }
+          ]
+        }
+    }
+{% endblock %}

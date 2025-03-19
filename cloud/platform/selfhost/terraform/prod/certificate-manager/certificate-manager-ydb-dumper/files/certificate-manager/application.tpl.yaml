@@ -1,0 +1,87 @@
+localWorkingDirectory: /root
+removeBackupsOlderThan: P7D
+
+cron:
+  expression: "0 0 * * * ?"
+  backedUpDirectory: .
+
+ydb:
+  serviceAccountId: aje9h0sam0bv7nnru51g
+  endpoint: grpcs://ydb-certificate-manager.cloud.yandex.net:2136
+  database: /global/certificate-manager
+  testQueries:
+    - "SELECT COUNT(*) > 0 FROM `%s/acme_providers`"
+    - "SELECT COUNT(*) > 10 FROM `%s/certificates`"
+    - "SELECT COUNT(*) > 10 FROM `%s/certificate_content_versions`"
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/acme_accounts`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/acme_accounts`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 100;"
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/acme_providers`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/acme_providers`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 10;"
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/certificate_content_versions`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/certificate_content_versions`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 90;"
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/certificate_updates`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/certificate_updates`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 50;"
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/certificates`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/certificates`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 50;"
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/certificates_by_folder`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/certificates_by_folder`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 50;"
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/domain`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/domain`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 20;"
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/domains_by_domain`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/domains_by_domain`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 30;"
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/domains_by_folder`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/domains_by_folder`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 30;"
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/orders`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/orders`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 180;"
+    - "$count1 = (SELECT COUNT(DISTINCT certificate_id) FROM `{{TEST_DIR}}/certificate_content_versions`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/certificates` WHERE issued_at >= 0);
+       SELECT $count1 = $count2;"
+    - "$count1 = (SELECT COUNT(certificate_id)  FROM `{{TEST_DIR}}/certificates_by_folder`);
+       $count2 = (SELECT COUNT(certificate_id) FROM `{{TEST_DIR}}/certificates` );
+       SELECT $count1 = $count2;"
+    - "$count1 = (SELECT COUNT(DISTINCT certificate_id)  FROM `{{TEST_DIR}}/orders`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/certificates` WHERE order_id is not null);
+       SELECT $count1 = $count2;"
+    - "$count1 = (SELECT COUNT(*)  FROM `{{TEST_DIR}}/acme_providers`);
+       $count2 = (SELECT COUNT(DISTINCT provider_id) FROM `{{TEST_DIR}}/acme_accounts`);
+       SELECT $count1  = $count2;"
+
+kms:
+  isRoot: false
+  hosts: [api.cloud.yandex.net]
+  port: 443
+  keyId: abjbajnico0q08j06ioh
+
+storages:
+  cloudS3:
+    endpoint: storage.yandexcloud.net:443
+    bucket: ycm-dumper-backups
+    accessKeyPath: /run/ycm/s3-access-key
+    secretKeyPath: /run/ycm/s3-secret-key
+  mdsS3:
+    endpoint: s3.mds.yandex.net:443
+    bucket: ycm-prod-backups
+    accessKeyPath: /run/ycm/mds-access-key
+    secretKeyPath: /run/ycm/mds-secret-key
+
+solomon:
+  host: solomon.cloud.yandex-team.ru
+  oauthTokenPath: /run/ycm/solomon-token
+  project: certificate-manager
+  cluster: prod
+  service: service
+
+tokenService:
+  host: ts.private-api.cloud.yandex.net
+  port: 4282
+  timeout: PT10S

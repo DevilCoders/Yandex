@@ -1,0 +1,88 @@
+{
+  "variables": {
+    "folder_id": "{{env `FOLDER_ID`}}",
+    "subnet_id": "{{env `SUBNET_ID`}}",
+    "zone_id": "{{env `ZONE_ID`}}",
+    "commit_author": "{{env `COMMIT_AUTHOR`}}",
+    "gsid": "1000",
+    "service_account_id": "{{env `SERVICE_ACCOUNT_ID`}}",
+    "export_subnet_id": "{{env `EXPORT_SUBNET_ID`}}",
+    "export_service_account_id": "{{env `EXPORT_SERVICE_ACCOUNT_ID`}}",
+    "export_storage_path": "{{env `EXPORT_STORAGE_PATH`}}"
+   },
+  "builders": [
+    {
+      "type": "yandex",
+      "source_image_family": "yc-vpc-mr-prober-base",
+      "source_image_folder_id": "{{user `folder_id`}}",
+
+      "zone": "{{user `zone_id`}}",
+      "folder_id": "{{user `folder_id`}}",
+      "subnet_id": "{{user `subnet_id`}}",
+      "disk_type": "network-nvme",
+      "service_account_id": "{{user `service_account_id`}}",
+
+      "labels": {
+        "skip_update_ssh_keys": "true"
+      },
+      "metadata": {
+        "gsid": "{{user `GSID`}}"
+      },
+
+      "use_ipv4_nat": true,
+      "use_ipv6": true,
+
+      "image_name": "yc-vpc-mr-prober-web-server-{{isotime | clean_resource_name}}",
+      "image_family": "yc-vpc-mr-prober-web-server",
+      "image_description": "Web server image for VPC active monitoring also known as Mr. Prober. Comes with nginx. Exported to {{user `export_storage_path`}}.",
+      "image_labels": {
+        "commit_author": "{{user `commit_author`}}",
+        "version": "1"
+      },
+
+      "ssh_username": "ubuntu"
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "salt-masterless",
+      "bootstrap_args": "stable 3004",
+      "local_state_tree": "{{template_dir}}/../../salt",
+      "local_pillar_roots": "{{template_dir}}/../../salt/pillar",
+      "grains_file": "{{template_dir}}/grains",
+      "log_level": "info"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'Purge Salt packages'",
+        "sudo apt-get -y purge salt-common salt-minion",
+        "sudo rm -rf /srv/salt",
+        "sudo rm -rf /srv/pillar",
+        "sudo rm -rf /var/cache/salt",
+        "sudo rm -rf /var/lib/cloud",
+        "sudo rm -ff /var/lib/dhcp/*.leases",
+        "echo 'List installed packages and versions'",
+        "dpkg -l",
+        "ls -al /var/lib/dpkg/"
+      ]
+    }
+  ],
+  "post-processors": [
+   {
+      "type": "yandex-export",
+      "folder_id": "{{user `folder_id`}}",
+      "subnet_id": "{{user `export_subnet_id`}}",
+
+      "service_account_id": "{{user `export_service_account_id`}}",
+
+      "use_ipv6": true,
+
+      "paths": [
+         "{{user `export_storage_path`}}mr-prober/web-server/latest.qcow2",
+         "{{user `export_storage_path`}}mr-prober/web-server/{{build `ImageID`}}.qcow2"
+      ],
+      "keep_input_artifact": false
+    }
+  ]
+}

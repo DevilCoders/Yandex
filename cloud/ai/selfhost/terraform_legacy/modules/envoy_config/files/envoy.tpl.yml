@@ -1,0 +1,76 @@
+static_resources:
+    listeners:
+        - name: listener_0
+          address:
+              socket_address: { address: "::", port_value: ${downstream_port} }
+          filter_chains:
+              - filters:
+                    - name: envoy.filters.network.http_connection_manager
+                      typed_config:
+                          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+
+                          stat_prefix: ingress_http
+                          codec_type: AUTO
+
+                          route_config:
+                              name: local_route
+                              virtual_hosts:
+                                  - name: local_service
+                                    domains: ["*"]
+                                    routes:
+                                        - match: { prefix: "/" }
+                                          route: { cluster: upstream }
+
+                          http_filters:
+                              - name: envoy.filters.http.router
+
+                          access_log:
+                              - name: envoy.access_loggers.http_grpc
+                                typed_config:
+                                    "@type": type.googleapis.com/envoy.extensions.access_loggers.grpc.v3.HttpGrpcAccessLogConfig
+                                    common_config:
+                                        log_name: access_log
+                                        grpc_service:
+                                            envoy_grpc:
+                                                cluster_name: access_log_service
+                                        transport_api_version: V3
+                                    additional_request_headers_to_log: ["X-Folder-Id"]
+                                    additional_response_trailers_to_log: ["X-Billing-Units", "X-Billing-Schema", "X-Billing-Unit-Type"]
+
+    clusters:
+        - name: upstream
+          connect_timeout: 0.25s
+          type: logical_dns
+          http2_protocol_options: {}
+          lb_policy: ROUND_ROBIN
+          load_assignment:
+              cluster_name: upstream
+              endpoints:
+                  - lb_endpoints:
+                        - endpoint:
+                              address:
+                                  socket_address:
+                                      address: 127.0.0.1
+                                      port_value: ${upstream_port}
+
+        - name: access_log_service
+          connect_timeout: 0.25s
+          type: logical_dns
+          http2_protocol_options: {}
+          lb_policy: ROUND_ROBIN
+          load_assignment:
+              cluster_name: access_log_service
+              endpoints:
+                  - lb_endpoints:
+                        - endpoint:
+                              address:
+                                  socket_address:
+                                      address: 127.0.0.1
+                                      port_value: 8087
+
+admin:
+    access_log_path: "/dev/stdout"
+    address:
+        socket_address:
+            address: 127.0.0.1
+            port_value: 9901

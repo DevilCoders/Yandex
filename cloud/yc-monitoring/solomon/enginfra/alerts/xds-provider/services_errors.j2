@@ -1,0 +1,44 @@
+{% extends "base_alert.j2" %}
+
+{% set service = "services-errors" %}
+
+
+{% set services_error_states = (
+    'services_invalid_total',
+    'services_stale_total',
+)%}
+
+{% macro prog() %}
+let ts = series_sum({
+    cluster='cloud_{{env}}_xds-provider_{{ az }}'
+    ,sensor='{{ services_error_states | join ('|') }}'
+    ,host='*'
+});
+
+// It's ok, just no errors for current host for a while
+ok_if(count(ts) == 0);
+
+let error_rate_str = '0';
+let error_rate = last(ts);
+let error_rate_str = to_fixed(error_rate, 0);
+
+alarm_if(error_rate > 2);
+warn_if(error_rate >= 1);
+{% endmacro %}
+
+{% block main %}
+    "name": "XDS provider services errors {{env}}@{{az}}",
+    "annotations": {
+        "error_rate": "[[ expression.error_rate_str ]]",
+        "description": "XDS provider services in error states: [[ expression.error_rate_str ]]",
+        "host": "{{ svm_fqdn() }}",
+        "service": "{{ service }}",
+        "dashboard": "{{ xds_provider_dashboard() }}",
+        "wiki": "{{ wiki_url(service) }}" 
+    },
+    "type": {{ type_expression() }},
+    "description": "",
+    "groupByLabels": [
+        "host"
+    ]
+{% endblock %}

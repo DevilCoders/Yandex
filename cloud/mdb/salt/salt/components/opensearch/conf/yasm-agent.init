@@ -1,0 +1,89 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          yandex-yasmagent
+# Required-Start:    $local_fs $remote_fs
+# Required-Stop:     $remote_fs 
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Yasmagent
+### END INIT INFO
+
+# Author: Leonid Vasiliev <lvasiliev@yandex-team.ru>
+
+# PATH should only include /usr/* if it runs after the mountnfs.sh script
+PATH=/sbin:/usr/sbin:/bin:/usr/bin
+
+NAME=yasmagent
+
+BASEDIR="/usr/local/yasmagent"
+LOGDIR="/var/log/yasmagent"
+RUNDIR="/var/run/yasmagent"
+PIDFILE="$BASEDIR/run/agent.pid"
+USER=""
+
+RUNCMD="$BASEDIR/run.py --config=$BASEDIR/agent.conf --log-dir=$LOGDIR --pid-file=$PIDFILE --yasmutil-dir=$BASEDIR/lib --http-port=11003 --push-enabled --push-http-port=11005 --push-limit-total-values=15000"
+
+# Exit if the package is not installed
+[ -x $DAEMON ] || exit 0
+
+# Read configuration variable file if it is present
+[ -r /etc/default/$NAME ] && . /etc/default/$NAME
+
+[ -z "$instance" ] && instance="--bsconfig --iss"
+[ -z "$USER" ] && USER="monitor"
+
+# Load the VERBOSE setting and other rcS variables
+. /lib/init/vars.sh
+
+# Define LSB log_* functions.
+# Depend on lsb-base (>= 3.0-6) to ensure that this file is present.
+. /lib/lsb/init-functions
+
+case "$1" in
+        start)
+                echo "Starting ${NAME}..."
+                su - $USER -c "$RUNCMD $instance"
+        ;;
+
+        stop)
+                echo "Stopping ${NAME}..."
+        if [ -f "$PIDFILE" ]; then
+            su - $USER -c "kill -9 `cat $PIDFILE` 2> /dev/null"
+            rm -f "$PIDFILE"
+        else
+            pkill -9 -u "$USER" -f 'python /usr/local/yasmagent/run.py'
+        fi
+    ;;
+
+        status)
+            echo -n "${NAME} is "
+            if [ -f "${PIDFILE}" ]
+            then
+                if kill -0 $(cat ${PIDFILE})
+                then
+                    echo "running (with pid $(cat ${PIDFILE}))"
+                    exit 0
+                else
+                    echo "not running"
+                    exit 1
+                fi
+            else
+                echo "not running"
+                exit 1
+            fi
+        ;;
+
+    restart|force-reload)
+        echo "Restarting ${NAME}..."
+        $0 stop
+        sleep 1
+        $0 start
+    ;;
+    
+    *)
+        echo "Usage $0 {start|stop|restart|force-reload}"
+        exit 1
+
+esac
+
+exit 0

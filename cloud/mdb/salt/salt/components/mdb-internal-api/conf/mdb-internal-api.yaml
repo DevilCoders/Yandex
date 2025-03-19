@@ -1,0 +1,269 @@
+{% set metadb_addrs = [] %}
+{% for addr in salt['pillar.get']('data:mdb-internal-api:config:metadb:addrs', []) %}
+{%     do metadb_addrs.append(addr) %}
+{% endfor %}
+{% set logsdb_addrs = [] %}
+{% for addr in salt['pillar.get']('data:mdb-internal-api:config:logsdb:addrs', []) %}
+{%     do logsdb_addrs.append(addr) %}
+{% endfor %}
+{% set perfdiagdb_addrs = [] %}
+{% for addr in salt['pillar.get']('data:mdb-internal-api:config:perfdiagdb:addrs', []) %}
+{%     do perfdiagdb_addrs.append(addr) %}
+{% endfor %}
+{% set perfdiagdb_mongodb_addrs = [] %}
+{% for addr in salt['pillar.get']('data:mdb-internal-api:config:perfdiagdb_mongodb:addrs', []) %}
+{%     do perfdiagdb_mongodb_addrs.append(addr) %}
+{% endfor %}
+{% set charts = {} %}
+{% for k, v in salt['pillar.get']('data:mdb-internal-api:config:logic:monitoring:charts', {}).items() %}
+{%     do charts.update({k: v}) %}
+{% endfor %}
+{% set config = {
+    "app": {
+        "logging": {
+            "level": salt['pillar.get']('data:mdb-internal-api:config:app:logging:level', 'info'),
+            "file": salt['pillar.get']('data:mdb-internal-api:config:app:logging:file', '/var/log/mdb-internal-api/api.log'),
+        },
+        "sentry": {
+            "dsn": salt['pillar.get']('data:mdb-internal-api:config:sentry:dsn', '__NOSENTRYDSN__'),
+            "environment": salt['pillar.get']('data:sentry:environment', '__NOSENTRYENV__'),
+        },
+    },
+    "api": {
+        "expose_error_debug": salt['pillar.get']('data:mdb-internal-api:config:api:expose_error_debug', False),
+        "cloud_id_prefix": salt['pillar.get']('data:prefixes:cloud', "mdb")
+    },
+    "grpc": {
+        "addr": salt['pillar.get']('data:mdb-internal-api:config:grpc:addr', ":50050")
+    },
+    "metadb": {
+        "db": {
+            "addrs": metadb_addrs,
+            "db": salt['pillar.get']('data:mdb-internal-api:config:metadb:db', '__NODB__'),
+            "user": salt['pillar.get']('data:mdb-internal-api:config:metadb:user', '__NOUSER__'),
+            "password": salt['pillar.get']('data:mdb-internal-api:config:metadb:password', '__NOPASSWORD__'),
+            "sslmode": salt['pillar.get']('data:mdb-internal-api:config:metadb:sslmode', 'verify-full'),
+            "sslrootcert": salt['pillar.get']('data:mdb-internal-api:config:metadb:sslrootcert', '__NOSSLROOTCERT__'),
+            "max_open_conn": salt['pillar.get']('data:mdb-internal-api:config:metadb:max_open_conn', 32),
+            "max_idle_conn": salt['pillar.get']('data:mdb-internal-api:config:metadb:max_idle_conn', 32)
+        }
+    },
+    "logsdb": {
+        "disabled": salt['pillar.get']('data:mdb-internal-api:config:logsdb:disabled', False),
+        "config": {
+            "db": {
+                "addrs": logsdb_addrs,
+                "db": salt['pillar.get']('data:mdb-internal-api:config:logsdb:db', '__NODB__'),
+                "user": salt['pillar.get']('data:mdb-internal-api:config:logsdb:user', '__NOUSER__'),
+                "password": salt['pillar.get']('data:mdb-internal-api:config:logsdb:password', '__NOPASSWORD__'),
+                "secure": True,
+                "compress": True,
+                "debug": salt['pillar.get']('data:mdb-internal-api:config:logsdb:debug', False),
+                "ca_file": salt['pillar.get']('data:mdb-internal-api:config:logsdb:ca_file', '__NOCAFILE__')
+            },
+            "data_opts": {
+                "time_column": salt['pillar.get']('data:mdb-internal-api:config:logsdb:time_column', 'log_time')
+            }
+        }
+    },
+    "perfdiagdb_mongodb": {
+        "disabled": salt['pillar.get']('data:mdb-internal-api:config:perfdiagdb_mongodb:disabled', False),
+        "db": {
+            "addrs": perfdiagdb_mongodb_addrs,
+            "db": salt['pillar.get']('data:mdb-internal-api:config:perfdiagdb_mongodb:db', '__NODB__'),
+            "user": salt['pillar.get']('data:mdb-internal-api:config:perfdiagdb_mongodb:user', '__NOUSER__'),
+            "password": salt['pillar.get']('data:mdb-internal-api:config:perfdiagdb_mongodb:password', '__NOPASSWORD__'),
+            "secure": True,
+            "compress": True,
+            "debug": salt['pillar.get']('data:mdb-internal-api:config:perfdiagdb_mongodb:debug', False),
+            "ca_file": salt['pillar.get']('data:mdb-internal-api:config:perfdiagdb_mongodb:ca_file', '__NOCAFILE__')
+        }
+    },
+    "perfdiagdb": {
+        "disabled": salt['pillar.get']('data:mdb-internal-api:config:perfdiagdb:disabled', False),
+        "db": {
+            "addrs": perfdiagdb_addrs,
+            "db": salt['pillar.get']('data:mdb-internal-api:config:perfdiagdb:db', '__NODB__'),
+            "user": salt['pillar.get']('data:mdb-internal-api:config:perfdiagdb:user', '__NOUSER__'),
+            "password": salt['pillar.get']('data:mdb-internal-api:config:perfdiagdb:password', '__NOPASSWORD__'),
+            "secure": True,
+            "compress": True,
+            "debug": salt['pillar.get']('data:mdb-internal-api:config:perfdiagdb:debug', False),
+            "ca_file": salt['pillar.get']('data:mdb-internal-api:config:perfdiagdb:ca_file', '__NOCAFILE__')
+        }
+    },
+    "s3": {
+        "host": salt['pillar.get']('data:mdb-internal-api:config:s3:host', ''),
+        "access_key": salt['pillar.get']('data:mdb-internal-api:config:s3:access_key', ''),
+        "secret_key": salt['pillar.get']('data:mdb-internal-api:config:s3:secret_key', '')
+    },
+    "s3_secure_backups": {
+        "host": salt['pillar.get']('data:mdb-internal-api:config:s3_secure_backups:host', ''),
+        "access_key": salt['pillar.get']('data:mdb-internal-api:config:s3_secure_backups:access_key', ''),
+        "secret_key": salt['pillar.get']('data:mdb-internal-api:config:s3_secure_backups:secret_key', '')
+    },
+    "access_service": {
+        "addr": salt['pillar.get']('data:mdb-internal-api:config:access_service:addr', '__NOADDR__'),
+        "config": {
+            "security": {
+                "tls": {
+                    "ca_file": salt['pillar.get']('data:mdb-internal-api:config:access_service:capath', '__NOCAPATH__')
+                }
+            }
+        }
+    },
+    "token_service": {
+        "addr": salt['pillar.get']('data:mdb-internal-api:config:token_service:addr', '__NOADDR__'),
+        "config": {
+            "security": {
+                "tls": {
+                    "ca_file": salt['pillar.get']('data:mdb-internal-api:config:token_service:capath', '__NOCAPATH__')
+                }
+            }
+        }
+    },
+    "resource_manager": {
+        "addr": salt['pillar.get']('data:mdb-internal-api:config:resource_manager:addr', '__NOADDR__'),
+        "config": {
+            "security": {
+                "tls": {
+                    "ca_file": salt['pillar.get']('data:mdb-internal-api:config:resource_manager:capath', '__NOCAPATH__')
+                }
+            }
+        }
+    },
+    "health": {
+        "host": salt['pillar.get']('data:mdb-internal-api:config:health:host', '__NOADDR__'),
+        "tls": {
+            "ca_file": salt['pillar.get']('data:mdb-internal-api:config:health:tls:ca_file', '__NOCAPATH__')
+        }
+    },
+    "iam": {
+        "uri": salt['pillar.get']('data:mdb-internal-api:config:iam:uri', '__NOURI__'),
+        "http": {
+            "transport": {
+                "tls": {
+                    "ca_file": salt['pillar.get']('data:mdb-internal-api:config:iam:http:transport:tls:ca_file', '__NOCAFILE__')
+                }
+            }
+        }
+    },
+    "crypto": {
+        "peers_public_key": salt['pillar.get']('data:mdb-internal-api:config:crypto:public_key', '__NOPUBLICKEY__'),
+        "private_key": salt['pillar.get']('data:mdb-internal-api:config:crypto:private_key', '__NOPRIVATEKEY__')
+    },
+    "racktables": {
+        "endpoint": salt[ 'pillar.get' ]('data:mdb-internal-api:config:racktables:endpoint', ""),
+        "token": salt[ 'pillar.get' ]('data:mdb-internal-api:config:racktables:token', "")
+    },
+    "yandex_team_integration": {
+        "uri": salt[ 'pillar.get' ]('data:mdb-internal-api:config:yandex_team_integration:uri', ""),
+        "config": {
+            "security": {
+                "tls": {
+                    "ca_file": salt[ 'pillar.get' ]('data:mdb-internal-api:config:yandex_team_integration:config:security:tls:ca_file', "")
+                }
+            }
+        }
+    },
+    "logic": {
+        "vtypes": {
+            "compute": salt['pillar.get']('data:mdb-internal-api:config:logic:vtypes:compute', 'df.cloud.yandex.net'),
+            "porto": salt['pillar.get']('data:mdb-internal-api:config:logic:vtypes:porto', 'db.yandex.net'),
+        },
+        "s3_bucket_prefix": salt['pillar.get']('data:mdb-internal-api:config:logic:s3_bucket_prefix', 'yandexcloud-dbaas-'),
+        "logs": {
+            "batch_size": salt['pillar.get']('data:mdb-internal-api:config:logic:logs:batch_size', 250),
+        },
+        "environment_vtype": salt['pillar.get']('data:mdb-internal-api:config:logic:environment_vtype', 'porto'),
+        "saltenvs": {
+            "production": salt['pillar.get']('data:mdb-internal-api:config:logic:saltenvs:production'),
+            "prestable": salt['pillar.get']('data:mdb-internal-api:config:logic:saltenvs:prestable'),
+        },
+        "zone_rename_map": salt['pillar.get']('data:mdb-internal-api:config:logic:zone_rename_map', {}),
+        "generation_names": salt['pillar.get']('data:mdb-internal-api:config:logic:generation_names', {}),
+        "kafka": {
+            "tasks_prefix": salt['pillar.get']('data:prefixes:tasks:kafka', ""),
+            "zk_zones": salt['pillar.get']('data:mdb-internal-api:config:logic:kafka:zk_zones', []),
+            "sync_topics": salt['pillar.get']('data:mdb-internal-api:config:logic:kafka:sync_topics', False),
+        },
+        "metastore": {
+            "tasks_prefix": salt['pillar.get']('data:prefixes:tasks:metastore', ""),
+            "kubernetes_cluster_id": salt['pillar.get']('data:mdb-internal-api:config:logic:metastore:kubernetes_cluster_id', ""),
+            "postgresql_cluster_id": salt['pillar.get']('data:mdb-internal-api:config:logic:metastore:postgresql_cluster_id', ""),
+            "secrets_folder_id": salt['pillar.get']('data:mdb-internal-api:config:logic:metastore:secrets_folder_id', ""),
+            "kubernetes_cluster_service_account_id": salt['pillar.get']('data:mdb-internal-api:config:logic:metastore:kubernetes_cluster_service_account_id', ""),
+            "kubernetes_node_service_account_id": salt['pillar.get']('data:mdb-internal-api:config:logic:metastore:kubernetes_node_service_account_id', ""),
+            "postgresql_hostname": salt['pillar.get']('data:mdb-internal-api:config:logic:metastore:postgresql_hostname', ""),
+            "service_subnet_ids": salt['pillar.get']('data:mdb-internal-api:config:logic:metastore:service_subnet_ids', []),
+        },
+        "elasticsearch": {
+            "tasks_prefix": salt['pillar.get']('data:prefixes:tasks:elasticsearch', ""),
+            "allowed_editions": salt['pillar.get']('data:mdb-internal-api:config:logic:elasticsearch:allowed_editions', []),
+            "versions": salt['pillar.get']('data:mdb-internal-api:config:logic:elasticsearch:versions', []),
+            "enable_auto_backups": salt['pillar.get']('data:mdb-internal-api:config:logic:elasticsearch:enable_auto_backups', False)
+        },
+        "sqlserver": {
+            "tasks_prefix": salt['pillar.get']('data:prefixes:tasks:sqlserver', ""),
+            "product_ids": {
+                "standard": salt['pillar.get']('data:mdb-internal-api:config:logic:sqlserver:product_ids:standard', "standard"),
+                "enterprise": salt['pillar.get']('data:mdb-internal-api:config:logic:sqlserver:product_ids:enterprise', "enterprise")
+            }
+        },
+        "greenplum": {
+            "tasks_prefix": salt['pillar.get']('data:prefixes:tasks:greenplum', "")
+        },
+        "resource_validation": {
+            "decommissioned_resource_presets": salt['pillar.get']('data:mdb-internal-api:config:logic:resource_validation:decommissioned_resource_presets', []),
+            "decommissioned_zones": salt['pillar.get']('data:mdb-internal-api:config:logic:resource_validation:decommissioned_zones', []),
+            "minimal_disk_unit": salt['pillar.get']('data:mdb-internal-api:config:logic:resource_validation:minimal_disk_unit', 1)
+        },
+        "clickhouse": {
+            "backup": {
+                "backup_schedule": {
+                    "use_backup_service": salt['pillar.get']('data:mdb-internal-api:config:logic:clickhouse:use_backup_service', False)
+                }
+            },
+            "versions": salt['pillar.get']('data:mdb-internal-api:config:logic:clickhouse:versions', []),
+            "external_uri_validation": salt['pillar.get']('data:mdb-internal-api:config:logic:clickhouse:external_uri_validation', {})
+        },
+        "console": {
+            "uri": salt['pillar.get']('data:mdb-internal-api:config:logic:console:uri', "")
+        },
+        "monitoring": {
+            "charts": charts
+        },
+        "cloud_default_quota": salt['pillar.get']('data:mdb-internal-api:config:logic:cloud_default_quota', {}),
+        "e2e": {
+             "cluster_name": salt['pillar.get']('data:mdb-internal-api:config:logic:e2e:cluster_name', ""),
+             "folder_id": salt['pillar.get']('data:mdb-internal-api:config:logic:e2e:folder_id', "")
+        },
+        "cluster_stop_supported": salt['pillar.get']('data:mdb-internal-api:config:logic:cluster_stop_supported', true),
+        "flags": {
+             "allow_move_between_clouds": salt['pillar.get']('data:mdb-internal-api:config:logic:flags:allow_move_between_clouds', False)
+        }
+    }
+} %}
+{% if salt['pillar.get']('data:dbaas:vtype') == 'compute' %}
+{% do config.update({
+    "vpc": {
+        "uri": salt['pillar.get']('data:mdb-internal-api:config:vpc:uri', '__NOADDR__'),
+        "token": salt['pillar.get']('data:mdb-internal-api:config:vpc:token', '')
+    },
+    "compute": {
+        "uri": salt['pillar.get']('data:mdb-internal-api:config:compute:uri')
+    },
+    "license_service": {
+        "addr": salt['pillar.get']('data:mdb-internal-api:config:license_service:addr', '__NOADDR__'),
+        "http_config": {
+            "ca_file": salt['pillar.get']('data:mdb-internal-api:config:license_service:capath', '__NOCAPATH__'),
+            "log_http_body": salt['pillar.get']('data:mdb-internal-api:config:license_service:log_http_body', False)
+        }
+    }
+}) %}
+{% endif %}
+{{ config|yaml(False) }}
+service_account:
+  id: {{ salt['pillar.get']('data:mdb-internal-api:service_account:id') }}
+  key_id: {{ salt['pillar.get']('data:mdb-internal-api:service_account:key_id') }}
+  private_key: {{ salt['pillar.get']('data:mdb-internal-api:service_account:private_key') | yaml_encode }}

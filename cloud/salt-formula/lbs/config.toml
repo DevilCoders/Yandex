@@ -1,0 +1,83 @@
+{%- set lb_endpoints = grains['cluster_map']['load_balancer']['endpoints'] -%}
+debug = true
+
+[devices]
+        filters = ["loop[0-9+]", "sd[a-z][0-9]+", "nvme[0-9]n[0-9]p[0-9]"]
+        ignoreStateFile = false
+        metaspaceSize = 1073741824
+
+[snapshot]
+        enabled = true
+        [snapshot.endpoint]
+                server = "{{ lb_endpoints.snapshot_grpc.host }}"
+                port = {{ lb_endpoints.snapshot_grpc.port }}
+		secure = false
+[blockcache]
+	enabled = true
+	write = true
+	size = 0
+
+[iosched]
+	enabled = true
+	logStat = true
+	updateTime = 30
+	balancer = true
+
+[log]
+	level = "Debug"
+	mask = ["All"]
+	source = true
+	time = true
+	systemd = true
+	svlogd = true
+	svlogdpath = "/var/log/yc/lbs"
+	svlogdlevel = "Verbose"
+
+[topology]
+       [topology.default]
+                "out.1" = "0 [ $.Length ] limit /dev/mapper/[ $.Name ]_era"
+                "era.1" = "0 [ $.Length ] era [ divu $.Length 2 8192 64 | add 256 | int64 | allocate $.Metaspace .Name ] /dev/mapper/[ $.Name ]_snap 8192"
+                "snap.1" = "0 [ $.Length ] live-snap /dev/mapper/[ $.Name ]_zbm"
+                "zbm.1" = "0 [ $.Length ] zero-bitmap /dev/mapper/[ $.Rules.in.Name ] [ divu $.Length 4096 8 | mul 8 | int64 | allocate $.Metaspace (printf \"%s_zbm\" .Name) ]"
+        [topology.raid0]
+                "min_devices" = 2
+                "max_devices" = 20
+                "ratio" = "1"
+                "redundancy" = 0
+                "alignments" = [1048576]
+                "out.1" = "0 [ $.Length ] limit /dev/mapper/[ $.Name ]_era"
+                "era.1" = "0 [ $.Length ] era [ divu $.Length 2 8192 64 | add 256 | int64 | allocate $.Metaspace .Name ] /dev/mapper/[ $.Name ]_snap 8192"
+                "snap.1" = "0 [ $.Length ] live-snap /dev/mapper/[ $.Name ]_zbm"
+                "zbm.1" = "0 [ $.Length ] zero-bitmap /dev/mapper/[ $.Name ]_raid [ divu $.PhysLen 4096 8 | mul 8 | int64 | allocate $.Metaspace (printf \"%s_zbm\" .Name) ]"
+                "raid.1" = "0 [ $.PhysLen ] raid raid0 1 2048 [ len $.Inputs ][ range $.Inputs ] [ 256 | int64 | allocate $.Metaspace .Name ] /dev/mapper/[ .Name ][ end ]"
+        [topology.raid1]
+                "min_devices" = 2
+                "max_devices" = 20
+                "ratio" = "0"
+                "redundancy" = -1
+                "alignments" = [2097152]
+                "out.1" = "0 [ len $.Inputs | int64 | div $.Length ] limit /dev/mapper/[ $.Name ]_era"
+                "era.1" = "0 [ len $.Inputs | int64 | div $.Length ] era [ divu $.Length 2 8192 64 | add 256 | int64 | allocate $.Metaspace .Name ] /dev/mapper/[ $.Name ]_snap 8192"
+                "snap.1" = "0 [ len $.Inputs | int64 | div $.Length ] live-snap /dev/mapper/[ $.Name ]_zbm"
+                "zbm.1" = "0 [ len $.Inputs | int64 | div $.Length ] zero-bitmap /dev/mapper/[ $.Name ]_raid [ divu $.Length 4096 8 | mul 8 | int64 | allocate $.Metaspace (printf \"%s_zbm\" .Name) ]"
+                "raid.1" = "0 [ len $.Inputs | int64 | div $.Length ] raid raid1 1 2048 [ len $.Inputs ][ range $.Inputs ] [ 256 | int64 | allocate $.Metaspace .Name ] /dev/mapper/[ .Name ][ end ]"
+        [topology.raid5]
+                "min_devices" = 3
+                "max_devices" = 20
+                "ratio" = "1"
+                "redundancy" = 1
+                "out.1" = "0 [ sub $.Length (len $.Inputs | int64 | div $.Length) ] limit /dev/mapper/[ $.Name ]_era"
+                "era.1" = "0 [ sub $.Length (len $.Inputs | int64 | div $.Length) ] era [ divu $.Length 2 8192 64 | add 256 | int64 | allocate $.Metaspace .Name ] /dev/mapper/[ $.Name ]_snap 8192"
+                "snap.1" = "0 [ sub $.Length (len $.Inputs | int64 | div $.Length) ] live-snap /dev/mapper/[ $.Name ]_zbm"
+                "zbm.1" = "0  [ sub $.Length (len $.Inputs | int64 | div $.Length) ] zero-bitmap /dev/mapper/[ $.Name ]_raid [ divu $.Length 4096 8 | mul 8 | int64 | allocate $.Metaspace (printf \"%s_zbm\" .Name) ]"
+                "raid.1" = "0 [ sub $.Length (len $.Inputs | int64 | div $.Length) ] raid raid5_ls 3 2048 region_size 4096 [ len $.Inputs ][ range $.Inputs ] [ 256 | int64 | allocate $.Metaspace .Name ] /dev/mapper/[ .Name ][ end ]"
+        [topology.raid10]
+                "min_devices" = 4
+                "max_devices" = 20
+                "ratio" = "2"
+                "redundancy" = 0
+                "out.1" = "0 [ div $.Length 2 ] limit /dev/mapper/[ $.Name ]_era"
+                "era.1" = "0 [ div $.Length 2 ] era [ divu $.Length 2 8192 64 | add 256 | int64 | allocate $.Metaspace .Name ] /dev/mapper/[ $.Name ]_snap 8192"
+                "snap.1" = "0 [ div $.Length 2 ] live-snap /dev/mapper/[ $.Name ]_zbm"
+                "zbm.1" = "0 [ div $.Length 2 ] zero-bitmap /dev/mapper/[ $.Name ]_raid [ divu $.Length 4096 8 | mul 8 | int64 | allocate $.Metaspace (printf \"%s_zbm\" .Name) ]"
+                "raid.1" = "0 [ div $.Length 2 ] raid raid10 1 2048 [ len $.Inputs ][ range $.Inputs ] [ 256 | int64 | allocate $.Metaspace .Name ] /dev/mapper/[ .Name ][ end ]"

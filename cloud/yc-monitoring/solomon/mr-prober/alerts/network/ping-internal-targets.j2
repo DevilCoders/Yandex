@@ -1,0 +1,38 @@
+{% extends "../../../base/alert.j2" %}
+
+{% set idc="network-ping-internal-targets" %}
+{% set description="Кластер meeseeks, проберы network-ping и http-request.\\n\\n" +
+"Алерт на то, что с одного хоста недоступно сразу два внутренних таргета." %}
+
+{% set windowSecs=60 %}
+{% set delaySecs=15 %}
+{% set resolvedEmptyPolicy="RESOLVED_EMPTY_NO_DATA" %}
+{% set checkExpression="" %}
+
+{% macro prog() %}
+let fails = {project="{{ project_id }}", cluster="*", service="metrics", host!="{{ az_names }}", metric="fail", cluster_slug="meeseeks", prober_slug="network-ping|http-request", matrix_host="10.*|-", matrix_url="http://10.*|-"};
+
+let fails_count = max(group_lines('sum', group_by_time(1m, 'sum', fails)));
+alarm_if(fails_count >= 2);
+warn_if(fails_count >= 1);
+{% endmacro %}
+
+{% block main %}
+    "name": "[meeseeks] ICMP and HTTP availability of internal targets",
+    "groupByLabels": [
+        "cluster",
+        "host",
+        "cluster_slug",
+        "prober_slug"
+	],
+    "annotations": {
+        "host": "[[labels.host]]",
+        "stand": "[[labels.cluster]]",
+        "service": "[[labels.prober_slug]]-internal-targets",
+        "cluster": "[[labels.cluster_slug]]",
+        "fails graph": "{{ solomon_endpoint }}/?project={{ project_id }}&service=metrics&l.metric=fail&cluster=[[labels.cluster]]&l.prober_slug=[[labels.prober_slug]]&l.host=[[labels.host]]&l.cluster_slug=[[labels.cluster_slug]]&graph=auto&b=1h&e=&downsamplingFill=previous",
+        "logs": "{{ s3_viewer_url }}/mr-prober-logs?key=[[labels.cluster]]%2Fprobers%2F[[labels.cluster_slug]]%2F[[labels.host]]%2F[[labels.prober_slug]]%2F",
+        "unavailable targets count": "[[expression.fails_count]]"
+    },
+    "type": {{ type_expression() }}
+{% endblock %}

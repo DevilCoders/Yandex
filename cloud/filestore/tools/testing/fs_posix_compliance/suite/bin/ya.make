@@ -1,0 +1,9 @@
+PACKAGE()
+
+OWNER(g:cloud-nbs)
+
+FROM_SANDBOX(2513045473 EXECUTABLE OUT
+    flock
+)
+
+END()

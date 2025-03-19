@@ -1,0 +1,26 @@
+OWNER(g:cloud-iam)
+
+RECURSE(
+    team-integration-abc
+    team-integration-abc-repo-ydb
+    team-integration-abcd-adapter
+    team-integration-abcd-provider-api
+    team-integration-abcd-provider-impl
+    team-integration-application
+    team-integration-cloud-billing-client
+    team-integration-cloud-resource-manager-client
+    team-integration-grpc-client
+    team-integration-grpc-server
+    team-integration-http-client
+    team-integration-http-server
+    team-integration-idm
+    team-integration-legacy
+    team-integration-operation
+    team-integration-package
+    team-integration-repository
+    team-integration-team-abc-client
+    team-integration-team-abcd-client
+    team-integration-tvm-client
+    team-integration-tvm-grpc
+    team-integration-tvm-http
+)

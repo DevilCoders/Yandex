@@ -1,0 +1,97 @@
+{
+  "variables": {
+    "service_account_key_file": "{{env `YC_SA_KEY_FILE`}}",
+    "folder_id": "b1gr3c080vud9ltv0pov",
+    "service_account_id": "ajeqnn1jlrr7il0rb69i",
+    "app_service_name": "{{env `YC_IAM_SERVICE`}}",
+    "image_family": "dc-yc-iam-{{env `YC_IAM_SERVICE`}}"
+  },
+  "builders": [
+    {
+      "type": "yandex",
+      "service_account_id": "{{user `service_account_id`}}",
+      "service_account_key_file": "{{user `service_account_key_file`}}",
+      "folder_id": "{{user `folder_id`}}",
+      "zone": "ru-central1-b",
+      "image_name": "{{user `image_family`}}-{{isotime | clean_resource_name}}",
+      "image_family": "{{user `image_family`}}",
+      "source_image_id": "fd8dm9cflcrp498d4jrh",
+      "disk_type": "network-nvme",
+      "ssh_username": "ubuntu",
+      "use_ipv4_nat": true
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'image prepared by Packer at ' | sudo tee /etc/image_description",
+        "date --rfc-3339 sec | sudo tee -a /etc/image_description",
+        "sudo systemctl stop kubelet"
+      ]
+    },
+
+    {
+      "type": "shell-local",
+      "command": "echo 'Coping all needed files'"
+    },
+    {
+      "type": "file",
+      "source": "./files/{{user `app_service_name`}}/configs",
+      "destination": "/tmp/{{user `app_service_name`}}"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "sudo mkdir -p /etc/yc/{{user `app_service_name`}}/",
+        "sudo mv /tmp/{{user `app_service_name`}}/* /etc/yc/{{user `app_service_name`}}/"
+      ]
+    },
+    {
+      "type": "shell-local",
+      "command": "echo 'Coping pod_manifests'"
+    },
+    {
+      "type": "file",
+      "source": "./files/{{user `app_service_name`}}/pod_manifests",
+      "destination": "/tmp/{{user `app_service_name`}}"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "sudo mkdir -p /etc/kubelet.d/",
+        "sudo mv /tmp/{{user `app_service_name`}}/pod_manifests/*.yaml /etc/kubelet.d/"
+      ]
+    },
+    {
+      "type": "shell-local",
+      "command": "echo 'Loading docker images'"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "curl -s -H Metadata-Flavor:Google http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token | jq -r .access_token | sudo docker login --username iam --password-stdin cr.yandex",
+        "for filename in /etc/kubelet.d/*.yaml; do python -c 'import sys, yaml, json; json.dump(yaml.load(sys.stdin), sys.stdout, indent=4)' < ${filename} | jq  -r '.. |.image? | select(. != null)'; done | sort | uniq > /tmp/containers",
+        "for image in $(cat /tmp/containers); do sudo docker pull $image; done",
+        "sudo docker logout cr.yandex"
+      ]
+    },
+    {
+      "type": "shell-local",
+      "command": "echo 'Remove temporary files'"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "rm -rf /tmp/{{user `app_service_name`}}"
+      ]
+    }
+  ],
+  "post-processors": [
+    {
+      "type": "manifest",
+      "output": "{{ pwd }}/{{user `image_family`}}-builder-manifest.json",
+      "strip_path": true
+    }
+  ]
+}

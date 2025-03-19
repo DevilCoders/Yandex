@@ -1,0 +1,35 @@
+version: '2.4'
+
+services:
+  lbk:
+    extends:
+      file: ../../../../dev/logbroker/docker-compose.yaml
+      service: lbk
+    environment:
+      - LOGBROKER_CREATE_TOPICS=resharder-errors,billing-enricher-var-output
+      - GRPC_PORT=2145
+      - LOGBROKER_TOPICS_PARTITIONS=4
+  ydb-client:
+    extends:
+      file: ../../db/ydb/dev/docker-compose.yaml
+      service: client
+    command: /code/ydb/migrate_in_docker.sh
+    depends_on:
+      - lbk
+    volumes:
+      - type: bind
+        source: ../../db/
+        target: /code/
+        read_only: true
+      - type: bind
+        source: ./client_profile/
+        target: /root/.ydb/config/
+        read_only: false
+  ua:
+    extends:
+      file: ../../tooling/dev/docker-compose.yaml
+      service: ua
+  jaeger:
+    extends:
+      file: ../../tooling/dev/docker-compose.yaml
+      service: jaeger

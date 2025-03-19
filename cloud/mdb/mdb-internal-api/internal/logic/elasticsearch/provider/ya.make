@@ -1,0 +1,27 @@
+GO_LIBRARY()
+
+OWNER(g:mdb)
+
+SRCS(
+    auth.go
+    backups.go
+    clusters.go
+    console.go
+    elasticsearch.go
+    extension.go
+    modify.go
+    search.go
+    users.go
+)
+
+GO_TEST_SRCS(
+    clusters_test.go
+    elasticsearch_test.go
+)
+
+END()
+
+RECURSE(
+    gotest
+    internal
+)

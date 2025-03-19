@@ -1,0 +1,31 @@
+{% set START_TIMEOUT = salt.mdb_redis.get_redis_server_start_wait() %}
+{% set STOP_TIMEOUT = salt.mdb_redis.get_redis_server_stop_wait() %}
+[Unit]
+Description=Redis Server
+After=network.target etc-fix.service
+Documentation=https://redis.io/
+
+[Service]
+{% if salt.pillar.get('data:database_slice:enable', False) and salt.dbaas.is_dataplane() %}
+Slice=database.slice
+{% endif %}
+Type=forking
+User=redis
+Group=redis
+RuntimeDirectory=redis
+RuntimeDirectoryPreserve=yes
+ExecStart=/usr/local/yandex/start-redis.sh
+{% if salt.mdb_redis.is_managed_cluster() %}
+ExecStartPre=!/usr/local/yandex/start-pre.sh
+ExecStartPost=!/usr/local/yandex/start-post.sh
+ExecStop=!/usr/local/yandex/stop.sh
+TimeoutStartSec={{ START_TIMEOUT }}
+TimeoutStopSec={{ STOP_TIMEOUT }}
+{% endif %}
+PIDFile={{ salt.mdb_redis.get_redis_pidfile() }}
+Restart=always
+RestartSec=1
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,43 @@
+{% extends "base_alert.j2" %}
+
+{% set notificationChannels = ["compute_api_duty_telegram", "juggler"] if env in ["prod", "preprod"] else ["juggler"] %}
+{% set windowSecs = 600 %}
+{% set checkExpression = "" %}
+{% set description = "https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-disk-events" %}
+
+{% set accounts = {
+     'preprod': 'aoeeuk6nmfvdsn75kksu',
+     'prod': 'b1grjf2o6a6f1fmqeu6j',
+   }
+%}
+
+{% macro prog() %}
+let disk_events = {
+    project='kikimr',
+    cluster='yandexcloud_{{ env }}_logbroker_global',
+    service='pqtabletAggregatedCounters',
+    Account = '{{ accounts[env] }}',
+    ConsumerPath='{{ accounts[env] }}/{{ env }}/consumer',
+    TopicPath='{{ accounts[env] }}/{{ env }}/disk-state',
+    sensor='WriteTimeLagMsByCommitted'
+};
+let avg = group_lines('avg', disk_events);
+let delay = avg(avg);
+
+alarm_if(delay > {{ alarm_hours }} * 3600 * 1000);
+
+warn_if(delay > {{ warn_hours }} * 3600 * 1000);
+
+{% endmacro %}
+
+{% block main %}
+    "name": "{{ name }} delay @{{ env | upper }}",
+    "annotations": {
+        "host": "yc_compute_head_{{ env }}",
+        "service": "{{ service }}",
+        "details": "{{ details }}: [[expression.delay]] miliseconds delay"
+    },
+    "description": "{{ description }}",
+    "type": {{ type_expression() }}
+{% endblock %}
+

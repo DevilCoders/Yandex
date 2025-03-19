@@ -1,0 +1,358 @@
+grpcServer:
+  maxConcurrentRequests: 100
+  port: 443
+  reflectionEnabled: true
+  certificatePemFile: /run/trail/certificate.pem
+
+authClient:
+  host: as.private-api.cloud.yandex.net
+  port: 4286
+  maxRetries: 5
+  timeout: PT2S
+  tls: true
+
+metrics:
+  pullPort: 4302
+
+cluster:
+  clusterId: cnp
+
+resourceManager:
+  host: rm.private-api.cloud.yandex.net
+  port: 4284
+  timeout: PT10S
+  tls: true
+
+iam:
+  host: iam.private-api.cloud.yandex.net
+  port: 4283
+  timeout: PT3S
+  tls: true
+
+organizationManager:
+  host: org.private-api.cloud.yandex.net
+  port: 4290
+  timeout: PT5S
+  tls: true
+
+kikimr:
+  host: localhost
+  discoveryEndpoint: lb.etn01t6c3eilhl31nl7j.ydb.mdb.yandexcloud.net
+  port: 2135
+  tablespace: /global/b1gm277magvimb2gv0ld/etn01t6c3eilhl31nl7j/
+  database: /global/b1gm277magvimb2gv0ld/etn01t6c3eilhl31nl7j
+  useSSL: true
+
+healthCheck:
+  port: 9982
+  path: /ping
+
+preparer:
+  destinations:
+    - destination:
+        installation:
+          predefinedName: YC_LOGBROKER
+        topic: /b1gm277magvimb2gv0ld/yc-trail
+        maxChunkBytes: 262144
+      unparsed:
+        installation:
+          predefinedName: YC_LOGBROKER
+        topic: /b1gm277magvimb2gv0ld/yc-trail-unparsed
+        maxChunkBytes: 262144
+      unfiltered:
+        installation:
+          predefinedName: YC_LOGBROKER
+        topic: /b1gm277magvimb2gv0ld/yc-trail-unfiltered
+        maxChunkBytes: 262144
+      cloudLogging:
+        installation:
+          predefinedName: YC_LOGBROKER
+        topic: /yc.logs.cloud/yc-logging
+        maxChunkBytes: 262144
+        messageFormat: LOGGING
+        compressionCodec: ZSTD
+      sources:
+        - name: yc-events-prod
+          installation:
+            predefinedName: YC_LOGBROKER
+          topic: /b1gm277magvimb2gv0ld/yc-events
+          consumer: /b1gm277magvimb2gv0ld/yc-trail-preparer
+          maxMessages: 20
+          taskPoolSize: 9
+
+        - name: yc-organizationmanager-prod
+          installation:
+            predefinedName: YC_LOGBROKER
+          topic: /b1gm277magvimb2gv0ld/services/yc-organizationmanager
+          consumer: /b1gm277magvimb2gv0ld/yc-trail-preparer
+          maxMessages: 20
+          taskPoolSize: 4
+
+        - name: yc-storage-prod
+          installation:
+            predefinedName: YC_LOGBROKER
+          topic: /b1gm277magvimb2gv0ld/services/yc-storage
+          consumer: /b1gm277magvimb2gv0ld/yc-trail-preparer
+          maxMessages: 20
+          taskPoolSize: 9
+
+        - name: yc-lockbox-data-prod
+          installation:
+            predefinedName: YC_LOGBROKER
+          topic: /b1gm277magvimb2gv0ld/services/yc-lockbox-data
+          consumer: /b1gm277magvimb2gv0ld/yc-trail-preparer
+          maxMessages: 20
+          taskPoolSize: 4
+
+        - name: yc-events-e2e-prod
+          installation:
+            predefinedName: YC_LOGBROKER
+          topic: /b1gm277magvimb2gv0ld/e2e/yc-events-e2e
+          consumer: /b1gm277magvimb2gv0ld/yc-trail-preparer
+          maxMessages: 20
+          taskPoolSize: 1
+
+        - name: yc-events-ingest
+          installation:
+            predefinedName: YC_LOGBROKER
+          topic: /b1gm277magvimb2gv0ld/ingest/yc-events-ingest
+          consumer: /b1gm277magvimb2gv0ld/yc-trail-preparer
+          maxMessages: 20
+          taskPoolSize: 3
+
+taskProcessorPools:
+  pools:
+    preparer: 3
+    preparer-lb: 4
+    preparer-dist-cache: 1
+    preparer-organizationmanager: 2
+    preparer-storage: 3
+    preparer-lockbox: 2
+    preparer-e2e: 1
+    preparer-ingest: 1
+
+distributedCache:
+  fetchSize: 1000
+  cleanupDelay: PT5M
+  poolName: preparer-dist-cache
+
+sourcePoolMappings:
+  mappings:
+    - pool: preparer
+      source: yc-events-prod
+    - pool: preparer-organizationmanager
+      source: yc-organizationmanager-prod
+    - pool: preparer-storage
+      source: yc-storage-prod
+    - pool: preparer-lockbox
+      source: yc-lockbox-data-prod
+    - pool: preparer-e2e
+      source: yc-events-e2e-prod
+    - pool: preparer-ingest
+      source: yc-events-ingest
+
+localCache:
+  refreshPeriodSec: 60
+  expirePeriodSec: 60
+  defaultLifetime: PT1H
+  lifetimes:
+    folder: PT1H
+    cloud: PT1H
+    subject: PT1H
+    cloudInfo: PT1H
+    folderByFederation: PT1H
+    cloudByFolder: PT1H
+    organization: PT1H
+    organizationByFederation: PT1H
+  notFoundLifetime: PT1H
+
+worker:
+  duration: PT10M
+  additionalRandomDuration: PT10M
+  maxDuration: PT30M
+
+rpsLimits:
+  rmRps: 200
+  iamRps: 100
+  orgRps: 100
+
+conceal:
+  concealedRemoteAddress: cloud.yandex
+  concealedUserAgent: Yandex Cloud
+  concealOnError: true
+  ipPrefixesToConceal:
+    - 2a0d:d6c0::/32 #prod
+    - 2a02:6b8::/32 #preprod
+  subjectsToConceal:
+    aje93hbfo3g079jsa6ae: yc-sa-audit-trails
+
+eventDistributor:
+  parallelism: 25
+
+yandexMonitoringMetrics:
+  pullPort: 4303
+  refreshPeriod: PT15S
+  removeMetricsRefreshPeriod: PT1H
+
+trailsCache:
+  refreshPeriod: PT30S
+  cacheRecordLifetime: PT10M
+
+jwtTokenService:
+  host: iam.api.cloud.yandex.net
+  port: 443
+  timeout: PT5S
+  tls: true
+
+systemAccount:
+  common:
+    type: INSTANCE_METADATA
+  ydb:
+    type: INSTANCE_METADATA
+
+trailsFilters:
+  defaultExcludedEvents:
+    - yandex.cloud.audit.lockbox.GetPayload
+    - yandex.cloud.audit.storage.ObjectCreate
+    - yandex.cloud.audit.storage.ObjectDelete
+    - yandex.cloud.audit.storage.ObjectUpdate
+  trails:
+    # Audit Trails Demo
+    cnp9ph2hm7mrevjfom3d:
+      overwriteDefaultFilters: true
+    # mirtov8@
+    cnpn9p1cepbl19dv83cm:
+      overwriteDefaultFilters: true
+      excludedEvents:
+        - yandex.cloud.audit.lockbox.GetPayload
+    # Raiffeisen
+    cnpcbp02onk74aflqgfr:
+      overwriteDefaultFilters: true
+      excludedEvents:
+        - yandex.cloud.audit.lockbox.GetPayload
+    # Verticals
+    cnpv9i9p57ol7mnqohml:
+      overwriteDefaultFilters: true
+      excludedEvents:
+        - yandex.cloud.audit.lockbox.GetPayload
+    # Audit Trails Experiments
+    cnpmgie4ua2lk1v9noug:
+      overwriteDefaultFilters: true
+      excludedEvents:
+        - yandex.cloud.audit.lockbox.GetPayload
+    # e-sidorov@
+    cnpj56or0km3e486qle4:
+      overwriteDefaultFilters: true
+      excludedEvents:
+        - yandex.cloud.audit.lockbox.GetPayload
+    # e-sidorov@
+    cnpejng7n4kq3q36u54h:
+      overwriteDefaultFilters: true
+      excludedEvents:
+        - yandex.cloud.audit.lockbox.GetPayload
+    # xseiko@
+    cnpkffff46r2h10pb82c:
+      overwriteDefaultFilters: true
+      excludedEvents:
+        - yandex.cloud.audit.lockbox.GetPayload
+    # nrkk@
+    cnp6u661r5amdji6tgje:
+      overwriteDefaultFilters: true
+      excludedEvents:
+        - yandex.cloud.audit.lockbox.GetPayload
+    # pjalybin@
+    cnpaj0hvlf1tfrerq4pa:
+      overwriteDefaultFilters: true
+      excludedEvents:
+        - yandex.cloud.audit.lockbox.GetPayload
+    # Audit Trails Default
+    cnpae304hi46356tdcfm:
+      overwriteDefaultFilters: true
+      excludedEvents:
+        - yandex.cloud.audit.lockbox.GetPayload
+    # Raiffeisen Organization Trail
+    cnp33del7c5jea4rqvrm:
+      collectOrganizationLogs: true
+    # SLB
+    cnpthm4ehia30gnrhumj:
+      collectOrganizationLogs: true
+    # Lamoda
+    cnpmq5hfcjmsph7uerkd:
+      collectOrganizationLogs: true
+    # Banki.ru
+    cnpps9j6cga2tdingl30:
+      overwriteDefaultFilters: true
+      excludedEvents:
+        - yandex.cloud.audit.lockbox.GetPayload
+    # Banki.ru
+    cnp6e6brntg4dkn9bg0f:
+      overwriteDefaultFilters: true
+      excludedEvents:
+        - yandex.cloud.audit.lockbox.GetPayload
+    # rubda.ru
+    cnpf9u8ah6oqc9kshpp2:
+      overwriteDefaultFilters: true
+      excludedEvents:
+        - yandex.cloud.audit.lockbox.GetPayload
+    # rubda.ru
+    cnpf4ae5jhkpebetbnof:
+      overwriteDefaultFilters: true
+      excludedEvents:
+        - yandex.cloud.audit.lockbox.GetPayload
+    # Audit Trails lockbox data plane logs trail
+    cnpekgp3sddjrd3odu8i:
+      overwriteDefaultFilters: true
+      excludedEvents:
+        - yandex.cloud.audit.storage.ObjectCreate
+        - yandex.cloud.audit.storage.ObjectDelete
+        - yandex.cloud.audit.storage.ObjectUpdate
+    # andriva@ trail
+    cnp2r2qrodod6fh103at:
+      overwriteDefaultFilters: true
+      excludedEvents:
+        - yandex.cloud.audit.storage.ObjectCreate
+        - yandex.cloud.audit.storage.ObjectDelete
+        - yandex.cloud.audit.storage.ObjectUpdate
+    # architects cloud trail
+    cnp0mfof0ctna3m6p087:
+      overwriteDefaultFilters: true
+      excludedEvents:
+        - yandex.cloud.audit.storage.ObjectCreate
+        - yandex.cloud.audit.storage.ObjectDelete
+        - yandex.cloud.audit.storage.ObjectUpdate
+    # architects cloud trail
+    cnpiuimqhq53nmi01o12:
+      overwriteDefaultFilters: true
+      excludedEvents:
+        - yandex.cloud.audit.storage.ObjectCreate
+        - yandex.cloud.audit.storage.ObjectDelete
+        - yandex.cloud.audit.storage.ObjectUpdate
+    # architects cloud trail
+    cnpks3g6i64rtrlph2db:
+      overwriteDefaultFilters: true
+      excludedEvents:
+        - yandex.cloud.audit.storage.ObjectCreate
+        - yandex.cloud.audit.storage.ObjectDelete
+        - yandex.cloud.audit.storage.ObjectUpdate
+    # Yandex.Bank
+    cnppimrddhp61s0dk54d:
+      overwriteDefaultFilters: true
+      excludedEvents:
+        - yandex.cloud.audit.storage.ObjectCreate
+        - yandex.cloud.audit.storage.ObjectDelete
+        - yandex.cloud.audit.storage.ObjectUpdate
+    #Yandex.Bank
+    cnp264rjke2jrh7mlm2i:
+      overwriteDefaultFilters: true
+      excludedEvents:
+        - yandex.cloud.audit.storage.ObjectCreate
+        - yandex.cloud.audit.storage.ObjectDelete
+        - yandex.cloud.audit.storage.ObjectUpdate
+
+ingestion:
+  destination:
+    installation:
+      predefinedName: YC_LOGBROKER
+    topic: /b1gm277magvimb2gv0ld/ingest/yc-events-ingest
+    maxChunkBytes: 262144
+    publisherPoolSize: 1

@@ -1,0 +1,203 @@
+{% set config = salt.pillar.get('data:clickhouse:config', {}) %}
+{% set ca_path = salt.mdb_clickhouse.ca_path() %}
+<?xml version="1.0"?>
+<yandex>
+    <logger>
+        <level>{{ config.get('log_level', 'debug') }}</level>
+        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+        <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+        <odbc_bridge_log>/var/log/clickhouse-server/clickhouse-odbc-bridge.log</odbc_bridge_log>
+        <odbc_bridge_errlog>/var/log/clickhouse-server/clickhouse-odbc-bridge.err.log</odbc_bridge_errlog>
+        <odbc_bridge_level>{{ config.get('log_level', 'debug') }}</odbc_bridge_level>
+        <!-- never - embedded log rotation is disabled in favor of logrototate. -->
+        <size>never</size>
+        <count>50</count>
+    </logger>
+
+{% if salt.mdb_clickhouse.ssl_enabled() %}
+    <openSSL>
+        <server> <!-- Used for https server AND secure tcp port -->
+            <certificateFile>/etc/clickhouse-server/ssl/server.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/ssl/server.key</privateKeyFile>
+            <caConfig>{{ ca_path }}</caConfig>
+            <verificationMode>none</verificationMode>
+            <loadDefaultCAFile>true</loadDefaultCAFile>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>{{ salt.mdb_clickhouse.disabled_ssl_protocols() }}</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+        </server>
+        <client> <!-- Used for connecting to https dictionary source and to ZooKeeper in secure mode -->
+            <certificateFile>/etc/clickhouse-server/ssl/server.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/ssl/server.key</privateKeyFile>
+            <loadDefaultCAFile>true</loadDefaultCAFile>
+            <caConfig>{{ ca_path }}</caConfig>
+{%     if config.get('ssl_client_verification_mode') %}
+            <verificationMode>{{ config.ssl_client_verification_mode }}</verificationMode>
+{%     endif %}
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>{{ salt.mdb_clickhouse.disabled_ssl_protocols() }}</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <invalidCertificateHandler>
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+{% endif %}
+
+{% for setting_name, port_number in salt.mdb_clickhouse.port_settings() | dictsort %}
+    <{{ setting_name }}>{{ port_number }}</{{ setting_name }}>
+{% endfor %}
+
+{% set interserver_credentials = salt.pillar.get('data:clickhouse:interserver_credentials', {}) %}
+{% if interserver_credentials %}
+    <interserver_http_credentials>
+        <user>{{ interserver_credentials.user }}</user>
+        <password>{{ interserver_credentials.password }}</password>
+    </interserver_http_credentials>
+{% endif %}
+
+    <!-- :: (wildcard IPv6 address) - accept connections both with IPv4 and IPv6 from everywhere. -->
+    <listen_host>::</listen_host>
+
+    <!-- Path to data directory, with trailing slash. -->
+    <path>/var/lib/clickhouse/</path>
+
+    <!-- Path to temporary data for processing hard queries. -->
+    <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
+
+    <!-- Path to file with substitutions. -->
+    <include_from>/etc/clickhouse-server/cluster.xml</include_from>
+
+    <remote_servers incl="remote-servers" />
+
+    <zookeeper incl="zookeeper-servers" optional="true" />
+
+{% if not salt.mdb_clickhouse.has_separated_keeper() %}
+{{ salt.mdb_clickhouse.render_raft_config() }}
+{% endif %}
+
+    <distributed_ddl>
+        <path>/clickhouse/task_queue/ddl</path>
+{% for setting_name, value in config.get('distributed_ddl', {}) | dictsort %}
+        <{{ setting_name }}>{{ value }}</{{ setting_name }}>
+{% endfor %}
+    </distributed_ddl>
+
+    <macros incl="macros" optional="true" />
+
+    <use_graphite>false</use_graphite>
+
+    <prometheus incl="prometheus" optional="true" />
+
+{% for table, table_settings in salt.mdb_clickhouse.system_tables() | dictsort %}
+{%     if table_settings.enabled %}
+    <{{ table }}>
+{%         for name, value in table_settings.config | dictsort %}
+        <{{ name }}>{{ value }}</{{ name }}>
+{%         endfor %}
+    </{{ table }}>
+{%     endif %}
+{% endfor %}
+
+{% set geobase_path = salt.mdb_clickhouse.geobase_path() %}
+    <path_to_regions_hierarchy_file>{{ geobase_path }}/regions_hierarchy.txt</path_to_regions_hierarchy_file>
+    <path_to_regions_names_files>{{ geobase_path }}</path_to_regions_names_files>
+
+    <dictionaries_config>dictionaries.d/*.xml</dictionaries_config>
+
+    <models_config>/etc/clickhouse-server/models.d/*.xml</models_config>
+    <catboost_dynamic_library_path>/usr/lib/libcatboostmodel.so</catboost_dynamic_library_path>
+
+{% if salt.mdb_clickhouse.version_cmp('21.9') >= 0 %}
+{# actually these settings are available starting with 20.11 #}
+    <user_directories>
+        <users_xml>
+            <path>users.xml</path>
+        </users_xml>
+{%     if salt.mdb_clickhouse.user_replication_enabled() %}
+       <replicated>
+           <zookeeper_path>/clickhouse/access/</zookeeper_path>
+       </replicated>
+{%     else %}
+        <local_directory>
+            <path>/var/lib/clickhouse/access/</path>
+        </local_directory>
+{%     endif %}
+    </user_directories>
+{% else %}
+    <users_config>users.xml</users_config>
+{%     if salt.mdb_clickhouse.version_cmp('20.4') >= 0 %}
+    <access_control_path>/var/lib/clickhouse/access/</access_control_path>
+{%     endif %}
+{% endif %}
+    <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>
+
+{% for setting_name, value in salt.mdb_clickhouse.server_settings() | dictsort %}
+    <{{ setting_name }}>{{ value }}</{{ setting_name }}>
+{% endfor %}
+
+    <merge_tree>
+{% for setting_name, value in salt.mdb_clickhouse.merge_tree_settings() | dictsort %}
+        <{{ setting_name }}>{{ value }}</{{ setting_name }}>
+{% endfor %}
+{% if salt.mdb_clickhouse.version_cmp('22.0') >= 0 and salt.pillar.get('convert_zero_copy_schema', '') == 'convert' %}
+        <remote_fs_zero_copy_path_compatible_mode>1</remote_fs_zero_copy_path_compatible_mode>
+{% endif %}
+    </merge_tree>
+
+{% for key, settings in salt.mdb_clickhouse.render_kafka_config() | dictsort %}
+    <{{key}}>
+{%     for setting_name, value in settings | dictsort %}
+        <{{ setting_name }}>{{ value }}</{{ setting_name }}>
+{%     endfor %}
+    </{{key}}>
+
+{% endfor %}
+    <rabbitmq>
+{% for setting_name, value in salt.mdb_clickhouse.rabbitmq_settings() | dictsort %}
+        <{{ setting_name }}>{{ value }}</{{ setting_name }}>
+{% endfor %}
+    </rabbitmq>
+
+{% set compression_config = config.get('compression') %}
+{% if compression_config %}
+    <compression>
+{%     for compression_case in compression_config %}
+        <case>
+            <method>{{ compression_case.method }}</method>
+            <min_part_size>{{ compression_case.min_part_size }}</min_part_size>
+            <min_part_size_ratio>{{ compression_case.min_part_size_ratio }}</min_part_size_ratio>
+        </case>
+{%     endfor %}
+    </compression>
+{% endif %}
+
+{% for graphite_config in config.get('graphite_rollup', []) %}
+    <{{ graphite_config.name }}>
+{%     for pattern in graphite_config.patterns %}
+{%         if pattern.get('regexp') %}
+        <pattern>
+            <regexp>{{ pattern.regexp }}</regexp>
+            <function>{{ pattern.function }}</function>
+{%             for retention in pattern.retention %}
+            <retention>
+                <age>{{ retention.age }}</age>
+                <precision>{{ retention.precision }}</precision>
+            </retention>
+{%             endfor %}
+        </pattern>
+{%         else %}
+        <default>
+            <function>{{ pattern.function }}</function>
+{%             for retention in pattern.retention %}
+            <retention>
+                <age>{{ retention.age }}</age>
+                <precision>{{ retention.precision }}</precision>
+            </retention>
+{%             endfor %}
+        </default>
+{%         endif %}
+{%     endfor %}
+    </{{ graphite_config.name }}>
+{% endfor %}
+</yandex>

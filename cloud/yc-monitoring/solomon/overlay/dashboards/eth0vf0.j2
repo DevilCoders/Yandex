@@ -1,0 +1,34 @@
+{% extends "../../base/dashboard.j2" %}
+
+{% set limit = "25" %}
+{% set cluster = "cloud_" + env + "_compute_*|cloud_" + env %}
+{# cloud_{env} shard keeps "sys" history before 6 Jul 2021 (CLOUD-74308).
+   Remove if that history is not needed any more. #}
+
+{% macro render_row_azs(name) %}
+{ "panels": [
+    {% for az in zones_by_env[env] %}
+        {{ render_panel(
+            title=name + "/s @ " + az.prefix|upper,
+            cluster=cluster,
+            service="sys",
+            query="path=/Net/Ifs/" + name + "&l.intf=eth0vf0&graph=auto&stack=false&asc=false&downsamplingAggr=max&filter=top&filterBy=max&filterLimit=" + limit + "&host=" + compute_node_selector(az.prefix),
+            subtitle="TOP" + limit) }}
+        {% if not loop.last %},{% endif %}
+    {% endfor %}
+]}
+{% endmacro %}
+
+
+{% block rows %}
+[
+    {{ render_row_azs("RxBytes") }},
+    {{ render_row_azs("TxBytes") }},
+    {{ render_row_azs("RxPackets") }},
+    {{ render_row_azs("TxPackets") }},
+    {{ render_row_azs("RxDrop") }},
+    {{ render_row_azs("TxDrop") }},
+    {{ render_row_azs("RxErrs") }},
+    {{ render_row_azs("TxErrs") }}
+]
+{% endblock %}

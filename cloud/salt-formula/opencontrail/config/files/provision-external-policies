@@ -1,0 +1,196 @@
+#!/usr/bin/env python2.7
+
+import argparse
+import json
+import os
+import socket
+
+from cfgm_common.exceptions import NoIdError
+from vnc_api import vnc_api
+
+
+TMP_PATH = "/tmp/oct_policy/mx_addresses"
+RULE_PORT_LIST = ["25"]
+ENDPOINTS = ["mx.yandex.ru", "smtp.yandex.ru"]
+
+
+def make_rule(direction=None, protocol=None, action=None, src_cidr=None, src_port=None, dst_cidr=None, dst_port=None):
+    """Make rule for network policy."""
+
+    src_addr, src_prefix = src_cidr.split("/")
+    dst_addr, dst_prefix = dst_cidr.split("/")
+    src_port = "-1" if src_port == "any" else src_port
+    dst_port = "-1" if dst_port == "any" else dst_port
+
+    if isinstance(dst_port, str):
+        dst_port = [dst_port]
+
+    dst_ports = [vnc_api.PortType(start_port=int(port), end_port=int(port)) for port in dst_port]
+
+    rule = vnc_api.PolicyRuleType(
+        direction=direction,
+        protocol=protocol,
+        action_list=vnc_api.ActionListType(simple_action=action),
+        src_addresses=[vnc_api.AddressType(subnet=vnc_api.SubnetType(src_addr, int(src_prefix)))],
+        src_ports=[vnc_api.PortType(start_port=int(src_port), end_port=int(src_port))],
+        dst_addresses=[vnc_api.AddressType(subnet=vnc_api.SubnetType(dst_addr, int(dst_prefix)))],
+        dst_ports=dst_ports
+    )
+    return rule
+
+
+def save_endpoints_addresses(yandex_nets):
+    """Save public endpoins addresses to tmp."""
+
+    with open(TMP_PATH, "w") as f:
+        json.dump(yandex_nets, f)
+
+
+def get_endpoints_addresses(endpoints):
+    """Get addresses of public endpoints."""
+
+    addresses = []
+    for host in endpoints:
+        addresses += socket.gethostbyname_ex(host)[2]
+
+    return addresses
+
+
+def check_endpoints_addresses(yandex_nets):
+    """Chek if public endpoints addresses were changed."""
+
+    if os.path.exists(TMP_PATH):
+        with open(TMP_PATH, "r") as f:
+            before_nets = json.load(f)
+        return set(yandex_nets) != set(before_nets)
+    else:
+        try:
+            os.mkdir(os.path.dirname(TMP_PATH))
+        except OSError:
+            pass
+
+    return True
+
+
+def policy_name(network_name):
+    return"{}-smtp-policy".format(network_name)
+
+
+def create_policy(network_name, smtp_ports, yandex_nets):
+    """Add network policy to external network."""
+
+    vnc = vnc_api.VncApi(
+        api_server_host="127.0.0.1",
+        api_server_port="8082",
+        api_server_use_ssl=False
+    )
+
+    project = vnc.project_read(fq_name=["default-domain", "default-project"])
+    network_fq_name = [
+        "default-domain", "default-project", network_name
+    ]
+    try:
+        external_network = vnc.virtual_network_read(fq_name=network_fq_name)
+    except NoIdError:
+        # No hands - no cartoons
+        return
+
+    rules = []
+    for ip_addr in yandex_nets:
+        ip_addr = "{}/32".format(ip_addr)
+        rules.append(make_rule(
+            direction=">", protocol="tcp", action="pass",
+            src_cidr="10.0.0.0/8", src_port="any",
+            dst_cidr=ip_addr, dst_port=smtp_ports
+        ))
+        rules.append(make_rule(
+            direction=">", protocol="tcp", action="pass",
+            src_cidr="172.16.0.0/12", src_port="any",
+            dst_cidr=ip_addr, dst_port=smtp_ports
+        ))
+        rules.append(make_rule(
+            direction=">", protocol="tcp", action="pass",
+            src_cidr="192.168.0.0/16", src_port="any",
+            dst_cidr=ip_addr, dst_port=smtp_ports
+        ))
+
+    rules.append(make_rule(
+        direction=">", protocol="tcp", action="deny",
+        src_cidr="10.0.0.0/8", src_port="any",
+        dst_cidr="0.0.0.0/0", dst_port=smtp_ports
+    ))
+    rules.append(make_rule(
+        direction=">", protocol="tcp", action="deny",
+        src_cidr="172.16.0.0/12", src_port="any",
+        dst_cidr="0.0.0.0/0", dst_port=smtp_ports
+    ))
+    rules.append(make_rule(
+        direction=">", protocol="tcp", action="deny",
+        src_cidr="192.168.0.0/16", src_port="any",
+        dst_cidr="0.0.0.0/0", dst_port=smtp_ports
+    ))
+    rules.append(make_rule(
+        direction="<>", protocol="any", action="pass",
+        src_cidr="0.0.0.0/0", src_port="any",
+        dst_cidr="0.0.0.0/0", dst_port="any"
+    ))
+
+    policy = vnc_api.NetworkPolicy(
+        name=policy_name(network_name), parent_obj=project,
+        network_policy_entries=vnc_api.PolicyEntriesType(rules)
+    )
+
+    # delete_policy if it exists
+    try:
+        old_policy_fq_name = [
+            "default-domain", "default-project", policy_name(network_name)
+        ]
+        old_policy = vnc.network_policy_read(fq_name=old_policy_fq_name)
+        external_network.del_network_policy(old_policy)
+        vnc.virtual_network_update(external_network)
+        vnc.network_policy_delete(old_policy.fq_name)
+    except NoIdError:
+        pass
+
+    policy_id = vnc.network_policy_create(policy)
+
+    policy = vnc.network_policy_read(id=policy_id)
+
+    # Ref policy to external net
+    policy_type = vnc_api.VirtualNetworkPolicyType(sequence=vnc_api.SequenceType(major=0, minor=0))
+    external_network.add_network_policy(ref_obj=policy, ref_data=policy_type)
+
+    vnc.virtual_network_update(external_network)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--smtp-ports", action="append", default=None)
+    parser.add_argument("--smtp-endpoints", action="append", default=None)
+    parser.add_argument("--network", action="append", required=True)
+
+    args = parser.parse_args()
+
+    if args.smtp_ports is None:
+        args.smtp_ports = RULE_PORT_LIST
+
+    if args.smtp_endpoints is None:
+        args.smtp_endpoints = ENDPOINTS
+
+    return args
+
+def main():
+    """This script's main function."""
+
+    args = parse_args()
+
+    yandex_nets = get_endpoints_addresses(args.smtp_endpoints)
+
+    if check_endpoints_addresses(yandex_nets):
+        for network in args.network:
+            create_policy(network, args.smtp_ports, yandex_nets)
+        save_endpoints_addresses(yandex_nets)
+
+
+if __name__ == "__main__":
+    main()

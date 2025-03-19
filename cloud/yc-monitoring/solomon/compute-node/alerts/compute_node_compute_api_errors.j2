@@ -1,0 +1,35 @@
+{% extends "base_alert.j2" %}
+
+{% set name = "Critical Compute API errors on Compute Node" %}
+{% set jugglerService = "compute-node-compute-api-errors" %}
+{% set description = "https://docs.yandex-team.ru/yc-monitoring/compute-node/compute-node-compute-api-errors" %}
+{% set isComputeNode = True %}
+
+{# A typical sync period on Compute Node is one minute. Consider retries in window size. #}
+{% set windowSecs = 5 * 60 %}
+
+{% macro prog() %}
+let errors = group_by_labels({
+    project="{{ project_id }}",
+    cluster="cloud_{{ env }}_compute",
+    service="compute_node",
+    sensor="compute_private_client_requests",
+    status_code="400 *|Obsolete revision|Validation error"
+}, as_vector("host", "method"), v -> group_lines("sum", v));
+
+let total = group_by_labels(errors, "host", v -> group_lines("sum", v));
+let error_rate = avg(total);
+let error_rate_human = to_fixed(error_rate, 3);
+
+let methods = map(
+    drop_empty_lines(drop_below(errors, 0.0000000001)),
+    x -> get_label(x, "method")
+);
+
+alarm_if(error_rate > 0);
+{% endmacro %}
+
+{% set annotations = [
+    ("methods", "[[expression.methods]]"),
+    ("error_rate", "[[expression.error_rate_human]]"),
+] %}

@@ -1,0 +1,225 @@
+{% extends "lib/ajax/object.html" %}
+{% load lib.templatetags %}
+{% load meta.templatetags %}
+{% block object_data %}
+<div class="row">
+  <div class="col-lg-24 col-md-24 col-sm-24 col-xs-24">
+    <ul class="nav nav-tabs noodle-tabs">
+      <li class="active"><a href="#tab_common" data-toggle="tab">{% cluster_image obj.type %} Common</a></li>
+      {% tab_item "args" %}
+      {% tab_item "changes" %}
+      {% tab_item "shipments" %}
+      {% tab_item "acquire_finish_changes" %}
+      {% tab_item "restarts" %}
+    </ul>
+    <div class="tab-content">
+      <div class="tab-pane active" id="tab_common">
+        <div class="row">
+          <div class="col-lg-9">
+            <table class="table table-borderless noodle-details-table">
+              <tr>
+                <th>ID</th>
+                <td>{{ obj.self_pk_c }}</td>
+              </tr>
+              <tr>
+                <th>Cluster</th>
+                <td>{% with cluster=obj.cluster %}{% include "meta/includes/cluster_with_type.html" %}{% endwith %}</td>
+              </tr>
+              <tr>
+                <th>Result</th>
+                <td>{{ obj.result|bool_label }}</td>
+              </tr>
+              <tr>
+                <th>Jaeger</th>
+                <td>{{ obj.tracing|jaeger_link }}</td>
+              </tr>
+              <tr>
+                <th>Folder</th>
+                <td>{{ obj.folder.self_link }}&nbsp;{% simple_copy obj.folder.folder_ext_id %}</td>
+              </tr>
+              <tr>
+                <th>Worker</th>
+                <td>{{ obj.worker_id|dash_if_not }}</td>
+              </tr>
+              <tr>
+                <th>Created by</th>
+                <td>{{ obj.created_by }}</td>
+              </tr>
+              <tr>
+                <th>Created at</th>
+                <td>{% dt_formatted obj.create_ts %}</td>
+              </tr>
+              <tr>
+                <th>Started at</th>
+                <td>{% dt_formatted obj.start_ts %}</td>
+              </tr>
+              <tr>
+                <th>Ended at</th>
+                <td>{% dt_formatted obj.end_ts %}</td>
+              </tr>
+              <tr>
+                <th>Timeout</th>
+                <td>{{ obj.timeout|dash_if_not }}</td>
+              </tr>
+              <tr>
+                <th>Type</th>
+                <td>{{ obj.task_type }}</td>
+              </tr>
+              <tr>
+                <th>Operation Type</th>
+                <td>{{ obj.operation_type }}</td>
+              </tr>
+              <tr>
+                <th>Restart count</th>
+                <td>{{ obj.restart_count }}</td>
+              </tr>
+              <tr>
+                <th>Failed acquire count</th>
+                <td>{{ obj.failed_acquire_count }}</td>
+              </tr>
+              <tr>
+                <th>Notes</th>
+                <td>{{ obj.notes|dash_if_not }}</td>
+              </tr>
+            </table>
+          </div>
+          <div class="col-lg-15">
+            <table class="table table-borderless noodle-details-table">
+              <tr>
+                <th>Metadata</th>
+                <td>{{ obj.metadata }}</td>
+              </tr>
+              <tr>
+                <th>Hidden</th>
+                <td>{{ obj.hidden|bool_label }}</td>
+              </tr>
+              <tr>
+                <th>Version</th>
+                <td>{{ obj.version }}</td>
+              </tr>
+              <tr>
+                <th>Delayed until</th>
+                <td>{% dt_formatted obj.delayed_until %}</td>
+              </tr>
+              <tr>
+                <th>Required task</th>
+                <td>
+                  {% if obj.required_task %}
+                    {% obj_block_onload obj "required_task" %}
+                  {% else %}
+                    &ndash;
+                  {% endif %}
+                </td>
+              </tr>
+              <tr>
+                <th>Errors</th>
+                <td>
+                  {% if obj.errors %}
+                    {{ obj.errors|to_html_json }}
+                  {% else %}
+                    &ndash;
+                  {% endif %}
+                </td>
+              </tr>
+              <tr>
+                <th>Context</th>
+                <td>{{ obj.context|dash_if_not }}</td>
+              </tr>
+              <tr>
+                <th>Create rev</th>
+                <td>{{ obj.create_rev|dash_if_not }}</td>
+              </tr>
+              <tr>
+                <th>Acquire rev</th>
+                <td>{{ obj.acquire_rev|dash_if_not }}</td>
+              </tr>
+              <tr>
+                <th>Target rev</th>
+                <td>{{ obj.target_rev|dash_if_not }}</td>
+              </tr>
+              <tr>
+                <th>Finish rev</th>
+                <td>{{ obj.finish_rev|dash_if_not }}</td>
+              </tr>
+              <tr>
+                <th>Unmanaged</th>
+                <td>{{ obj.unmanaged|bool_label }}</td>
+              </tr>
+              <tr>
+                <th>Config id</th>
+                <td>{{ obj.config_id|dash_if_not }}</td>
+              </tr>
+              <tr>
+                <th>Comment</th>
+                <td>
+                  {% if obj.comment %}
+                    {% if obj.comment_is_traceback %}
+                      {{ obj.comment|to_html_traceback }}
+                    {% else %}
+                      {{ obj.comment }}
+                    {% endif %}
+                  {% else %}
+                    &ndash;
+                  {% endif %}
+                  </td>
+              </tr>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="tab-pane" id="tab_args">
+        <div class="row">
+          {% if obj.task_args %}
+          <div id="task_args" class="col-lg-24 col-md-24 col-sm-24 col-xs-24 no-padding"></div>
+          <script>
+            init_monaco({'container': 'task_args', 'data': '{{ obj.pretty_args | escapejs }}'})
+          </script>
+          {% else %}
+          &ndash;
+          {% endif %}
+        </div>
+      </div>
+      <div class="tab-pane" id="tab_changes">
+        <div class="row">
+          {% with changes=obj.parsed_changes %}
+          <table class="table table-hover noodle-table noodle-table-sortable">
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Subject</th>
+                <th>Info</th>
+              </tr>
+            </thead>
+            <tbody>
+            {% for change in obj.parsed_changes %}
+              <tr>
+                <td>{% dt_formatted change.timestamp True %}</td>
+                <td class="noodle-mono">{{ change.subject }}</td>
+                <td>{{ change.info|title }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+          {% update_tab_badge "changes" obj.parsed_changes|length %}
+          {% endwith %}
+        </div>
+      </div>
+      <div class="tab-pane" id="tab_shipments">
+        <div class="row">
+          {% obj_block_onload obj "shipments" %}
+        </div>
+      </div>
+      <div class="tab-pane" id="tab_acquire_finish_changes">
+        <div class="row">
+          {% obj_block_onload obj "acquire_finish_changes" %}
+        </div>
+      </div>
+      <div class="tab-pane" id="tab_restarts">
+        <div class="row">
+          {% obj_block_onload obj "restarts" %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

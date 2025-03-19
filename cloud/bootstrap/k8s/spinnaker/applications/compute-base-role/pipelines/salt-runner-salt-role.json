@@ -1,0 +1,491 @@
+{
+    "appConfig": {},
+    "application": "compute-base-role",
+    "id": "276dc25c-c9e5-488a-af51-07263225c914",
+    "index": 0,
+    "keepWaitingPipelines": false,
+    "limitConcurrent": true,
+    "name": "salt-runner-salt-role",
+    "parameterConfig": [
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "Salt Formula version",
+            "name": "saltFormulaVersion",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": true,
+            "required": true
+        },
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "Use existing release ticket",
+            "name": "releaseTicket",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": false,
+            "required": false
+        },
+        {
+            "default": "salt-runner",
+            "description": "",
+            "hasOptions": false,
+            "label": "Salt role name",
+            "name": "saltRole",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": false,
+            "required": false
+        },
+        {
+            "default": "bootstrap",
+            "description": "",
+            "hasOptions": false,
+            "label": "",
+            "name": "namespace",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": false,
+            "required": false
+        },
+        {
+            "default": "compute",
+            "description": "",
+            "hasOptions": false,
+            "label": "",
+            "name": "baseRole",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": false,
+            "required": false
+        },
+        {
+            "default": "Compute: Node",
+            "description": "",
+            "hasOptions": false,
+            "label": "",
+            "name": "components",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": false,
+            "required": false
+        },
+        {
+            "default": "293",
+            "description": "",
+            "hasOptions": false,
+            "label": "",
+            "name": "infraServiceID",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": false,
+            "required": false
+        }
+    ],
+    "spelEvaluator": "v4",
+    "stages": [
+        {
+            "failOnFailedExpressions": true,
+            "name": "Configure context",
+            "refId": "1",
+            "requisiteStageRefIds": [],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "spinnakerExecutionURL",
+                    "value": "https://spinnaker.cloud.yandex.net/#/applications/bootstrap-base-role/executions/${trigger.executionId}"
+                },
+                {
+                    "key": "spinnakerExecutionMD",
+                    "value": "[${trigger.executionId}](https://spinnaker.cloud.yandex.net/#/applications/bootstrap-base-role/executions/${trigger.executionId})"
+                },
+                {
+                    "key": "today",
+                    "value": "${new java.text.SimpleDateFormat(\"dd.MM.yyyy\").format(new java.util.Date())}"
+                },
+                {
+                    "key": "triggerUserLogin",
+                    "value": "${trigger.user.replace(\"@yandex-team.ru\", \"\")}"
+                }
+            ]
+        },
+        {
+            "name": "Switch ticket to TESTING",
+            "refId": "11",
+            "requisiteStageRefIds": [
+                "40",
+                "41",
+                "42"
+            ],
+            "ticketId": "${createStartrekTicketKey}",
+            "transition": "tesingInDev",
+            "type": "executeTransition"
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Ready to PREPROD?",
+            "notifications": [],
+            "refId": "13",
+            "requisiteStageRefIds": [
+                "11"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "name": "Switch ticket to PREPROD",
+            "refId": "22",
+            "requisiteStageRefIds": [
+                "45"
+            ],
+            "ticketId": "${createStartrekTicketKey}",
+            "transition": "testingAtRc",
+            "type": "executeTransition"
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Ready to PROD?",
+            "notifications": [],
+            "refId": "24",
+            "requisiteStageRefIds": [
+                "22"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "name": "Switch ticket to PROD",
+            "refId": "33",
+            "requisiteStageRefIds": [
+                "46"
+            ],
+            "ticketId": "${createStartrekTicketKey}",
+            "transition": "released",
+            "type": "executeTransition"
+        },
+        {
+            "components": "${parameters.components}",
+            "description": "Salt Formula version: `${parameters.saltFormulaVersion}` Spinnaker execution: ${spinnakerExecutionMD}",
+            "followers": "${triggerUserLogin}",
+            "name": "Create Release Startrek ticket",
+            "outputVariable": "startrekTicketId",
+            "queue": "CLOUD",
+            "refId": "36",
+            "requisiteStageRefIds": [
+                "1"
+            ],
+            "stageEnabled": {
+                "expression": "${ parameters.releaseTicket == \"\" }",
+                "type": "expression"
+            },
+            "summary": "[ ${new java.text.SimpleDateFormat(\"dd.MM.yyyy\").format(new java.util.Date())} ] [ Deploy ] ${parameters.baseRole}: ${parameters.saltRole} salt role",
+            "ticketType": "release",
+            "type": "createStartrekTicket"
+        },
+        {
+            "failOnFailedExpressions": true,
+            "name": "Use existing ticket",
+            "refId": "38",
+            "requisiteStageRefIds": [
+                "1"
+            ],
+            "stageEnabled": {
+                "expression": "${ parameters.releaseTicket != \"\" }",
+                "type": "expression"
+            },
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "createStartrekTicketKey",
+                    "value": "${parameters.releaseTicket}"
+                }
+            ]
+        },
+        {
+            "application": "compute-base-role",
+            "failPipeline": true,
+            "name": "Update version testing",
+            "pipeline": "2d1ae569-05eb-4984-be7f-99a7de756fcf",
+            "pipelineParameters": {
+                "baseRole": "${parameters.baseRole}",
+                "namespace": "${parameters.namespace}",
+                "releaseTicket": "${createStartrekTicketKey}",
+                "saltFormulaVersion": "${parameters.saltFormulaVersion}",
+                "saltRole": "${parameters.saltRole}",
+                "stand": "testing"
+            },
+            "refId": "39",
+            "requisiteStageRefIds": [
+                "36",
+                "38"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "compute-base-role",
+            "failPipeline": true,
+            "name": "Deploy Testing VLA",
+            "pipeline": "18ec3cc0-e33f-4d93-8cad-0a17119236f7",
+            "pipelineParameters": {
+                "az": "a",
+                "baseRole": "${parameters.baseRole}",
+                "infraServiceID": "${parameters.infraServiceID}",
+                "namespace": "${parameters.namespace}",
+                "releaseTicket": "${createStartrekTicketKey}",
+                "saltRole": "${parameters.saltRole}",
+                "stand": "testing"
+            },
+            "refId": "40",
+            "requisiteStageRefIds": [
+                "39"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "compute-base-role",
+            "failPipeline": true,
+            "name": "Deploy Testing SAS",
+            "pipeline": "18ec3cc0-e33f-4d93-8cad-0a17119236f7",
+            "pipelineParameters": {
+                "az": "b",
+                "baseRole": "${parameters.baseRole}",
+                "infraServiceID": "${parameters.infraServiceID}",
+                "namespace": "${parameters.namespace}",
+                "releaseTicket": "${createStartrekTicketKey}",
+                "saltRole": "${parameters.saltRole}",
+                "stand": "testing"
+            },
+            "refId": "41",
+            "requisiteStageRefIds": [
+                "39"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "compute-base-role",
+            "failPipeline": true,
+            "name": "Deploy Testing MYT",
+            "pipeline": "18ec3cc0-e33f-4d93-8cad-0a17119236f7",
+            "pipelineParameters": {
+                "az": "c",
+                "baseRole": "${parameters.baseRole}",
+                "infraServiceID": "${parameters.infraServiceID}",
+                "namespace": "${parameters.namespace}",
+                "releaseTicket": "${createStartrekTicketKey}",
+                "saltRole": "${parameters.saltRole}",
+                "stand": "testing"
+            },
+            "refId": "42",
+            "requisiteStageRefIds": [
+                "39"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "compute-base-role",
+            "failPipeline": true,
+            "name": "Update version preprod",
+            "pipeline": "2d1ae569-05eb-4984-be7f-99a7de756fcf",
+            "pipelineParameters": {
+                "baseRole": "${parameters.baseRole}",
+                "namespace": "${parameters.namespace}",
+                "releaseTicket": "${createStartrekTicketKey}",
+                "saltFormulaVersion": "${parameters.saltFormulaVersion}",
+                "saltRole": "${parameters.saltRole}",
+                "stand": "preprod"
+            },
+            "refId": "43",
+            "requisiteStageRefIds": [
+                "13"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "compute-base-role",
+            "failPipeline": true,
+            "name": "Deploy Preprod VLA",
+            "pipeline": "18ec3cc0-e33f-4d93-8cad-0a17119236f7",
+            "pipelineParameters": {
+                "az": "a",
+                "baseRole": "${parameters.baseRole}",
+                "infraServiceID": "${parameters.infraServiceID}",
+                "namespace": "${parameters.namespace}",
+                "releaseTicket": "${createStartrekTicketKey}",
+                "saltRole": "${parameters.saltRole}",
+                "stand": "preprod"
+            },
+            "refId": "44",
+            "requisiteStageRefIds": [
+                "43"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "compute-base-role",
+            "failPipeline": true,
+            "name": "Deploy Preprod SAS",
+            "pipeline": "18ec3cc0-e33f-4d93-8cad-0a17119236f7",
+            "pipelineParameters": {
+                "az": "b",
+                "baseRole": "${parameters.baseRole}",
+                "infraServiceID": "${parameters.infraServiceID}",
+                "namespace": "${parameters.namespace}",
+                "releaseTicket": "${createStartrekTicketKey}",
+                "saltRole": "${parameters.saltRole}",
+                "stand": "preprod"
+            },
+            "refId": "45",
+            "requisiteStageRefIds": [
+                "44"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "compute-base-role",
+            "failPipeline": true,
+            "name": "Deploy Preprod MYT",
+            "pipeline": "18ec3cc0-e33f-4d93-8cad-0a17119236f7",
+            "pipelineParameters": {
+                "az": "c",
+                "baseRole": "${parameters.baseRole}",
+                "infraServiceID": "${parameters.infraServiceID}",
+                "namespace": "${parameters.namespace}",
+                "releaseTicket": "${createStartrekTicketKey}",
+                "saltRole": "${parameters.saltRole}",
+                "stand": "preprod"
+            },
+            "refId": "46",
+            "requisiteStageRefIds": [
+                "51"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "compute-base-role",
+            "failPipeline": true,
+            "name": "Update version prod",
+            "pipeline": "2d1ae569-05eb-4984-be7f-99a7de756fcf",
+            "pipelineParameters": {
+                "baseRole": "${parameters.baseRole}",
+                "namespace": "${parameters.namespace}",
+                "releaseTicket": "${createStartrekTicketKey}",
+                "saltFormulaVersion": "${parameters.saltFormulaVersion}",
+                "saltRole": "${parameters.saltRole}",
+                "stand": "prod"
+            },
+            "refId": "47",
+            "requisiteStageRefIds": [
+                "24"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "compute-base-role",
+            "failPipeline": true,
+            "name": "Deploy Prod VLA",
+            "pipeline": "18ec3cc0-e33f-4d93-8cad-0a17119236f7",
+            "pipelineParameters": {
+                "az": "a",
+                "baseRole": "${parameters.baseRole}",
+                "infraServiceID": "${parameters.infraServiceID}",
+                "namespace": "${parameters.namespace}",
+                "releaseTicket": "${createStartrekTicketKey}",
+                "saltRole": "${parameters.saltRole}",
+                "stand": "prod"
+            },
+            "refId": "48",
+            "requisiteStageRefIds": [
+                "47"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "compute-base-role",
+            "failPipeline": true,
+            "name": "Deploy Prod SAS",
+            "pipeline": "18ec3cc0-e33f-4d93-8cad-0a17119236f7",
+            "pipelineParameters": {
+                "az": "b",
+                "baseRole": "${parameters.baseRole}",
+                "infraServiceID": "${parameters.infraServiceID}",
+                "namespace": "${parameters.namespace}",
+                "releaseTicket": "${createStartrekTicketKey}",
+                "saltRole": "${parameters.saltRole}",
+                "stand": "prod"
+            },
+            "refId": "49",
+            "requisiteStageRefIds": [
+                "48"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "compute-base-role",
+            "failPipeline": true,
+            "name": "Deploy Prod MYT",
+            "pipeline": "18ec3cc0-e33f-4d93-8cad-0a17119236f7",
+            "pipelineParameters": {
+                "az": "c",
+                "baseRole": "${parameters.baseRole}",
+                "infraServiceID": "${parameters.infraServiceID}",
+                "namespace": "${parameters.namespace}",
+                "releaseTicket": "${createStartrekTicketKey}",
+                "saltRole": "${parameters.saltRole}",
+                "stand": "prod"
+            },
+            "refId": "50",
+            "requisiteStageRefIds": [
+                "49"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Ready to PREPROD-C?",
+            "notifications": [],
+            "refId": "51",
+            "requisiteStageRefIds": [
+                "50"
+            ],
+            "type": "manualJudgment"
+        }
+    ],
+    "triggers": []
+}

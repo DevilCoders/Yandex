@@ -1,0 +1,135 @@
+folderId: 537115
+uid: <DASHBOARD_ID>  # substituted from script
+title: <DASHBOARD_TITLE>
+tags: [ 'snapshot', 'cloud', 'yc-snapshot' ]
+refresh: 10s
+links:
+  - { title: '<TEXT_LINK_OTHER_BOARD>', url: "https://grafana.yandex-team.ru/d/<SECONDARY_DASHBOARD_ID>" }
+  - { title: 'Ссылка на код этого дашборда', url: "https://a.yandex-team.ru/arc/trunk/arcadia/cloud/compute/snapshot/tools/dashboard_gen/template.yaml"}
+variables:
+  ui:
+    cluster:
+      values: [<STAND_ID>] # substituted from script, may be comma separated values
+      hidden: false
+    zone:
+      values: [<ZONE_VALUES>]
+      titles: [<ZONE_TITLES>]
+      hidden: true
+      multi: true
+  uiQuery:
+    host:
+      inheritLabels: false
+      labels: 'project=<SOLOMON_PROJECT>, service=snapshot, cluster="cloud_${cluster}_snapshot", host=*'
+      label: host
+      regex: '.*(vla(.*)|sas(.*)|myt(.*)|spb99-(.*))'
+      hidden: <HIDDEN_HOST_VAR>
+      multi: true
+
+
+graphDefaults: { datasource: <DATASOURCE_ID>, width: 8, height: 6 } # 'Solomon' or 'Solomon Cloud' or etc
+queryDefaults: { labels: 'project=<SOLOMON_PROJECT>, service=snapshot, cluster="cloud_${cluster}_snapshot", host="snapshot-${<HOST_VAR>}*"' }
+
+rows:
+  - title: Tasks
+    panels:
+      !include includes/count.yaml 'Running tasks' current_running_tasks "Текущее количество запущенных задач" <HOST_VAR>
+      !include includes/count.yaml 'In manager tasks' current_in_manager_tasks "Текущее количество добавленных задач" <HOST_VAR>
+      !include includes/count.yaml 'Waiting tasks' current_waiting_tasks "Текущее количество задач ожидающих исполнения" <HOST_VAR>
+
+      !include includes/speed.yaml 'NBS task speed' nbs_move_task_speed 'Скорость выполнения задачи связанной с перемещением из NBS' <HOST_VAR>
+      !include includes/speed.yaml 'URL task speed' url_move_task_speed 'Скорость выполнения задачи связанной с перемещением из пользовательского образа' <HOST_VAR>
+      !include includes/timed.yaml 'Move task time' end_move_timer 'Время Выполнения Move запроса' <HOST_VAR>
+      !include includes/timed.yaml 'ShallowCopy task time' end_shallow_copy_timer 'Время Выполнения ShallowCopy запроса' <HOST_VAR>
+
+  - title: YDB
+    panels:
+      !include includes/nomaxtime.yaml 'YDB query time seconds' kikimr_query_timer 'Время выполнения YDB запросов' <HOST_VAR>
+      !include includes/nomaxtime.yaml 'YDB transaction time seconds' kikimr_transaction_timer 'Время выполнения YDB транзакций' <HOST_VAR>
+
+      !include includes/count.yaml 'Transaction invalidated' kikimr_transaction_errors "Количество инвалидаций транзакций" <HOST_VAR>
+      !include includes/count.yaml 'Query errors' kikimr_query_errors "Количество ошибок ydb" <HOST_VAR>
+
+      !include includes/nomaxtime.yaml 'YDB read blob time' kikimr_read_chunk_query_timer 'Время чтения одного чанка' <HOST_VAR>
+
+  - title: NBS
+    panels:
+      !include includes/timed.yaml 'NBS read time' nbs_read_data_full_timer 'Время чтения из NBS' <HOST_VAR>
+      !include includes/speed.yaml 'NBS read speed' nbs_read_at_speed 'Скорость чтения из NBS' <HOST_VAR>
+
+      !include includes/timed.yaml 'NBS write time' nbs_write_data_full_timer 'Время записи в NBS' <HOST_VAR>
+      !include includes/speed.yaml 'NBS write speed' nbs_write_at_speed 'Скорость записи в NBS' <HOST_VAR>
+
+  - title: Snapshot
+    panels:
+      !include includes/timed.yaml 'Snapshot read time' snapshot_read_at_timer 'Время чтения из Snapshot' <HOST_VAR>
+      !include includes/speed.yaml 'Snapshot read speed' snapshot_read_at_speed 'Скорость чтения из Snapshot' <HOST_VAR>
+
+      !include includes/timed.yaml 'Snapshot write time' snapshot_write_at_timer 'Время записи в Snapshot' <HOST_VAR>
+      !include includes/speed.yaml 'Snapshot write speed' snapshot_write_at_speed 'Скорость записи в Snapshot' <HOST_VAR>
+
+  - title: User Image
+    panels:
+      !include includes/speed.yaml 'User image read speed' image_read_speed 'Скорость вычитки пользовательского образа' <HOST_VAR>
+
+      !include includes/timed.yaml 'Image map read time' read_block_map_timer 'Время чтения пользовательских карт образов' <HOST_VAR>
+      !include includes/speed.yaml 'Image map size' read_block_map_bytes 'Размеры пользовательских карт образов' <HOST_VAR>
+      !include includes/size.yaml 'Image map size (blocs)' read_block_map_size 'Размеры пользовательских карт образов в блоках' <HOST_VAR>
+
+  - title: Auth
+    panels:
+      - type: graph
+        title: "IAM Auth (${<HOST_VAR>})"
+        description: 'Количество удачных и неудачных обращений в IAM'
+        uiRepeat: <HOST_VAR>
+        queries:
+          - params: { labels: 'sensor="iam_authorization_ok"'}
+            select: {group_lines: sum, alias: "OK"}
+            groupByTime: { avg: 1m }
+          - params: { labels: 'sensor="iam_authorization_failed"'}
+            select: {group_lines: sum, alias: "FAIL"}
+            groupByTime: { avg: 1m }
+        yAxes: [{ format: short }]
+        draw: [{ alias: 'FAIL', color: 'red' }, { alias: 'OK', color: 'green' }]
+
+
+      !include includes/timed.yaml 'IAM auth time seconds' iam_authorize_timer 'Время авторизации в IAM' <HOST_VAR>
+
+  - title: System
+    panels:
+      !include includes/count.yaml 'Allocated objects' go_memstats_heap_objects "Текущее количество аллоцированных обьектов" <HOST_VAR>
+      !include includes/countbytes.yaml 'Allocated memory' go_memstats_heap_alloc_bytes "Текущий обьем аллоцированной памяти" <HOST_VAR>
+
+      !include includes/count.yaml 'Goroutines count' go_goroutines "Текущее количество горутин" <HOST_VAR>
+      !include includes/count.yaml 'Open file descriptors' process_open_fds "Количество открытых файловых дескрипторов" <HOST_VAR>
+      !include includes/count.yaml 'Threads count' go_threads "Количество физических потоков" <HOST_VAR>
+      !include includes/count.yaml 'Log error messages' log_error_messages "Количество сообщений об ошибках в логах" <HOST_VAR>
+
+      - type: graph
+        title: "Chunks cache hit/miss (${<HOST_VAR>})"
+        description: 'Количество попаданий и промохов в SnapshotChunksCache'
+        uiRepeat: <HOST_VAR>
+        queries:
+          - params: { labels: 'sensor="snapshot_cache_hit"'}
+            select: { group_lines: sum, alias: "HIT" }
+            groupByTime: { avg: 1m }
+          - params: { labels: 'sensor="snapshot_cache_miss"'}
+            select: { group_lines: sum, alias: "MISS"}
+            groupByTime: { avg: 1m }
+        yAxes: [{ format: short }]
+        draw: [{ alias: 'MISS', color: 'red' }, { alias: 'HIT', color: 'green' }]
+
+  - title: NBS Zero
+    panels:
+      !include includes/timed.yaml 'NBS read zero time' nbs_read_zeroes_timer 'Время чтения нулевых байт из NBS' <HOST_VAR>
+      !include includes/speed.yaml 'NBS read zero speed' nbs_read_at_speed_zero 'Скорость чтения нульбайт из NBS' <HOST_VAR>
+
+      !include includes/timed.yaml 'NBS write zero time' nbs_write_zeroes_timer 'Время записи нульбайт в NBS' <HOST_VAR>
+      !include includes/speed.yaml 'NBS write zero speed' nbs_write_at_speed_zero 'Скорость записи нульбайт в NBS' <HOST_VAR>
+
+  - title: Snapshot Zero
+    panels:
+      !include includes/timed.yaml 'Snapshot read zero time' snapshot_read_at_zero_timer 'Время чтения нулевых байт из Snapshot' <HOST_VAR>
+      !include includes/speed.yaml 'Snapshot read zero speed' snapshot_read_at_speed_zero 'Скорость чтения нульбайт из Snapshot' <HOST_VAR>
+
+      !include includes/timed.yaml 'Snapshot write zero time' snapshot_write_at_zero_timer 'Время записи нульбайт в Snapshot' <HOST_VAR>
+      !include includes/speed.yaml 'Snapshot write zero speed' snapshot_write_at_speed_zero 'Скорость записи нульбайт Snapshot' <HOST_VAR>

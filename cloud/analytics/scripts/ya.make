@@ -1,0 +1,13 @@
+RECURSE(
+    common
+    yt_migrate
+    anonymize_leads
+    import_crm_leads
+    import_forms_leads
+    import_leads_data 
+    remove_duplicated_leads
+    sb_timeout_analyze
+    update_lead_id
+    import_ba_isv_var
+    import_crm_isv_var
+)

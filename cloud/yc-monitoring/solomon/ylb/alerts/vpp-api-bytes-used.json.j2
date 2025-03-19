@@ -1,0 +1,36 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro svm_fqdn() -%}
+	[[labels.host]].{{ svm_domains[env] }}
+{%- endmacro %}
+
+{% macro prog() %}
+let bytes_used = group_by_labels({
+	env='{{ env }}',
+	service='vsop',
+	name='vpp-api-bytes-used',
+	host='loadbalancer-node*|*lb-node*'
+	}, 'host', v -> group_lines('sum', v));
+
+let description = 'VPP is eating a lot of memory';
+let is_red = max(bytes_used) / 1000 / 1000 > 30; // https://st.yandex-team.ru/CLOUD-43930
+alarm_if(is_red);
+
+let is_yellow = max(bytes_used) / 1000 / 1000 > 25; // https://st.yandex-team.ru/CLOUD-43930
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+	"id": "{{ id }}",
+	"name": "{{ name }}",
+	"description": "",
+	"groupByLabels": ["host"],
+	"state": "ACTIVE",
+	"annotations": {
+		"details": "[[expression.description]]",
+		"host": "{{ svm_fqdn() }}",
+		"service": "{{ serviceName }}",
+		"wiki": "https://docs.yandex-team.ru/yc-monitoring/cgw/{{ serviceName }}"
+	},
+	"type": {{ type_expression() }}
+{% endblock %}

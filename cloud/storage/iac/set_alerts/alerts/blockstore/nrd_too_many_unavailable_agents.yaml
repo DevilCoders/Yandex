@@ -1,0 +1,54 @@
+definitions:
+  - &alert_id "{{.ID}}_nbs_nrd_too_many_unavailable_agents"
+  - &alert_name "{{.Name}} NBS NRD too many unavailable agents"
+  - &alert_annotations_tag "yc-{{.Cluster}}-nbs-solomon"
+  - &alert_annotations_host "solomon-alert-cloud_{{.Cluster}}_nbs_{{.Zone}}"
+  - &alert_annotations_service "solomon_alert_nbs_nrd_too_many_unavailable_agents"
+  - &prod_alert_program "let unavailable = {\n\tproject=\"nbs\",\n\tcluster=\"{{.SolomonCluster}}\",\n\tservice=\"disk_registry\",\n\thost=\"cluster\",\n\tsensor=\"AgentsInUnavailableState\"\n};\n\nlet warn = {\n\tproject=\"nbs\",\n\tcluster=\"{{.SolomonCluster}}\",\n\tservice=\"disk_registry\",\n\thost=\"cluster\",\n\tsensor=\"AgentsInWarningState\"\n};\n\nlet online = {\n\tproject=\"nbs\",\n\tcluster=\"{{.SolomonCluster}}\",\n\tservice=\"disk_registry\",\n\thost=\"cluster\",\n\tsensor=\"AgentsInOnlineState\"\n};\n\nlet v = max(unavailable / series_sum(online + warn));\nlet p = to_fixed(100.0 * v, 2) + \"%\";\n\nalarm_if(v > 0.3);\nwarn_if(v > 0.2);\n"
+  - &preprod_alert_program "let unavailable = last({\n\tproject=\"nbs\",\n\tcluster=\"{{.SolomonCluster}}\",\n\tservice=\"disk_registry\",\n\thost=\"control-{{.Zone}}\",\n\tsensor=\"AgentsInUnavailableState\"\n});\n\nlet warn = last({\n\tproject=\"nbs\",\n\tcluster=\"{{.SolomonCluster}}\",\n\tservice=\"disk_registry\",\n\thost=\"control-{{.Zone}}\",\n\tsensor=\"AgentsInWarningState\"\n});\n\nlet online = last({\n\tproject=\"nbs\",\n\tcluster=\"{{.SolomonCluster}}\",\n\tservice=\"disk_registry\",\n\thost=\"control-{{.Zone}}\",\n\tsensor=\"AgentsInOnlineState\"\n});\n\nlet v = unavailable / (online + warn);\nlet p = to_fixed(100.0 * v, 2) + \"%\";\n\nalarm_if(v > 0.4);\nwarn_if(v > 0.3);\n"
+  - &prod_alert_debug "v: {{expression.v}}\np: {{expression.p}}"
+  - &preprod_alert_debug "v: {{expression.v}}\np: {{expression.p}}\nonline: {{expression.online}}\nunavailable: {{expression.unavailable}}\nwarn: {{expression.warn}}\n"
+  - &alert_description "(doc: https://nda.ya.ru/t/MGGcZoub5Fnfax)"
+  - &alert_juggler_description |-
+      В кластере слишком много агентов ({{ expression.p }}) в состоянии unavailable.
+      {{alert.description}}
+
+alerts:
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_description
+    debug: *preprod_alert_debug
+    resolved_empty_policy: "RESOLVED_EMPTY_OK"
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - preprod_vla
+      - preprod_sas
+      - preprod_myt
+    expression:
+      program: *preprod_alert_program
+
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_description
+    debug: *prod_alert_debug
+    resolved_empty_policy: "RESOLVED_EMPTY_OK"
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - prod_vla
+      - prod_sas
+      - prod_myt
+      - israel
+    expression:
+      program: *prod_alert_program

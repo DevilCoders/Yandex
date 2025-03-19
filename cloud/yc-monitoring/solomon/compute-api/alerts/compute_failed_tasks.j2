@@ -1,0 +1,41 @@
+{% extends "base_alert.j2" %}
+
+{% set windowSecs = 300 %}
+{% set checkExpression = "" %}
+{% set repeatNotifySecs = 3600 %}
+
+{% set resolvedEmptyPolicy = "RESOLVED_EMPTY_MANUAL" %}
+{% set description = "https://docs.yandex-team.ru/yc-monitoring/compute-api/compute-failed-tasks" %}
+
+{% macro prog() %}
+let failed_task_count = diff(integrate_fn(group_lines('sum',{
+    project='{{ project_id }}',
+    cluster='cloud_{{ env }}_head',
+    service='compute_tasks',
+    sensor='tasks_failed',
+    host='cluster', type!='All'
+})));
+ok_if(size(failed_task_count) == 0);
+
+let tasks = sum(failed_task_count);
+let failed_task_count='';
+
+let readable = to_fixed(tasks, 2);
+alarm_if(tasks > 150);
+warn_if(tasks > 100);
+{% endmacro %}
+
+{% block main %}
+    "name": "Alert on compute failed tasks @{{ env | upper }}",
+    "groupByLabels": ["type"],
+    "annotations": {
+        "host": "yc_compute_head_{{ env }}_[[ labels.type ]]",
+        "service": "compute-failed-tasks",
+        "tags": "compute-failed-tasks",
+        "failed_tasks": "[[expression.readable]]",
+        "task_type": "[[ labels.type ]]",
+        "description": "See https://wiki.yandex-team.ru/cloud/compute/alerts-manuals/#alertfailedtasks for instructions."
+    },
+    "description": "Notifies about too many failed tasks\n\nSee {{ description }} for instructions.",
+    "type": {{ type_expression() }}
+{% endblock %}

@@ -1,0 +1,30 @@
+{% extends "../../../base/alert.j2" %}
+
+{% set idc="api-request-duration" %}
+{% set description="Alarm if 99-th percentile of request duration is more than 2 seconds" %}
+
+{% set windowSecs=300 %}
+{% set delaySecs=0 %}
+
+{% macro prog() %}
+let p99 = max(histogram_percentile(99, {project="cloud_mr_prober", cluster="*", service="api", name="http_request_duration_seconds", handler="*", host="*"}));
+alarm_if(p99 == 0);
+warn_if(p99 > 1);
+alarm_if(p99 > 2);{% endmacro %}
+{% set checkExpression="" %}
+
+{% block main %}
+    "name": "[API] Request duration",
+    "groupByLabels": [
+        "cluster",
+        "host"
+	],
+    "annotations": {
+        "host": "[[labels.host]]",
+        "cluster": "[[labels.cluster]]",
+        "service": "api-request-duration",
+        "graph": "{{ solomon_endpoint }}/?project={{ project_id }}&cluster=[[labels.cluster]]&service=api&name=http_request_duration_seconds&graph=auto&l.handler=*&overLinesTransform=WEIGHTED_PERCENTILE&l.host=[[labels.host]]&b=1w&e=",
+        "p99": "[[expression.p99]]"
+    },
+    "type": {{ type_expression() }}
+{% endblock %}

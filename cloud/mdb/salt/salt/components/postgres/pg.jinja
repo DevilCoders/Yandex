@@ -1,0 +1,84 @@
+{% set pg = salt['grains.filter_by']({
+    'Debian': {
+        'prefix': '/var/lib/postgresql',
+        'mdadm_config': '/etc/mdadm/mdadm.conf',
+        'bouncer_user': 'postgres',
+        'bouncer_pid_dir': '/var/run/postgresql',
+        'postgres_comm': 'postgres',
+    },
+}) %}
+
+{% set use_1c = '1c' == salt['pillar.get']('data:versions:postgres:edition') %}
+
+{% do pg.update({'use_1c': use_1c }) %}
+
+{% set major_raw = salt['pillar.get']('data:versions:postgres:major_version') %}
+{% set major_num = major_raw|int() * 100 %}
+{% do pg.update({'version': { 'major_num': major_num }}) %}
+
+{% set yandex_env = salt['pillar.get']('yandex:environment', 'dev') %}
+
+{% set pg_master = salt['pillar.get']('pg-master') %}
+{% set is_replica = (pg_master and pg_master != salt['grains.get']('fqdn')) or salt['pillar.get']('replica') or salt['mdb_postgresql.is_replica']() %}
+{% do pg.update({'is_replica': is_replica, 'is_master': not is_replica, 'pg_role': 'master' if not is_replica else is_replica}) %}
+
+{% set pg_version = salt['pillar.get']('data:versions:postgres') %}
+{% set versions = {
+    'major': pg_version.major_version|string(),
+    'pkg':   pg_version.package_version
+    }
+%}
+{% do pg.version.update(versions) %}
+
+{% set pgdata = pg.prefix + '/' + pg.version.major + '/data' %}
+{% set log_file_name = 'postgresql-' + pg.version.major + '-data.log' %}
+{% set csv_log_file_name = 'postgresql-' + pg.version.major + '-data.csv' %}
+{% set log_file_path = '/var/log/postgresql/' + log_file_name %}
+{% set csv_log_file_path = '/var/log/postgresql/' + csv_log_file_name %}
+{% set config_file_path = salt['grains.filter_by']({
+    'Debian': '/etc/postgresql/' + pg.version.major + '/data/postgresql.conf',
+}) %}
+
+{% do pg.update({
+    'data': pgdata,
+    'log_file_name': log_file_name,
+    'log_file_path': log_file_path,
+    'csv_log_file_path': csv_log_file_path,
+    'config_file_path': config_file_path,
+    })
+%}
+
+{% if pg.version.major_num >= 1000 %}
+{% do pg.update({
+    'wal_dir_path': pgdata + '/pg_wal'
+    })
+%}
+{% else %}
+{% do pg.update({
+    'wal_dir_path': pgdata + '/pg_xlog'
+    })
+%}
+{% endif %}
+
+{% set extra = salt['grains.filter_by']({
+    'Debian': {
+        'service': 'postgresql@' + pg.version.major + '-data',
+        'bin_path': '/usr/lib/postgresql/' + pg.version.major + '/bin',
+    },
+}) %}
+{% do pg.update(extra) %}
+
+{% do pg.update({'connection_pooler': salt['pillar.get']('data:connection_pooler', 'odyssey')}) %}
+
+{% set environment = salt['pillar.get']('yandex:environment', 'dev') %}
+{% if environment in ['dev', 'qa', 'load'] %}
+{%     set pgsync_version = '3.9637809' %}
+{% elif environment == 'prod' %}
+{%     set pgsync_version = '3.9637809' %}
+{% else %}
+{%     set pgsync_version = '3.9637809' %}
+{% endif %}
+
+{# prefer the version from data:versions, if set #}
+{% set pgsync_version = salt['pillar.get']('data:versions:pgsync:package_version', pgsync_version) %}
+{% do pg.update({'pgsync_version': pgsync_version}) %}

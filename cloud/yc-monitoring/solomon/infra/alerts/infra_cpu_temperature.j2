@@ -1,0 +1,20 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro prog() %}
+let max_repair_time_hours = 12;
+let series = group_lines('min', {project="{{ project_id }}", cluster="cloud_{{ env }}", service="infra_hw", metric="system_disks_aliveness", host="{{ host_prefix }}*"});
+let last_ok = last(get_timestamps(drop_below(series, 0.9)));
+let last_any = last(get_timestamps(series));
+alarm_if(last_any - last_ok > max_repair_time_hours*3600);
+{% endmacro %}
+
+{% block main %}
+    "name": "yc_infra_disk_fail @ {{ env }}/{{ cluster }}",
+    "annotations": {
+        "host": "[[labels.host]]{{ host_suffix }}",
+        "tags": "infra_disk_fail, {{ env }}, {{ cluster }}",
+        "service": "disk_repair_sla"
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

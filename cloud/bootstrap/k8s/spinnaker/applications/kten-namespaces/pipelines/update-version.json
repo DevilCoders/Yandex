@@ -1,0 +1,380 @@
+{
+    "description": "This pipeline adds new namespaces for team in HW and SVM kten clusters.\nIt uses current content of \nhttps://bb.yandex-team.ru/projects/CLOUD/repos/k8s-deploy/browse/enginfra-namespaces_hw-values.yaml\nand\nhttps://bb.yandex-team.ru/projects/CLOUD/repos/k8s-deploy/browse/enginfra-namespaces_svm-values.yaml\nas a source, updates per per stand values files and applies namespaces chart to all clusters ",
+    "appConfig": {},
+    "application": "kten-namespaces",
+    "id": "132d985b-852a-4db6-a247-9a8ae36a7c57",
+    "index": 4,
+    "keepWaitingPipelines": false,
+    "limitConcurrent": true,
+    "name": "update-version",
+    "parameterConfig": [
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "Use existing release ticket",
+            "name": "useReleaseTicket",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": false,
+            "required": false
+        },
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": false,
+            "label": "",
+            "name": "chartVersion",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": false,
+            "required": true
+        }
+    ],
+    "spelEvaluator": "v4",
+    "stages": [
+        {
+            "failOnFailedExpressions": true,
+            "name": "Configure context",
+            "refId": "1",
+            "requisiteStageRefIds": [],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "now",
+                    "value": "${new java.text.SimpleDateFormat(\"dd.MM.yyyy-HH:mm:ss\").format(new java.util.Date())}"
+                },
+                {
+                    "key": "triggerUserLogin",
+                    "value": "${trigger.user.replace(\"@yandex-team.ru\", \"\")}"
+                },
+                {
+                    "key": "spinnakerExecutionURL",
+                    "value": "https://spinnaker.cloud.yandex.net/#/applications/kten-namespaces/executions/${execution.Id}"
+                },
+                {
+                    "key": "chartVersion",
+                    "value": "${parameters.chartVersion}"
+                }
+            ]
+        },
+        {
+            "components": "Selfhost",
+            "description": "Update version to ${chartVersion}",
+            "followers": "${triggerUserLogin}",
+            "name": "Create release ticket",
+            "outputVariable": "releaseTicket",
+            "queue": "CLOUD",
+            "refId": "2",
+            "requisiteStageRefIds": [
+                "1"
+            ],
+            "stageEnabled": {
+                "expression": "${ parameters.useReleaseTicket == \"\" }",
+                "type": "expression"
+            },
+            "summary": "[ ${now} ] [ Deploy ] update KTEN namespaces char version",
+            "ticketType": "release",
+            "type": "createStartrekTicket"
+        },
+        {
+            "failOnFailedExpressions": true,
+            "name": "Use existing ticket",
+            "refId": "3",
+            "requisiteStageRefIds": [
+                "1"
+            ],
+            "stageEnabled": {
+                "expression": "${ parameters.useReleaseTicket != \"\" }",
+                "type": "expression"
+            },
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "releaseTicket",
+                    "value": "${parameters.useReleaseTicket}"
+                }
+            ]
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Check TESTING-A",
+            "notifications": [],
+            "refId": "14",
+            "requisiteStageRefIds": [
+                "325"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Check PREPROD-A",
+            "notifications": [],
+            "refId": "220",
+            "requisiteStageRefIds": [
+                "329"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "application": "kten-namespaces",
+            "failPipeline": true,
+            "name": "Apply TESTING-A",
+            "pipeline": "799aff4d-8c84-4dae-8c10-8844efa2ebec",
+            "pipelineParameters": {
+                "az": "a",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "testing"
+            },
+            "refId": "325",
+            "requisiteStageRefIds": [
+                "330"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "kten-namespaces",
+            "failPipeline": true,
+            "name": "Apply TESTING-B",
+            "pipeline": "799aff4d-8c84-4dae-8c10-8844efa2ebec",
+            "pipelineParameters": {
+                "az": "b",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "testing"
+            },
+            "refId": "326",
+            "requisiteStageRefIds": [
+                "14"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "kten-namespaces",
+            "failPipeline": true,
+            "name": "Apply TESTING-C",
+            "pipeline": "799aff4d-8c84-4dae-8c10-8844efa2ebec",
+            "pipelineParameters": {
+                "az": "c",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "testing"
+            },
+            "refId": "327",
+            "requisiteStageRefIds": [
+                "14"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Go to PREPROD?",
+            "notifications": [],
+            "refId": "328",
+            "requisiteStageRefIds": [
+                "326",
+                "327"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "application": "kten-namespaces",
+            "failPipeline": true,
+            "name": "Apply PREPROD-A",
+            "pipeline": "799aff4d-8c84-4dae-8c10-8844efa2ebec",
+            "pipelineParameters": {
+                "az": "a",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "preprod"
+            },
+            "refId": "329",
+            "requisiteStageRefIds": [
+                "331"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "kten-namespaces",
+            "failPipeline": true,
+            "name": "Update manifests TESTING",
+            "pipeline": "fb2e3718-59fc-4b4e-a495-dbb51fef5b29",
+            "pipelineParameters": {
+                "chartVersion": "${chartVersion}",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "testing"
+            },
+            "refId": "330",
+            "requisiteStageRefIds": [
+                "2",
+                "3"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "kten-namespaces",
+            "failPipeline": true,
+            "name": "Update manifests PREPROD",
+            "pipeline": "fb2e3718-59fc-4b4e-a495-dbb51fef5b29",
+            "pipelineParameters": {
+                "chartVersion": "${chartVersion}",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "preprod"
+            },
+            "refId": "331",
+            "requisiteStageRefIds": [
+                "328"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "kten-namespaces",
+            "failPipeline": true,
+            "name": "Apply PREPROD-B",
+            "pipeline": "799aff4d-8c84-4dae-8c10-8844efa2ebec",
+            "pipelineParameters": {
+                "az": "b",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "preprod"
+            },
+            "refId": "332",
+            "requisiteStageRefIds": [
+                "220"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Go to PROD?",
+            "notifications": [],
+            "refId": "337",
+            "requisiteStageRefIds": [
+                "332"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "application": "kten-namespaces",
+            "failPipeline": true,
+            "name": "Update manifests PROD",
+            "pipeline": "fb2e3718-59fc-4b4e-a495-dbb51fef5b29",
+            "pipelineParameters": {
+                "chartVersion": "${chartVersion}",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "prod"
+            },
+            "refId": "338",
+            "requisiteStageRefIds": [
+                "337"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "kten-namespaces",
+            "failPipeline": true,
+            "name": "Apply PROD-A",
+            "pipeline": "799aff4d-8c84-4dae-8c10-8844efa2ebec",
+            "pipelineParameters": {
+                "az": "a",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "prod"
+            },
+            "refId": "339",
+            "requisiteStageRefIds": [
+                "338"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Check PROD-A",
+            "notifications": [],
+            "refId": "340",
+            "requisiteStageRefIds": [
+                "339"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "application": "kten-namespaces",
+            "failPipeline": true,
+            "name": "Apply PROD-B",
+            "pipeline": "799aff4d-8c84-4dae-8c10-8844efa2ebec",
+            "pipelineParameters": {
+                "az": "b",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "prod"
+            },
+            "refId": "341",
+            "requisiteStageRefIds": [
+                "340"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "application": "kten-namespaces",
+            "failPipeline": true,
+            "name": "Apply PROD-C",
+            "pipeline": "799aff4d-8c84-4dae-8c10-8844efa2ebec",
+            "pipelineParameters": {
+                "az": "c",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "prod"
+            },
+            "refId": "342",
+            "requisiteStageRefIds": [
+                "340"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        },
+        {
+            "failPipeline": true,
+            "judgmentInputs": [],
+            "name": "Go to PREPROD-C?",
+            "notifications": [],
+            "refId": "343",
+            "requisiteStageRefIds": [
+                "341",
+                "342"
+            ],
+            "type": "manualJudgment"
+        },
+        {
+            "application": "kten-namespaces",
+            "failPipeline": true,
+            "name": "Apply PREPROD-C",
+            "pipeline": "799aff4d-8c84-4dae-8c10-8844efa2ebec",
+            "pipelineParameters": {
+                "az": "c",
+                "releaseTicket": "${releaseTicket}",
+                "stand": "preprod"
+            },
+            "refId": "344",
+            "requisiteStageRefIds": [
+                "343"
+            ],
+            "type": "pipeline",
+            "waitForCompletion": true
+        }
+    ],
+    "triggers": []
+}

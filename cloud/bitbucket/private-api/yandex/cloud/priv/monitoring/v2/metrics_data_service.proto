@@ -1,0 +1,165 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.monitoring.v2;
+
+import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
+import "yandex/cloud/priv/validation.proto";
+import "yandex/cloud/priv/monitoring/v2/metric_type.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/monitoring/v2;monitoring";
+option java_outer_classname = "PMDS";
+
+// A set of methods for managing metric data.
+service MetricsDataService {
+    // Returns metric data from Monitoring.
+    rpc Read (ReadMetricsDataRequest) returns (ReadMetricsDataResponse);
+
+    // Writes metric data to Monitoring.
+    rpc Write (WriteMetricsDataRequest) returns (WriteMetricsDataResponse);
+}
+
+// List of available aggregate functions for downsampling.
+enum GridAggregation {
+    GRID_AGGREGATION_UNSPECIFIED = 0;
+
+    // Max value.
+    MAX = 1;
+
+    // Min value.
+    MIN = 2;
+
+    // Sum of values.
+    SUM = 3;
+
+    // Average value.
+    AVG = 4;
+
+    // Last value.
+    LAST = 5;
+
+    // Total count of points.
+    COUNT = 6;
+}
+
+// List of available gap filling policy for downsampling.
+enum GapFilling {
+    GAP_FILLING_UNSPECIFIED = 0;
+
+    // Returns `null` as a metric value and `timestamp` as a time series value.
+    NULL = 1;
+
+    // Returns no value and no timestamp.
+    NONE = 2;
+
+    // Returns the value from the previous time interval.
+    PREVIOUS = 3;
+}
+
+// List of available aggregate functions for downsampling.
+message Downsampling {
+    oneof mode {
+        // Maximum number of points to be returned.
+        int64 max_points = 1 [(value) = ">10"];
+
+        // Time interval (grid) for downsampling in milliseconds.
+        // Points in the specified range are aggregated into one time point.
+        int64 grid_interval = 2 [(value) = ">0"];
+
+        // Disable downsampling.
+        bool disabled = 3;
+    }
+
+    // Function that is used for downsampling.
+    GridAggregation grid_aggregation = 4;
+
+    // Parameters for filling gaps in data.
+    GapFilling gap_filling = 5;
+}
+
+message DataQuery {
+    // Query text.
+    string query = 1 [(required) = true];
+
+    // The beginning of the time interval, in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+    google.protobuf.Timestamp from_time = 2 [(required) = true];
+
+    // The end of the time interval, in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) text format.
+    google.protobuf.Timestamp to_time = 3 [(required) = true];
+
+    // Downsampling parameters.
+    Downsampling downsampling = 4 [(required) = true];
+}
+
+message ReadMetricsDataRequest {
+    // ID of the folder that the metric belongs to.
+    string folder_id = 1 [(required) = true, (length) = "<=50"];
+
+    // Query parameters.
+    DataQuery query = 2;
+}
+
+message Timeseries {
+    // List of timestamps as unix-time milliseconds.
+    repeated int64 timestamps = 1;
+
+    // List of double values.
+    repeated double double_values = 2;
+
+    // List of int64 values. Only for `IGAUGE` metric type.
+    repeated int64 int64_values = 3;
+}
+
+message MetricData {
+    // Name of the metric.
+    string name = 1;
+
+    // List of metric labels as `key:value` pairs.
+    map<string, string> labels = 2;
+
+    // Type of the metric.
+    MetricType type = 3;
+
+    // Metric values.
+    Timeseries timeseries = 4;
+}
+
+message ReadMetricsDataResponse {
+    // List of metrics with timeseries.
+    repeated MetricData metrics = 1;
+}
+
+message WriteMetricsDataRequest {
+    message RawData {
+        // Query content type. Use "application/json".
+        string content_type = 3 [(required) = true];
+        // Query content.
+        bytes content = 4 [(required) = true];
+    }
+
+    message TypedData {
+        // List of metrics with timeseries.
+        repeated MetricData metrics = 1;
+    }
+
+    // ID of the folder that the metric belongs to.
+    string folder_id = 1 [(required) = true, (length) = "<=50"];
+
+    // ID of the service that the metric belongs to. Use `service=custom` for custom metrics.
+    string service = 2 [(required) = true, (length) = "<=50"];
+
+    oneof data {
+        // Raw metrics data.
+        RawData raw_data = 10;
+        // Typed metrics data.
+        TypedData typed_data = 11;
+    }
+}
+
+message WriteMetricsDataResponse {
+    // Number of successfully written metrics.
+    int64 written_metrics_count = 1;
+
+    // Error message if the writing failed.
+    google.rpc.Status partial_failure_error = 2;
+}

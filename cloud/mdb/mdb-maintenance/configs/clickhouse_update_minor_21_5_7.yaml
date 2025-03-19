@@ -1,0 +1,32 @@
+info: Minor update of ClickHouse version to 21.5.7.9
+disabled: true
+clusters_selection:
+  db: >-
+    WITH clusters AS (
+      SELECT c.cid,
+             CAST(string_to_array(p.value #>> '{data,clickhouse,ch_version}', '.') AS int[]) AS version_nums
+        FROM dbaas.subclusters sc
+        JOIN dbaas.clusters c USING(cid)
+        JOIN dbaas.pillar p USING(subcid)
+       WHERE c.status = 'RUNNING'
+         AND sc.roles && '{clickhouse_cluster}'
+         AND CAST(p.value #>> '{data,clickhouse,unmanaged,minor_updates_disabled}' AS bool) IS DISTINCT FROM true
+    ) SELECT c.cid
+      FROM clusters c
+     WHERE c.version_nums > ARRAY[21, 5]
+       AND c.version_nums < ARRAY[21, 5, 7, 9]
+pillar_change: >-
+  UPDATE dbaas.pillar p
+     SET value = jsonb_set(value, '{data,clickhouse,ch_version}', to_jsonb(CAST('21.5.7.9' AS text)))
+    FROM dbaas.subclusters sc
+   WHERE p.subcid=sc.subcid
+     AND sc.cid=:cid
+     AND sc.roles && '{clickhouse_cluster}'
+worker:
+  operation_type: clickhouse_cluster_modify
+  task_type: clickhouse_cluster_maintenance
+  task_args:
+    restart: true
+  timeout: 4h
+max_delay_days: 21
+min_days: 7

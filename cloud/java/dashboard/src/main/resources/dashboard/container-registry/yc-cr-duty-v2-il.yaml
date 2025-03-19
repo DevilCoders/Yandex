@@ -1,0 +1,161 @@
+uid: yc-cr-duty-v2-il
+refresh: 3m
+title: Container registry duty dashboard v2 (IL 🇮🇱)
+
+tags: [ 'ycp', 'ycp-cr', 'ycp-duty']
+links:
+  - { title: 'Source spec', url: 'https://a.yandex-team.ru/arc/trunk/arcadia/cloud/java/dashboard/src/main/resources/dashboard/container-registry/yc-cr-duty-v2-il.yaml' }
+  - title: Drilldown
+    tags: [ 'yc-cr-drilldown-il' ]
+
+variables:
+  replacement:
+    !include ../include/errors.yaml
+  ds:
+    solomon:
+      type: 'grafana-solomon-datasource'
+      regex: '^Solomon Cloud IL$'
+
+graphDefaults:
+  width: 8
+  height: 8
+  datasource: '$solomon'
+
+queryDefaults: { labels: 'project=yc.container-registry.service, cluster=yc.container-registry.service.runtime' }
+
+rows:
+  - title: Viewer
+    queryDefaults: { labels: 'host=cluster, service=viewer-ma, app=server, method=all' }
+    drilldowns:
+      - subUid: dd_cr_viewer_host
+        tags: [ 'ycp', 'ycp-cr', 'ycp-duty' ]
+        ui:
+          host:
+            multi: true
+            values: [ '*-*', '*-il1-a', '*-1-il1-a', '*-2-il1-a' ]
+            titles: [ 'Cluster', 'DC il1', 'Host IG il1-a-1', 'Host IG il1-a-2']
+        uiRepeat: host
+        labels: 'host=$host'
+      - subUid: dd_cr_viewer_method
+        tags: [ 'ycp', 'ycp-cr', 'ycp-duty' ]
+        ui:
+          method:
+            multi: true
+            values: [ '/blobs/GET', '/blobs/HEAD', '/manifests/GET', '/manifests/HEAD', '/v2/GET', '_catalog/GET']
+        uiRepeat: method
+        labels: 'method=$method'
+    panels:
+      - type: graph
+        templates: { name: rps, rate: ui, sumLines: true }
+        title: 'Viewer $rateUnit ($solomon)'
+        queries:
+          - params: { labels: 'name=servlet_requests, meter_type=count' }
+
+      - type: graph
+        templates: { name: errors }
+        title: 'Viewer errors ($solomon)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=servlet_statuses, status=4*' }
+          - params: { labels: 'name=servlet_statuses, status=5*' }
+        yAxes: [ { min: 0}, { min: 0 } ]
+        draw:
+          - { alias: '4xx', color: '#147', at: right }
+          - { alias: '5xx & 503', color: '#b20', at: left }
+
+      - type: graph
+        templates: { name: percentile, groupLines: true, format: solomon }
+        title: 'Viewer duration ($solomon)'
+        queries:
+          - params: { labels: 'name=servlet_durations' }
+
+
+  - title: Uploader
+    queryDefaults: { labels: 'host=cluster, service=uploader-ma, app=server, method=all' }
+    drilldowns:
+      - subUid: dd_cr_uploader_host
+        tags: [ 'ycp', 'ycp-cr', 'ycp-duty' ]
+        ui:
+          host:
+            multi: true
+            values: [ '*-*', '*-il1-a', '*-1-il1-a', '*-2-il1-a' ]
+            titles: [ 'Cluster', 'DC il1', 'Host IG il1-a-1', 'Host IG il1-a-2']
+        uiRepeat: host
+        labels: 'host=$host'
+      - subUid: dd_cr_uploader_method
+        tags: [ 'ycp', 'ycp-cr', 'ycp-duty' ]
+        ui:
+          method:
+            multi: true
+            values: [ '/manifests/PUT', '/manifests/DELETE', '/blobs/uploads/POST', '/blobs/uploads/PUT', '/blobs/uploads/PATCH', '/blobs/uploads/DELETE']
+        uiRepeat: method
+        labels: 'method=$method'
+    panels:
+      - type: graph
+        templates: { name: rps, rate: ui, sumLines: true}
+        title: 'Uploader $rateUnit ($solomon)'
+        queries:
+          - params: { labels: 'name=servlet_requests, meter_type=count' }
+
+      - type: graph
+        templates: { name: errors }
+        title: 'Uploader errors ($solomon)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=servlet_statuses, status=4*' }
+          - params: { labels: 'name=servlet_statuses, status=5*' }
+        yAxes: [ { min: 0}, { min: 0 } ]
+        draw:
+          - { alias: '4xx', color: '#147', at: right }
+          - { alias: '5xx & 503', color: '#b20', at: left }
+
+      - type: graph
+        templates: { name: percentile, groupLines: true, format: solomon }
+        title: 'Uploader duration ($solomon)'
+        queries:
+          - params: { labels: 'name=servlet_durations' }
+
+  - title: Manager
+    queryDefaults: { labels: 'host=cluster, service=manager-ma, app=container-registry-manager_server, method=all' }
+    drilldowns:
+      - subUid: dd_cr_manager_host
+        tags: [ 'ycp', 'ycp-cr', 'ycp-duty' ]
+        ui:
+          host:
+            multi: true
+            values: [ '*-*', '*-il1-a', '*-1-il1-a', '*-2-il1-a' ]
+            titles: [ 'Cluster', 'DC il1', 'Host IG il1-a-1', 'Host IG il1-a-2']
+        uiRepeat: host
+        labels: 'host=$host'
+      - subUid: dd_cr_manager_method
+        tags: [ 'ycp', 'ycp-cr', 'ycp-duty' ]
+        ui:
+          method:
+            multi: true
+            values: [ 'containerregistry.v1.RegistryService/Get', 'containerregistry.v1.RegistryService/List', 'containerregistry.v1.RegistryService/Create', 'containerregistry.v1.RegistryService/Delete', 'containerregistry.v1.RegistryService/Update', 'containerregistry.v1.OperationService/Get', 'containerregistry.v1.ImageService/Get', 'containerregistry.v1.ImageService/List', 'containerregistry.v1.ImageService/Delete', 'containerregistry.v1.console.ImageService/List', 'containerregistry.v1.console.ImageService/Get', 'containerregistry.v1.console.ImageService/Delete', 'containerregistry.v1.console.ImageService/FindTags']
+        uiRepeat: method
+        labels: 'method=$method'
+    panels:
+      - type: graph
+        templates: { name: rps, rate: ui, sumLines: true }
+        title: 'Manager $rateUnit ($solomon)'
+        queries:
+          - params: { labels: 'name=grpc_requests, meter_type=count' }
+
+      - type: graph
+        templates: { name: errors }
+        title: 'Manager errors ($solomon)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, status=@4xx' }
+          - params: { labels: 'name=grpc_statuses, status=@5xx503' }
+        yAxes: [ { min: 0}, { min: 0 } ]
+        draw:
+          - { alias: '4xx', color: '#147', at: right }
+          - { alias: '5xx & 503', color: '#b20', at: left }
+
+      - type: graph
+        templates: { name: percentile, groupLines: true, format: solomon }
+        title: 'Manager duration ($solomon)'
+        queries:
+          - params: { labels: 'name=grpc_durations' }

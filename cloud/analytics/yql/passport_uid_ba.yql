@@ -1,0 +1,150 @@
+use hahn;
+PRAGMA yt.InferSchema = '1';
+PRAGMA File('libcrypta_identifier_udf.so', 'yt://hahn/home/crypta/public/udfs/stable/libcrypta_identifier_udf.so');
+PRAGMA Udf('libcrypta_identifier_udf.so');
+
+$export_tbl = '%EXPORT_TABLE%';
+$cloud_owners_tbl = '//home/cloud_analytics/import/iam/cloud_owners/1h';
+$accounts_tbl = '//home/cloud/billing/exported-billing-tables/billing_accounts_prod';
+$accounts_history_tbl = '//home/cloud/billing/exported-billing-tables/billing_accounts_history_prod';
+$usage_reports_tbl = '//home/cloud/billing/analytics_cube/realtime/prod_full';
+$email_company_tbl = '//home/cloud_analytics/clients/email_company';
+$clients_ent_isv_tbl = '//home/cloud_analytics/clients/ent_isv';
+
+$date_format = '%Y-%m-%dT%H:%M:%S+00:00';
+
+$to_decimal = ($amount) -> {
+    RETURN CAST($amount AS Decimal(22,9));
+};
+
+$parse_date = ($dttm, $format) -> {
+    $parse = DateTime::Parse($format);
+    return $parse($dttm)
+} ;
+
+$date_to_str = ($dttm, $format) -> {
+    $format = DateTime::Format($format);
+    return $format($dttm)
+} ;
+
+$email_to_canonical = ($email) -> {
+    RETURN Identifiers::NormalizeEmail($email);
+};
+
+DEFINE SUBQUERY $last_non_empty_table($path) AS
+    $max_path = (
+        SELECT MAX(Path) AS Path
+        FROM FOLDER($path, 'row_count')
+        WHERE Type = 'table'
+            AND Yson::LookupInt64(Attributes, 'row_count') > 0
+    );
+    SELECT * FROM CONCAT($max_path);
+END DEFINE;
+
+$email_company = (
+    SELECT
+        email,
+        some(source) AS source
+    FROM $email_company_tbl
+        GROUP BY $email_to_canonical(email) AS email
+);
+
+$billing_accounts = (
+    select
+        a.*,
+        Yson::LookupString(Yson::ParseJson(Yson::ConvertToString(a.metadata)), "block_reason", Yson::Options(false as Strict)) as block_reason
+      from $accounts_tbl as a
+);
+
+$ba_first_consumption = (
+    SELECT billing_account_id, $date_to_str(DateTime::FromSeconds(cast(MIN(billing_record_end_time) as uint32)), "%Y-%m-%d") as first_consumption_date
+    from $usage_reports_tbl
+    where billing_record_cost > 0
+    group by billing_account_id
+);
+
+$ba_first_paid_consumption = (
+    SELECT billing_account_id, $date_to_str(DateTime::FromSeconds(cast(MIN(billing_record_end_time) as uint32)), "%Y-%m-%d") as first_paid_consumption_date
+    from $usage_reports_tbl
+    where billing_record_cost > -billing_record_credit
+    group by billing_account_id
+);
+
+$ba_paid = (
+    SELECT
+        billing_account_id,
+        MIN(updated_at) AS ba_paid_at
+    FROM $accounts_history_tbl
+    where usage_status = 'paid'
+    GROUP BY billing_account_id
+);
+
+$iam_clouds = (
+    SELECT
+        passport_uid AS passport_uid,
+        MIN(cloud_created_at) AS cloud_created_at,
+        $email_to_canonical(max_by(user_settings_email, cloud_created_at)) AS user_settings_email,
+        $email_to_canonical(max_by(email, cloud_created_at)) AS email
+    FROM $last_non_empty_table($cloud_owners_tbl)
+    GROUP BY passport_uid
+);
+
+$passport_cloud_ba = (
+    SELECT
+        case
+            when billing_accounts.state in  ("active", "creating")
+            then billing_accounts.state
+            else billing_accounts.state || (( "_" || billing_accounts.block_reason) ?? "")
+        end as ba_curr_state,
+        billing_accounts.id AS billing_account_id,
+        DateTime::ToSeconds(
+            DateTime::MakeDatetime($parse_date(
+                iam_clouds.cloud_created_at,
+                $date_format
+            ))
+        ) AS created_at,
+        IF(
+            iam_clouds.passport_uid IS NULL,
+            billing_accounts.owner_id,
+            iam_clouds.passport_uid
+        ) AS passport_uid,
+        iam_clouds.email AS email,
+        iam_clouds.user_settings_email AS user_settings_email,
+        IF(
+            companies.source IS NULL,
+            IF(
+                DateTime::MakeDatetime($parse_date(iam_clouds.cloud_created_at, $date_format))
+                > DateTime::MakeDatetime($parse_date('2018-11-27', '%Y-%m-%d')),
+                'organic',
+                'unknown'
+            ),
+            companies.source
+        ) AS source,
+        billing_accounts.created_at AS ba_created_at,
+        ba_paid.ba_paid_at AS ba_paid_at,
+        ba_first_consumption.first_consumption_date AS first_consumption_date,
+        ba_first_paid_consumption.first_paid_consumption_date AS first_paid_consumption_date,
+        clients.name AS client_name,
+        clients.sales_person AS sales_person,
+        clients.segment AS segment
+    FROM $iam_clouds AS iam_clouds
+    FULL JOIN $billing_accounts AS billing_accounts
+        ON billing_accounts.owner_id = iam_clouds.passport_uid
+    LEFT JOIN $ba_paid AS ba_paid
+        ON billing_accounts.id = ba_paid.billing_account_id
+    LEFT JOIN $ba_first_consumption AS ba_first_consumption
+        ON billing_accounts.id = ba_first_consumption.billing_account_id
+    LEFT JOIN $ba_first_paid_consumption AS ba_first_paid_consumption
+        ON billing_accounts.id = ba_first_paid_consumption.billing_account_id
+    LEFT JOIN $email_company AS companies
+        ON $email_to_canonical(iam_clouds.email) = companies.email
+    LEFT JOIN $last_non_empty_table($clients_ent_isv_tbl) AS clients
+        ON clients.billing_account_id = billing_accounts.id
+    WHERE
+        passport_uid IS NOT Null
+        AND passport_uid != ''
+);
+
+INSERT INTO $export_tbl WITH TRUNCATE
+SELECT * FROM $passport_cloud_ba
+;

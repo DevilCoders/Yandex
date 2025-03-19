@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ts-pod
+  labels:
+    app: token-service
+    yc-service: iam
+spec:
+  containers:
+    - name: ts-container
+      # image: cr.yandex/crpjpke23kn41vbv1p7r/iam-token-service:yc-test
+      image: 785415555008.dkr.ecr.eu-central-1.amazonaws.com/iam-token-service
+      imagePullPolicy: IfNotPresent
+      ports:
+        - containerPort: 4282
+      readinessProbe:
+        httpGet:
+          path: /ping
+          port: 9981
+        initialDelaySeconds: 30
+        timeoutSeconds: 1
+      env:
+        - name: APPLICATION_YAML
+          value: "/etc/yc/token-service/config.yaml"
+        - name: _JAVA_OPTIONS
+          value: "-Dlog4j2.configurationFile=file:///etc/yc/token-service/log4j2.yaml"
+      volumeMounts:
+        - name: config-volume
+          mountPath: /etc/yc/token-service/
+          readOnly:  true
+        - name: secrets-volume
+          mountPath: /etc/yc/token-service/secrets/
+          readOnly: true
+        - name: logs-volume
+          mountPath: /var/log/yc/token-service/
+          terminationGracePeriodSeconds: 30
+  hostNetwork: true
+  volumes:
+    - name: config-volume
+      hostPath:
+        path: /etc/yc/token-service
+        type: DirectoryOrCreate
+    - name: secrets-volume
+      hostPath:
+        path: /etc/yc/token-service/secrets
+        type: DirectoryOrCreate
+    - name: logs-volume
+      hostPath:
+        path: /var/log/yc/token-service
+        type: DirectoryOrCreate

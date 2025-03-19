@@ -1,0 +1,63 @@
+localWorkingDirectory: "/root"
+removeBackupsOlderThan: "P7D"
+
+cron:
+  expression: "0 0 * * * ?"
+  backedUpDirectory: "main"
+
+ydb:
+  serviceAccountId: "bfbpoqg4l1b0ebbtikrq"
+  endpoint: "grpcs://lb.cc803lgli70rn7k08v13.ydb.mdb.cloud-preprod.yandex.net:2135"
+  database: "/pre-prod_global/aoevcpnp2dmogo6u33ka/cc803lgli70rn7k08v13"
+  testQueries:
+    - "SELECT COUNT(*) > 100 FROM `%s/secret`"
+    - "SELECT COUNT(*) > 100 FROM `%s/version`"
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/secret`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/secret`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 10;"
+
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/secret_by_folder`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/secret_by_folder`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 10;"
+
+    - "$count1 = (SELECT COUNT(*) FROM `{{SOURCE_DIR}}/version`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/version`);
+       SELECT Abs(CAST($count1 AS Int64) - CAST($count2 AS Int64)) < 10;"
+
+    - "$count1 = (SELECT COUNT(DISTINCT secret_id) FROM `{{TEST_DIR}}/version`);
+       $count2 = (SELECT COUNT(*) FROM `{{TEST_DIR}}/secret`);
+       SELECT $count1 = $count2;"
+
+    - "$values = (SELECT secret_id FROM `{{TEST_DIR}}/secret`);
+       $count = (SELECT COUNT(secret_id) FROM `{{TEST_DIR}}/secret_by_folder`
+       WHERE secret_id NOT IN $values);
+       SELECT $count = 0;"
+kms:
+  isRoot: false
+  hosts: ["api.cloud-preprod.yandex.net"]
+  port: 443
+  keyId: "e10keeucjarn3h2unftb"
+
+storages:
+  cloudS3:
+    endpoint: "storage.cloud-preprod.yandex.net:443"
+    bucket: "lockbox-backups"
+    accessKeyEnv: "CLOUD_S3_ACCESS_KEY"
+    secretKeyEnv: "CLOUD_S3_SECRET_KEY"
+  mdsS3:
+    endpoint: "s3.mds.yandex.net:443"
+    bucket: "lockbox-preprod-backups"
+    accessKeyEnv: "MDS_S3_ACCESS_KEY"
+    secretKeyEnv: "MDS_S3_SECRET_KEY"
+
+solomon:
+  host: "solomon.cloud-preprod.yandex-team.ru"
+  oauthTokenEnv: "SOLOMON_OAUTH_TOKEN"
+  project: "aoevcpnp2dmogo6u33ka"
+  cluster: "lockbox"
+  service: "service"
+
+tokenService:
+  host: "ts.private-api.cloud-preprod.yandex.net"
+  port: 4282
+  timeout: "PT10S"

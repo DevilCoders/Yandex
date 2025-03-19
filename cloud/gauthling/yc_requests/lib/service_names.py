@@ -1,0 +1,5 @@
+COMPUTE = "compute"
+IDENTITY = "identity"
+NETWORK = "network"
+SNAPSHOT = "snapshot"
+TEMPLATE = "template"

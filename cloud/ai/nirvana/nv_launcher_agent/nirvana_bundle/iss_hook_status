@@ -1,0 +1,169 @@
+#!/usr/bin/env python
+# -*- coding: UTF-8 -*-
+
+from __future__ import division, print_function
+
+import io
+import json
+import socket
+import sys
+from datetime import datetime
+
+
+class Status(object):
+    READY = 0
+    NOT_LISTENING = 40
+    NO_JOB_LAUNCHER = 41
+    FATAL = 1
+
+    @staticmethod
+    def name_of(value):
+        for k, v in Status.__dict__.items():
+            if value == v:
+                return k
+        return None
+
+
+class Port(object):
+    def __init__(self, name, number, protocol):
+        self.number = number
+        self.protocol = protocol
+        self.name = name
+
+    def spec(self):
+        return '%s = %d %s' % (self.name, self.number, self.protocol)
+
+    def __str__(self):
+        return self.spec()
+
+
+def try_check_ports():
+    try:
+        (status, message) = check_ports()
+    except BaseException as e:
+        (status, message) = (Status.FATAL, e.message)
+
+    last_line = []
+    try:
+        with io.open('./job_launcher.diag.status_history.log', mode='rt', encoding='utf-8') as hist_log:
+            for line in hist_log:
+                last_line = line.split('\t')
+    except (OSError, IOError):
+        pass
+
+    last_status_name = last_line[1] if len(last_line) > 1 else None
+    new_status_name = Status.name_of(status)
+    if last_status_name != new_status_name:
+        try:
+            with io.open('./job_launcher.diag.status_history.log', mode='at', encoding='utf-8') as hist_log:
+                hist_log.write(u'%s\t%s\t%s\n' % (datetime.now().isoformat('T'), new_status_name, message))
+        except (OSError, IOError):
+            pass
+
+    return status
+
+
+def check_ports():
+    ports_to_check = get_ports_to_check()
+    if not ports_to_check:
+        print('no ports to check', file=sys.stderr)
+        return Status.READY, 'no ports to check'
+
+    try:
+        with io.open('./job_launcher.out.json', mode='rt', encoding='utf-8') as out_file:
+            out_first = out_file.read(1)
+            if len(out_first.strip()) != 0:
+                # job_launcher already failed
+                print('job_launcher failed, no need to check ports', file=sys.stderr)
+                return Status.READY, 'job_launcher failed'
+    except (OSError, IOError):
+        # ignore if job_launcher.out.json does not exist or cannot be read
+        pass
+
+    active_ports = get_active_ports()
+    not_active = {p for p in ports_to_check if p.number not in active_ports[p.protocol]}
+    address = get_address()
+    if len(not_active) != 0 and address:
+        not_ready = {p for p in ports_to_check if not try_connect_port(address, p)}
+        msg_suffix = ' (checked using connect())'
+    else:
+        not_ready = not_active
+        msg_suffix = ' (checked using /proc/net)'
+
+    if len(not_ready) == 0:
+        return Status.READY, 'all ports are ready' + msg_suffix
+    else:
+        print('\n'.join(map(lambda p: '[!!] %s' % p, not_ready)))
+        print('not listening to %s' % comma_delimited(not_ready), file=sys.stderr)
+        return Status.NOT_LISTENING, ('not listening to %s%s' % (comma_delimited(not_ready), msg_suffix))
+
+
+def comma_delimited(iterable):
+    return ', '.join(map(lambda p: p.__str__(), iterable))
+
+
+def get_ports_to_check():
+    ports_to_check = []
+    if len(sys.argv) > 1:
+        for arg in sys.argv[1:]:
+            port_parts = arg.split(':')
+            if len(port_parts) == 3:
+                ports_to_check.append(Port(port_parts[0], int(port_parts[1]), port_parts[2]))
+    return ports_to_check
+
+
+def get_address():
+    try:
+        with io.open('./dump.json', mode='rt', encoding='utf-8') as conf_file:
+            dump = json.load(conf_file)
+            return dump["container"]["constraints"]["ip"].split()[1]
+    except (OSError, IOError, KeyError):
+        # ignore JSON read and parse errors
+        return None
+
+
+def try_connect_port(address, port):
+    if address is None:
+        return False
+
+    print('fallback: trying %s_connect([%s]:%s)' % (port.protocol, address, port.number))
+    if port.protocol == "TCP":
+        sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+    else:
+        # we can't check udp, so we have to consider udp is always open
+        sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+    sock.settimeout(1)
+    result = sock.connect_ex((address, port.number))
+    sock.close()
+    return result == 0
+
+def get_active_ports():
+    _PATHS = {"TCP": ['/proc/net/tcp', '/proc/net/tcp6'],
+              "UDP": ['/proc/net/udp', '/proc/net/udp6']}
+    return {protocol: get_active_port_set(paths) for protocol, paths in _PATHS.items()}
+
+
+def get_active_port_set(paths):
+    _LOCAL_ADDRESS = 1
+
+    port_set = set()
+    for path in paths:
+        try:
+            with io.open(path, mode='rt', encoding='ascii') as procnet:
+                procnet.readline()  # skip first line
+                for line in procnet:
+                    columns = line.strip().split()
+                    if not columns:
+                        continue
+
+                    laddr = columns[_LOCAL_ADDRESS]
+                    _, port_number = laddr.split(':')
+
+                    port_set.add(int(port_number, 16))
+        except (OSError, IOError):
+            continue  # ignore all read errors
+
+    return port_set
+
+
+sys.exit(try_check_ports())

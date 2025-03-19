@@ -1,0 +1,40 @@
+use hahn;
+
+DEFINE SUBQUERY $last_non_empty_table($path) AS
+    $max_path = (
+        SELECT
+            MAX_BY(Path, row_count) as path
+        FROM (
+            SELECT
+            Path,
+            Yson::LookupInt64(Attributes, 'row_count') as row_count
+            FROM FOLDER($path, 'row_count')
+            WHERE Type = 'table'
+                )
+    );
+    SELECT * FROM CONCAT($max_path);
+END DEFINE;
+
+$result = (
+SELECT
+    b.billing_account_id as billing_account_id,
+    id,
+    start_time,
+    end_time,
+    CAST (initial_amount AS Double) as initial_amount,
+    COALESCE(CAST (value AS Double), -1) as consumed_amount
+FROM $last_non_empty_table('//home/logfeller/logs/yc-billing-export-monetary-grant-consumption-counters/1h') as a
+FULL JOIN $last_non_empty_table('//home/logfeller/logs/yc-billing-export-monetary-grants/1h') as b
+ON a.monetary_grant_id = b.id
+);
+
+INSERT INTO `//home/cloud_analytics/tmp/artkaz/grants_spending` WITH TRUNCATE
+SELECT
+    *
+FROM $result;
+
+INSERT INTO `//home/cloud_analytics/import/billing/grants_spending` WITH TRUNCATE
+SELECT
+    *
+FROM $result;
+

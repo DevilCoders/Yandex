@@ -1,0 +1,10 @@
+from .iam import AWSIAM, AWSRole, DOUBLE_CLOUD_CLUSTERS_IAM_PATH
+from .policies import DEFAULT_EC2_ASSUME_ROLE_POLICY
+
+
+__all__ = [
+    'AWSIAM',
+    'DEFAULT_EC2_ASSUME_ROLE_POLICY',
+    'AWSRole',
+    'DOUBLE_CLOUD_CLUSTERS_IAM_PATH',
+]

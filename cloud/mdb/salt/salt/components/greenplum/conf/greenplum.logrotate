@@ -1,0 +1,64 @@
+{%- from "components/greenplum/map.jinja" import gpdbvars with context -%}
+{% set bin_path="%s-%s/bin"|format(gpdbvars.gphome, gpdbvars.gpmajver) %}
+{{ gpdbvars.gplog }}/s3-backup.log {{ gpdbvars.gplog }}/wal-g*.log {
+  daily
+  rotate {{ salt['pillar.get']('data:config:log_keep_days', 10) }}
+  copytruncate
+  compress
+  notifempty
+  maxsize {{ salt['pillar.get']('data:config:log_maxsize', '512M') }}
+  missingok
+  su {{ gpdbvars.gpadmin }} {{ gpdbvars.gpadmin }}
+  create 640 {{ gpdbvars.gpadmin }} adm
+}
+{{ gpdbvars.gplog }}/daily_operations.log {{ gpdbvars.gplog }}/orphans_killer.log {
+  daily
+  rotate {{ salt['pillar.get']('data:config:log_keep_days', 10) }}
+{% if salt['pillar.get']('data:ship_logs', False) %}
+  delaycompress
+{% endif %}
+  compress
+  copytruncate
+  missingok
+  notifempty
+  maxsize {{ salt['pillar.get']('data:config:log_maxsize', '128M') }}
+  create 640 {{ gpdbvars.gpadmin }} adm
+}
+
+{{ gpdbvars.gplog }}/gp_autorecovery.log {
+  daily
+  rotate {{ salt['pillar.get']('data:config:log_keep_days', 10) }}
+{% if salt['pillar.get']('data:ship_logs', False) %}
+  delaycompress
+{% endif %}
+  compress
+  copytruncate
+  missingok
+  notifempty
+  maxsize {{ salt['pillar.get']('data:config:log_maxsize', '128M') }}
+  create 640 {{ gpdbvars.gpadmin }} adm
+}
+
+{% for segment_info in salt['mdb_greenplum.get_segment_info']() %}
+{{ segment_info['datadir'] }}/pg_log/greenplum*.csv {
+  daily
+  rotate {{ salt['pillar.get']('data:config:gpdblogs:log_keep_days', 10) }}
+{% if salt['pillar.get']('data:ship_logs', False) %}
+  delaycompress
+{% endif %}
+  compress
+  missingok
+  maxsize {{ salt['pillar.get']('data:config:gpdblogs:log_maxsize', '128M') }}
+  create 640 {{ gpdbvars.gpadmin }} adm
+  su root root
+  sharedscripts
+  firstaction
+    su - {{ gpdbvars.gpadmin }} -c "{{ bin_path }}/pg_isready -q -p {{ segment_info['port'] }}" > /dev/null 2>&1
+  endscript
+  lastaction
+    su - {{ gpdbvars.gpadmin }} -c "{{ bin_path }}/pg_isready -q -p {{ segment_info['port'] }} && PGOPTIONS='-c gp_session_role=utility' {{ bin_path }}/psql -d postgres -p {{ segment_info['port'] }} -c 'select pg_rotate_logfile()'" > /dev/null 2>&1
+  endscript
+}
+
+{% endfor %}
+

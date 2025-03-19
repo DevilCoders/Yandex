@@ -1,0 +1,62 @@
+{% extends "vpc_api_base_alert.j2" %}
+
+{% set cluster = "cloud_{}_cpl".format(env) %}
+{% set service = "vpc-api-l7-errors" %}
+
+{% set windowSecs = 300 %}
+
+{% macro prog() %}
+{# FIXME(wronglink): remove alb_cluster_name filtration as there is no alb_cluster_name metrics anymore #}
+{# See: https://t.me/c/1426447463/10793 #}
+let signal_ts = series_sum({
+    project=platform
+    ,cluster='{{ cluster }}'
+    ,service=api_envoy_tags_ma
+    ,name=alb_upstream_rq_xx
+    ,alb_response_code_class='2'
+    ,alb_cluster_name=-
+    ,cluster_group='*'
+    ,host='*'
+    ,backend=vpc_api_backend
+});
+// There should be 2xx
+no_data_if(count(signal_ts) == 0);
+
+let ts = series_sum(
+    non_negative_derivative({
+        project=platform
+        ,cluster='{{ cluster }}'
+        ,service=api_envoy_tags_ma
+        ,name=alb_upstream_rq_xx
+        ,alb_response_code_class='5'
+        ,alb_cluster_name=-
+        ,cluster_group='*'
+        ,host='*'
+        ,backend=vpc_api_backend
+    })
+);
+let error_rate = 0;
+
+// It's ok, just no 5xx for a while
+ok_if(count(ts) == 0);
+
+let error_rate = avg(ts);
+
+alarm_if(error_rate > (2 / 60.0));
+warn_if(error_rate > (1 / 60.0));
+{% endmacro %}
+
+{% block main %}
+    "name": "VPC API L7 errors {{env}}",
+    "annotations": {
+        "error_rate": "[[ expression.error_rate ]]",
+        "description": "VPC API L7 errors rate [[ expression.error_rate ]]",
+        "windowSecs": "{{ windowSecs }}",
+        "host": "{{ solomon_host() }}",
+        "service": "{{ service }}",
+        "grap": "https://solomon.cloud.yandex-team.ru/?project=platform&cluster={{ cluster }}&service=api_envoy_tags_ma&l.backend=vpc_api_backend&l.name=alb_upstream_rq_xx&l.alb_cluster_name=-&l.alb_response_code_class=5&l.cluster_group=*&l.host=*&graph=auto&transform=differentiate",
+        "graphVpc": "https://solomon.cloud.yandex-team.ru/?project=yandexcloud&cluster={{ cluster }}&host=*&l.alb_response_code_class=5&graph=cloud_{{ env }}_vpc-api_l7_requests",
+        "wiki": "{{ wiki_url(service) }}" 
+    },
+    "type": {{ type_expression() }}
+{% endblock %}

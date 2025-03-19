@@ -1,0 +1,16 @@
+{% set timezone = salt['timezone.get_offset']() %}
+{% set hours_delta = timezone[:3]|int * 60 %}
+{% set delta = (timezone[0] + timezone[3:])|int + hours_delta %}
+{% set utc_minutes = salt['pillar.get']('data:backup:start:hours', 22) * 60 + salt['pillar.get']('data:backup:start:minutes', 0) %}
+{% set local_minutes = utc_minutes + delta %}
+{% set cron_hours = (24 + local_minutes // 60) % 24 %}
+{% set cron_minutes = local_minutes % 60 %}
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
+MAILTO=''
+
+{% if not salt.pillar.get('data:backup:use_backup_service') %}
+{{ cron_minutes }} {{ cron_hours }} * * * mysql flock -w 10 -o /tmp/mysql_walg_backup_push.lock /usr/local/yandex/mysql_walg.py backup_push
+{% else %}
+# backup api enabled
+{% endif %}
+* * * * * mysql flock -w 10 -o /tmp/mysql_walg_cron.lock /usr/local/yandex/mysql_walg.py binlogs_push

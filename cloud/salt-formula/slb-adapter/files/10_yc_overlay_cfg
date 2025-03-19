@@ -1,0 +1,20 @@
+# Config file for overlay network on a dual-interfaced VM (underlay + overlay)
+
+auto {{ overlay_dev }}
+
+iface {{ overlay_dev }} inet6 manual
+    pre-up /sbin/ip link set {{ overlay_dev }} mtu {{ overlay_mtu }}
+    up /usr/bin/yc-inet6-cfg $IFACE up -d 0
+    down /usr/bin/yc-inet6-cfg $IFACE down
+
+# ipv4 is only present on overlay network
+# so no reason to cut off default route
+iface {{ overlay_dev }} inet manual
+    # This is required as ipv6 is technically active if link is up.
+    # Default route via link-local addr on overlay interface
+    # can pollute routing table.
+    # See CLOUD-8387 for details.
+    pre-up sysctl -w net.ipv6.conf.$IFACE.accept_ra_defrtr=0
+    pre-up /sbin/ip link set {{ overlay_dev }} mtu {{ overlay_mtu }}
+    up dhclient -nw -v -pf /run/dhclient.$IFACE.pid -lf /var/lib/dhcp/dhclient.$IFACE.leases $IFACE
+    down dhclient -r -pf /run/dhclient.$IFACE.pid -lf /var/lib/dhcp/dhclient.$IFACE.leases $IFACE

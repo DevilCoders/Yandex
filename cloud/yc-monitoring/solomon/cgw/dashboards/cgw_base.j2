@@ -1,0 +1,92 @@
+{% extends "../../base/dashboard.j2" %}
+
+{% set cloudgate_cluster = "cloud_" + env + "_cloudgate" %}
+
+{% macro cgw_dc_selector(az) -%}
+    cgw-dc*{{ az }}*
+{%- endmacro %}
+
+{% macro render_row_for_cluster_per_az(title, cluster, service, query) %}
+{ "panels": [
+    {% for az in zones_by_env[env] %}
+        {%- set host = cgw_dc_selector(az.prefix) -%}
+        {{ render_panel(title=title + " @ " + az.prefix|upper, cluster=cluster, service=service, query=query + "&l.host=" + host) }}
+        {% if not loop.last %},{% endif %}
+    {% endfor %}
+]}
+{% endmacro %}
+
+{% macro render_loop_iface_row(who, iface) %}
+    {{ render_row_for_cluster_per_az(title="CGW Rx/Tx Packets for " + who, cluster=cloudgate_cluster, service="interfaces",
+    query="l.name=rx_packets_rate&l.iface=" + iface + "&overLinesTransform=SUMMARY&hideNoData=true&graph=auto") }},
+    {{ render_row_for_cluster_per_az(title="CGW Rx/Tx Bytes for " + who, cluster=cloudgate_cluster, service="interfaces",
+    query="l.name=rx_bytes_rate&l.iface=" + iface + "&overLinesTransform=SUMMARY&hideNoData=true&graph=auto") }},
+    {{ render_row_for_cluster_per_az(title="CGW Drops Bytes for " + who, cluster=cloudgate_cluster, service="interfaces",
+    query="l.name=drops&l.iface=" + iface + "&transform=differentiate&overLinesTransform=SUMMARY&hideNoData=true&graph=auto") }}
+{% endmacro %}
+
+{% set pretty_loop_name_names = {
+    "rx_packets_rate": "Rx Packets",
+    "rx_bytes_rate": "Rx Bytes",
+    "drops_rate": "Drops Bytes",
+    "drops": "Drops Bytes",
+}
+%}
+
+{% set loop_iface_name_extra_transforms = {
+    "drops": "&transform=differentiate",
+}
+%}
+
+{% macro render_loop_iface_element(who, iface, name, az) %}
+    {% set name_name = pretty_loop_name_names.get(name, name) %}
+    {%- set host = cgw_dc_selector(az) -%}
+
+    {{ render_panel(title="CGW " + name_name + " for " + who + " @ " + az|upper, cluster=cloudgate_cluster, service="interfaces",
+    query="l.name=" + name + "&l.iface=" + iface + "&l.host=" + host + "&overLinesTransform=SUMMARY&hideNoData=true&graph=auto" + loop_iface_name_extra_transforms.get(name, "")) }}
+{% endmacro %}
+
+{% macro render_loop_iface_columns(cols) %}
+    {% for name in ("rx_packets_rate", "rx_bytes_rate", "drops") %}
+        {
+            "panels": [
+            {% for col in cols %}
+                {{ render_loop_iface_element(who=col["who"], iface=col["iface"], name=name, az=col["az"]) }}
+                {% if not loop.last %},{% endif %}
+            {% endfor %}
+            ]
+        }
+        {% if not loop.last %},{% endif %}
+    {% endfor %}
+{% endmacro %}
+
+{% macro render_netinfra_traf(title, host, iface) %}
+    {{ render_panel(title=title, project="cloud_noc", cluster="netinfra", service="monitoring", query="&l.intf=" + iface + "&l.host=" + host + "&l.sensor=tx_rate|rx_rate&hideNoData=true&graph=auto&stack=false&downsampling=byInterval&grid=1m30s&downsamplingAggr=max") }}
+{% endmacro %}
+
+{% macro render_netinfra_panel(title_host_pairs) %}
+{
+    "panels": [
+        {% for (title, host, iface) in title_host_pairs %}
+            {{ render_netinfra_traf(title, host, iface) }}
+            {% if not loop.last %},{% endif %}
+        {% endfor %}
+    ]
+}
+{% endmacro %}
+
+
+{% macro render_netinfra_traf_graph(title, graph) %}
+    {{ render_panel(title=title, project="cloud_noc", cluster="netinfra", service="monitoring", query="&l.sensor=tx_rate%7Crx_rate&graph="+graph) }}
+{% endmacro %}
+
+{% macro render_netinfra_graph(title_host_pairs) %}
+{
+    "panels": [
+        {% for (title, graph) in title_host_pairs %}
+            {{ render_netinfra_traf_graph(title, graph) }}
+            {% if not loop.last %},{% endif %}
+        {% endfor %}
+    ]
+}
+{% endmacro %}

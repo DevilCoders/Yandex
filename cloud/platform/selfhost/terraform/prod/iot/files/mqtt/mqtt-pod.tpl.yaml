@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: PodList
+items:
+${infra_pod_spec}
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: mqtt-server
+    annotations:
+      config_digest: ${config_digest}
+  spec:
+    initContainers:
+      - name: deploy-configs
+        image: registry.yandex.net/cloud/api/metadata:6c1bc05bc
+        volumeMounts:
+          - name: config-dir
+            mountPath: /etc
+            terminationGracePeriodSeconds: 30
+    containers:
+      - name: tvmtool
+        image: registry.yandex.net/cloud/tvm_tool:1.2.19
+        env:
+          - name: TVMTOOl_LOCAL_AUTHTOKEN
+            value: ${tvmtool_auth_token}
+        volumeMounts:
+          - mountPath: /etc/tvmtool/tvmtool.conf
+            name: tvmtool-config
+            readOnly: true
+      - name: push-client
+        image: registry.yandex.net/cloud/platform/push-client:${push_client_version}
+        volumeMounts:
+          - name: all-logs
+            mountPath: /var/log
+            terminationGracePeriodSeconds: 30
+          - name: var-spool
+            mountPath: /var/spool
+            terminationGracePeriodSeconds: 30
+          - name: push-client-config
+            mountPath: /etc/yandex/statbox-push-client
+            readOnly: true
+      - name: mqtt
+        image: registry.yandex.net/cloud/cloud-go/iot/mqtt-server:v5301-35fee0e
+        volumeMounts:
+          - mountPath: /etc/yc-iot/mqtt-server.yaml
+            name: mqttconfig
+            readOnly: true
+          - mountPath: /etc/yc-iot/mqtt
+            name: mqtt-all-conf
+            readOnly: true
+          - mountPath: /var/log/yc-iot/mqtt
+            name: mqtt-logs
+    hostNetwork: true
+    volumes:
+      - name: mqttconfig
+        hostPath:
+          path: /etc/yc-iot/mqtt-server.yaml
+      - name: mqtt-all-conf
+        hostPath:
+          path: /etc/yc-iot/mqtt
+      - name: config-dir
+        hostPath:
+          path: /etc
+      - name: tvmtool-config
+        hostPath:
+          path: /etc/tvmtool/tvmtool.conf
+      - name: mqtt-logs
+        hostPath:
+          path: /var/log/yc-iot/mqtt
+          type: DirectoryOrCreate
+      - name: all-logs
+        hostPath:
+          path: /var/log
+          type: DirectoryOrCreate
+      - name: var-spool
+        hostPath:
+          path: /data/var/spool
+          type: DirectoryOrCreate
+      - name: push-client-config
+        hostPath:
+          path: /etc/yandex/statbox-push-client

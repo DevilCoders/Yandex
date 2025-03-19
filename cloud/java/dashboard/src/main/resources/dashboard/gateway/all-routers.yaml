@@ -1,0 +1,122 @@
+uid: 1cBBiRHZk
+refresh: 3m
+title:  All routers metrics (API, DPL01, CPL)
+
+tags: [ 'ycp', 'ycp-router', 'ycp-gateway', 'ycp-duty', 'ycp-drilldown' ]
+
+variables:
+  ui:
+    cluster: { values: [prod, preprod] }
+    type:
+      multi: true
+      values: [api-router, dpl01, cpl]
+      titles: [api, dpl01, cpl]
+
+graphDefaults: { width: 6, height: 5, datasource: 'Solomon Cloud' }
+queryDefaults: { dropNan: true, labels: 'project=platform, service=api_gateway_ma, host!=cluster' }
+
+rows:
+
+  - title: ${type}-router
+    uiRepeat: type
+    drilldowns:
+      - subUid: dd_host_1cBBiRHZk
+        ui:
+          cluster: cluster
+          type:
+            values: [api-router, dpl01, cpl]
+            titles: [api, dpl01, cpl]
+          host:
+            multi: true
+            values: [ '*-myt01', '*-sas01',  '*-vla01', '*-myt02', '*-sas02', '*-vla02' ]
+            titles: [ 'Host myt01', 'Host sas01',  'Host vla01', 'Host myt02', 'Host sas02', 'Host vla02' ]
+        uiRepeat: host
+        labels: 'host=$host'
+    queryDefaults: { labels: 'cluster=cloud_${cluster}_${type}, service=api_envoy_ma' }
+
+    panels:
+
+      - type: graph
+        templates:
+          - { name: rps, rate: ui }
+          - { name: patchSelect, before: last, add: { asap: [] } }
+        title: 'Router $rateUnit ($cluster)'
+        queries:
+          - params: { labels: 'name=envoy_http_frontend_v4_plain_downstream_rq_total|envoy_http_frontend_v6_plain_downstream_rq_total|envoy_http_frontend_v4_tls_downstream_rq_total|envoy_http_frontend_v6_tls_downstream_rq_total' }
+
+      - type: graph
+        title: 'downstream errors ($cluster)'
+        display: { legend: false, fill: 0 }
+        yAxes: [ { min: 0, decimals: 1 } ]
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=name=envoy_http_frontend_v4_plain_downstream_rq_5xx|envoy_http_frontend_v6_plain_downstream_rq_5xx|envoy_http_frontend_v4_tls_downstream_rq_5xx|envoy_http_frontend_v6_tls_downstream_rq_5xx' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: "0", group_lines: [sum], alias: 5xx }
+          - params: { labels: 'name=name=envoy_http_frontend_v4_plain_downstream_rq_503|envoy_http_frontend_v6_plain_downstream_rq_503|envoy_http_frontend_v4_tls_downstream_rq_503|envoy_http_frontend_v6_tls_downstream_rq_503' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: "0", group_lines: [sum], alias: "503" }
+
+      - type: graph
+        title: 'duration ($cluster)'
+        templates:
+          - { name: patchSelect, before: last, add: { asap: [] } }
+        display: { legend: false, fill: 0 }
+        yAxes: [ { format: ms, min: 0, decimals: 1 } ]
+        queryDefaults: { labels: 'name=envoy_http_frontend_v4_plain_downstream_rq_time|envoy_http_frontend_v4_tls_downstream_rq_time|envoy_http_frontend_v6_plain_downstream_rq_time|envoy_http_frontend_v6_tls_downstream_rq_time' }
+        queries:
+          - params: { labels: 'quantile=0.5' }
+            groupByTime: { last: 'default' }
+            select: { group_lines: [max], alias: p50 }
+          - params: { labels: 'quantile=0.9' }
+            groupByTime: { last: 'default' }
+            select: { group_lines: [max], alias: p90 }
+          - params: { labels: 'quantile=0.99' }
+            groupByTime: { last: 'default' }
+            select: { group_lines: [max], alias: p99 }
+
+      - type: graph
+        title: 'Router upstreams $rateUnit ($cluster)'
+        templates:
+          - { name: rps, rate: ui }
+          - { name: patchSelect, before: last, add: { asap: [] } }
+        display: { legend: false, fill: 0 }
+        yAxes: [ { min: 0, decimals: 1 } ]
+        queries:
+          - params: { labels: 'name=envoy_cluster_*_upstream_rq_total' }
+
+      - type: graph
+        title: 'upstream errors ($cluster)'
+        display: { legend: false, fill: 0 }
+        yAxes: [ { min: 0, decimals: 1 } ]
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=envoy_cluster_*_external_upstream_rq_5xx|envoy_cluster_*_external_upstream_rq_503' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: "0", group_by_labels: [sum, name] }
+
+      - type: graph
+        title: 'upstreams duration ($cluster)'
+        templates:
+          - { name: patchSelect, before: last, add: { asap: [] } }
+        display: { legend: false, fill: 0 }
+        yAxes: [ { format: ms, min: 0, decimals: 1 } ]
+        queries:
+          - params: { labels: 'name=envoy_cluster*external_upstream_rq_time, quantile=0.99' }
+            groupByTime: { last: 'default' }
+            select: { group_by_labels: [max, name] }
+
+      - type: graph
+        title: '$router_type Router LA1 ($cluster)'
+        templates:
+          - { name: patchSelect, before: last, add: { asap: [] } }
+        display: { legend: false, fill: 0 }
+        yAxes: [ { min: 0, decimals: 1 } ]
+        queryDefaults: { labels: 'name=node_load1, service=node-exporter_ma, host!=cluster' }
+        queries:
+          - select: { percentile_group_lines: "50", alias: "la1 p50" }
+            groupByTime: { max: 'default' }
+          - select: { percentile_group_lines: "95", alias: "la1 p95" }
+            groupByTime: { max: 'default' }
+          - select: { percentile_group_lines: "99", alias: "la1 p99" }
+            groupByTime: { max: 'default' }

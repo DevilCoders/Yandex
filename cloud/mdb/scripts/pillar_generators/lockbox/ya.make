@@ -1,0 +1,9 @@
+PY3_LIBRARY()
+
+STYLE_PYTHON()
+
+OWNER(g:mdb)
+
+ALL_PY_SRCS()
+
+END()

@@ -1,0 +1,59 @@
+$parse_metadata = ($metadata) -> { RETURN Yson::ConvertToDict(Yson::ParseJson(Yson::ConvertToString($metadata))); };
+$get_is_verified = ($metadata) -> {$parsed_metadata = $parse_metadata($metadata); RETURN IF(DictContains($parsed_metadata, "verified"), Yson::ConvertToBool(DictLookup($parsed_metadata, "verified")), false);};
+$get_is_fraud = ($metadata) -> {
+    $parsed_metadata = $parse_metadata($metadata);
+    RETURN IF(DictContains($parsed_metadata, "fraud_detected_by"),
+    ListHasItems(Yson::ConvertToStringList(DictLookup($parsed_metadata, "fraud_detected_by"))), false);
+};
+$parse_feature_flags = ($feature_flags) -> { RETURN Yson::ParseJson(Yson::ConvertToString($feature_flags)); };
+$get_feature_flag = ($feature_flags, $flag)  -> {
+    $parsed_feature_flags = $parse_feature_flags($feature_flags);
+    RETURN NVL(Yson::LookupBool($parsed_feature_flags, $flag), false);
+};
+$format_date = DateTime::Format("%Y-%m-%d");
+$format_time = DateTime::Format("%H:%M:%S");
+$get_datetime = ($timestamp) -> { RETURN AddTimezone(DateTime::FromSeconds(CAST($timestamp AS Uint32)), 'Europe/Moscow'); };
+$get_date_by_timestamp = ($timestamp) -> { RETURN $format_date($get_datetime($timestamp)); };
+$get_time_by_timestamp = ($timestamp) -> { RETURN $format_time($get_datetime($timestamp)); };
+$get_w_cohort = ($timestamp) -> { RETURN $format_date(DateTime::StartOfWeek($get_datetime($timestamp))); };
+$get_m_cohort = ($timestamp) -> { RETURN $format_date(DateTime::StartOfMonth($get_datetime($timestamp))); };
+
+-- please, keep alphabetical order by alias
+
+$result = (
+    SELECT
+        balance_client_id                            AS balance_client_id,
+        balance_contract_id                          AS balance_contract_id,
+        balance                                      AS balance,
+        billing_account_id                           AS billing_account_id,
+        billing_threshold                            AS billing_threshold,
+        country_code                                 AS country_code,
+        currency                                     AS currency,
+        disabled_at                                  AS disabled_at,
+        feature_flags                                AS feature_flags,
+        $get_is_fraud(metadata)                      AS is_fraud,
+        $get_feature_flag(feature_flags, "isv")      AS is_isv,
+        $get_feature_flag(feature_flags, "referral") AS is_referral,
+        $get_feature_flag(feature_flags, "referrer") AS is_referrer,
+        $get_feature_flag(feature_flags, "var")      AS is_var,
+        $get_is_verified(metadata)                   AS is_verified,
+        master_account_id                            AS master_account_id,
+        metadata                                     AS metadata,
+        name                                         AS name,
+        owner_id                                     AS owner_id,
+        paid_at                                      AS paid_at,
+        payment_cycle_type                           AS payment_cycle_type,
+        payment_method_id                            AS payment_method_id,
+        payment_type                                 AS payment_type,
+        person_id                                    AS person_id,
+        person_type                                  AS person_type,
+        state                                        AS state,
+        type                                         AS type,
+        updated_at                                   AS updated_at,
+        $get_date_by_timestamp(updated_at)           AS updating_date,
+        $get_m_cohort(updated_at)                    AS updating_month,
+        $get_time_by_timestamp(updated_at)           AS updating_time,
+        $get_w_cohort(updated_at)                    AS updating_week,
+        usage_status                                 AS usage_status,
+    FROM $billing_accounts_table
+);

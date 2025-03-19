@@ -1,0 +1,150 @@
+# Link: https://grafana.yandex-team.ru/d/cloud-l7-billing/cloud-l7-billing-status
+#
+# How to update:
+#
+# Get token from https://oauth.yandex-team.ru/authorize?response_type=token&client_id=12225edea41e4add87aaa4c4896431f1
+#
+# $ export GRAFANA_OAUTH_TOKEN=...
+#
+# $ cd ~/arcadia/cloud/java/dashboard/src/main/resources/dashboard
+# $ sudo docker run --rm -it -v `pwd`:/data/ -e GRAFANA_OAUTH_TOKEN="$GRAFANA_OAUTH_TOKEN" registry.yandex.net/cloud/platform/dashboard:latest java -jar build/java-dashboard.jar upload /data/l7/billing.yaml
+#
+
+uid: cloud-l7-billing
+title: Cloud L7 Billing status
+refresh: 1m
+tags: [l7, alb, billing]
+
+variables:
+  ui:
+    env:
+      values:
+        - prod
+        - preprod
+  uiQuery:
+    host:
+      datasource: 'Solomon Cloud'
+      labels: 'project=platform, cluster="cloud_${env}_alb-billing", service="alb-billing_ma", host="*"'
+      inheritLabels: false
+
+graphDefaults:
+  datasource: 'Solomon Cloud'
+  width: 8
+  height: 8
+
+queryDefaults:
+  dropNan: true
+  labels: >-
+    project=platform,
+    cluster=${cluster},
+    service=alb-billing_ma,
+    host=${host}
+
+rows:
+- title: 'Billing counters (per 15sec iteration)'
+  queryDefaults:
+    dropNan: true
+    labels: 'project=platform, service=alb-billing_ma, cluster="cloud_${env}_alb-billing", host=${host}'
+  panels:
+  - type: graph
+    title: 'Billed loadbalancers'
+    queries:
+    - params: { labels: 'name=processed_loadbalancers_total' }
+      groupByTime: { max: default }
+      select: { alias: "processed", diff: [], drop_below: [0] }
+    - params: { labels: 'name=all_loadbalancers_total' }
+      groupByTime: { max: default }
+      select: { alias: all, diff: [], drop_below: [0] }
+  - type: graph
+    title: 'Billed metrics'
+    queries:
+    - params: { labels: 'name=billed_metrics_total' }
+      groupByTime: { max: default }
+      select: { diff: [], drop_below: [0] }
+  - type: graph
+    title: 'Errors'
+    queries:
+    - params: { labels: 'name=metric_err' }
+      groupByTime: { max: default }
+      select: { diff: [], drop_below: [0] }
+    draw: [{ alias: 'errors', color: '#147'}]
+
+
+- title: CPU
+  queryDefaults:
+    dropNan: true
+    labels: 'project=platform, service=node-exporter_ma, cluster="cloud_${env}_alb-billing", host=${host}'
+  panels:
+  - type: graph
+    title: 'CPU #0'
+    queries:
+    - params: { labels: 'name=node_cpu_seconds_total, cpu=0' }
+      groupByTime: { max: default }
+      select: { non_negative_derivative: [] }
+  - type: graph
+    title: 'CPU #1'
+    queries:
+    - params: { labels: 'name=node_cpu_seconds_total, cpu=1' }
+      groupByTime: { max: default }
+      select: { non_negative_derivative: [] }
+  - type: graph
+    title: Context switches
+    queries:
+    - params: { labels: 'name=node_context_switches_total' }
+      groupByTime: { max: default }
+      select: { non_negative_derivative: [] }
+
+- title: Memory
+  queryDefaults:
+    dropNan: true
+    labels: 'project=platform, service=node-exporter_ma, cluster="cloud_${env}_alb-billing", host=${host}'
+  panels:
+  - type: graph
+    title: Slab Memory
+    yAxes: [{format: bytes}]
+    queries:
+    - params: { labels: 'name=node_memory_Slab_bytes' }
+      groupByTime: { max: default }
+      select: { alias: "slab" }
+  - type: graph
+    title: Cached
+    yAxes: [{format: bytes}]
+    queries:
+    - params: { labels: 'name=node_memory_Cached_bytes' }
+      groupByTime: { max: default }
+      select: { alias: "slab" }
+  - type: graph
+    title: MemAvailable
+    yAxes: [{format: bytes}]
+    queries:
+    - params: { labels: 'name=node_memory_MemAvailable_bytes' }
+      groupByTime: { max: default }
+      select: { alias: "available" }
+
+- title: Disks
+  queryDefaults:
+    dropNan: true
+    labels: 'project=platform, service=node-exporter_ma, cluster="cloud_${env}_alb-billing", host=${host}'
+  panels:
+  - type: graph
+    title: Boot disk bytes available
+    yAxes: [{ format: bytes }]
+    queries:
+    - params: { labels: 'name=node_filesystem_avail_bytes, mountpoint=/' }
+      groupByTime: { max: default }
+
+  - type: graph
+    title: /var/log/fluent bytes available
+    yAxes: [{ format: bytes }]
+    queries:
+    - params: { labels: 'name=node_filesystem_avail_bytes, mountpoint=/var/log/fluent' }
+      groupByTime: { max: default }
+
+
+  - type: graph
+    title: File descriptors
+    queries:
+    - params: { labels: 'name=node_filefd_allocated' }
+      groupByTime: { max: default }
+
+

@@ -1,0 +1,104 @@
+uid: trail-logbroker
+refresh: 1m
+title: Audit Trails Logbroker
+
+tags:
+  - yc-trails
+  - yc-audit-trails
+links:
+  - { title: 'Dashboards', tags: [ yc-trails ] }
+
+variables:
+  ui:
+    !include include/_datasources.yaml
+    project:
+      values:
+        - b1gvcqr959dbmi1jltep
+        - aoeb66ftj1tbt1b2eimn
+      titles:
+        - prod
+        - preprod
+    account:
+      values:
+        - b1gm277magvimb2gv0ld
+        - aoedsmvctptsmbkj4g90
+      titles:
+        - prod
+        - preprod
+    quoter:
+      values:
+        - /global/b1gvcqr959dbmi1jltep/etn03iai600jur7pipla/PersQueue/System/Quoters/b1gm277magvimb2gv0ld
+        - /pre-prod_global/aoeb66ftj1tbt1b2eimn/cc8035oc71oh9um52mv3/PersQueue/System/Quoters/aoedsmvctptsmbkj4g90
+      titles:
+        - prod
+        - preprod
+    host:
+      multi: true
+      hidden: true
+      values:
+        - 'cluster'
+  replacement:
+    !include ../include/errors.yaml
+
+
+graphDefaults:
+  datasource: ${datasource}
+  width: 6
+  height: 6
+
+queryDefaults:
+  dropNan: false
+  labels: ''
+  defaultTimeWindow: $__interval
+
+rows:
+  - title: 'Write to CLOUD Account Quota'
+    queryDefaults: { labels: 'project=${project}, cluster=global-data-plane' }
+    panels:
+      - type: graph
+        title: Quota Usage in CLOUD account
+        queries:
+
+          - params: { labels: 'sensor=QuotaConsumed|Limit, host=${host}, service=quoter_service, quoter=${quoter}, resource=write-quota' }
+            select: { group_by_labels: [ 'sum', 'sensor' ], alias: '{{sensor}}' }
+        display: { stack: false, empty: false, sort: decreasing }
+        yAxes: [ { min: 0, format: decbytes, decimals: 0 } ]
+      - type: graph
+        title: Quota Wait in CLOUD account
+        templates: [ { name: percentile, format: Interval, sensor: raw } ]
+        queries:
+          - params: { labels: 'Account=${account}, sensor=TopicWriteQuotaWaitOriginal, service=pqproxy_topicWriteQuotaWait, host=${host}, OriginDC=${host}, TopicPath=${account}/*' }
+            select: { alias: '{{Interval}} {{host}}' }
+        display: { stack: true, empty: false, sort: decreasing }
+        yAxes: [ { min: 0 } ]
+
+  !include include/_yc-topic-read.yaml  yc-events yc-trail-preparer   'by Preparer'
+
+  !include include/_yc-topic-write.yaml yc-events
+
+  !include include/_yc-topic-read.yaml  services/yc-storage yc-trail-preparer   'by Preparer'
+
+  !include include/_yc-topic-write.yaml services/yc-storage
+
+  !include include/_yc-topic-read.yaml  services/yc-organizationmanager yc-trail-preparer   'by Preparer'
+
+  !include include/_yc-topic-write.yaml services/yc-organizationmanager
+
+  !include include/_yc-topic-write.yaml yc-trail
+
+  !include include/_yc-topic-write.yaml yc-trail-unparsed
+
+  !include include/_yc-topic-write.yaml yc-trail-unfiltered
+
+  !include include/_yc-topic-read.yaml  e2e/yc-events-e2e yc-trail-preparer   'by Preparer'
+
+  !include include/_yc-topic-write.yaml e2e/yc-events-e2e
+
+  !include include/_yc-topic-read.yaml  services/yc-lockbox-data yc-trail-preparer   'by Preparer'
+
+  !include include/_yc-topic-write.yaml services/yc-lockbox-data
+
+  !include include/_yc-topic-read.yaml  ingest/yc-events-ingest yc-trail-preparer   'by Preparer'
+
+  !include include/_yc-topic-write.yaml ingest/yc-events-ingest
+

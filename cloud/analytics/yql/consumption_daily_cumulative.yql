@@ -1,0 +1,469 @@
+use hahn;
+
+/*
+$cum_sum = ($y) -> {
+    RETURN YQL::FoldMap($y, 0.0, ($item, $state) -> {
+    $state = $item + $state;
+    return AsTuple($state, $state); }
+);
+};
+*/
+$format = DateTime::Format("%Y-%m-%d %H:%M:%S");
+
+
+
+$start_of_day = ($ts) -> {RETURN DateTime::ToSeconds(DateTime::MakeTimestamp(DateTime::StartOfDay(DateTime::Split(DateTime::FromSeconds($ts) ))));};
+
+$date_range = ($date) -> {RETURN ListMap(ListFromRange(0,DateTime::ToDays(CurrentUtcDatetime()-$date)+1 ?? 0), ($d) -> {RETURN $start_of_day(DateTime::ToSeconds($date + DateTime::IntervalFromDays(CAST ($d AS Int16))));});}
+;
+
+$script = @@
+def cum_sum(d):
+    d_ = {}
+    s = 0
+    for k in sorted(list(d.keys())):
+        s += d[k]
+        d_[k] = s
+    return d_
+
+def sort_by_keys(d):
+    d_ = {}
+    for k in sorted(list(d.keys())):
+        d_[k] = d[k]
+    return d_
+
+@@;
+
+$cum_sum = Python::cum_sum(Callable<(Dict<Uint64?,Double?>)->Dict<Uint64,Double>>, $script);
+$sort_by_keys = Python::sort_by_keys(Callable<(Dict<Uint64?,Double?>)->Dict<Uint64,Double>>, $script);
+
+
+$to_start_of_week = ($ts) -> {RETURN DateTime::ToSeconds(DateTime::MakeDatetime(DateTime::StartOfWeek(DateTime::FromSeconds(CAST($ts AS Uint32))))) - 24*60*60;};
+$to_start_of_month = ($ts) -> {RETURN DateTime::ToSeconds(DateTime::MakeDatetime(DateTime::StartOfMonth(DateTime::FromSeconds(CAST($ts AS Uint32))))) - 24*60*60;};
+$to_start_of_quarter = ($ts) -> {RETURN DateTime::ToSeconds(DateTime::MakeDatetime(DateTime::StartOfQuarter(DateTime::FromSeconds(CAST($ts AS Uint32))))) - 24*60*60;};
+
+
+$ba_cloud_tags = (
+SELECT
+    billing_account_id,
+    cloud_id,
+    ba_curr_state,
+    ba_curr_state_extended,
+    usage_status,
+    offer_amount,
+    client_name,
+    source,
+    source2,
+    segment,
+    sales_person,
+    idc_industry,
+    1 as one
+FROM (
+    SELECT DISTINCT
+        billing_account_id,
+        cloud_id,
+        ba_curr_state,
+        ba_curr_state_extended,
+        usage_status,
+        offer_amount,
+        client_name,
+        source,
+        source2,
+        segment,
+        sales_person,
+        idc_industry
+        --1 as one
+    FROM `home/cloud_analytics/export/billing/billing_records_daily`
+    --WHERE
+        --billing_account_id = 'dn2rfajhhavgi6g918fm'
+    )
+);
+
+$dates = (
+SELECT
+    billing_account_id,
+    cloud_id,
+    sku,
+    `date`
+FROM (
+    SELECT
+        billing_account_id,
+        cloud_id,
+        sku,
+        $date_range(DateTime::FromSeconds(CAST($to_start_of_quarter(MIN(`date`)) AS UInt32))) as `date`
+       -- $date_range(DateTime::FromSeconds(1537228800)) as `date`
+    FROM `home/cloud_analytics/export/billing/billing_records_daily`
+    --WHERE
+       -- billing_account_id = 'dn2rfajhhavgi6g918fm'
+    GROUP BY
+    billing_account_id,
+    cloud_id,
+    sku
+)
+FLATTEN BY `date`
+);
+
+SELECT
+    count(*)
+FROM
+    $dates;
+
+
+
+$ba_sku = (
+    SELECT DISTINCT
+        billing_account_id,
+        cloud_id,
+        sku,
+        service1,
+        service2,
+        service3,
+        service4,
+        pricing_unit
+    FROM `home/cloud_analytics/export/billing/billing_records_daily`
+    --WHERE
+        --billing_account_id = 'dn2rfajhhavgi6g918fm'
+);
+
+SELECT
+    count(*)
+FROM
+    $ba_sku;
+
+$cons_daily_all_dims = (
+    SELECT
+        CAST (`date` AS Uint64) as `date`,
+        c.billing_account_id as billing_account_id,
+        ba_curr_state,
+        ba_curr_state_extended,
+        c.cloud_id as cloud_id,
+        service1,
+        service2,
+        service3,
+        service4,
+        c.sku as sku,
+        pricing_unit,
+        usage_status,
+        offer_amount,
+        client_name,
+        source,
+        source2,
+        segment,
+        sales_person,
+        idc_industry
+    FROM (
+        SELECT
+            a.billing_account_id as billing_account_id,
+            ba_curr_state,
+            ba_curr_state_extended,
+            a.cloud_id as cloud_id,
+            service1,
+            service2,
+            service3,
+            service4,
+            sku,
+            pricing_unit,
+            usage_status,
+            offer_amount,
+            client_name,
+            source,
+            source2,
+            segment,
+            sales_person,
+            idc_industry
+        FROM
+            $ba_cloud_tags as a
+        INNER JOIN
+            $ba_sku as b
+        ON a.billing_account_id = b.billing_account_id AND a.cloud_id = b.cloud_id
+        ) as c
+    INNER JOIN
+        $dates as d
+    ON c.billing_account_id = d.billing_account_id AND c.cloud_id = d.cloud_id AND c.sku = d.sku
+);
+
+
+--INSERT INTO `home/cloud_analytics/export/billing/billing_records_daily_all_tags_combs`
+$res = (
+SELECT
+    f.`date` as `date`,
+    f.billing_account_id as billing_account_id,
+    ba_curr_state,
+    ba_curr_state_extended,
+    f.cloud_id as cloud_id,
+    service1,
+    service2,
+    service3,
+    service4,
+    f.sku as sku,
+    pricing_unit,
+    IF(quantity IS NULL, 0, quantity) AS quantity,
+    IF(cost IS NULL, 0, cost) AS cost,
+    IF(credit IS NULL, 0, credit) AS credit,
+    IF(paid_consumption IS NULL, 0, paid_consumption) AS paid_consumption,
+    IF(DateTime::GetYear(DateTime::FromSeconds(CAST(f.`date` AS Uint32))) < 2019, IF(cost IS NULL, 0, cost)/1.18, IF(cost IS NULL, 0, cost)/1.20) AS cost_minus_vat,
+    IF(DateTime::GetYear(DateTime::FromSeconds(CAST(f.`date` AS Uint32))) < 2019, IF(credit IS NULL, 0, credit)/1.18, IF(credit IS NULL, 0, credit)/1.20) AS credit_minus_vat,
+    IF(DateTime::GetYear(DateTime::FromSeconds(CAST(f.`date` AS Uint32))) < 2019, IF(paid_consumption IS NULL, 0, paid_consumption)/1.18, IF(paid_consumption IS NULL, 0, paid_consumption)/1.20) AS paid_consumption_minus_vat,
+    usage_status,
+    offer_amount,
+    client_name,
+    source,
+    source2,
+    segment,
+    sales_person,
+    idc_industry
+FROM
+    $cons_daily_all_dims as f
+LEFT JOIN (
+    SELECT
+        billing_account_id,
+        cloud_id,
+        sku,
+        `date`,
+        quantity,
+        cost,
+        credit,
+        paid_consumption
+     FROM `home/cloud_analytics/export/billing/billing_records_daily`
+     --WHERE
+        --billing_account_id = 'dn2rfajhhavgi6g918fm'
+) as g
+on f.billing_account_id = g.billing_account_id AND f.cloud_id = g.cloud_id AND f.sku = g.sku AND f.`date` = g.`date`
+);
+
+
+
+$res_list = (
+SELECT
+    ListSort(AGGREGATE_LIST(`date`)) AS `date`,
+    billing_account_id,
+    AGGREGATE_LIST(ba_curr_state)[0] AS ba_curr_state,
+    AGGREGATE_LIST(ba_curr_state_extended)[0] AS ba_curr_state_extended,
+    cloud_id,
+    AGGREGATE_LIST(service1)[0] AS service1,
+    AGGREGATE_LIST(service2)[0] AS service2,
+    AGGREGATE_LIST(service3)[0] AS service3,
+    AGGREGATE_LIST(service4)[0] AS service4,
+    sku,
+    AGGREGATE_LIST(pricing_unit)[0] AS pricing_unit,
+    DictItems($sort_by_keys(ToDict(AGGREGATE_LIST(AsTuple(`date`,quantity))))) AS quantity,
+    DictItems($sort_by_keys(ToDict(AGGREGATE_LIST(AsTuple(`date`,cost))))) AS cost,
+    DictItems($sort_by_keys(ToDict(AGGREGATE_LIST(AsTuple(`date`,credit))))) AS credit,
+    DictItems($sort_by_keys(ToDict(AGGREGATE_LIST(AsTuple(`date`,paid_consumption))))) AS paid_consumption,
+    DictItems($sort_by_keys(ToDict(AGGREGATE_LIST(AsTuple(`date`,cost_minus_vat))))) AS cost_minus_vat,
+    DictItems($sort_by_keys(ToDict(AGGREGATE_LIST(AsTuple(`date`,credit_minus_vat))))) AS credit_minus_vat,
+    DictItems($sort_by_keys(ToDict(AGGREGATE_LIST(AsTuple(`date`,paid_consumption_minus_vat))))) AS paid_consumption_minus_vat,
+    DictItems($cum_sum(ToDict(AGGREGATE_LIST(AsTuple(`date`,quantity))))) AS quantity_cum,
+    DictItems($cum_sum(ToDict(AGGREGATE_LIST(AsTuple(`date`,cost))))) AS cost_cum,
+    DictItems($cum_sum(ToDict(AGGREGATE_LIST(AsTuple(`date`,credit))))) AS credit_cum,
+    DictItems($cum_sum(ToDict(AGGREGATE_LIST(AsTuple(`date`,paid_consumption))))) AS paid_consumption_cum,
+    DictItems($cum_sum(ToDict(AGGREGATE_LIST(AsTuple(`date`,cost_minus_vat))))) AS cost_minus_vat_cum,
+    DictItems($cum_sum(ToDict(AGGREGATE_LIST(AsTuple(`date`,credit_minus_vat))))) AS credit_minus_vat_cum,
+    DictItems($cum_sum(ToDict(AGGREGATE_LIST(AsTuple(`date`,paid_consumption_minus_vat))))) AS paid_consumption_minus_vat_cum,
+    AGGREGATE_LIST(usage_status)[0] AS usage_status,
+    AGGREGATE_LIST(offer_amount)[0] AS offer_amount,
+    AGGREGATE_LIST(client_name)[0] AS client_name,
+    AGGREGATE_LIST(source)[0] AS source,
+    AGGREGATE_LIST(source2)[0] AS source2,
+    AGGREGATE_LIST(segment)[0] AS segment,
+    AGGREGATE_LIST(sales_person)[0] AS sales_person,
+    AGGREGATE_LIST(idc_industry)[0] AS idc_industry
+FROM $res
+GROUP BY
+    billing_account_id,
+    cloud_id,
+    sku
+);
+
+
+
+$res_list_zipped = (
+    SELECT
+        billing_account_id,
+        cloud_id,
+        sku,
+        ba_curr_state,
+        ba_curr_state_extended,
+        service1,
+        service2,
+        service3,
+        service4,
+        pricing_unit,
+        usage_status,
+        offer_amount,
+        client_name,
+        source,
+        source2,
+        segment,
+        sales_person,
+        idc_industry,
+        ListZipAll(
+            `date`,
+            quantity,
+            cost,
+            credit,
+            paid_consumption,
+            cost_minus_vat,
+            credit_minus_vat,
+            paid_consumption_minus_vat,
+            quantity_cum,
+            cost_cum,
+            credit_cum,
+            paid_consumption_cum,
+            cost_minus_vat_cum,
+            credit_minus_vat_cum,
+            paid_consumption_minus_vat_cum
+        ) as list_zipped
+    FROM $res_list
+);
+
+
+
+$cons_cum = (
+
+SELECT
+    billing_account_id,
+    cloud_id,
+    sku,
+    ba_curr_state,
+    ba_curr_state_extended,
+    service1,
+    service2,
+    service3,
+    service4,
+    pricing_unit,
+    usage_status,
+    offer_amount,
+    client_name,
+    source,
+    source2,
+    segment,
+    sales_person,
+    idc_industry,
+    `date`,
+    quantity.1 as quantity,
+    cost.1 as cost,
+    credit.1 as credit,
+    paid_consumption.1 as paid_consumption,
+    cost_minus_vat.1 as cost_minus_vat,
+    credit_minus_vat.1 as credit_minus_vat,
+    paid_consumption_minus_vat.1 as paid_consumption_minus_vat,
+    quantity_cum.1 as quantity_cum,
+    cost_cum.1 as cost_cum,
+    credit_cum.1 as credit_cum,
+    paid_consumption_cum.1 as paid_consumption_cum,
+    cost_minus_vat_cum.1 as cost_minus_vat_cum,
+    credit_minus_vat_cum.1 as credit_minus_vat_cum,
+    paid_consumption_minus_vat_cum.1 as paid_consumption_minus_vat_cum
+
+FROM (
+SELECT
+    billing_account_id,
+    cloud_id,
+    sku,
+    ba_curr_state,
+    ba_curr_state_extended,
+    service1,
+    service2,
+    service3,
+    service4,
+    pricing_unit,
+    usage_status,
+    offer_amount,
+    client_name,
+    source,
+    source2,
+    segment,
+    sales_person,
+    idc_industry,
+    list_zipped.0 as `date`,
+    list_zipped.1 as quantity,
+    list_zipped.2 as cost,
+    list_zipped.3 as credit,
+    list_zipped.4 as paid_consumption,
+    list_zipped.5 as cost_minus_vat,
+    list_zipped.6 as credit_minus_vat,
+    list_zipped.7 as paid_consumption_minus_vat,
+    list_zipped.8 as quantity_cum,
+    list_zipped.9 as cost_cum,
+    list_zipped.10 as credit_cum,
+    list_zipped.11 as paid_consumption_cum,
+    list_zipped.12 as cost_minus_vat_cum,
+    list_zipped.13 as credit_minus_vat_cum,
+    list_zipped.14 as paid_consumption_minus_vat_cum
+
+FROM $res_list_zipped
+FLATTEN BY list_zipped
+)
+);
+
+INSERT INTO `home/cloud_analytics/tmp/artkaz/cons_cum` WITH TRUNCATE
+SELECT * FROM $cons_cum
+;
+
+COMMIT;
+
+INSERT INTO `home/cloud_analytics/export/billing/billing_records_daily_cumulative` WITH TRUNCATE
+SELECT
+    a.billing_account_id as billing_account_id,
+    a.cloud_id as cloud_id,
+    a.sku as sku,
+    a.ba_curr_state AS ba_curr_state,
+    a.ba_curr_state_extended AS ba_curr_state_extended,
+    a.service1 AS service1,
+    a.service2 AS service2,
+    a.service3 AS service3,
+    a.service4 AS service4,
+    a.pricing_unit AS pricing_unit,
+    a.usage_status AS usage_status,
+    a.offer_amount AS offer_amount,
+    a.client_name AS client_name,
+    a.source AS source,
+    a.source2 AS source2,
+    a.segment AS segment,
+    a.sales_person AS sales_person,
+    a.idc_industry AS idc_industry,
+    a.`date` AS `date`,
+    a.quantity as quantity_cum_day,
+    a.cost as cost_cum_day,
+    a.credit as credit_cum_day,
+    a.paid_consumption as paid_consumption_cum_day,
+    a.cost_minus_vat as cost_minus_vat_cum_day,
+    a.credit_minus_vat as credit_minus_vat_cum_day,
+    a.paid_consumption_minus_vat as paid_consumption_minus_vat_cum_day,
+    a.quantity_cum as quantity_cum,
+    a.cost_cum as cost_cum,
+    a.credit_cum as credit_cum,
+    a.paid_consumption_cum as paid_consumption_cum,
+    a.cost_minus_vat_cum as cost_minus_vat_cum,
+    a.credit_minus_vat_cum as credit_minus_vat_cum,
+    a.paid_consumption_minus_vat_cum as paid_consumption_minus_vat_cum,
+    a.quantity_cum - b.quantity_cum as quantity_cum_week,
+    a.cost_cum - b.cost_cum as cost_cum_week,
+    a.credit_cum - b.credit_cum as credit_cum_week,
+    a.paid_consumption_cum - b.paid_consumption_cum as paid_consumption_cum_week,
+    a.cost_minus_vat_cum - b.cost_minus_vat_cum as cost_minus_vat_cum_week,
+    a.credit_minus_vat_cum - b.credit_minus_vat_cum as credit_minus_vat_cum_week,
+    a.paid_consumption_minus_vat_cum  - b.paid_consumption_minus_vat_cum as paid_consumption_minus_vat_cum_week,
+    a.quantity_cum - c.quantity_cum as quantity_cum_month,
+    a.cost_cum - c.cost_cum as cost_cum_month,
+    a.credit_cum - c.credit_cum as credit_cum_month,
+    a.paid_consumption_cum - c.paid_consumption_cum as paid_consumption_cum_month,
+    a.cost_minus_vat_cum - c.cost_minus_vat_cum as cost_minus_vat_cum_month,
+    a.credit_minus_vat_cum - c.credit_minus_vat_cum as credit_minus_vat_cum_month,
+    a.paid_consumption_minus_vat_cum  - c.paid_consumption_minus_vat_cum as paid_consumption_minus_vat_cum_month,
+    a.quantity_cum - d.quantity_cum as quantity_cum_quarter,
+    a.cost_cum - d.cost_cum as cost_cum_quarter,
+    a.credit_cum - d.credit_cum as credit_cum_quarter,
+    a.paid_consumption_cum - d.paid_consumption_cum as paid_consumption_cum_quarter,
+    a.cost_minus_vat_cum - d.cost_minus_vat_cum as cost_minus_vat_cum_quarter,
+    a.credit_minus_vat_cum - d.credit_minus_vat_cum as credit_minus_vat_cum_quarter,
+    a.paid_consumption_minus_vat_cum  - d.paid_consumption_minus_vat_cum as paid_consumption_minus_vat_cum_quarter
+FROM `home/cloud_analytics/tmp/artkaz/cons_cum` as a
+LEFT JOIN `home/cloud_analytics/tmp/artkaz/cons_cum` as b
+ON a.billing_account_id = b.billing_account_id AND a.cloud_id = b.cloud_id AND a.sku = b.sku AND $to_start_of_week(a.`date`) = b.`date`
+LEFT JOIN `home/cloud_analytics/tmp/artkaz/cons_cum` as c
+ON a.billing_account_id = c.billing_account_id AND a.cloud_id = c.cloud_id AND a.sku = c.sku AND $to_start_of_month(a.`date`) = c.`date`
+LEFT JOIN `home/cloud_analytics/tmp/artkaz/cons_cum` as d
+ON a.billing_account_id = d.billing_account_id AND a.cloud_id = d.cloud_id AND a.sku = d.sku AND $to_start_of_quarter(a.`date`) = d.`date`
+;

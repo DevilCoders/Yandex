@@ -1,0 +1,31 @@
+info: Major update of ZooKeeper version to 3.6.3
+disabled: true
+clusters_selection:
+  db: >-
+    WITH clusters AS (
+      SELECT c.cid,
+             CAST(COALESCE(p.value #> '{data,zk,version}', '""') AS text) as zk_version
+        FROM dbaas.subclusters sc
+        JOIN dbaas.clusters c USING(cid)
+        JOIN dbaas.pillar p USING(subcid)
+       WHERE c.status = 'RUNNING'
+         AND c.type = 'clickhouse_cluster'
+         AND sc.roles && '{zk}'
+    ) SELECT c.cid
+      FROM clusters c
+     WHERE c.zk_version != '"3.6.3-1+yandex33-fd53f2f"'
+pillar_change: >-
+  UPDATE dbaas.pillar p
+     SET value = jsonb_set(value, '{data,zk,version}', to_jsonb(CAST('3.6.3-1+yandex33-fd53f2f' AS text)))
+    FROM dbaas.subclusters sc
+   WHERE p.subcid=sc.subcid
+     AND sc.cid=:cid
+     AND sc.roles && '{zk}'
+worker:
+  operation_type: clickhouse_cluster_modify
+  task_type: clickhouse_cluster_maintenance
+  task_args:
+    restart_zk: true
+  timeout: 4h
+max_delay_days: 21
+min_days: 7

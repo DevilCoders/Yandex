@@ -1,0 +1,1 @@
+ya ide idea -r .

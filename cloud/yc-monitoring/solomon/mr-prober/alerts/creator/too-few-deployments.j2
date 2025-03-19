@@ -1,0 +1,27 @@
+{% extends "../../../base/alert.j2" %}
+
+{% set idc="creator-too-few-deployments" %}
+{% set description="Check that new deployments are often enough. Should be at least 1 in last 60 minutes." %}
+
+{% set windowSecs=3600 %}
+{% set delaySecs=60 %}
+
+{% macro prog() %}
+let deployments_count = sum(group_lines('sum', {cluster='*', service='creator', metric='deployment', status='*'}));
+{% endmacro %}
+{% set checkExpression="deployments_count < 1" %}
+
+{% block main %}
+    "name": "[Creator] Too few deployments",
+    "groupByLabels": [
+        "cluster",
+        "host"
+	],
+    "annotations": {
+        "host": "[[labels.host]]",
+        "description": "Looks like Creator doesn't produce new deployments. Check it with `journalctl -u creator -f`. Restart with `sudo systemctl restart creator`. If you need to kill hung terraform, send SIGTERM to it firstly, not SIGKILL.",
+        "service": "creator-too-few-deployments",
+        "deployments graph": "{{ solomon_endpoint }}/?project={{ project_id }}&cluster=[[labels.cluster]]&service=creator&host=[[labels.host]]&l.metric=deployment&graph=auto&b=2h&e="
+    },
+    "type": {{ type_expression() }}
+{% endblock %}

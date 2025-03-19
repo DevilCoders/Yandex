@@ -1,0 +1,3 @@
+data:
+    dbaas:
+        vtype: compute

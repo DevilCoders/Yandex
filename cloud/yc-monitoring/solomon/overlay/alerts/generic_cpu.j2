@@ -1,0 +1,37 @@
+{% extends "../../base/alert.j2" %}
+
+{% set is_compute_node = compute_node|default(False) %}
+{% set is_oct_ctrl = is_oct_ctrl|default(False) %}
+
+{% macro prog() %}
+let cpu_usage_cores = avg({
+  project='{{ project_id }}',
+  cluster='{{ "cloud_" ~ env ~ ("_compute" if is_compute_node else "_oct") }}',
+  service='{{ "oct_vrouter" if is_compute_node else "oct_ctrl_cgroup_metrics" if is_oct_ctrl else "oct_head_cgroup_metrics" }}',
+  metric_group='CPU',
+  metric='cpuacct.usage',
+  unit='{{ unit }}'
+}) / 1000000000;
+
+let is_red = cpu_usage_cores > {{ alarm_limit }};
+let is_yellow = cpu_usage_cores > {{ warn_limit }};
+
+alarm_if(is_red);
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+    "name": "{{ unit }} cpu @ {{ env }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "host": "{{ compute_node_fqdn() if is_compute_node else svm_fqdn() }}",
+        "tags": "Solomon",
+        "cpu_usage_cores": "[[expression.cpu_usage_cores]]",
+        "crit_cpu_usage_cores": "{{ alarm_limit }}",
+        "warn_cpu_usage_cores": "{{ warn_limit }}",
+        "service": "{{ unit }}-cpu",
+        "description": "CPU usage (cores). If goes WARN/CRIT, check for overload."
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

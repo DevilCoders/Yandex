@@ -1,0 +1,176 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.organizationmanager.v1;
+
+import "google/protobuf/timestamp.proto";
+import "yandex/cloud/api/operation.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+import "yandex/cloud/priv/organizationmanager/v1/invitation.proto";
+import "yandex/cloud/priv/sensitive.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/organizationmanager/v1;organizationmanager";
+option java_outer_classname = "PORGIS";
+
+service InvitationService {
+  // Get invitation by CODE.
+  rpc GetByCode (GetInvitationByCodeRequest) returns (InvitationByCode);
+
+  // Invite users for organization.
+  rpc Create (CreateInvitationsRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "CreateInvitationsMetadata"
+      response: "CreateInvitationsResponse"
+    };
+  }
+
+  // List organization invitations.
+  rpc ListForOrganization (ListOrganizationInvitationsRequest) returns (ListOrganizationInvitationsResponse);
+
+  // Resend invitation.
+  rpc Resend (ResendInvitationRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "ResendInvitationMetadata"
+      response: "ResendInvitationResponse"
+    };
+  }
+
+  // Accept invitation.
+  rpc Accept (AcceptInvitationRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "AcceptInvitationMetadata"
+      response: "AcceptInvitationResponse"
+    };
+  }
+
+  // Reject invitation.
+  rpc Reject (RejectInvitationRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "RejectInvitationMetadata"
+      response: "RejectInvitationResponse"
+    };
+  }
+
+  // Delete invitation.
+  rpc Delete (DeleteInvitationRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeleteInvitationMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+}
+
+message GetInvitationByCodeRequest {
+  string code = 1 [(required) = true, (length) = "<=1000", (sensitive) = true];
+}
+
+message InvitationByCode {
+  Invitation invitation = 1;
+  string organization_id = 2;
+  string organization_name = 3;
+}
+
+message CreateInvitationsRequest {
+  string organization_id = 1 [(required) = true, (length) = "<=50"];
+  repeated InvitationRequest invitations = 2 [(size) = "1-100"];
+  google.protobuf.Timestamp not_after = 3;
+
+  message InvitationRequest {
+    oneof identity {
+      option (exactly_one) = true;
+      Invitee invitee = 1;
+      YandexPassportUserAccount yandex_passport_user_account = 2;
+    }
+  }
+  message Invitee {
+    string email = 1 [(required) = true, (length) = "3-320"];
+  }
+  message YandexPassportUserAccount {
+    // Yandex.Passport logins or Yandex.Passport email
+    string login = 1 [(required) = true, (length) = "2-63"];
+  }
+}
+
+message CreateInvitationsMetadata {
+  string organization_id = 1;
+}
+
+message CreateInvitationsResponse {
+  repeated Invitation valid_invitations = 1;
+  repeated Invitation invalid_invitations = 2;
+}
+
+message ListOrganizationInvitationsRequest {
+  string organization_id = 1 [(required) = true, (length) = "<=50"];
+  Invitation.Status status = 2 [(required) = true];
+  int64 page_size = 3 [(value) = "0-1000"];
+  string page_token = 4 [(length) = "<=1000"];
+  // supported fields for filter:
+  // email
+  string filter = 5 [(length) = "<=1000"];
+}
+
+message ListOrganizationInvitationsResponse {
+  repeated Invitation invitations = 1;
+  string next_page_token = 2;
+}
+
+message ResendInvitationRequest {
+  string invitation_id = 1 [(required) = true, (length) = "<=50"];
+}
+
+message ResendInvitationMetadata {
+  string invitation_id = 1;
+  string organization_id = 2;
+  string email = 3;
+}
+
+message ResendInvitationResponse {
+  string invitation_id = 1;
+  string organization_id = 2;
+  string email = 3;
+}
+
+message AcceptInvitationRequest {
+  string code = 1 [(required) = true, (length) = "<=1000", (sensitive) = true];
+}
+
+message AcceptInvitationMetadata {
+  string invitation_id = 1;
+  string organization_id = 2;
+  string invitee_id = 3;
+  string subject_id = 4;
+}
+
+message AcceptInvitationResponse {
+  string invitation_id = 1;
+  string organization_id = 2;
+  string invitee_id = 3;
+  string subject_id = 4;
+}
+
+message RejectInvitationRequest {
+  string code = 1 [(required) = true, (length) = "<=1000", (sensitive) = true];
+}
+
+message RejectInvitationMetadata {
+  string invitation_id = 1;
+  string organization_id = 2;
+  string invitee_id = 3;
+}
+
+message RejectInvitationResponse {
+  string invitation_id = 1;
+  string organization_id = 2;
+  string invitee_id = 3;
+}
+
+message DeleteInvitationRequest {
+  string invitation_id = 1 [(required) = true, (length) = "<=50"];
+}
+
+message DeleteInvitationMetadata {
+  string invitation_id = 1;
+  string organization_id = 2;
+  string invitee_id = 3;
+}

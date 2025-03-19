@@ -1,0 +1,152 @@
+USE hahn;
+PRAGMA yt.InferSchema = '1';
+
+$consumption_table = '//home/cloud_analytics/export/marketo/ya_consumption_daily';
+$leads_table = '//home/cloud_analytics/export/marketo/lead';
+$iam_cloud_owners_tbl = '//home/cloud_analytics/import/iam/cloud_owners/1h';
+$email_company_table = '//home/cloud_analytics/clients/email_company';
+$change_score_table = '//home/cloud_analytics/import/marketo_proxy/change_score';
+$change_data_value_table = '//home/cloud_analytics/import/marketo_proxy/change_data_value';
+
+$daily_consumption_threshold = 50.0;
+$daily_consumption_limit = 300.0;
+$delay_period = Interval('P7DT0H');
+
+DEFINE SUBQUERY $last_non_empty_table($path) AS
+    $max_path = (
+        SELECT MAX(Path) AS Path
+        FROM FOLDER($path, 'row_count')
+        WHERE Type = 'table'
+            AND Yson::LookupInt64(Attributes, 'row_count') > 0
+    );
+    SELECT * FROM CONCAT($max_path);
+END DEFINE;
+
+$triggers_ = (
+    SELECT
+        c.email AS email,
+        c.avg_daily_consumption_in_last_period AS avg_daily_consumption_in_last_period,
+        c.compared_to_prev_period_percentage AS compared_to_prev_period_percentage,
+        'trigger_1 (avg. daily consumption for last week is ' || CAST(avg_daily_consumption_in_last_period AS String) || ' rub.)' AS trigger
+    FROM $consumption_table as c
+    LEFT ONLY JOIN $change_score_table AS cst
+        ON c.email = cst.email
+    WHERE
+        product = 'all_products'
+        AND is_grant = true
+        AND (
+            avg_daily_consumption_in_last_period > $daily_consumption_threshold
+            AND avg_daily_consumption_in_last_period < $daily_consumption_limit
+        )
+);
+
+$triggers = (
+    SELECT
+        email,
+        trigger,
+        avg_daily_consumption_in_last_period,
+        compared_to_prev_period_percentage
+    FROM $triggers_
+    GROUP BY
+        email,
+        trigger,
+        avg_daily_consumption_in_last_period,
+        compared_to_prev_period_percentage
+);
+
+$created = DateTime::ToSeconds(CurrentUtcTimestamp());
+$change_score = (
+    SELECT
+        tr.email AS email,
+        CAST(tr.trigger AS String) AS reason,
+        CAST(tr.trigger AS String) AS campaign_id,
+        CAST(tr.trigger AS String) AS campaign_name,
+        $created AS created,
+        'null' AS old_value,
+        '+1' AS change_value,
+        CAST(iam.passport_uid AS Uint64) AS marketo_id, -- Fake ID
+        CAST(iam.passport_uid AS String) AS marketo_guid,
+        CAST(iam.passport_uid AS Uint64) AS lead_id, -- Fake ID
+        'null' AS relative_score,
+        CAST(1 AS Uint64) AS new_value,
+        'null' AS urgency,
+        'null' AS priority,
+        'Change Score' AS type_name,
+        'null' AS relative_urgency,
+        CAST(146 AS Uint64) AS score_id,
+        'Lead Score' AS score_name
+    FROM $triggers AS tr
+    LEFT JOIN $last_non_empty_table($iam_cloud_owners_tbl) AS iam
+        ON String::ToLower(tr.email) = String::ToLower(iam.user_settings_email)
+    LEFT JOIN (SELECT email, LIST(source){0} AS source FROM $email_company_table group by String::ToLower(email) AS email) AS email_company
+        ON String::ToLower(email_company.email) = String::ToLower(iam.user_settings_email)
+    WHERE
+        (email_company.source IS NULL OR email_company.source != 'direct_offer')
+        AND tr.trigger is not NULL
+        AND DateTime::TimestampFromStringFormat(iam.cloud_created_at, '%Y-%m-%dT%H:%M:%S+00:00') < CurrentUtcTimestamp() - $delay_period
+        AND String::ToLower(iam.cloud_status) = 'active'
+);
+
+$change_data_value_score = (
+    SELECT
+        tr.email AS email,
+        CAST(tr.trigger AS String) AS reason,
+        CAST(tr.trigger AS String) AS campaign_id,
+        CAST(tr.trigger AS String) AS campaign_name,
+        $created AS created,
+        'Marketo Flow Action' AS source,
+        'null' AS old_value,
+        CAST(146 AS Uint64) AS attr_id,
+        'Lead Score' AS attr_name,
+        'Change Data Value' AS type_name,
+        '1' AS new_value,
+        CAST(iam.passport_uid AS Uint64) AS marketo_id, -- Fake ID
+        CAST(iam.passport_uid AS String) AS marketo_guid,
+        CAST(iam.passport_uid AS Uint64) AS lead_id -- Fake ID
+    FROM $triggers AS tr
+    LEFT JOIN $last_non_empty_table($iam_cloud_owners_tbl) AS iam
+        ON String::ToLower(tr.email) = String::ToLower(iam.user_settings_email)
+    LEFT JOIN (SELECT email, LIST(source){0} AS source FROM $email_company_table group by String::ToLower(email) AS email) AS email_company
+        ON String::ToLower(email_company.email) = String::ToLower(iam.user_settings_email)
+    WHERE
+        (email_company.source IS NULL OR email_company.source != 'direct_offer')
+        AND tr.trigger is not NULL
+        AND DateTime::TimestampFromStringFormat(iam.cloud_created_at, '%Y-%m-%dT%H:%M:%S+00:00') < CurrentUtcTimestamp() - $delay_period
+        AND String::ToLower(iam.cloud_status) = 'active'
+);
+$change_data_value_status = (
+    SELECT
+        tr.email AS email,
+        CAST(tr.trigger AS String) AS reason,
+        CAST(tr.trigger AS String) AS campaign_id,
+        CAST(tr.trigger AS String) AS campaign_name,
+        $created AS created,
+        'Marketo Flow Action' AS source,
+        'null' AS old_value,
+        CAST(145 AS Uint64) AS attr_id,
+        'Lead Status' AS attr_name,
+        'Change Data Value' AS type_name,
+        'MQL' AS new_value,
+        CAST(iam.passport_uid AS Uint64) AS marketo_id, -- Fake ID
+        CAST(iam.passport_uid AS String) AS marketo_guid,
+        CAST(iam.passport_uid AS Uint64) AS lead_id -- Fake ID
+    FROM $triggers AS tr
+    LEFT JOIN $last_non_empty_table($iam_cloud_owners_tbl) AS iam
+        ON String::ToLower(tr.email) = String::ToLower(iam.user_settings_email)
+    LEFT JOIN (SELECT email, LIST(source){0} AS source FROM $email_company_table group by String::ToLower(email) AS email) AS email_company
+        ON String::ToLower(email_company.email) = String::ToLower(iam.user_settings_email)
+    WHERE
+        (email_company.source IS NULL OR email_company.source != 'direct_offer')
+        AND tr.trigger is not NULL
+        AND DateTime::TimestampFromStringFormat(iam.cloud_created_at, '%Y-%m-%dT%H:%M:%S+00:00') < CurrentUtcTimestamp() - $delay_period
+        AND String::ToLower(iam.cloud_status) = 'active'
+);
+
+INSERT INTO $change_score_table
+    SELECT * FROM $change_score;
+INSERT INTO $change_data_value_table
+    SELECT * FROM $change_data_value_score;
+INSERT INTO $change_data_value_table
+    SELECT * FROM $change_data_value_status;
+
+

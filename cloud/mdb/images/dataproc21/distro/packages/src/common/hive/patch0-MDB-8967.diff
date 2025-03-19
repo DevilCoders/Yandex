@@ -1,0 +1,151 @@
+From 2cc04c14c3b1682e6600ee2662d61c09f551bc52 Mon Sep 17 00:00:00 2001
+From: Epikhin Mikhail <schizophrenia@yandex-team.ru>
+Date: Thu, 2 Jul 2020 22:04:28 +0300
+Subject: [PATCH] MDB-8967: Backport patches HIVE-22779, HIVE-20784 from our
+ google dataproc colleagues
+
+---
+ .../HiveHBaseTableSnapshotInputFormat.java    |  5 ++-
+ .../hadoop/hive/ql/stats/TestStatsUtils.java  |  4 +--
+ .../client/metrics/ShuffleWriteMetrics.java   |  4 +--
+ .../hive/spark/counter/SparkCounter.java      | 35 ++++++-------------
+ 4 files changed, 17 insertions(+), 31 deletions(-)
+
+diff --git a/hbase-handler/src/java/org/apache/hadoop/hive/hbase/HiveHBaseTableSnapshotInputFormat.java b/hbase-handler/src/java/org/apache/hadoop/hive/hbase/HiveHBaseTableSnapshotInputFormat.java
+index aedadc29b8..6862edd268 100644
+--- a/hbase-handler/src/java/org/apache/hadoop/hive/hbase/HiveHBaseTableSnapshotInputFormat.java
++++ b/hbase-handler/src/java/org/apache/hadoop/hive/hbase/HiveHBaseTableSnapshotInputFormat.java
+@@ -26,8 +26,6 @@
+ import org.apache.hadoop.hbase.mapred.TableSnapshotInputFormat;
+ import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
+ import org.apache.hadoop.hbase.protobuf.generated.ClientProtos;
+-import org.apache.hadoop.hbase.util.Base64;
+-import org.apache.hadoop.hbase.util.Bytes;
+ import org.apache.hadoop.mapred.FileInputFormat;
+ import org.apache.hadoop.mapred.InputFormat;
+ import org.apache.hadoop.mapred.InputSplit;
+@@ -36,6 +34,7 @@
+ import org.apache.hadoop.mapred.Reporter;
+ 
+ import java.io.IOException;
++import java.util.Base64;
+ import java.util.List;
+ 
+ public class HiveHBaseTableSnapshotInputFormat
+@@ -54,7 +53,7 @@ private static void setColumns(JobConf job) throws IOException {
+   // Copied from HBase's TableMapreduceUtil since it is not public API
+   static String convertScanToString(Scan scan) throws IOException {
+     ClientProtos.Scan proto = ProtobufUtil.toScan(scan);
+-    return Base64.encodeBytes(proto.toByteArray());
++    return Base64.getEncoder().encodeToString(proto.toByteArray());
+   }
+ 
+   @Override
+diff --git a/ql/src/test/org/apache/hadoop/hive/ql/stats/TestStatsUtils.java b/ql/src/test/org/apache/hadoop/hive/ql/stats/TestStatsUtils.java
+index 4add29027d..456f4ae765 100644
+--- a/ql/src/test/org/apache/hadoop/hive/ql/stats/TestStatsUtils.java
++++ b/ql/src/test/org/apache/hadoop/hive/ql/stats/TestStatsUtils.java
+@@ -26,12 +26,12 @@
+ import java.lang.reflect.Modifier;
+ import java.util.Set;
+ 
++import com.google.common.collect.Sets;
+ import org.apache.commons.lang.reflect.FieldUtils;
+ import org.apache.hadoop.hive.conf.HiveConf;
+ import org.apache.hadoop.hive.ql.plan.ColStatistics.Range;
+ import org.apache.hadoop.hive.serde.serdeConstants;
+ import org.junit.Test;
+-import org.spark_project.guava.collect.Sets;
+ 
+ public class TestStatsUtils {
+ 
+@@ -101,4 +101,4 @@ public void testPrimitiveSizeEstimations() throws Exception {
+     }
+   }
+ 
+-}
+\ No newline at end of file
++}
+diff --git a/spark-client/src/main/java/org/apache/hive/spark/client/metrics/ShuffleWriteMetrics.java b/spark-client/src/main/java/org/apache/hive/spark/client/metrics/ShuffleWriteMetrics.java
+index 64a4b86042..d27b1700cd 100644
+--- a/spark-client/src/main/java/org/apache/hive/spark/client/metrics/ShuffleWriteMetrics.java
++++ b/spark-client/src/main/java/org/apache/hive/spark/client/metrics/ShuffleWriteMetrics.java
+@@ -47,8 +47,8 @@ public ShuffleWriteMetrics(
+   }
+ 
+   public ShuffleWriteMetrics(TaskMetrics metrics) {
+-    this(metrics.shuffleWriteMetrics().shuffleBytesWritten(),
+-      metrics.shuffleWriteMetrics().shuffleWriteTime());
++    this(metrics.shuffleWriteMetrics().bytesWritten(),
++      metrics.shuffleWriteMetrics().writeTime());
+   }
+ 
+ }
+diff --git a/spark-client/src/main/java/org/apache/hive/spark/counter/SparkCounter.java b/spark-client/src/main/java/org/apache/hive/spark/counter/SparkCounter.java
+index d0eb1fa446..5366289fc8 100644
+--- a/spark-client/src/main/java/org/apache/hive/spark/counter/SparkCounter.java
++++ b/spark-client/src/main/java/org/apache/hive/spark/counter/SparkCounter.java
+@@ -19,15 +19,14 @@
+ 
+ import java.io.Serializable;
+ 
+-import org.apache.spark.Accumulator;
+-import org.apache.spark.AccumulatorParam;
+ import org.apache.spark.api.java.JavaSparkContext;
++import org.apache.spark.util.LongAccumulator;
+ 
+ public class SparkCounter implements Serializable {
+ 
+   private String name;
+   private String displayName;
+-  private Accumulator<Long> accumulator;
++  private LongAccumulator accumulator;
+ 
+   // Values of accumulators can only be read on the SparkContext side. This field is used when
+   // creating a snapshot to be sent to the RSC client.
+@@ -55,9 +54,16 @@ public SparkCounter(
+ 
+     this.name = name;
+     this.displayName = displayName;
+-    LongAccumulatorParam longParam = new LongAccumulatorParam();
+     String accumulatorName = groupName + "_" + name;
+-    this.accumulator = sparkContext.accumulator(initValue, accumulatorName, longParam);
++    this.accumulator = createAccumulator(sparkContext, accumulatorName, initValue);
++  }
++
++  private LongAccumulator createAccumulator(
++    JavaSparkContext sparkContext, String accumulatorName, long initValue) {
++    LongAccumulator accumulator = new LongAccumulator();
++    accumulator.setValue(initValue);
++    sparkContext.sc().register(accumulator, accumulatorName);
++    return accumulator;
+   }
+ 
+   public long getValue() {
+@@ -87,23 +93,4 @@ public void setDisplayName(String displayName) {
+   SparkCounter snapshot() {
+     return new SparkCounter(name, displayName, accumulator.value());
+   }
+-
+-  class LongAccumulatorParam implements AccumulatorParam<Long> {
+-
+-    @Override
+-    public Long addAccumulator(Long t1, Long t2) {
+-      return t1 + t2;
+-    }
+-
+-    @Override
+-    public Long addInPlace(Long r1, Long r2) {
+-      return r1 + r2;
+-    }
+-
+-    @Override
+-    public Long zero(Long initialValue) {
+-      return 0L;
+-    }
+-  }
+-
+ }
+-- 
+2.21.1 (Apple Git-122.3)
+

@@ -1,0 +1,48 @@
+info: Odyssey (connection pooler) version upgrade
+repeatable: true
+priority: 1
+env_order_disabled: true
+supports_offline: true
+clusters_selection:
+  db: >-
+    SELECT cid FROM (
+             SELECT cid,
+                    env,
+                    type,
+                    actual_rev,
+                    'odyssey' as component
+             FROM dbaas.clusters
+             WHERE status = 'RUNNING'
+               AND type = 'postgresql_cluster'
+         ) c
+             JOIN dbaas.versions USING (cid, component)
+             JOIN dbaas.pillar USING (cid)
+                WHERE (
+                  versions.minor_version not in ('Odyssey-2032', 'Odyssey-1964-d2bf7f2')
+                )
+                AND NOT versions.pinned
+                AND coalesce((pillar.value->'data'->>'odyssey_pinned'), 'no') != 'yes'
+pillar_change: >-
+  UPDATE dbaas.versions p SET minor_version = default_v.minor_version,
+      package_version = default_v.package_version
+  FROM (
+           SELECT default_versions.minor_version,
+                  default_versions.package_version
+           FROM (
+                    SELECT *,
+                           'odyssey' AS component
+                    FROM dbaas.clusters
+                    WHERE clusters.cid = :cid
+                ) c
+                    JOIN dbaas.versions USING (cid, component)
+                    JOIN dbaas.default_versions USING (component, env, major_version, edition)
+       ) as default_v
+  WHERE p.cid = :cid AND component = 'odyssey'
+worker:
+  operation_type: postgresql_cluster_modify
+  task_type: postgresql_cluster_fast_maintenance
+  task_args:
+    update_odyssey: true
+  timeout: 3h
+max_delay_days: 1
+min_days: 0

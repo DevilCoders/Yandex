@@ -1,0 +1,165 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: events
+  namespace: infra
+spec:
+  hostNetwork: true
+  hostPID: true
+  containers:
+    - name: metricsagent
+      image: registry.yandex.net/cloud/api/metricsagent:6af7679
+      resources:
+        requests:
+          cpu: 200m
+          memory: 128Mi
+        limits:
+          memory: 128Mi
+      volumeMounts:
+        - name: metricsagent-config
+          mountPath: /etc/metricsagent/metricsagent.yaml
+          readOnly: true
+        - name: var-log
+          mountPath: /var/log
+    - name: logcleaner
+      image: registry.yandex.net/cloud/api/logcleaner:cc0eb217c
+      command: ["/usr/bin/logcleaner", "--num-files-to-keep", "5"]
+      volumeMounts:
+        - name: var-log
+          mountPath: /var/log
+          terminationGracePeriodSeconds: 30
+    - name: fluent
+      image: registry.yandex.net/cloud/api/fluent:49062677d
+      env:
+        - name: FLUENT_UID
+          value: "0"
+        - name: FLUENTD_OPT
+          value: "--log-rotate-age 5 --log-rotate-size 104857600"
+      volumeMounts:
+        - name: var-log
+          mountPath: /var/log
+          terminationGracePeriodSeconds: 30
+        - name: etc-fluent
+          mountPath: /fluentd/etc
+          readOnly: true
+        - name: etc-fluent
+          mountPath: /etc/fluent
+          readOnly: true
+        - name: var-lib-docker-containers
+          mountPath: /var/lib/docker/containers
+          readOnly: true
+        - name: var-log-journal
+          mountPath: /var/log/journal
+          readOnly: true
+    - name: push-client
+      image: registry.yandex.net/cloud/platform/push-client:2019-03-28T18-40
+      volumeMounts:
+        - name: var-log
+          mountPath: /var/log
+          terminationGracePeriodSeconds: 30
+        - name: var-spool
+          mountPath: /var/spool
+          terminationGracePeriodSeconds: 30
+        - name: push-client-config
+          mountPath: /etc/yandex/statbox-push-client
+          readOnly: true
+    - name: juggler-client
+      image: registry.yandex.net/cloud/platform/juggler-client:2019-09-09T15-21
+      volumeMounts:
+        - name: juggler-bundle-manifest-file
+          mountPath: /juggler-bundle/MANIFEST.json
+          readOnly: true
+        - name: platform-http-check-json
+          mountPath: /juggler-bundle/platform-http-checks.json
+          readOnly: true
+        - name: juggler-client-config
+          mountPath: /home/monitor/juggler/etc/client.conf
+          readOnly: true
+        - name: juggler-client-log
+          mountPath: /var/log/juggler-client
+          terminationGracePeriodSeconds: 30
+        - name: var-log-fluent
+          mountPath: /var/log/fluent
+          terminationGracePeriodSeconds: 30
+          readOnly: true
+        - name: var-spool-push-client
+          mountPath: /var/spool/push-client
+          terminationGracePeriodSeconds: 30
+          readOnly: true
+        - name: push-client-config
+          mountPath: /etc/yandex/statbox-push-client
+          readOnly: true
+        - name: hostfs-mon
+          mountPath: /hostfs
+          readOnly: true
+    - name: tvmtool
+      image: registry.yandex.net/cloud/tvm_tool:1.2.19
+      env:
+        - name: TVMTOOl_LOCAL_AUTHTOKEN
+          value: 764a5f28530362a00af4d459ea670e2a
+      volumeMounts:
+        - mountPath: /etc/tvmtool/tvmtool.conf
+          name: tvmtool-config
+          readOnly: true
+  volumes:
+    - name: all-configs
+      hostPath:
+        path: /etc
+        type: DirectoryOrCreate
+    - name: var-log
+      hostPath:
+        path: /var/log
+    - name: etc-fluent
+      hostPath:
+        path: /etc/fluent
+    - name: var-lib-docker-containers
+      hostPath:
+        path: /var/lib/docker/containers
+    - name: var-log-journal
+      hostPath:
+        path: /run/log/journal
+    - name: solomon-agent-config
+      hostPath:
+        path: /etc/solomon-agent
+    - name: metricsagent-config
+      hostPath:
+        path: /etc/metricsagent/metricsagent.yaml
+    - name: var-spool
+      hostPath:
+        path: /data/var/spool
+        type: DirectoryOrCreate
+    - name: push-client-config
+      hostPath:
+        path: /etc/yandex/statbox-push-client
+    - name: juggler-client-dir
+      hostPath:
+        path: /etc/api/configs/juggler-client
+        type: DirectoryOrCreate
+    - name: juggler-client-log
+      hostPath:
+        path: /var/log/juggler-client
+        type: DirectoryOrCreate
+    - name: juggler-bundle-manifest-file
+      hostPath:
+        path: /etc/api/configs/juggler-client/MANIFEST.json
+        type: FileOrCreate
+    - name: platform-http-check-json
+      hostPath:
+        path: /etc/api/configs/juggler-client/platform-http-check.json
+        type: FileOrCreate
+    - name: juggler-client-config
+      hostPath:
+        path: /etc/api/configs/juggler-client/juggler-client.conf
+        type: FileOrCreate
+    - name: hostfs-mon
+      hostPath:
+        path: /
+    - name: var-log-fluent
+      hostPath:
+        path: /var/log/fluent
+    - name: var-spool-push-client
+      hostPath:
+        path: /var/spool/push-client
+    - name: tvmtool-config
+      hostPath:
+        path: /etc/tvmtool/tvmtool.conf

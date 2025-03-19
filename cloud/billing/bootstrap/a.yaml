@@ -1,0 +1,72 @@
+service: yandexcloudbilling
+title: SelfSKU
+
+arcanum:
+  auto_merge:
+    requirements:
+      - system: arcanum
+        type: approved
+        disabling_policy: need_reason
+        data:
+          min_approvers_count: 2
+          ignore_self_ship: true
+      - system: arcanum
+        type: comment_issues_closed
+      - system: arcanum
+        type: st_issue_linked
+        disabling_policy: need_reason
+        data:
+          in_commit_message: true
+      - system: ci
+        type: build
+      - system: ci
+        type: tests
+
+ci:
+  secret: sec-01fkd2hqchtde5zanp0m4xt6y9
+
+  runtime:
+    sandbox-owner: YC-BILLING
+
+  releases:
+    release-testing:
+      title: SelfSKU testing bundle
+      auto: true
+      flow: release-selfsku
+      flow-vars:
+        pkg-name: testing
+      filters:
+        - sub-paths: ["testing/**"]
+    release-internal:
+      title: SelfSKU internal stand bundle
+      auto: true
+      flow: release-selfsku
+      flow-vars:
+        pkg-name: internal
+      filters:
+        - sub-paths: ["internal/**"]
+
+  flows:
+    release-selfsku:
+      title: SelfSKU bundle release
+      jobs:
+        start:
+          title: Flow start
+          task: dummy
+        build-and-dist:
+          title: Build and distribute bundle ${flow-vars.pkg-name}
+          task: projects/cloud/billing/aw_build
+          needs:
+            - start
+          input:
+            build_type:
+              id: Billing_ArcSelfsku
+              properties:
+                arc-branch: "${context.branch}"
+                arc-commit: "${context.target_commit.revision.hash}"
+                pkg-json-path: "cloud/billing/bootstrap/${flow-vars.pkg-name}/packaging/pkg.json"
+        done:
+          title: Flow done
+          task: dummy
+          needs:
+            - build-and-dist

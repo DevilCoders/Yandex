@@ -1,0 +1,47 @@
+{%- from "components/greenplum/map.jinja" import gpdbvars with context -%}
+{%- set management_iface = 'eth1' -%}
+{%- set fqdn = salt.grains.get('id') -%}
+{% if salt.pillar.get('data:dbaas:subcluster_name') == 'master_subcluster' %}
+table filter {
+    chain INPUT {
+        policy DROP;
+
+        interface eth0 {
+            # allow to greenplum master port
+            proto tcp dport ({{ gpdbvars.master_port }} 6432) ACCEPT;
+
+        }
+    }
+    chain OUTPUT {
+        daddr 169.254.169.254 mod owner uid-owner '{{ gpdbvars.gpadmin }}' REJECT reject-with icmp-net-unreachable;
+    }
+}
+{% endif %}
+
+domain ip6 {
+    table filter {
+        chain INPUT {
+            policy DROP;
+
+            interface {{ management_iface }} {
+                proto tcp dport 22 ACCEPT;
+            }
+{% if salt.pillar.get('data:dbaas:subcluster_name') == 'master_subcluster' %}
+            interface eth0 {
+                proto tcp dport ({{ gpdbvars.master_port }} 6432) ACCEPT;
+            }
+{% endif %}
+        }
+
+        chain OUTPUT {
+            mod state state (ESTABLISHED RELATED) ACCEPT;
+            outerface {{ management_iface }} {
+                # The last match wins.
+{% for host in salt['pillar.get']('data:access:management_hosts', []) %}
+                daddr '{{ host.fqdn }}' proto tcp dport {{host.port}} ACCEPT;
+{% endfor %}
+                mod owner uid-owner '{{ gpdbvars.gpadmin }}' DROP;
+            }
+        }
+    }
+}

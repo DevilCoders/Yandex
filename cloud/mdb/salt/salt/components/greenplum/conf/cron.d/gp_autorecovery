@@ -1,0 +1,16 @@
+{% from "components/greenplum/map.jinja" import gpdbvars with context %}
+{% set minutes = salt['pillar.get']('data:autorecovery:minutes', '5') %}
+{% set max_retries = salt['pillar.get']('data:autorecovery:max_retries', 1) %}
+{% set rebalance_flag = '' %}
+{% if salt['pillar.get']('data:autorecovery:rebalance', True) %}
+{% set rebalance_flag = '--rebalance' %}
+{% endif %}
+
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
+MAILTO=''
+MASTER_DATA_DIRECTORY={{ gpdbvars.masterdir }}/master/gpseg-1
+
+# m h dom mon dow user command
+# */N means every N's minute of hour
+
+*/{{ minutes }} * * * * {{ gpdbvars.gpadmin }} flock -n /tmp/gp_autorecovery.lock /usr/bin/python /usr/local/yandex/gp_autorecovery.py --tries {{ max_retries }} {{ rebalance_flag }} --gphome {{ gpdbvars.gphome }}-{{ gpdbvars.gpmajver }} >> {{ gpdbvars.gplog }}/gp_autorecovery.log 2>&1

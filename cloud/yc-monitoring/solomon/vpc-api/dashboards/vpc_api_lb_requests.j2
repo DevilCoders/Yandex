@@ -1,0 +1,73 @@
+{% extends "../../base/dashboard.j2" %}
+
+{% set methods = (
+'TargetGroupService/Create',
+'TargetGroupService/Update',
+'TargetGroupService/Delete',
+
+'TargetGroupService/AddTargets',
+'TargetGroupService/RemoveTargets',
+
+'NetworkLoadBalancerService/Create',
+'NetworkLoadBalancerService/Update',
+'NetworkLoadBalancerService/Delete',
+
+'NetworkLoadBalancerService/Start',
+'NetworkLoadBalancerService/Stop',
+
+'NetworkLoadBalancerService/AttachTargetGroup',
+'NetworkLoadBalancerService/DetachTargetGroup',
+
+'NetworkLoadBalancerService/AddListener',
+'NetworkLoadBalancerService/RemoveListener',
+) %}
+
+{% block parameters %}
+{
+    "name": "cluster",
+    "value": "cloud_{{ env }}_vpc-api"
+},
+{
+    "name": "service",
+    "value": "vpc-config-plane"
+},
+{
+    "name": "host",
+    "value": "vpc-api*"
+}
+{% endblock %}
+
+{% block rows %}
+[
+    {% for method in methods %}
+        { "panels": [
+            {{ render_panel(
+                "Requests for {}".format(method),
+                "[[cluster]]", 
+                "vpc-config-plane",
+                "host={{host}}&" +
+                    "zone=*&" +
+                    "app=vpc-config-plane_server&" +
+                    "l.method=loadbalancer.v1.{}&".format(method) +
+                    "graph=cloud_preprod_vpc-api_requests",
+                colspan=6,
+            ) }},
+            {{ render_panel(
+                "Internal errors for {}".format(method),
+                "[[cluster]]", 
+                "vpc-config-plane",
+                "host={{host}}&" +
+                    "zone=*&" +
+                    "app=vpc-config-plane_server&" +
+                    "l.method=loadbalancer.v1.{}&".format(method) +
+                    "l.sensor=grpc_requests_with_status&" +
+                    "l.status=INTERNAL&" +
+                    "transform=differentiate&"
+                    "graph=auto",
+                colspan=6,
+            ) }}
+        ]}
+        {% if loop.nextitem is defined %},{% endif %}
+    {% endfor %}
+]
+{% endblock %}

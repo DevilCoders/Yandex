@@ -1,0 +1,13 @@
+ipv4_addresses = [""]
+ipv6_addresses = [""]
+yc_instance_group_size = 1
+yc_folder = "aoebkbob87uggqiadh8h"
+ydb_tablespace = "test/"
+logbroker_destination_installation = "LOGBROKER"
+logbroker_destination_topic_prefix = "yc-trail/preprod/test/"
+logbroker_source_installation = "LOGBROKER"
+logbroker_source_topic = "yc-trail/preprod/test/yc-events"
+logbroker_source_consumer = "yc-trail/preprod/test/yc-preparer"
+name_prefix = "test-preprod-preparer"
+hostname_prefix = "test-prp"
+e2e_topic_pool_size = "0"

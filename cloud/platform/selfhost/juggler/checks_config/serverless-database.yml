@@ -1,0 +1,153 @@
+---
+- hosts:        localhost
+  gather_facts: false
+  pre_tasks:
+  - juggler_facts: jserver_api={{ jserver_api }}
+    tags:
+    - always
+  post_tasks:
+  - juggler_cleanup:
+
+  tasks:
+  ################################## DATABASE ###################################
+  - name: serverless-database__preprod
+    include_role:
+      name: serverless-database
+    vars:
+      app:                  serverless-database
+      env:                  preprod
+      cgroup:               "{{v.conductor_group}}"
+      unreachable_host:     "{{ v.hosts }}"
+      children:
+        - 'YC_DNS%{{ v.hosts }}'
+      service_responsibles: "{{responsibles.serverless}}"
+      tags:
+      - "yc-serverless"
+      - "yc-serverless-database"
+      - "yc-serverless-database-{{ env }}-app"
+      - "yc-serverless-database-{{ env }}-app-{{ v.tag_suffix }}"
+      - "yc-notify" #will be notified (via call) about these checks
+    loop_control:
+      loop_var: v
+    with_items:
+    - conductor_group: cloud_preprod_sless_docapi
+      hosts: sless-docapi-*.slydb.serverless.cloud-preprod.yandex.net@tenant={{ env }}
+      tag_suffix:      docapi
+    - conductor_group: cloud_preprod_sless_ydb
+      hosts: sless-ydb-*.slydb.serverless.cloud-preprod.yandex.net@tenant={{ env }}
+      tag_suffix:      ydb
+  - name: serverless-database__prod
+    include_role:
+      name: serverless-database
+    vars:
+      app:                  serverless-database
+      env:                  prod
+      cgroup:               "{{v.conductor_group}}"
+      unreachable_host:     "{{ v.hosts }}"
+      children:
+        - 'YC_DNS%{{ v.hosts }}'
+      service_responsibles: "{{responsibles.serverless}}"
+      tags:
+      - "yc-serverless"
+      - "yc-serverless-database"
+      - "yc-serverless-database-{{ env }}-app"
+      - "yc-serverless-database-{{ env }}-app-{{ v.tag_suffix }}"
+      - "yc-notify" #will be notified (via call) about these checks
+    loop_control:
+      loop_var: v
+    with_items:
+    - conductor_group: cloud_prod_sless_docapi
+      hosts: sless-docapi-*.slydb.serverless.cloud.yandex.net@tenant={{ env }}
+      tag_suffix:      docapi
+    - conductor_group: cloud_prod_sless_ydb
+      hosts: sless-ydb-*.slydb.serverless.cloud.yandex.net@tenant={{ env }}
+      tag_suffix:      ydb
+
+  ################################### INFRA #####################################
+  - name: serverless-database-infra__preprod
+    include_role:
+      name: infra
+    vars:
+      host:                 serverless-database-preprod
+      env:                  preprod
+      service:              "{{v.service}}"
+      service_responsibles: "{{responsibles.serverless}}"
+      tags:
+      - "yc-serverless-database"
+      - "yc-serverless-database-{{ env }}"
+      - "yc-serverless-database-{{ env }}-infra"
+      - "yc-serverless-database-{{ env }}-infra-{{ v.service }}"
+      flap: {stable: 0, critical: 0}
+    loop_control:
+      loop_var: v
+    with_items:
+    - service: minor-maintenance
+    - service: minor-issue
+    - service: major-maintenance
+    - service: major-issue
+  - name: serverless-database-infra__prod
+    include_role:
+      name: infra
+    vars:
+      host:                 serverless-database-prod
+      env:                  prod
+      service:              "{{v.service}}"
+      service_responsibles: "{{responsibles.serverless}}"
+      tags:
+      - "yc-serverless-database"
+      - "yc-serverless-database-{{ env }}"
+      - "yc-serverless-database-{{ env }}-infra"
+      - "yc-serverless-database-{{ env }}-infra-{{ v.service }}"
+      flap: {stable: 0, critical: 0}
+    loop_control:
+      loop_var: v
+    with_items:
+    - service: minor-maintenance
+    - service: minor-issue
+    - service: major-maintenance
+    - service: major-issue
+
+  #################################### E2E ######################################
+  - name:          serverless-database-e2e__preprod
+    juggler_check: ''
+    args:          "{{ default_check | hash_merge( default_timed_limits, item ) }}"
+    vars:
+      app:       e2e"
+      env:       preprod
+      namespace: ycloud
+      children:
+      - teamcity-yc-serverless-database-docapi:e2e-preprod-yc-serverless-database
+      - teamcity-yc-serverless-database-ydb:e2e-preprod-yc-serverless-database
+      tags:      "{{ item.tags }}"
+    with_items:
+    - service: e2e-preprod-yc-serverless-database
+      host:    yc-serverless-database-teamcity
+      ttl:     9000
+      tags:
+      - "yc-serverless"
+      - "yc-serverless-teamcity"
+      - "yc-serverless-teamcity-{{ env }}"
+      - "yc-serverless-teamcity-{{ env }}-e2e"
+      - "yc-serverless-teamcity-{{ env }}-e2e-database"
+
+  - name:          serverless-database-e2e__prod
+    juggler_check: ''
+    args:          "{{ default_check | hash_merge( default_timed_limits, item ) }}"
+    vars:
+      app:       e2e
+      env:       prod
+      namespace: ycloud
+      children:
+      - teamcity-yc-serverless-database-docapi:e2e-prod-yc-serverless-database
+      - teamcity-yc-serverless-database-ydb:e2e-prod-yc-serverless-database
+      tags:      "{{ item.tags }}"
+    with_items:
+    - service: e2e-prod-yc-serverless-database
+      host:    yc-serverless-database-teamcity
+      ttl:     9000
+      tags:
+      - "yc-serverless"
+      - "yc-serverless-teamcity"
+      - "yc-serverless-teamcity-{{ env }}"
+      - "yc-serverless-teamcity-{{ env }}-e2e"
+      - "yc-serverless-teamcity-{{ env }}-e2e-database"

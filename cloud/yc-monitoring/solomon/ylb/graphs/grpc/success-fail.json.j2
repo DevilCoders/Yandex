@@ -1,0 +1,39 @@
+{% extends "base.json.j2" %}
+
+{%- set type_map = {
+	'server': 'grpc__*',
+	'client': 'client_grpc__*'
+}
+-%}
+
+{%- set prefix = type_map.get(type, 'grpc__*') -%}
+
+{% block parameters %}
+{
+    "name": "host",
+    "value": "*"
+}
+{% endblock %}
+
+{% block elements %}
+{{
+	render_element(
+		"grpc successes [[host]]",
+		"non_negative_derivative(group_by_labels({name='" + prefix + "_success', code='*'}, 'host', v -> group_lines('sum', v)))",
+	)
+}},
+{{
+	render_element(
+		"grpc failures [[host]]",
+		"non_negative_derivative(group_by_labels({name='" + prefix + "_fail', code='*'}, 'host', v -> group_lines('sum', v)))",
+	)
+}},
+{{
+	render_element(
+		"fail rate, %",
+		"non_negative_derivative(group_by_labels({name='" + prefix + "_fail', code='*'}, 'host', v -> group_lines('sum', v)))/(non_negative_derivative(group_by_labels({name='" + prefix + "_fail', code='-'}, 'host', v -> group_lines('sum', v)))+non_negative_derivative(group_by_labels({name='" + prefix + "_success', code='-'}, 'host', v -> group_lines('sum', v))))*100",
+		yaxis="RIGHT",
+		color="RED",
+	)
+}}
+{% endblock %}

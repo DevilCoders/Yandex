@@ -1,0 +1,22 @@
+#pragma once
+
+#include "public.h"
+
+#include <util/datetime/base.h>
+
+namespace NCloud {
+
+////////////////////////////////////////////////////////////////////////////////
+
+struct ITimer
+{
+    virtual ~ITimer() = default;
+
+    virtual TInstant Now() = 0;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
+ITimerPtr CreateWallClockTimer();
+
+}   // namespace NCloud

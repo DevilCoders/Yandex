@@ -1,0 +1,152 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.hopper.v1alpha;
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/hopper/v1alpha;hopper";
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/wrappers.proto";
+import "yandex/cloud/api/operation.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+import "yandex/cloud/priv/validation.proto";
+
+service HopperService {
+  rpc Export(ExportRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      response: "ExportResponse"
+    };
+  }
+  rpc GetServiceAccountID(google.protobuf.Empty) returns (google.protobuf.StringValue);
+}
+
+message ExportRequest {
+  string source_image_id = 1 [(required) = true];
+  bool delete_image_after = 2;
+  oneof target {
+    // export to s3 and grant this service_account read permissions
+    string service_account_id = 3;
+    // export to s3 and generate presign url
+    Presign presign = 4;
+    // reserved
+    string external = 5;
+    // export to s3 and move(copy) to another installation
+    ImportTargetList import_list = 6;
+  }
+  bool dry_run = 7;
+  // generate new uuid for boot partition and modify grub.cfg and fstab
+  bool update_uuid = 8;
+  // go template for s3 key path
+  //  * If the pattern ends on the slash, it will be added `disk.qcow2`
+  // Supported template keys:
+  //  * common:
+  //   * `OperationID`
+  //  * from source image:
+  //   * `ImageName`
+  //   * `SourceImageID`
+  //   * `SourceFolderID`
+  //   * `SourceFolderName`
+  //   * `SourceFolderFamily`
+  //   * `SourceCloudID`
+  //   * `SourceCloudName`
+  //   * `Label.<LabelName>`
+  //  * from user_account/service_account:
+  //   * `SubjectID`
+  //  * from service_account:
+  //   * `FolderName`
+  //   * `FolderID`
+  //   * `CloudName`
+  //   * `CloudID`
+  // default: `hopper-compute-images/{{.OperationID}}/disk.qcow2`
+  string s3_key_template = 9;
+}
+
+message ExportResponseItem {
+  oneof Item {
+    // s3://bucket/some/key
+    string s3 = 1;
+    // https://storage.yandexcloud.net/presign/url?...
+    string presign = 2;
+    // <scheme>://host/path
+    string raw = 3;
+    // imageID
+    string id = 4;
+    // reason if import has been skipped
+    string skip_reason = 6;
+  }
+  string authorization = 5;
+}
+
+message ExportResponse {
+  message Result {
+    ExportResponseItem artifact = 1;
+    string folder_id = 2;
+    string environment = 3;
+  }
+  repeated Result item = 1;
+}
+
+message Presign {
+  google.protobuf.Duration expire_time = 1;
+}
+
+message ImportTargetList {
+  repeated ImportTarget target = 1 [(size) = ">0"];
+}
+
+message ImportTarget {
+  // IAM token or SA key
+  oneof AuthorizationMethod {
+    // raw IAM token or sa key
+    string authorization = 1;
+    // lockbox secret from the same stand as the service
+    LockboxSecret lockbox = 7;
+  }
+  string target_folder = 2 [(required) = true];
+  enum ApiEndpoint {
+    API_ENDPOINT_UNSPECIFIED = 0;
+    PROD = 1;
+    PREPROD = 2;
+    GPN = 3;
+    BLUE = 4;
+    GREEN = 5;
+    IL = 6;
+    TESTING = 7;
+    CLOUDVM = 8;
+    CUSTOM = 9; // use custom endpoints
+  }
+  ApiEndpoint api_endpoint = 3 [(required) = true];
+  bool pooled = 4;
+  // required grpc services:
+  // * yandex.cloud.priv.servicecontrol.v1.AccessService/Authenticate
+  // * yandex.cloud.priv.compute.v1.ImageService/Get
+  // * yandex.cloud.priv.servicecontrol.v1.AccessService/Authorize
+  // * yandex.cloud.priv.iam.v1.IamTokenService/Create
+  // * yandex.cloud.priv.compute.v1.ImageService/List
+  // * yandex.cloud.priv.compute.v1.ImageService/Create
+  // * yandex.cloud.priv.compute.v1.OperationService/Get
+  repeated Endpoint endpoints = 5;
+  // skip if fail
+  bool allow_skip_failed = 6;
+  // Duration to wait for an import operation.
+  // Default is 15m * (image_size_gb / 10)
+  google.protobuf.Duration import_duration = 8;
+}
+
+message Endpoint {
+  // [prefix] contains segments prefix of method full proto name.
+  // Examples:
+  //   yandex.cloud.priv.compute
+  //   yandex.cloud.priv.compute.v1.InstanceService.Get
+  string prefix = 1 [(required) = true];
+  // [addr] specified address in host:port format
+  string addr = 2 [(required) = true];
+  bool plaintext = 4;
+  bool skip_tls_verify = 3;
+}
+
+message LockboxSecret {
+  string secret_id = 1 [(required) = true];
+  string version_id = 2;
+  string key = 3 [(required) = true];
+}

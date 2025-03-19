@@ -1,0 +1,356 @@
+#!/usr/bin/env bash
+#
+# Wraps virtualenvwrapper's mkvirtualenv and provides a very easy way of
+# creating development virtual environments for your python projects.
+#
+
+die() {
+    echo "Error:" "$@" >&2
+    exit 1
+}
+
+show_help() {
+    cat <<EOF
+Usage: $script_name [options] [-a PROJECT] [-A PROJECT]...
+
+Wraps virtualenvwrapper's mkvirtualenv and provides a very easy way of
+creating development virtual environments for your python projects.
+
+If you cloned some of required packages into the project root and want to use
+the cloned versions instead of installing them via pip into the virtual
+environment, just list these package names in local-requirements.txt - they
+won't be installed, but their paths will be added to PYTHONPATH of the created
+virtual environment.
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -a PROJECT, --project PROJECT
+                        path to the project (default is current directory)
+  -A PROJECT, --extra-project PROJECT
+                        path to an additional project to add to the virtual environment
+  -n NAME, --name NAME  virtual environment name (default is name of project's directory)
+  --force               replace existing virtual environment if exists
+  -p PYTHON, --python PYTHON
+                        python interpreter to use (default is python)
+  --pip-version  pip-version to install
+  -v VIRTUALENV, --virtualenv VIRTUALENV
+                        virtualenv to use (default is virtualenv)
+  -w VIRTUALENVWRAPPER, --virtualenvwrapper
+                        virtualenvwrapper to use (default is virtualenvwrapper.sh)
+  -s, --system-site-packages
+                        give the virtual environment access to the global site-packages
+  -i, --index-url URL   base URL of Python Package Index
+  -f, --find-links URL  if a URL or path to an html file, then parse for links to archives,
+                        if a local path or file:// URL that's a directory, then look for
+                        archives in the directory listing
+  --no-index            ignore package index (only looking at --find-links URLs instead)
+  --no-cache-dir        disable the cache
+EOF
+}
+
+check_option() {
+    [ -n "$2" ] || die "Invalid option $1 value."
+}
+
+parse_args() {
+    eval set -- "$@"
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            -a|--project)
+                check_option $1 $2
+                project_path="$2"
+                shift
+                ;;
+            -n|--name)
+                check_option $1 $2
+                project_name="$2"
+                shift
+                ;;
+            -A|--extra-project)
+                check_option $1 $2
+                extra_project_paths+=("$2")
+                shift
+                ;;
+            --force)
+                force=1
+                ;;
+            -p|--python)
+                check_option $1 $2
+                python="$2"
+                shift
+                ;;
+            --pip-version)
+                check_option $1 $2
+                pip_version="$2"
+                shift
+                ;;
+            -v|--virtualenv)
+                check_option $1 $2
+                virtualenv="$2"
+                shift
+                ;;
+            -w|--virtualenvwrapper)
+                check_option $1 $2
+                virtualenvwrapper="$2"
+                shift
+                ;;
+            -s|--system-site-packages)
+                virtualenv_options="$virtualenv_options --system-site-packages"
+                ;;
+            -i|--index-url)
+                check_option $1 $2
+                pip_options+=("$1" "$2");
+                distutils_config="$distutils_config"$'\n'"index-url = $2"
+                shift
+                ;;
+            -f|--find-links)
+                check_option $1 $2
+                pip_options+=("$1" "$2");
+                distutils_config="$distutils_config"$'\n'"find-links = $2"
+                shift
+                ;;
+            --no-index)
+                virtualenv_options="$virtualenv_options --never-download"
+                pip_options+=("$1")
+                distutils_config="$distutils_config"$'\n'"allow-hosts = localhost"
+                ;;
+            --no-cache-dir)
+                pip_options+=("$1")
+                ;;
+            --)
+                shift
+                break
+                ;;
+            (-*)
+                die "Unrecognized option: $1."
+                ;;
+            (*)
+                break
+                ;;
+        esac
+        shift
+    done
+
+    [ $# -eq 0 ] || die "Invalid parameter: $1."
+
+    project_path="$(cd "$project_path" && pwd)"
+    [ "$project_path" != "/" -a "$project_path" != "//" ] || \
+        die "Invalid project path: $project_path."
+
+    if [ -z "$project_name" ]; then
+        project_name="$(basename "$project_path")"
+    else
+        [[ "$project_name" != */* ]] || die "Invalid virtual environment name: $project_name."
+    fi
+
+    if [[ "$python" != */* ]]; then
+        local python_path
+        python_path="$(which "$python" 2>/dev/null)" || die "Unable to find '$python' executable."
+        python="$python_path"
+    fi
+}
+
+cleanup() {
+    [ -z "$temp_dir" ] || rm -rf "$temp_dir"
+}
+
+create_virtualenv() {
+    local env_name
+    local existing_envs
+
+    if [ -n "${PYENV_SHELL:-}" ]; then
+        echo "Using pyenv-virtualenvwrapper."
+
+        PYENV_VERSION="$("$python" -c 'print(".".join(map(str, __import__("sys").version_info[:3])))')"
+        export PYENV_VERSION
+
+        set +eu;
+            eval "$(pyenv init -)" || die "Failed to activate pyenv."
+            pyenv virtualenvwrapper || die "Failed to activate pyenv-virtualenvwrapper."
+        set -eu
+    else
+        echo "Using virtualenvwrapper."
+
+        if virtualenvwrapper="$(which "$virtualenvwrapper" 2>/dev/null)"; then
+            :
+        elif [ "$(uname)" != Darwin -a -e /etc/bash_completion.d/virtualenvwrapper ]; then
+            virtualenvwrapper=/etc/bash_completion.d/virtualenvwrapper
+        else
+            die "Unable to find virtualenvwrapper."
+        fi
+
+        set +eu;
+            . "$virtualenvwrapper" || die "Failed to activate virtualenvwrapper."
+        set -eu
+    fi
+
+    set +eu;
+        existing_envs="$(lsvirtualenv)" || \
+            die "Unable to get a list of existing virtual environments.";
+    set -eu
+
+    while read env_name; do
+        [ "$env_name" = "$project_name" ] || continue
+        [ "$force" -ne 0 ] || die "Virtual environment '$project_name' already exists."
+
+        set +eu
+            rmvirtualenv "$project_name" || die "Failed to remove virtual environment '$project_name'."
+        set -eu
+    done <<<"$existing_envs"
+
+    set +eu
+        VIRTUALENVWRAPPER_VIRTUALENV="$virtualenv" VIRTUALENVWRAPPER_VIRTUALENV_ARGS="$virtualenv_options" \
+            mkvirtualenv -p "$python" -a "$project_path" "$project_name" && \
+                workon "$project_name" || die "Failed to create the virtual environment."
+    set -eu
+
+    configure_virtualenv
+}
+
+configure_virtualenv() {
+    local distutils_config_path
+
+    if [ -n "$distutils_config" ]; then
+        # setup.py's setup_requires keyword (which is used by some packages) uses easy_install instead of pip which
+        # makes it to ignore pip's --index-url, --no-index and --find-links options, so we have to configure them using
+        # distutils config file (see https://pip.pypa.io/en/latest/reference/pip_install.html#controlling-setup-requires)
+        distutils_config_path="$(python -c '
+import os.path
+import distutils
+print(os.path.join(os.path.dirname(distutils.__file__), "distutils.cfg"))
+        ')"
+        [ -e "$distutils_config_path" ] || die "Unable to find virtualenv's distutils.cfg file."
+
+        echo "Patching $distutils_config_path..."
+        mv "$distutils_config_path"{,.orig}
+        cat > "$distutils_config_path" <<< "[easy_install]$distutils_config"
+    fi
+
+    set +u
+        if [ -n "$pip_version" ]; then
+            pip_install+="==$pip_version"
+        fi
+        pip install "${pip_options[@]}" -U ${pip_install}
+    set -u
+
+    local extra_project_path
+    local extra_project_name
+    local locally_provided_requirements=""
+
+    if [ ${#extra_project_paths[@]} -ne 0 ]; then
+        # Collecting a list of requirements provided by extra projects
+        for extra_project_path in "${extra_project_paths[@]}"; do
+            if [ -e "$extra_project_path/setup.py" ]; then
+                extra_project_name="$(cd "$extra_project_path" && "$python" setup.py --name)"
+                locally_provided_requirements="$locally_provided_requirements $extra_project_name"
+            fi
+        done
+
+        # The main project may override requirements, so configure the extra projects first
+        for extra_project_path in "${extra_project_paths[@]}"; do
+            configure_project "$extra_project_path" "$locally_provided_requirements"
+        done
+    fi
+
+    configure_project "$project_path" "$locally_provided_requirements"
+
+    if [ -n "$distutils_config" ]; then
+        echo "Reverting $distutils_config_path..."
+        mv "$distutils_config_path"{.orig,}
+    fi
+}
+
+configure_project() {
+    local sed
+    local project_path
+    local package_name
+    local package_path
+    local local_packages
+    local requirements_path
+    local os_requirements_path
+    local locally_provided_requirements
+
+    project_path="$1"
+    locally_provided_requirements="$2"
+
+    os_requirements_path="$(uname | tr '[:upper:]' '[:lower:]')-requirements.txt"
+    [ "$(uname)" = Darwin ] && sed='sed -E' || sed='sed -r'
+
+    echo "Configuring $project_path project..."
+
+    rm -f "$temp_dir"/*requirements.txt
+
+    for requirements_path in requirements.txt $os_requirements_path dev-requirements.txt test-requirements.txt; do
+        [ ! -e "$project_path/$requirements_path" ] || \
+            cp "$project_path/$requirements_path" "$temp_dir/project-$requirements_path"
+    done
+
+    if [ -e "$project_path/local-requirements.txt" ]; then
+        local_packages="$(< "$project_path/local-requirements.txt")"
+
+        for package_name in $local_packages; do
+            package_path="$project_path/$package_name"
+
+            [ -d "$package_path" ] || \
+                die "Unable to find local package '$package_name' which is listed in $project_path/local-requirements.txt."
+
+            if [ -d "$package_path/src" ]; then
+                add2virtualenv "$package_path/src"
+            else
+                add2virtualenv "$package_path"
+            fi
+
+            [ ! -e "$package_path/requirements.txt" ] || \
+                cp "$package_path/requirements.txt" "$temp_dir/package-$package_name-requirements.txt"
+        done
+
+        locally_provided_requirements="$locally_provided_requirements $local_packages"
+    fi
+
+    shopt -s nullglob
+        for package_name in $locally_provided_requirements; do
+            for requirements_path in "$temp_dir/"*requirements.txt; do
+                $sed -i.bak "/^\\s*${package_name/./\\.}([<=>]|\\s*\$)/d" "$requirements_path"
+            done
+        done
+
+        # The project may override requirements, so install its requirements at the very end
+        for requirements_path in "$temp_dir/"package-*-requirements.txt "$temp_dir/"project-*requirements.txt; do
+            set +u
+                pip install "${pip_options[@]}" -r "$requirements_path"
+            set -u
+        done
+    shopt -u nullglob
+
+    add2virtualenv "$project_path"
+}
+
+set -eu
+script_name="$0"
+
+force=0
+project_path="$PWD"
+project_name=""
+extra_project_paths=()
+python="python"
+pip_install="pip"
+virtualenv="virtualenv"
+virtualenvwrapper="virtualenvwrapper.sh"
+virtualenv_options=""
+pip_options=()
+distutils_config=""
+
+parse_args "$(getopt -n "$0" -o ha:n:A:p:v:w:si:f: -l help,force,project:,name:,extra-project:,python:,pip-version:,virtualenv:,virtualenvwrapper:,system-site-packages,index-url:,find-links:,no-index,no-cache-dir -- "$@")"
+[ -z "${VIRTUAL_ENV-}" ] || die "Activated virtual environment detected. Please deactivate it before running this script."
+
+temp_dir=""
+trap cleanup EXIT
+trap "exit 1" SIGINT SIGTERM SIGQUIT
+temp_dir="$(mktemp -d "/var/tmp/mkdevelvirtualenv.XXXXXX")"
+
+create_virtualenv

@@ -1,0 +1,9 @@
+OWNER(g:mdb)
+
+PY23_LIBRARY()
+
+STYLE_PYTHON()
+
+PY_SRCS(utils.py)
+
+END()

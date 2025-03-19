@@ -1,0 +1,162 @@
+#!/usr/bin/env python
+# -*-coding: utf-8 -*-
+# vim: sw=4 ts=4 expandtab ai
+
+import argparse
+import pprint
+from requests import RequestException
+from introspect import load_config, IntrospectUtil, print_for_monitoring, \
+    STATUS_OK, STATUS_WARN, STATUS_CRIT, DEFAULT_TIMEOUT
+
+
+CHECK_NAME = "contrail-peering"
+CONFIG_NAME = "contrail-peering.conf"
+
+
+class ControlIntrospectUtil(object):
+    def __init__(self, host, port):
+        self.util = IntrospectUtil(host, port, debug=True, timeout=DEFAULT_TIMEOUT)
+
+    def get_peers(self):
+        raw_data = self.util.get("Snh_ShowBgpNeighborSummaryReq")
+        result = {}
+        for peer_data in raw_data[0]["neighbors"] or []:
+            peer_name = peer_data["peer"]
+            result[peer_name] = peer_data
+        return result
+
+    def get_route_tables_raw(self, prefix=None, source=None, protocol=None, family=None):
+        args = [
+            ("routing_table",  ""),
+            ("routing_instance", ""),
+            ("prefix", prefix or ""),
+            ("longer_match", ""),
+            ("shorter_match", ""),
+            ("count", ""),
+            ("start_routing_table", ""),
+            ("start_routing_instance", ""),
+            ("start_prefix", ""),
+            ("source", source or ""),
+            ("protocol", protocol or ""),
+            ("family", family or "")
+        ]
+        query_string = "&".join("{}={}".format(k, v) for k, v in args)
+        return self.util.get("Snh_ShowRouteReq?" + query_string)
+
+    def get_route_tables(self, **kwargs):
+        raw_tables = self.get_route_tables_raw(**kwargs)
+        return raw_tables[0]["tables"] or []
+
+
+def routes(table):
+    routes = table.get("routes")
+    return routes or []
+
+
+def dump(util, args):
+    """
+    Print raw tables as JSON to stdout (for human)
+    """
+    raw_routes = util.get_route_tables_raw(args.prefix, args.source, args.protocol, args.family)
+    pprint.pprint(raw_routes)
+
+
+def show(util, args):
+    """
+    Show primary routes information (for human)
+    """
+    tables = util.get_route_tables(prefix=args.prefix, source=args.source, protocol=args.protocol, family=args.family)
+    for table in tables:
+        print("{}".format(table["routing_table_name"]))
+        for route in routes(table):
+            print("  {}".format(route["prefix"]))
+            for path in route["paths"]:
+                print("    nexthop {} label {} / {} peer {}, peer_as {}"
+                      .format(path["next_hop"], path["label"],
+                              path["protocol"], path["peer_router_id"], path["peer_as"]))
+        print("")
+
+
+def check(util, expected_peers, announces_address_families):
+    """
+    Check peering and report in Juggler format (for monitoring)
+    """
+    if not expected_peers:
+        return STATUS_WARN, "Peers to check not configured"
+
+    peers = util.get_peers()
+
+    problems = []
+    for peer_name in expected_peers:
+        peer = peers.get(peer_name)
+        if not peer:
+            problems.append("{} (NotFound)".format(peer_name))
+            continue
+
+        pretty_name = "{}/{}".format(peer_name, peer["peer_address"])
+
+        state = peer["state"]
+        if state != "Established":
+            problems.append("{} ({})".format(pretty_name, state))
+            continue
+
+        if announces_address_families and peer:
+            problematic_families = []
+
+            for family in announces_address_families:
+                tables = util.get_route_tables(protocol="BGP", family=family, source=peer["peer_id"])
+                routes_count = sum(len(routes(table)) for table in tables)
+                if routes_count == 0:
+                    problematic_families.append(family)
+
+            if problematic_families:
+                problems.append("{} (no announces: {})".format(pretty_name, ", ".join(problematic_families)))
+
+    if problems:
+        return STATUS_CRIT, ", ".join(problems)
+    return STATUS_OK, "All {} peers are OK".format(len(expected_peers))
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Contrail-control introspection tool to check peering")
+
+    parser.add_argument("-d", "--dump", action="store_true", help="Dump routes (full info, JSON)")
+    parser.add_argument("-s", "--show", action="store_true", help="Show routes (main info, human-readable)")
+
+    parser.add_argument("--host", default="127.0.0.1", help="API host (default 127.0.0.1)")
+    parser.add_argument("--port", default=8083, type=int, help="API port (default 8083)")
+    parser.add_argument("--timeout", default=DEFAULT_TIMEOUT, help="API timeout (default {})".format(DEFAULT_TIMEOUT))
+
+    parser.add_argument("--prefix")
+    parser.add_argument("--source", help="Peer address")
+    parser.add_argument("--protocol", help="For example: BGP/XMPP/Local")
+    parser.add_argument("--family", help="For example: inet, inet6, evpn")
+
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    util = ControlIntrospectUtil(args.host, args.port)
+
+    if args.dump:
+        dump(util, args)
+        return
+
+    if args.show:
+        show(util, args)
+        return
+
+    config = load_config(CONFIG_NAME)
+    expected_peers = config.get("expected_peers")
+    announces_address_families = config.get("announces_address_families", [])
+
+    try:
+        status, message = check(util, expected_peers, announces_address_families)
+        print_for_monitoring(CHECK_NAME, status, message)
+    except RequestException as e:
+        print_for_monitoring(CHECK_NAME, STATUS_CRIT, e)
+
+
+if __name__ == '__main__':
+    main()

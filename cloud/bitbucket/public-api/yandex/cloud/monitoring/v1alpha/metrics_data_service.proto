@@ -1,0 +1,205 @@
+syntax = "proto3";
+
+package yandex.cloud.monitoring.v1alpha;
+
+import "google/api/annotations.proto";
+import "yandex/cloud/api/tools/options.proto";
+import "yandex/cloud/validation.proto";
+import "yandex/cloud/monitoring/v1alpha/metric.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/public-api/yandex/cloud/monitoring/v1alpha;monitoringv1alpha";
+option java_package = "yandex.cloud.api.monitoring.v1alpha";
+
+// A set of methods for managing metric data.
+service MetricsDataService {
+  // Returns metric data from Monitoring.
+  rpc Read (ReadDataRequest) returns (ReadDataResult) {
+    option (google.api.http) = {
+        post: "/monitoring/v1/data/read"
+        body: "query"
+    };
+    option (yandex.cloud.api.tools.method).lint_skip.http_query_parameters = true;
+    option (yandex.cloud.api.tools.method).lint_skip.http_path = true;
+    option (yandex.cloud.api.tools.method).lint_skip.http_verb = true;
+  }
+
+  // Writes metric data to Monitoring.
+  rpc Write (WriteRataRequest) returns (WriteDataResponse) {
+    option (google.api.http) = {
+        post: "/monitoring/v1/data/write"
+        body: "content"
+    };
+    option (yandex.cloud.api.tools.method).lint_skip.http_query_parameters = true;
+    option (yandex.cloud.api.tools.method).lint_skip.http_path = true;
+  }
+}
+
+// List of available aggregate functions for downsampling.
+enum GridAggregation {
+    GRID_AGGREGATION_UNSPECIFIED = 0;
+
+    // Max function.
+    MAX = 1;
+
+    // Min function.
+    MIN = 2;
+
+    // Sum function.
+    SUM = 3;
+
+    // Average value.
+    AVG = 4;
+
+    // Last value.
+    LAST = 5;
+
+    // Total count of points.
+    COUNT = 6;
+}
+
+enum FillGap {
+    FILL_GAP_UNSPECIFIED = 0;
+
+    // Returns `null` as a metric value and `timestamp` as a time series value.
+    NULL = 1;
+
+    // Returns no value and no timestamp.
+    NONE = 2;
+
+    // Returns the value from the previous time interval.
+    PREVIOUS = 3;
+}
+
+message DataQuery {
+    message Downsampling {
+        // Maximum number of points to be returned.
+        int64 max_points = 1 [(value) = "10-10000"];
+
+        // Time interval (grid) for downsampling in milliseconds.
+        // Points in the specified range are aggregated into one time point.
+        int64 grid_millis = 2 [(value) = ">0"];
+
+        // Function that is used for downsampling.
+        GridAggregation aggregation = 3;
+
+        // Parameters for filling gaps in data.
+        FillGap fill = 4;
+    }
+
+    // Query text.
+    string program = 1 [(required) = true];
+
+    // The beginning of the time interval. String in [ISO8601](https://ru.wikipedia.org/wiki/ISO_8601) format.
+    int64 from_time = 2 [(required) = true];
+
+    // The end of the time interval. String in [ISO8601](https://ru.wikipedia.org/wiki/ISO_8601) format.
+    int64 to_time = 3 [(required) = true];
+
+    // Downsampling parameters.
+    Downsampling downsampling = 4;
+}
+
+message ReadDataRequest {
+    // ID of the cloud that the metric belongs to.
+    string cloud_id = 1 [(required) = true, (length) = "<=50"];
+
+    // ID of the folder that the metric belongs to.
+    string folder_id = 2 [(required) = true, (length) = "<=50"];
+
+    // Query parameters.
+    DataQuery query = 9 [(required) = true];
+}
+
+
+message DoubleValues {
+    repeated double values = 1;
+}
+
+message LongValues {
+    repeated int64 values = 1;
+}
+
+message Timeseries {
+    //string alias = 1;
+
+    // Type of the metric.
+    MetricKind kind = 2;
+
+    // Name of the metric.
+    string name = 3;
+
+    // List of metric labels as `key:value` pairs.
+    map<string, string> labels = 4;
+
+    // List of timestamps.
+    repeated int64 timestamps = 5;
+
+    // List of metric values.
+    repeated double values = 6;
+}
+
+message ReadDataResult {
+    // List of metrics.
+    repeated Timeseries vector = 1;
+}
+
+
+message JsonFormat {
+    message Point {
+        // Time point in the `timestamp` format.
+        int64 ts = 1;
+        // Metric value.
+        double value = 2;
+
+    }
+    message Metric {
+        // Name of the metric.
+        string name = 1;
+
+        // Metric labels as `key:value` pairs.
+        map<string, string> labels = 2;
+
+        // Type of the metric.
+        MetricKind kind = 3;
+
+        // Time point in the `timestamp` format. If it is not specified, the current time is used.
+        int64 ts = 4;
+
+        // Metric value in the time point.
+        double value = 5;
+
+        // List of several points.
+        repeated Point timeseries = 6;
+    }
+
+    // Common timestamp for all metrics.
+    int64 ts = 1;
+
+    // Common labels for all metrics as `key:value` pairs.
+    map<string, string> labels = 2;
+
+    // List of metrics.
+    repeated Metric metrics = 3;
+}
+
+message WriteRataRequest {
+    // ID of the cloud that the metric belongs to.
+    string cloud_id = 1 [(required) = true, (length) = "<=50"];
+
+    // ID of the folder that the metric belongs to.
+    string folder_id = 2 [(required) = true, (length) = "<=50"];
+
+    // ID of the service that the metric belongs to. Use `service=custom` for custom metrics.
+    string service = 3 [(required) = true];
+
+    // Query content.
+    JsonFormat content = 4 [(required) = true];
+}
+
+message WriteDataResponse {
+    // Number of successfully written metrics.
+    int64 metrics_pushed = 1;
+
+    // Error message if the writing failed.
+    string error_message = 2;
+}

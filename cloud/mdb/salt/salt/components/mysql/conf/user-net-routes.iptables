@@ -1,0 +1,62 @@
+domain ip6 {
+{% if salt.dbaas.is_compute() %}
+    table mangle {
+        chain OUTPUT {
+            mod owner uid-owner 'mysql'
+            MARK set-mark 4;
+
+            # wal-g is run from mysql user so we need separate rule
+{%   for host in salt['pillar.get']('data:access:user_hosts', []) %}
+            mod owner uid-owner 'mysql'
+            mod tcp proto tcp daddr '{{ host.fqdn }}' dport {{ host.port }}
+            MARK set-mark 8;
+{%   endfor %}
+
+            # Needed until mysync is run from mysql user
+            # DBAASEXTERNALNETS
+            mod owner uid-owner 'mysql'
+            mod tcp proto tcp dport 2181
+            mod u32 u32 "0x20&0xffffffff=0xf802"
+            MARK set-mark 8;
+
+{%   for project_id in salt.mdb_network.get_external_project_ids(exclude_user_project_id=true) %}
+            mod owner uid-owner 'mysql'
+            mod tcp proto tcp sport 3306
+            mod u32 u32 "0x20&0xffffffff={{ project_id }}"
+            MARK set-mark 8;
+{%   endfor %}
+        }
+    }
+{% endif %}
+{% if salt.dbaas.is_porto() and salt.mdb_network.is_in_user_project_id() %}
+{%   set ip6_user_addr = salt.mdb_network.ip6_porto_user_addr() %}
+{%   set ip6_control_addr = salt.mdb_network.ip6_porto_control_addr() %}
+{%   set cluster_hosts = salt['pillar.get']('data:dbaas:cluster_hosts', None) %}
+    table nat {
+        chain POSTROUTING {
+            outerface eth0 {
+{%   for host in salt['pillar.get']('data:access:user_hosts', []) %}
+                # wal-g is run from mysql user so we need separate rule
+                mod owner uid-owner 'mysql'
+                mod tcp proto tcp daddr '{{ host.fqdn }}' dport {{ host.port }}
+                SNAT to {{ ip6_control_addr }};
+{%   endfor %}
+
+                # Needed until mysync is run from mysql user
+                mod owner uid-owner 'mysql'
+                mod tcp proto tcp dport 2181
+                mod u32 u32 "0x20&0xffffffff=0x1589"
+                SNAT to {{ ip6_control_addr }};
+
+{%   if cluster_hosts %}
+                daddr ( {{ cluster_hosts | join(' ') }} )
+                SNAT to {{ ip6_user_addr }};
+{%   endif %}
+
+                mod owner uid-owner 'mysql'
+                SNAT to {{ ip6_user_addr }};
+            }
+        }
+    }
+{% endif %}
+}

@@ -1,0 +1,325 @@
+{% set gateway = salt['pillar.get']('data:gateway') %}
+
+extra_discovery:
+- id: log-reading
+  address: reader.logging.cloud-preprod.yandex.net:443
+- id: log-ingestion
+  address: ingester.logging.cloud-preprod.yandex.net:443
+
+groups:
+  - id: dataproc_manager
+    aliases:
+      - dataproc-manager
+    frontends:
+      - address: {{ gateway['cert_server_name'] }}:{{ gateway['public_port'] }}
+      - address: {{ gateway['envoy_public_hostname'] }}:{{ gateway['public_port'] }}
+    backends:
+      - id: dataproc_manager
+        services:
+          - id: yandex.cloud.dataproc.manager.v1.DataprocManagerService
+          - id: yandex.cloud.dataproc.manager.v1.JobService
+        global:
+          prefix: e4u
+          endpoint:
+            address: {{ gateway['envoy_public_hostname'] }}:{{ gateway['private_port'] }}
+            no_sidecar: true
+            plaintext: true
+
+  - id: dataproc
+    aliases:
+      - dataproc
+    frontends:
+      - address: {{ gateway['envoy_public_hostname'] }}:{{ gateway['public_port'] }}
+    backends:
+      - id: dataproc
+        services:
+          - id: yandex.cloud.dataproc.v1.JobService
+          - id: yandex.cloud.dataproc.v1.ClusterService
+          - id: yandex.cloud.dataproc.v1.ResourcePresetService
+          - id: yandex.cloud.dataproc.v1.SubclusterService
+        global:
+          prefix: e4u
+          endpoint:
+            address: {{ gateway['envoy_public_hostname'] }}:{{ gateway['adapter_plaintext_port'] }}
+            no_sidecar: true
+            plaintext: true
+
+  - id: kafka
+    aliases:
+      - mdb-kafka
+      - managed-kafka
+    frontends:
+      - address: {{ gateway['envoy_public_hostname'] }}:{{ gateway['public_port'] }}
+    backends:
+      - id: kafka
+        services:
+          - id: yandex.cloud.mdb.kafka.v1.ClusterService
+          - id: yandex.cloud.mdb.kafka.v1.TopicService
+          - id: yandex.cloud.mdb.kafka.v1.UserService
+          - id: yandex.cloud.mdb.kafka.v1.ResourcePresetService
+        global:
+          prefix: mdb
+          endpoint:
+            address: {{ gateway['envoy_public_hostname'] }}:{{ gateway['go_api_plaintext_port'] }}
+            no_sidecar: false
+            plaintext: true
+
+  - id: postgresql
+    aliases:
+      - mdb-postgresql
+      - managed-postgresql
+    frontends:
+      - address: {{ gateway['envoy_public_hostname'] }}:{{ gateway['public_port'] }}
+    backends:
+      - id: postgresql
+        services:
+          - id: yandex.cloud.mdb.postgresql.v1.BackupService
+          - id: yandex.cloud.mdb.postgresql.v1.ClusterService
+          - id: yandex.cloud.mdb.postgresql.v1.DatabaseService
+          - id: yandex.cloud.mdb.postgresql.v1.ResourcePresetService
+          - id: yandex.cloud.mdb.postgresql.v1.UserService
+        global:
+          prefix: e4u
+          endpoint:
+            address: {{ gateway['envoy_public_hostname'] }}:{{ gateway['adapter_plaintext_port'] }}
+            no_sidecar: false
+            plaintext: true
+
+  - id: clickhouse
+    aliases:
+      - mdb-clickhouse
+      - managed-clickhouse
+    frontends:
+      - address: {{ gateway['envoy_public_hostname'] }}:{{ gateway['public_port'] }}
+    backends:
+      - id: clickhouse
+        services:
+          - id: yandex.cloud.mdb.clickhouse.v1.BackupService
+          - id: yandex.cloud.mdb.clickhouse.v1.ClusterService
+          - id: yandex.cloud.mdb.clickhouse.v1.DatabaseService
+          - id: yandex.cloud.mdb.clickhouse.v1.MlModelService
+          - id: yandex.cloud.mdb.clickhouse.v1.ResourcePresetService
+          - id: yandex.cloud.mdb.clickhouse.v1.UserService
+        global:
+          prefix: e4u
+          endpoint:
+            address: {{ gateway['envoy_public_hostname'] }}:{{ gateway['adapter_plaintext_port'] }}
+            no_sidecar: false
+            plaintext: true
+
+  - id: mongodb
+    aliases:
+      - mdb-mongodb
+      - managed-mongodb
+    frontends:
+      - address: {{ gateway['envoy_public_hostname'] }}:{{ gateway['public_port'] }}
+    backends:
+      - id: mongodb
+        services:
+          - id: yandex.cloud.mdb.mongodb.v1.BackupService
+          - id: yandex.cloud.mdb.mongodb.v1.ClusterService
+          - id: yandex.cloud.mdb.mongodb.v1.DatabaseService
+          - id: yandex.cloud.mdb.mongodb.v1.ResourcePresetService
+          - id: yandex.cloud.mdb.mongodb.v1.UserService
+        global:
+          prefix: e4u
+          endpoint:
+            address: {{ gateway['envoy_public_hostname'] }}:{{ gateway['adapter_plaintext_port'] }}
+            no_sidecar: false
+            plaintext: true
+
+  - id: redis
+    aliases:
+      - mdb-redis
+      - managed-redis
+    frontends:
+      - address: {{ gateway['envoy_public_hostname'] }}:{{ gateway['public_port'] }}
+    backends:
+      - id: redis
+        services:
+          - id: yandex.cloud.mdb.redis.v1.BackupService
+          - id: yandex.cloud.mdb.redis.v1.ClusterService
+          - id: yandex.cloud.mdb.redis.v1.ResourcePresetService
+        global:
+          prefix: e4u
+          endpoint:
+            address: {{ gateway['envoy_public_hostname'] }}:{{ gateway['adapter_plaintext_port'] }}
+            no_sidecar: false
+            plaintext: true
+      - id: redis-logs
+        services:
+          - id: yandex.cloud.mdb.redis.v1.ClusterService
+            methods:
+              - ListLogs
+              - StreamLogs
+        global:
+          prefix: e4u
+          endpoint:
+            address: {{ gateway['envoy_public_hostname'] }}:{{ gateway['go_api_plaintext_port'] }}
+            no_sidecar: false
+            plaintext: true
+
+  - id: mysql
+    aliases:
+      - mdb-mysql
+      - managed-mysql
+    frontends:
+      - address: {{ gateway['envoy_public_hostname'] }}:{{ gateway['public_port'] }}
+    backends:
+      - id: mysql
+        services:
+          - id: yandex.cloud.mdb.mysql.v1.BackupService
+          - id: yandex.cloud.mdb.mysql.v1.ClusterService
+          - id: yandex.cloud.mdb.mysql.v1.DatabaseService
+          - id: yandex.cloud.mdb.mysql.v1.ResourcePresetService
+          - id: yandex.cloud.mdb.mysql.v1.UserService
+          - id: yandex.cloud.mdb.mysql.v1alpha.BackupService
+          - id: yandex.cloud.mdb.mysql.v1alpha.ClusterService
+          - id: yandex.cloud.mdb.mysql.v1alpha.DatabaseService
+          - id: yandex.cloud.mdb.mysql.v1alpha.ResourcePresetService
+          - id: yandex.cloud.mdb.mysql.v1alpha.UserService
+        global:
+          prefix: e4u
+          endpoint:
+            address: {{ gateway['envoy_public_hostname'] }}:{{ gateway['adapter_plaintext_port'] }}
+            no_sidecar: false
+            plaintext: true
+
+  - id: compute
+    aliases:
+    - compute
+    frontends:
+      - address: {{ gateway['envoy_public_hostname'] }}:{{ gateway['public_port'] }}
+    backends:
+      - id: compute
+        operation_service_id: yandex.cloud.priv.compute.v1.OperationService
+        services:
+          - id: yandex.cloud.compute.v1.ImageService
+          - id: yandex.cloud.compute.v1.PlacementGroupService
+          - id: yandex.cloud.compute.v1.DiskService
+          - id: yandex.cloud.compute.v1.SnapshotService
+          - id: yandex.cloud.compute.v1.ZoneService
+          - id: yandex.cloud.compute.v1.DiskTypeService
+          - id: yandex.cloud.compute.v1.HostTypeService
+          - id: yandex.cloud.compute.v1.HostGroupService
+          - id: yandex.cloud.compute.v1.InstanceService
+          - id: yandex.cloud.compute.v1.DiskPlacementGroupService
+        global:
+          prefix: fdv
+          endpoint:
+            address: {{ gateway['compute_grpc_hostname'] }}:{{ gateway['compute_grpc_port'] }}
+          regions:
+            - location: ru-central1
+              prefix: b06
+              zones:
+                - location: ru-central1-a
+                  prefix: a7l
+                - location: ru-central1-b
+                  prefix: c8r
+                - location: ru-central1-c
+                  prefix: d9h
+
+  - id: iam
+    aliases:
+      - iam
+    frontends:
+      - address: {{ gateway['envoy_public_hostname'] }}:{{ gateway['public_port'] }}
+    backends:
+      - id: iam
+        operation_service_id: yandex.cloud.priv.iam.v1.OperationService
+        services:
+          - id: yandex.cloud.iam.v1.ApiKeyService
+          - id: yandex.cloud.iam.v1.KeyService
+          - id: yandex.cloud.iam.v1.awscompatibility.AccessKeyService
+          - id: yandex.cloud.iam.v1.RoleService
+          - id: yandex.cloud.iam.v1.ServiceAccountService
+          - id: yandex.cloud.iam.v1.UserAccountService
+          - id: yandex.cloud.iam.v1.YandexPassportUserAccountService
+          - id: yandex.cloud.iam.v1.saml.CertificateService
+          - id: yandex.cloud.iam.v1.saml.FederationService
+        global:
+          prefix: bfb
+          endpoint:
+            address: iam.private-api.cloud-preprod.yandex.net:4283
+      - id: iam-token-service
+        services:
+          - id: yandex.cloud.iam.v1.IamTokenService
+        global:
+          prefix: bfb
+          endpoint:
+            address: ts.private-api.cloud-preprod.yandex.net:4282
+
+  - id: endpoint
+    aliases:
+      - endpoint
+    frontends:
+      - address: {{ gateway['envoy_public_hostname'] }}:{{ gateway['public_port'] }}
+    backends:
+      - id: endpoint
+        services:
+          - id: yandex.cloud.endpoint.ApiEndpointService
+
+  - id: operation
+    aliases:
+      - operation
+    frontends:
+      - address: {{ gateway['envoy_public_hostname'] }}:{{ gateway['public_port'] }}
+    backends:
+      - id: operation
+        services:
+          - id: yandex.cloud.operation.OperationService
+
+  - id: mdb-go
+    backends:
+      - id: mdb-go
+        operation_service_id: yandex.cloud.priv.mdb.v1.OperationService
+        services:
+        global:
+          prefix: mdb
+          endpoint:
+            address: {{ gateway['envoy_public_hostname'] }}:{{ gateway['go_api_plaintext_port'] }}
+            no_sidecar: false
+            plaintext: true
+
+  - id: mdb-py
+    backends:
+      - id: mdb-py
+        operation_service_id: yandex.cloud.priv.mdb.v1.OperationService
+        services:
+        global:
+          prefix: e4u
+          endpoint:
+            address: {{ gateway['envoy_public_hostname'] }}:{{ gateway['adapter_plaintext_port'] }}
+            no_sidecar: false
+            plaintext: true
+
+  - id: microcosm
+    backends:
+      - id: microcosm
+        operation_service_id: yandex.cloud.priv.microcosm.instancegroup.v1.OperationService
+        services:
+          - id: yandex.cloud.compute.v1.instancegroup.InstanceGroupService
+        global:
+          prefix: amc
+          endpoint:
+            address: {{ gateway['instance_group_api_hostname'] }}:{{ gateway['instance_group_api_port'] }}
+            no_sidecar: false
+
+  - id: logging
+    aliases:
+    - logging
+    frontends:
+    - address: logging.api.cloud-preprod.yandex.net:443
+    - id: ycp
+      address: logging.api.ycp.cloud-preprod.yandex.net:443
+    - id: canary
+      address: logging.api.canary.ycp.cloud-preprod.yandex.net:443
+    backends:
+      - id: logging
+        operation_service_id: yandex.cloud.priv.logging.v1.OperationService
+        services:
+        - id: yandex.cloud.logging.v1.LogGroupService
+        global:
+          prefix: af3
+          endpoint:
+            address: logging-cpl.private-api.ycp.cloud-preprod.yandex.net:443

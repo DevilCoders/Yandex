@@ -1,0 +1,43 @@
+{% extends "vpc-api-base.j2" %}
+
+{% set id_suffix = id_suffix | default("contrail_durations") %}
+{% set name = name | default("vpc api contrail durations") %}
+{% set transform = "DIFFERENTIATE" %}
+{% set only_long = only_long | default(false) %}
+
+{% macro contrail_http_durations(zone, le, host="none", method="none") %}
+series_sum({
+    sensor='http_durations'
+    ,hist_type='bin'
+    ,le='{{le}}'
+    ,zone='{{zone}}'
+    {% if host != 'none' %}
+        ,host='{{host}}'
+    {% endif %}
+    {% if method != 'none' %}
+        ,method='{{ method }}'
+    {% endif %}
+})
+{% endmacro %}
+
+{% block additional_params %}
+    ,{
+        "name": "host",
+        "value": "*"
+    }
+    ,{
+        "name": "method",
+        "value": "*"
+    }
+{% endblock %}
+
+{% block elements %}
+    {% for zone in az_zones %}
+        {% if not only_long %}
+            {{ render_element("< 0.25s {}".format(zone), contrail_http_durations(zone, "0.001|0.0025|0.005|0.0075|0.01|0.025|0.05|0.075|0.1|0.25") | to_prog, yaxis="LEFT")}},
+            {{ render_element("0.25s - 1s {}".format(zone), contrail_http_durations(zone, "0.5|0.75|1.0") | to_prog, area="true", stack="true", yaxis="RIGHT")}},
+        {% endif %}
+        {{ render_element("1s - 5s {}".format(zone), contrail_http_durations(zone, "2.5|5.0") | to_prog, area="true", stack="true", yaxis="RIGHT")}},
+        {{ render_element("> 5s {}".format(zone), contrail_http_durations(zone, "7.5|10.0|25.0|50.0|75.0|100.0|inf") | to_prog, area="true", stack="true", yaxis="RIGHT")}}
+    {% if not loop.last %},{% endif %}{% endfor %}
+{% endblock %}

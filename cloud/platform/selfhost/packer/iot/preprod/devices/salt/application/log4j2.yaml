@@ -1,0 +1,69 @@
+Configuration:
+  packages: "io.prometheus.client.log4j2"
+  appenders:
+    Console:
+      name: stdout
+      PatternLayout:
+        Pattern: "%d %-5level %-6X{tx} [%t] %c{1.}: %X{formatted-rid}%msg%n%throwable"
+    RollingFile:
+      - name: debugLogAppender
+        filename: "/var/log/yc-iot/devices/debug.log"
+        filePattern: "/var/log/yc-iot/devices/debug-%d{yyyy-MM-dd}-%i.log.gz"
+        PatternLayout:
+          pattern: "%d %-5level %-6X{tx} [%t] %c{1.}: %X{formatted-rid}%msg%n%throwable"
+        Policies:
+          TimeBasedTriggeringPolicy:
+            interval: 1
+            modulate: true
+          SizeBasedTriggeringPolicy:
+            size: 1 GB
+      - name: accessLogAppender
+        filename: "/var/log/yc-iot/devices/access.log"
+        filePattern: "/var/log/yc-iot/devices/access-%d{yyyy-MM-dd}-%i.log.gz"
+        PatternLayout:
+          pattern: "%msg%n"
+        Policies:
+          TimeBasedTriggeringPolicy:
+            interval: 1
+            modulate: true
+          SizeBasedTriggeringPolicy:
+            size: 1 GB
+      - name: eventLogAppender
+        filename: "/var/log/yc-iot/devices/events.log"
+        filePattern: "/var/log/yc-iot/devices/events-%i.log.gz"
+        PatternLayout:
+          pattern: "%msg%n"
+        Policies:
+          SizeBasedTriggeringPolicy:
+            size: 100 MB
+        DefaultRolloverStrategy:
+          max: 3
+    Prometheus:
+      name: prometheus
+
+  Loggers:
+    Root:
+      level: info
+      AppenderRef:
+        - ref: debugLogAppender
+        - ref: prometheus
+    Logger:
+      # repository requests
+      - name: yandex.cloud.repository.db
+        level: debug
+      # task start/stop
+      - name: yandex.cloud.task.TaskProcessorImpl
+        level: debug
+      # all grpc calls
+      - name: yandex.cloud.grpc.LoggingInterceptor
+        level: debug
+      - name: accessLog
+        level: debug
+        additivity: false
+        AppenderRef:
+          ref: accessLogAppender
+      - name: eventLog
+        level: info
+        additivity: false
+        AppenderRef:
+          ref: eventLogAppender

@@ -1,0 +1,169 @@
+use hahn;
+
+$billing_transactions_tbl = '//home/logfeller/logs/yc-billing-export-transactions/1h';
+$export_to = '//home/cloud_analytics/export/crm/billing_account/biling_account_info';
+
+$table_name_date_format = '%Y-%m-%dT%H:%M:%S';
+$field_date_format = "%Y-%m-%d";
+
+$complicated_field_date_format = "%Y-%m-%d %H:%M:%S";
+$complicated_datetime_parse = DateTime::Parse($complicated_field_date_format);
+
+
+$datetime_parse = DateTime::Parse($table_name_date_format);
+$datetime_format = DateTime::Format($table_name_date_format);
+
+$date_format = DateTime::Format($field_date_format);
+$dst_table = $export_to;
+$dst_cleanup_interval = DateTime::IntervalFromDays(31);
+
+$to_date = ($timestamp) -> {
+    RETURN $date_format(DateTime::FromSeconds(CAST($timestamp AS Uint32))); 
+};
+
+$parse = DateTime::Parse($complicated_field_date_format);
+$to_complicated_date = ($timestamp) -> {
+    RETURN CAST(DateTime::MakeDatetime($complicated_datetime_parse($timestamp)) as Uint32)
+};
+
+DEFINE SUBQUERY $last_non_empty_table($path) AS
+    $max_path = (
+        SELECT MAX(Path) as Path
+        FROM FOLDER($path, 'row_count')
+        WHERE Type = 'table'
+            AND Yson::LookupInt64(Attributes, 'row_count') > 0
+    );
+    SELECT * FROM CONCAT($max_path);
+END DEFINE;
+
+$kernel = (
+            SELECT
+                a.billing_account_id as billing_account_id,
+                ba_state as last_ba_state,
+                ba_usage_status as last_ba_usage_status,
+                b.block_reason as block_reason,
+                if (segment like '%ISV%', 1, 0) as ISV,
+                if (segment = '%VAR%', 1, 0) as VAR,
+            FROM hahn.`home/cloud_analytics/cubes/acquisition_cube/cube` as a
+            INNER JOIN (
+                SELECT
+                    a.billing_account_id as billing_account_id, 
+                    SOME(block_reason) as block_reason
+                from hahn.`home/cloud_analytics/cubes/acquisition_cube/cube` as a
+                INNER JOIN (
+                    SELECT 
+                        billing_account_id,
+                        max(event_time) as max_dt
+                    from hahn.`home/cloud_analytics/cubes/acquisition_cube/cube`
+                    GROUP BY  billing_account_id
+                ) as b
+                on a.billing_account_id == b.billing_account_id
+                WHERE event_time == b.max_dt
+                GROUP BY a.billing_account_id
+            ) as b
+            ON a.billing_account_id == b.billing_account_id
+            WHERE event == 'ba_created'
+        );
+
+$cubic_info_df = (
+SELECT 
+    a.billing_account_id as billing_account_id,
+    b.last_ba_state as ba_state0,
+    max(a.ba_state) as ba_state1,
+    b.last_ba_usage_status as ba_usage_status0,
+    max(a.ba_usage_status) as ba_usage_status1,
+    min(a.event_time) as updated_at,
+    max(a.first_first_trial_consumption_datetime) as first_first_trial_consumption_datetime,
+    b.block_reason as block_reason,
+    b.VAR as VAR,
+    b.ISV as ISV
+FROM hahn.`home/cloud_analytics/cubes/acquisition_cube/cube` as a 
+LEFT JOIN (
+    SELECT 
+        a.billing_account_id as billing_account_id,
+        b.last_ba_state as last_ba_state,
+        b.last_ba_usage_status as last_ba_usage_status,
+        max(a.event_time) as last_time_before_update,
+        b.max_dt as max_dt,
+        b.block_reason as block_reason,
+        b.VAR as VAR,
+        b.ISV as ISV
+    FROM hahn.`home/cloud_analytics/cubes/acquisition_cube/cube` as a
+    INNER JOIN (
+        SELECT
+            a.billing_account_id as billing_account_id,
+            last_ba_state,
+            last_ba_usage_status,
+            b.max_dt as max_dt,
+            a.block_reason as block_reason,
+            a.VAR as VAR,
+            a.ISV as ISV
+        FROM $kernel as a
+        INNER JOIN (
+            SELECT
+            billing_account_id,
+            max(event_time) as max_dt
+            FROM hahn.`home/cloud_analytics/cubes/acquisition_cube/cube`
+            GROUP by billing_account_id
+        ) as b
+        on a.billing_account_id == b.billing_account_id
+    ) as b
+    ON a.billing_account_id == b.billing_account_id
+    WHERE 
+        (
+            ba_usage_status != last_ba_usage_status
+        OR
+            ba_state != last_ba_state
+        )
+    GROUP BY a.billing_account_id, b.last_ba_state, b.last_ba_usage_status, b.max_dt, b.block_reason, 
+    b.VAR, b.ISV
+) as b
+ON a.billing_account_id == b.billing_account_id
+WHERE 
+    last_time_before_update is NULL
+OR
+    event_time > last_time_before_update
+OR
+    event_time == max_dt
+GROUP BY a.billing_account_id, b.last_ba_state, b.last_ba_usage_status, b.block_reason, 
+    b.VAR, b.ISV
+);
+
+INSERT INTO $export_to WITH TRUNCATE
+    (
+    SELECT
+        billing_account_id,
+        updated_at,
+        first_consumption_date,
+        first_trial_consumption_datetime,
+        type_of_consumption,
+        status,
+        block_reason,
+        VAR,
+        ISV
+    FROM (
+        SELECT 
+            $to_complicated_date(b.updated_at) as updated_at,
+            if(a.billing_account_id is NULL, b.billing_account_id, a.billing_account_id) as billing_account_id,
+            a.first_consumption_date as first_consumption_date,
+            $date_format($parse(b.first_first_trial_consumption_datetime)) as first_trial_consumption_datetime,
+            if (b.ba_state0 is NOT NULL, b.ba_state0, b.ba_state1) as status,
+            if (b.ba_usage_status0 is NOT NULL, b.ba_usage_status0, b.ba_usage_status1) as type_of_consumption,
+            b.block_reason as block_reason,
+            b.VAR as VAR,
+            b.ISV as ISV
+        FROM $cubic_info_df as b
+        FULL JOIN (
+            SELECT 
+                billing_account_id,
+                $to_date(min(created_at)) as first_consumption_date
+            FROM $last_non_empty_table($billing_transactions_tbl)
+            WHERE status = 'ok'
+            GROUP BY billing_account_id
+        ) as a
+        
+        ON a.billing_account_id == b.billing_account_id
+    )
+    WHERE billing_account_id is not null
+    ORDER by updated_at
+    );

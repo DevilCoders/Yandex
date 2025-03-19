@@ -1,0 +1,48 @@
+#!/bin/sh
+#
+# chkconfig: 2345 99 01
+# description: pgbouncer
+
+### BEGIN INIT INFO
+# Provides:          pgbouncer
+# Required-Start:    $remote_fs $supervisord $syslog
+# Required-Stop:     $remote_fs $supervisord $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Start pgbouncer
+# Description:       Start pgbouncer
+### END INIT INFO
+
+case "$1" in
+  status)
+    expected={{ salt['pillar.get']('data:pgbouncer:internal_count', 1) + salt['pillar.get']('data:pgbouncer:count') }}
+    actual=$(/usr/bin/supervisorctl status 2>&1 | grep '^pgbouncer' | grep -c RUNNING)
+    if [ "$expected" -eq "$actual" ]
+    then
+      echo "pgbouncer is running"
+      exit 0
+    else
+      echo "Unexpected number of bouncers running: $actual"
+      exit 1
+    fi
+    ;;
+  stop)
+    /usr/bin/supervisorctl stop pgbouncer_external:
+    /usr/bin/supervisorctl stop pgbouncer_internal:
+    ;;
+  restart)
+    /usr/bin/supervisorctl stop pgbouncer_external:
+    /usr/bin/supervisorctl stop pgbouncer_internal:
+    /usr/bin/supervisorctl start prestart_pgbouncer
+    /usr/bin/supervisorctl start pgbouncer_internal:
+    /usr/bin/supervisorctl start pgbouncer_external:
+    ;;
+  start)
+    /usr/bin/supervisorctl start prestart_pgbouncer
+    /usr/bin/supervisorctl start pgbouncer_internal:
+    /usr/bin/supervisorctl start pgbouncer_external:
+    ;;
+  *)
+    echo "Unsupported arg: $1"
+    exit 1
+esac

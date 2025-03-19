@@ -1,0 +1,20 @@
+SELECT
+    cid,
+    subcid,
+    shard_id,
+    status,
+    scheduled_date,
+    created_at,
+    delayed_until,
+    started_at,
+    finished_at,
+    updated_at,
+    shipment_id,
+    metadata,
+    errors,
+    initiator,
+    method
+FROM
+    dbaas.backups
+WHERE
+    backup_id = %(backup_id)s

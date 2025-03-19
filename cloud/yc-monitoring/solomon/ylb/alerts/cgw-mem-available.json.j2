@@ -1,0 +1,44 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro svm_fqdn() -%}
+  [[labels.host]].{{ svm_domains[env] }}
+{%- endmacro %}
+
+{% macro prog() %}
+let mem_available = avg({
+  cluster='cloud_{{ env }}_ylb',
+  service='sys',
+  host='*',
+  path='/Memory/MemAvailable'
+  });
+let mem_total = avg({
+  cluster='cloud_{{ env }}_ylb',
+  service='sys',
+  host='*',
+  path='/Memory/MemTotal'
+  });
+let Mb = 1024 * 1024;
+let mem_relative = mem_total > 0 ? mem_available / mem_total : 1.0;
+let description = 'Low on memory: ' + to_fixed(mem_available / Mb, 0) + '/' + to_fixed(mem_total / Mb, 0);
+
+let is_red = mem_available < ({{ red_abs_mb }} * Mb) || mem_relative < {{ red_relative }};
+alarm_if(is_red);
+
+let is_yellow = mem_available < ({{ yellow_abs_mb }} * Mb) || mem_relative < {{ yellow_relative }};
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+  "id": "{{ id }}",
+  "name": "{{ name }}",
+  "description": "",
+  "groupByLabels": ["host"],
+  "annotations": {
+    "details": "[[expression.description]]",
+    "mem_relative": "[[expression.mem_relative]]",
+    "host": "{{ svm_fqdn() }}",
+		"service": "{{ serviceName }}",
+		"wiki": "https://docs.yandex-team.ru/yc-monitoring/cgw/{{ serviceName }}"
+  },
+  "type": {{ type_expression() }}
+{% endblock %}

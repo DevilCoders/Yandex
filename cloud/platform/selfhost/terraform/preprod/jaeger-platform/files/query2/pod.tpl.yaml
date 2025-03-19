@@ -1,0 +1,92 @@
+apiVersion: v1
+kind:       PodList
+items:
+${infra_pod_spec}
+- apiVersion: v1
+  kind:       Pod
+  metadata:
+    name: jaeger
+    annotations:
+      config_digest: ${config_digest}
+  spec:
+    initContainers:
+      - name:  deploy-configs
+        image: registry.yandex.net/cloud/api/metadata:1b931b4a1
+        volumeMounts:
+          - name:                          all-configs
+            mountPath:                     /etc
+            terminationGracePeriodSeconds: 30
+    hostNetwork: true
+    containers:
+      - name:  schema-watcher
+        image: registry.yandex.net/cloud/serverless/jaeger-ydb-watcher:${watcher_version}
+        volumeMounts:
+          - name:      ydb-client-config
+            mountPath: /etc/ydb-client-config
+        env:
+          - name:  YDB_SA_META_AUTH
+            value: "true"
+          - name:  YDB_WRITE_TIMEOUT
+            value: 10s
+          - name:  YDB_ADDRESS
+            value: lb.cc8029onvgovgchgq841.ydb.mdb.cloud-preprod.yandex.net:2135
+          - name:  YDB_PATH
+            value: /pre-prod_global/aoeolbmrnipjt7p7kf6p/cc8029onvgovgchgq841
+          - name:  WATCHER_AGE
+            value: 168h
+          - name:  PARTS_TRACES
+            value: "4"
+          - name:  PARTS_IDX_TAG
+            value: "4"
+          - name:  PARTS_IDX_DURATION
+            value: "4"
+          - name:  PARTS_IDX_SERVICE_NAME
+            value: "4"
+          - name:  PARTS_IDX_SERVICE_OP
+            value: "4"
+          - name:  YDB_FOLDER
+            value: v2
+          - name:  YDB_FEATURE_SPLIT_BY_LOAD
+            value: "true"
+          - name:  YDB_FEATURE_COMPRESSION
+            value: "true"
+        args: ['watcher']
+      - name:  jaeger-query
+        image: registry.yandex.net/cloud/serverless/jaeger-ydb-query:${query_version}
+        volumeMounts:
+          - name:      ydb-client-config
+            mountPath: /etc/ydb-client-config
+        env:
+          - name:  YDB_SA_META_AUTH
+            value: "true"
+          - name:  YDB_WRITE_TIMEOUT
+            value: 10s
+          - name:  YDB_ADDRESS
+            value: lb.cc8029onvgovgchgq841.ydb.mdb.cloud-preprod.yandex.net:2135
+          - name:  YDB_PATH
+            value: /pre-prod_global/aoeolbmrnipjt7p7kf6p/cc8029onvgovgchgq841
+          - name:  YDB_FOLDER
+            value: v2
+          - name:  PLUGIN_HTTP_LISTEN_ADDRESS
+            value: :15001
+        ports:
+          - containerPort: 16686
+            protocol:      TCP
+        livenessProbe:
+          httpGet:
+            path: /ping
+            port: 15001
+          timeoutSeconds:      1
+          initialDelaySeconds: 10
+        args:
+          - --admin-http-port
+          - "16688"
+    volumes:
+      - hostPath:
+          path: /etc
+          type: DirectoryOrCreate
+        name: all-configs
+      - name: ydb-client-config
+        hostPath:
+          path: /etc/jaeger/
+          type: DirectoryOrCreate

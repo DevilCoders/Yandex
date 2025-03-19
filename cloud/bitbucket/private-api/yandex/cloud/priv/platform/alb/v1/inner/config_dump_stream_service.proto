@@ -1,0 +1,105 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.platform.alb.v1.inner;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+import "yandex/cloud/api/tools/options.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/platform/alb/v1/inner;alb";
+option java_outer_classname = "PALICDSS";
+
+service ConfigDumpStreamService {
+	rpc Stream(stream ConfigDump) returns (google.protobuf.Empty);
+}
+
+service ConfigDumpEnvoyConfigurationService {
+	rpc Get(Identity) returns (ConfigDumpEnvoyConfiguration);
+}
+
+service ConfigDumpService {
+	rpc Delete(ConfigDumpDeleteRequest) returns (google.protobuf.Empty);
+	rpc Get(ConfigDumpGetRequest) returns (ConfigDumpGetResponse);
+	rpc GetData(ConfigDumpGetDataRequest) returns (Data);
+	rpc DeleteBefore(ConfigDumpDeleteBeforeRequest) returns (google.protobuf.Empty);
+}
+
+message ConfigDumpEnvoyConfiguration {
+	bool enable_legacy = 1;
+	google.protobuf.Duration interval = 2;
+	ConfigDumpEnvoyStreamConfiguration stream = 3;
+}
+
+message ConfigDumpEnvoyStreamConfiguration {
+	int64 max_stream_messages = 1;
+	bool send_dump_on_first_stream_request = 2;
+}
+
+message ConfigDumpDeleteRequest {
+	// Delete all if load_balancer_id is empty
+	string load_balancer_id = 1;
+}
+
+message ConfigDumpGetDataRequest {
+	string load_balancer_id = 2;
+	string hash = 1;
+}
+
+message ConfigDumpDeleteBeforeRequest {
+	google.protobuf.Timestamp modified_at = 1;
+}
+
+message ConfigDumpGetRequest {
+		string load_balancer_id = 1;
+		// Only hashes loaded id load_data = false
+		bool load_data = 2;
+}
+
+message ConfigDumpGetResponse {
+	repeated ConfigDump config_dumps = 1;
+}
+
+message Identity {
+	string load_balancer_id = 1;
+	string hostname = 2;
+	string zone = 3;
+	APIVersion version = 4;
+}
+
+enum APIVersion {
+	API_VERSION_UNSPECIFIED = 0;
+	V2 = 2;
+	V3 = 3;
+}
+
+message Data {
+	enum Codec {
+		option (cloud.api.tools.enumeration).lint_skip.unspecified_value = true;
+		UNCOMPRESSED = 0;
+		GZIP = 1;
+	}
+	bytes data = 1;
+	Codec codec = 2;
+	string hash = 3;
+
+	google.protobuf.Timestamp created_at = 4;
+}
+
+message ConfigDump {
+	Identity identity = 1;
+	Data config_dump = 2;
+	Data clusters_state = 3;
+
+	map<string,int64> stats = 4;
+	Flags flags = 5;
+
+	google.protobuf.Timestamp created_at = 6;
+	google.protobuf.Timestamp modified_at = 7;
+}
+
+message Flags {
+	bool bad_backends = 1;
+	bool draining = 2;
+	bool shutdown = 3;
+}

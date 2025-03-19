@@ -1,0 +1,5 @@
+RECURSE(
+    lbreader
+    local
+    rptload
+)

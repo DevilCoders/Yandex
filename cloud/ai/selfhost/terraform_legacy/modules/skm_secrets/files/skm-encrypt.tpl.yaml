@@ -1,0 +1,28 @@
+yc_kms:
+%{if kms_private_endpoint != "" && iam_private_endpoint != ""}
+  kms_private_endpoint: "${kms_private_endpoint}"
+  iam_private_endpoint: "${iam_private_endpoint}"
+%{else}
+  api_endpoint: "${cloud_api_endpoint}" # адрес api gateway в целевом окружении
+%{endif}
+  oauth_token:
+    env_var: YC_OAUTH_TOKEN
+# https://oauth.yandex-team.ru/authorize?response_type=token&client_id=ce68fbebc76c4ffda974049083729982
+yav_token:
+  env_var: YAV_OAUTH_TOKEN
+kek:
+  kms:
+    key_uri: "yc-kms://${kms_key_id}"
+encrypted_dek: "${encrypted_dek}"
+secrets:
+%{ for k,v in secrets }%{if v.secret_id != ""}  - path: "${v.path}"
+    source:
+      yav:
+        secret_id: ${v.secret_id}
+        key: ${k}
+%{endif}%{ endfor }
+%{ for v in files }  - path: "${v.path}"
+    source:
+      file: ${v.source_path}
+%{ endfor }
+

@@ -1,0 +1,132 @@
+USE vanga;
+PRAGMA yt.InferSchema = '1';
+PRAGMA autocommit;
+PRAGMA DqEngine = "disable";
+
+$src_table_intermediate = "//home/cloud_analytics/export/sales/sales_intermediate";
+$src_table = "%SALES_LOG_TABLE%";
+$dst_path = "%SALES_EXPORT_PATH%";
+$cleanup_interval = Interval("P%CLEANUP_INTERVAL%D");
+$table_name_date_format = DateTime::Format("%Y-%m-%dT%H:%M:%S");
+$src_date_format = DateTime::Parse("%d.%m.%Y %H:%M:%S"); 
+
+$utc_seconds = ".000000Z";
+$timezones_diff = Interval("P0DT3H");
+
+$current_ts = DateTime::MakeDatetime(CurrentUtcTimestamp() + $timezones_diff);
+
+$last_sync_ts = (
+    SELECT MAX(DateTime::MakeTimestamp(
+                    DateTime::ParseIso8601(
+                        Yson::ConvertToString(Attributes.key) || $utc_seconds)))
+    FROM FOLDER($dst_path, "row_count;key")
+    WHERE Type = "table"
+        AND Yson::LookupInt64(Attributes, "row_count") > 0
+);
+
+
+INSERT INTO $src_table_intermediate with truncate
+select `date`,
+`user_name`,
+`message`,
+`company_url`,
+`company_area`,
+`company_city`,
+`company_name`,
+`yandex_login`,
+`yandexuid`,
+`user_firstName`,
+`user_lastName`,
+`user_email`,
+`user_phone`,
+`company_none`,
+`agreement`,
+`user_is_private`,
+`user_position`,
+`user_location`,
+`timezone`,
+`page_url`,
+`company_size`,
+`company_industry`,
+ FROM $src_table
+WHERE DateTime::MakeTimestamp($src_date_format(`date`)) BETWEEN
+        $last_sync_ts AND $current_ts;
+commit;
+
+--$current_ts = (
+--    SELECT MAX(DateTime::MakeTimestamp($src_date_format(`date`)))
+--    FROM $src_table_intermediate
+--);
+
+
+$s = (SELECT COUNT(*) FROM $src_table_intermediate);
+
+EVALUATE IF $s > 0 DO BEGIN
+
+
+$dst_table = $dst_path || "/"
+    || $table_name_date_format($current_ts) ?? "";
+
+$result = (
+    SELECT
+        DateTime::ToSeconds(DateTime::MakeTimestamp(DateTime::ParseIso8601(`date`))
+            - $timezones_diff
+        ) AS `timestamp`,
+        yandex_login,
+        yandexuid,
+        user_name,
+        user_firstName,
+        user_lastName,
+        user_email,
+        user_phone,
+        company_none,
+        company_name,
+        company_city,
+        company_area,
+        company_url,
+        page_url,
+        timezone,
+        IF(user_is_private = true, 'individual', 'company') as organization_form,
+        message,
+        IF(company_size = 'individual', null, company_size) as company_size,
+        company_industry as industry,
+        agreement
+    FROM $src_table_intermediate
+    WHERE user_name != 'Donald Trump'
+);
+
+INSERT INTO $dst_table
+SELECT *
+FROM $result;
+
+commit;
+
+END DO;
+
+
+-- Cleanup old tables
+DEFINE ACTION $drop_table($table_ts) AS
+    $table = $dst_path || "/" ||
+        $table_name_date_format($table_ts) ?? "";
+    DROP TABLE $table;
+END DEFINE;
+
+$tables_to_delete = (
+    SELECT AGGREGATE_LIST(
+        DateTime::MakeTimestamp(DateTime::ParseIso8601(
+            Yson::ConvertToString(Attributes.key) || $utc_seconds
+        ))
+    )
+    FROM FOLDER($dst_path, "key")
+    WHERE Type = "table"
+        AND DateTime::MakeTimestamp(DateTime::ParseIso8601(
+            Yson::ConvertToString(Attributes.key) || $utc_seconds))
+            <  $current_ts - $cleanup_interval
+);
+EVALUATE FOR $tb_ts IN $tables_to_delete
+    DO $drop_table($tb_ts);
+
+
+
+
+

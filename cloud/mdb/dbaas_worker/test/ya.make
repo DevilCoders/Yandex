@@ -1,0 +1,283 @@
+PY3TEST()
+
+STYLE_PYTHON()
+
+OWNER(g:mdb)
+
+SIZE(MEDIUM)
+
+FORK_SUBTESTS()
+
+SPLIT_FACTOR(64)
+
+REQUIREMENTS(
+    cpu:4
+    ram:12
+)
+
+PEERDIR(
+    cloud/bitbucket/private-api/yandex/cloud/priv/iam/v1
+    cloud/bitbucket/private-api/yandex/cloud/priv/iam/v1/awscompatibility
+    contrib/python/httmock
+    contrib/python/PyHamcrest
+    contrib/python/pytest-mock
+    contrib/python/mock
+    contrib/python/moto
+    contrib/python/boto
+    cloud/mdb/dbaas_worker/bin
+    cloud/mdb/dbaas_worker/internal
+    library/python/testing/yatest_common
+    contrib/libs/grpc/src/python/grpcio_status
+)
+
+DATA(arcadia/cloud/mdb/dbaas_worker)
+
+TEST_SRCS(
+    __init__.py
+    mocks/__init__.py
+    mocks/certificator.py
+    mocks/clickhouse/backup_key.py
+    mocks/compute.py
+    mocks/conductor.py
+    mocks/dataproc_manager.py
+    mocks/mock_disk_placement_group.py
+    mocks/dbm.py
+    mocks/deploy_v2.py
+    mocks/dns.py
+    mocks/dns_resolver.py
+    mocks/eds.py
+    mocks/gpg.py
+    mocks/grpc_state_interactor.py
+    mocks/instance_group.py
+    mocks/iam.py
+    mocks/iam_jwt.py
+    mocks/internal_api.py
+    mocks/loadbalancer.py
+    mocks/lockbox.py
+    mocks/juggler.py
+    mocks/kubernetes_master.py
+    mocks/managed_kubernetes.py
+    mocks/managed_postgresql.py
+    mocks/mdb_secrets.py
+    mocks/metadb.py
+    mocks/mlock.py
+    mocks/ssh_key.py
+    mocks/mysync.py
+    mocks/pgsync.py
+    mocks/nacl.py
+    mocks/resource_manager.py
+    mocks/s3.py
+    mocks/solomon.py
+    mocks/ssh.py
+    mocks/sqlserver_repl_cert.py
+    mocks/utils.py
+    mocks/vpc.py
+    mocks/zookeeper.py
+    mocks/mock_placement_group.py
+    providers/test_vpc.py
+    providers/test_eds.py
+    providers/test_compute.py
+    providers/test_disk_placement_group.py
+    providers/test_solomon_service_alerts.py
+    providers/lib/conftest.py
+    providers/test_resouce_manager.py
+    providers/test_pillar.py
+    providers/test_s3_bucket.py
+    providers/test_juggler.py
+    providers/aws/ec2/test_ec2.py
+    providers/aws/route53/test_route53.py
+    providers/certificator/test_main.py
+    providers/certificator/test_mdb_secrets.py
+    tasks/clickhouse/utils.py
+    tasks/elasticsearch/cluster/test_create.py
+    tasks/elasticsearch/cluster/test_create_backup.py
+    tasks/elasticsearch/cluster/test_delete.py
+    tasks/elasticsearch/cluster/test_delete_metadata.py
+    tasks/elasticsearch/cluster/test_modify.py
+    tasks/elasticsearch/cluster/test_upgrade.py
+    tasks/elasticsearch/cluster/test_purge.py
+    tasks/elasticsearch/cluster/test_restore.py
+    tasks/elasticsearch/cluster/test_start.py
+    tasks/elasticsearch/cluster/test_stop.py
+    tasks/elasticsearch/cluster/user/test_create.py
+    tasks/elasticsearch/cluster/user/test_delete.py
+    tasks/elasticsearch/cluster/user/test_modify.py
+    tasks/elasticsearch/cluster/host/test_create.py
+    tasks/elasticsearch/cluster/host/test_delete.py
+    tasks/elasticsearch/cluster/test_update_tls_certs.py
+    tasks/elasticsearch/utils.py
+    tasks/elasticsearch/test_resetup.py
+    tasks/elasticsearch/cluster/test_maintenance.py
+    tasks/opensearch/cluster/test_create.py
+    tasks/greenplum/test_resetup_master.py
+    tasks/greenplum/test_resetup_segment.py
+    tasks/greenplum/host/test_create.py
+    tasks/greenplum/cluster/test_create.py
+    tasks/greenplum/cluster/test_delete.py
+    tasks/greenplum/cluster/test_delete_metadata.py
+    tasks/greenplum/cluster/test_purge.py
+    tasks/greenplum/cluster/test_start.py
+    tasks/greenplum/cluster/test_stop.py
+    tasks/greenplum/cluster/test_update_tls_certs.py
+    tasks/greenplum/cluster/test_maintenance.py
+    tasks/greenplum/cluster/test_modify.py
+    tasks/greenplum/utils.py
+    tasks/hadoop/cluster/test_create.py
+    tasks/hadoop/cluster/test_delete.py
+    tasks/hadoop/cluster/test_modify.py
+    tasks/hadoop/cluster/test_start.py
+    tasks/hadoop/cluster/test_stop.py
+    tasks/hadoop/subcluster/test_create.py
+    tasks/hadoop/subcluster/test_delete.py
+    tasks/hadoop/subcluster/test_modify.py
+    tasks/hadoop/utils.py
+    tasks/metastore/cluster/test_create.py
+    tasks/metastore/cluster/test_delete.py
+    tasks/metastore/cluster/test_delete_metadata.py
+    tasks/mysql/test_resetup.py
+    tasks/mysql/cluster/alert/group/test_create.py
+    tasks/mysql/cluster/alert/group/test_delete.py
+    tasks/mysql/cluster/database/test_create.py
+    tasks/mysql/cluster/database/test_delete.py
+    tasks/mysql/cluster/test_create.py
+    tasks/mysql/cluster/test_create_backup.py
+    tasks/mysql/cluster/test_wait_backup_service.py
+    tasks/mysql/cluster/test_delete.py
+    tasks/mysql/cluster/test_delete_metadata.py
+    tasks/mysql/cluster/test_maintenance.py
+    tasks/mysql/cluster/test_modify.py
+    tasks/mysql/cluster/test_move.py
+    tasks/mysql/cluster/test_purge.py
+    tasks/mysql/cluster/test_restore.py
+    tasks/mysql/cluster/test_start.py
+    tasks/mysql/cluster/test_start_failover.py
+    tasks/mysql/cluster/test_stop.py
+    tasks/mysql/cluster/test_update_tls_certs.py
+    tasks/mysql/cluster/test_upgrade_80.py
+    tasks/mysql/cluster/user/test_create.py
+    tasks/mysql/cluster/user/test_delete.py
+    tasks/mysql/cluster/user/test_modify.py
+    tasks/mysql/host/test_create.py
+    tasks/mysql/host/test_delete.py
+    tasks/mysql/host/test_modify.py
+    tasks/mysql/utils.py
+    tasks/mongodb/test_resetup.py
+    tasks/mongodb/cluster/database/test_create.py
+    tasks/mongodb/cluster/database/test_delete.py
+    tasks/mongodb/cluster/test_create.py
+    tasks/mongodb/cluster/test_create_backup.py
+    tasks/mongodb/cluster/test_delete.py
+    tasks/mongodb/cluster/test_delete_metadata.py
+    tasks/mongodb/cluster/test_enable_sharding.py
+    tasks/mongodb/cluster/test_maintenance.py
+    tasks/mongodb/cluster/test_modify.py
+    tasks/mongodb/cluster/test_move.py
+    tasks/mongodb/cluster/test_purge.py
+    tasks/mongodb/cluster/test_resetup.py
+    tasks/mongodb/cluster/test_restart.py
+    tasks/mongodb/cluster/test_restore.py
+    tasks/mongodb/cluster/test_start.py
+    tasks/mongodb/cluster/test_stepdown.py
+    tasks/mongodb/cluster/test_stop.py
+    tasks/mongodb/cluster/test_update_tls_certs.py
+    tasks/mongodb/cluster/test_upgrade.py
+    tasks/mongodb/cluster/test_wait_backup_service.py
+    tasks/mongodb/cluster/test_delete_backup.py
+    tasks/mongodb/cluster/user/test_create.py
+    tasks/mongodb/cluster/user/test_delete.py
+    tasks/mongodb/cluster/user/test_modify.py
+    tasks/mongodb/host/test_create.py
+    tasks/mongodb/host/test_delete.py
+    tasks/mongodb/shard/test_create.py
+    tasks/mongodb/shard/test_delete.py
+    tasks/mongodb/utils.py
+    tasks/postgresql/cluster/alert/group/test_create.py
+    tasks/postgresql/cluster/alert/group/test_modify.py
+    tasks/postgresql/cluster/alert/group/test_delete.py
+    tasks/postgresql/test_resetup.py
+    tasks/postgresql/cluster/database/test_create.py
+    tasks/postgresql/cluster/database/test_delete.py
+    tasks/postgresql/cluster/database/test_modify.py
+    tasks/postgresql/cluster/test_add_host_sg.py
+    tasks/postgresql/cluster/test_create.py
+    tasks/postgresql/cluster/test_create_backup.py
+    tasks/postgresql/cluster/test_create_sg.py
+    tasks/postgresql/cluster/test_create_sg_and_users.py
+    tasks/postgresql/cluster/test_create_sg_default.py
+    tasks/postgresql/cluster/test_delete.py
+    tasks/postgresql/cluster/test_delete_metadata.py
+    tasks/postgresql/cluster/test_maintenance.py
+    tasks/postgresql/cluster/test_fast_maintenance.py
+    tasks/postgresql/cluster/test_modify.py
+    tasks/postgresql/cluster/test_move.py
+    tasks/postgresql/cluster/test_purge.py
+    tasks/postgresql/cluster/test_restore.py
+    tasks/postgresql/cluster/test_set_user_sg_for_created_cluster.py
+    tasks/postgresql/cluster/test_start.py
+    tasks/postgresql/cluster/test_start_failover.py
+    tasks/postgresql/cluster/test_stop.py
+    tasks/postgresql/cluster/test_update_tls_certs.py
+    tasks/postgresql/cluster/test_upgrade_11.py
+    tasks/postgresql/cluster/test_upgrade_12.py
+    tasks/postgresql/cluster/test_upgrade_13.py
+    tasks/postgresql/cluster/test_upgrade_14.py
+    tasks/postgresql/cluster/test_wait_backup_service.py
+    tasks/postgresql/cluster/test_delete_backup.py
+    tasks/postgresql/cluster/user/test_create.py
+    tasks/postgresql/cluster/user/test_delete.py
+    tasks/postgresql/cluster/user/test_modify.py
+    tasks/postgresql/host/test_create.py
+    tasks/postgresql/host/test_delete.py
+    tasks/postgresql/host/test_modify.py
+    tasks/postgresql/utils.py
+    tasks/redis/cluster/test_create.py
+    tasks/redis/cluster/test_create_backup.py
+    tasks/redis/cluster/test_delete.py
+    tasks/redis/cluster/test_delete_metadata.py
+    tasks/redis/cluster/test_maintenance.py
+    tasks/redis/cluster/test_modify.py
+    tasks/redis/cluster/test_move.py
+    tasks/redis/cluster/test_purge.py
+    tasks/redis/cluster/test_rebalance.py
+    tasks/redis/cluster/test_restore.py
+    tasks/redis/cluster/test_start.py
+    tasks/redis/cluster/test_start_failover.py
+    tasks/redis/cluster/test_stop.py
+    tasks/redis/cluster/test_upgrade.py
+    tasks/redis/host/test_create.py
+    tasks/redis/host/test_delete.py
+    tasks/redis/shard/test_create.py
+    tasks/redis/shard/test_delete.py
+    tasks/redis/utils.py
+    tasks/redis/test_resetup.py
+    tasks/redis/test_utils.py
+    tasks/sqlserver/utils.py
+    tasks/test_compute_modify_bugs.py
+    tasks/test_cover.py
+    tasks/test_utils.py
+    tasks/utils.py
+    test_except_hook.py
+    test_metadb.py
+    test_runners.py
+    test_replace_rootfs.py
+    test_utils.py
+    test_config.py
+    test_cloud_init.py
+)
+
+END()
+
+RECURSE(
+    mypy
+    metadb
+    mocks
+    providers/aws/iam
+    providers/aws/kms
+    providers/lib
+    tasks
+    tasks/clickhouse
+    tasks/kafka
+    tasks/sqlserver
+    tasks/opensearch
+    unit-tests
+)

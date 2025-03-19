@@ -1,0 +1,242 @@
+uid: ycpDuty
+refresh: 3m
+title: Duty dashboard (platform team)
+
+tags: [ 'ycp', 'ycp-gateway', 'ycp-adapter', 'ycp-ig', 'ycp-mk8s', 'ycp-duty', 'ycp-top' ]
+links:
+  - { title: 'Source spec', url: 'https://a.yandex-team.ru/arc/trunk/arcadia/cloud/java/dashboard/src/main/resources/dashboard/duty/duty.yaml' }
+  - { title: 'Drilldown', tags: [ 'ycp-duty', 'ycp-drilldown' ] }
+
+variables:
+  ui:
+    cluster: { values: [prod, preprod, gpn] }
+  replacement:
+    !include ../include/errors.yaml
+
+graphDefaults:
+  width: 8
+  height: 6
+
+rows:
+  - title: API Gateway
+    graphDefaults: { datasource: 'Solomon Cloud' }
+    queryDefaults: { dropNan: true, labels: 'project=platform, cluster=cloud_${cluster}_api-gateway, service=api_gateway_ma, host!=cluster' }
+    drilldowns:
+      - subUid: dd_api_gateway_host
+        tags: ['ycp', 'ycp-gateway', 'ycp-duty' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [ '*-*', '*-myt*', '*-sas*', '*-vla*', '*-myt01', '*-sas01',  '*-vla01', '*-myt02', '*-sas02', '*-vla02' ]
+            titles: [ 'Cluster', 'DC myt', 'DC sas', 'DC vla', 'Host myt1', 'Host sas1',  'Host vla1', 'Host myt2', 'Host sas2', 'Host vla2' ]
+        uiRepeat: host
+        labels: 'host=$host'
+      - subUid: dd_api_gateway_service
+        tags: ['ycp', 'ycp-gateway', 'ycp-duty' ]
+        ui:
+          cluster: cluster
+          service:
+            multi: true
+            values: [ 'yandex.cloud.*',
+                      'yandex.cloud.compute.*', 'yandex.cloud.containerregistry.*', 'yandex.cloud.endpoint.*', 'yandex.cloud.iam.*', 'yandex.cloud.k8s.*',
+                      'yandex.cloud.loadbalancer.*', 'yandex.cloud.mdb.*', 'yandex.cloud.operation.*', 'yandex.cloud.resourcemanager.*', 'yandex.cloud.vpc.*',
+                      'yandex.cloud.ydb.*', 'grpc.*' ]
+            titles: [ 'All services',
+                      'Compute', 'Container Registry', 'Endpoint', 'IAM', 'K8S',
+                      'Load Balancer', 'MDB', 'Operation', 'Resource Manager', 'VPC',
+                      'YDB', 'Grpc' ]
+        uiRepeat: service
+        labels: 'host=cluster, grpc_service=$service' # cannot add 'grpc_method=all', because for rps/rpm graph, there is no 'host=cluster, grpc_method=all' aggregate
+    panels:
+      - type: graph
+        templates:
+          - { name: rps, rate: ui }
+          - { name: patchSelect, before: last, add: { asap: [] } }
+        display: { fill: 0, lineWidth: 3 }
+        title: 'Gateway $rateUnit ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_server_request_total, system=*, grpc_type=*, grpc_service=yandex.cloud.*, grpc_method!=all' }
+
+      - type: graph
+        title: 'Gateway and envoy errors ($cluster)'
+        display: { fill: 0, lineWidth: 3 }
+        yAxes: [ { min: 0, decimals: 1 } ]
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_server_response_total, grpc_code=@c5xx, system=*, grpc_type=*, grpc_service=yandex.cloud, grpc_method!=all, upstream_error=true' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: "0", group_lines: [sum], alias: gw upstream 5xx }
+          - params: { labels: 'name=grpc_server_response_total, grpc_code=@c5xx, system=*, grpc_type=*, grpc_service=yandex.cloud, grpc_method!=all, upstream_error=false' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: "0", group_lines: [sum], alias: gw 5xx }
+          - params: { labels: 'name=envoy_http_frontend_v4_tls_downstream_rq_5xx|envoy_http_frontend_v6_tls_downstream_rq_5xx|envoy_http_frontend_v4_plain_downstream_rq_5xx|envoy_http_frontend_v6_plain_downstream_rq_5xx, service=api_envoy_ma, host!=cluster' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: "0", group_lines: [sum], alias: "envoy front 5xx" }
+          - params: { labels: 'name=envoy_cluster_*_upstream_rq_503, service=api_envoy_ma, host!=cluster' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: "0", group_lines: [sum], alias: "envoy upstream 503" }
+
+      - type: graph
+        templates:
+          - { groupLines: true, name: percentile, format: solomon }
+          - { name: patchSelect, before: last, add: { asap: [] } }
+        display: { fill: 0, lineWidth: 3 }
+        title: 'Gateway response duration ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_server_response_duration_seconds, system=*, grpc_type=*, grpc_service=yandex.cloud, bin=*' }
+
+  - title: 'API Adapter [New] (ma)'
+    graphDefaults: { datasource: 'Solomon Cloud' }
+    queryDefaults: { dropNan: true, labels: 'project=api-adapter, cluster=${cluster}, app=cloud-api-adapter_server, service=core, host!=cluster, method=all' }
+    drilldowns:
+      - subUid: dd_api_adapter_ig_host_ma
+        tags: [ 'ycp', 'ycp-adapter', 'ycp-duty' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [ 'cluster', '*-myt*', '*-sas*', '*-vla*', '*-myt1', '*-myt2', '*-sas1', '*-sas2', '*-vla1', '*-vla2' ]
+            titles: [ 'Cluster', 'DC myt', 'DC sas', 'DC vla', 'Host myt1', 'Host myt2', 'Host sas1', 'Host sas2', 'Host vla1', 'Host vla2' ]
+          method:
+            values: [ 'all', 'compute.*', 'iam.*', 'loadbalancer.*', 'mdb.*', 'resourcemanager.*', 'vpc.*' ]
+            titles: [ 'All services', 'Compute', 'IAM', 'Load Balancer', 'MDB', 'Resource Manager', 'VPC' ]
+        uiRepeat: host
+        labels: 'host=$host, method=$method'
+      - subUid: dd_api_adapter_ig_method_ma
+        tags: [ 'ycp', 'ycp-adapter', 'ycp-duty' ]
+        ui:
+          cluster: cluster
+          method:
+            multi: true
+            values: [ 'all', 'compute.*', 'iam.*', 'loadbalancer.*', 'mdb.*', 'resourcemanager.*', 'vpc.*' ]
+            titles: [ 'All services', 'Compute', 'IAM', 'Load Balancer', 'MDB', 'Resource Manager', 'VPC' ]
+          host:
+            values: [ 'cluster', '*-myt*', '*-sas*', '*-vla*', '*-myt1', '*-myt2', '*-sas1', '*-sas2', '*-vla1', '*-vla2' ]
+            titles: [ 'Cluster', 'DC myt', 'DC sas', 'DC vla', 'Host myt1', 'Host myt2', 'Host sas1', 'Host sas2', 'Host vla1', 'Host vla2' ]
+        uiRepeat: method
+        labels: 'host=$host, method=$method'
+
+    panels:
+      - type: graph
+        templates: { name: rps, rate: ui }
+        title: 'Adapter $rateUnit ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_requests, meter_type=count' }
+
+      - type: graph
+        templates: { name: errors }
+        title: 'Adapter errors ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_statuses_with_external, external=*, status=@4xx' }
+          - params: { labels: 'name=grpc_statuses_with_external, external=*, status=@503' }
+          - params: { labels: 'name=grpc_statuses_with_external, external=*, status=@5xx' }
+        draw: [{ alias: '4xx', color: '#147', at: right }, { alias: '503', color: '#da7', at: left }, { alias: '5xx', color: '#b20', at: left }]
+
+      - type: graph
+        templates: { name: percentile, groupLines: true, format: solomon }
+        title: 'Adapter response duration ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_durations' }
+
+  - title: Instance Groups (ma)
+    graphDefaults: { datasource: 'Solomon Cloud' }
+    queryDefaults: { labels: 'project=instance-group, cluster=${cluster}, app=instance-groups_server, service=backend, host=cluster, method=all' }
+    # drilldown is N/A for now because hosts are set up directly, not with conductor group, here
+    # https://solomon.cloud.yandex-team.ru/admin/projects/instance-group/clusters/instance-group_prod/edit
+    panels:
+      - type: graph
+        templates: { name: rps, rate: ui }
+        title: 'IG $rateUnit ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_requests, meter_type=count' }
+
+      - type: graph
+        templates: { name: errors }
+        title: 'IG errors ($cluster)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, status=@4xx' }
+          - params: { labels: 'name=grpc_statuses, status=@503' }
+          - params: { labels: 'name=grpc_statuses, status=@5xx' }
+        draw: [{ alias: '4xx', color: '#147', at: right }, { alias: '503', color: '#da7', at: left }, { alias: '5xx', color: '#b20', at: left }]
+
+      - type: graph
+        templates: { name: percentile, groupLines: true, format: solomon }
+        title: 'IG response duration ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_durations' }
+
+  - title: Managed Kubernetes API
+    graphDefaults: { datasource: 'Solomon Cloud' }
+    queryDefaults: { labels: 'project=platform, cluster=cloud_${cluster}_k8sapi, service=k8sapi_ma, host!=cluster, grpc_method=*, grpc_service=yandex.cloud.*' }
+    panels:
+      - type: graph
+        title: 'Mk8s API rps ($cluster)'
+        templates:
+          - { name: rps }
+          - { name: patchSelect, before: last, add: { asap: [] } }
+        display: { fill: 0, lineWidth: 3 }
+        queries:
+          - params: { labels: 'name=grpc_server_request_total' }
+
+      - type: graph
+        title: 'Mk8s API errors ($cluster)'
+        templates: { name: errors }
+        display: { fill: 0, lineWidth: 3 }
+        queryDefaults: { defaultTimeWindow: '15s', labels: 'name=grpc_server_response_total, grpc_method!=all' }
+        queries:
+          - params: { labels: 'grpc_code=@c5xx503' }
+          - params: { labels: 'grpc_code=@c4xx' }
+        draw:
+          - { alias: '5xx & 503', color: '#b20', at: left }
+          - { alias: '4xx', color: '#147', at: right }
+
+      - type: graph
+        templates:
+          - { groupLines: true, name: percentile, format: solomon, levels: [50, 75, 90, 99] }
+          - { name: patchSelect, before: last, add: { asap: [] } }
+        display: { fill: 0, lineWidth: 3 }
+        title: 'Mk8s API response duration ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_server_response_duration_seconds, grpc_code=*, bin=*' }
+
+  - title: Managed Kubernetes Controller
+    graphDefaults: { datasource: 'Solomon Cloud' }
+    queryDefaults: { labels: 'project=platform, cluster=cloud_${cluster}_mk8s-controller, service=mk8s-controller_ma, host=*' }
+    drilldowns:
+      - subUid: dd_mk8s_ctrl_trt
+        tags: [ 'ycp', 'ycp-mk8s', 'ycp-duty' ]
+        ui:
+          cluster: cluster
+          targetResourceType: { multi: true, values: [ '!all', NodeGroup, Cluster ], titles: [ 'All types', 'Node Group', 'Cluster' ] }
+          targetMethod: { values: [ '!all', Create, Update, Delete ], titles: [ 'All methods', Create, Update, Delete ] }
+        uiRepeat: targetResourceType
+        labels: 'target_resource_type=$targetResourceType, target_method=$targetMethod'
+    panels:
+      - type: graph
+        title: 'Mk8s operation errors ($cluster)'
+        templates: { name: errors }
+        display: { fill: 0, lineWidth: 3 }
+        queryDefaults: { defaultTimeWindow: '15s', labels: 'name=failed_operation_total, target_resource_type=*, target_method=*' }
+        queries:
+          - params: { labels: 'grpc_code=@c5xx503' }
+          - params: { labels: 'grpc_code=@c4xx' }
+        draw:
+          - { alias: '5xx & 503', color: '#b20', at: left }
+          - { alias: '4xx', color: '#147', at: right }
+
+      - type: graph
+        title: 'Mk8s hung operations ($cluster)'
+        display: { decimals: 0, fill: 0, lineWidth: 3 }
+        yAxes: [{ decimals: 1, format: short, min: 0 }]
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=hung_operation_total, target_resource_type=*, target_method!=Delete' }
+            groupByTime: { max: 'default' }
+            select: { group_lines: sum, alias: '>20m "all minus Delete"' }
+          - params: { labels: 'name=hung_operation_total, target_resource_type=*, target_method=Delete' }
+            groupByTime: { max: 'default' }
+            select: { group_lines: sum, alias: '>20m Delete' }
+        draw:
+          - { alias: '>20m', color: '#b20', at: left }

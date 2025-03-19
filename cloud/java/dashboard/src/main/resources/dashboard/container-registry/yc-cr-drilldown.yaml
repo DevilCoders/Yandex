@@ -1,0 +1,346 @@
+uid: yc-cr-drilldown
+refresh: 1m
+title: Container registry drilldown
+
+tags: [ 'ycp', 'ycp-cr', 'ycp-duty', 'yc-cr-drilldown']
+links:
+  - { title: 'Source spec', url: 'https://a.yandex-team.ru/arc/trunk/arcadia/cloud/java/dashboard/src/main/resources/dashboard/container-registry/cr-drilldown.yaml' }
+  - { title: 'Drilldown', tags: [ 'ycp-cr', 'ycp-drilldown' ] }
+
+variables:
+  repeat:
+    tx_duration_sensor:
+      values: ['tx_attempt_duration_seconds', 'tx_total_duration_seconds']
+      titles: ['Tx Attempt Duration', 'Tx Total Duration']
+    jvm_memory_area:
+      values: ['heap', 'nonheap']
+      titles: ['Heap', 'Non-Heap']
+    client_app:
+      values: ['auth', 'iam', 'resource-manager']
+      titles: ['Auth Client', 'IAM Client', 'Resource Manager Client']
+      variables:
+        subUid: ["dd-cr-auth-cs", "dd-cr-iam-cs", "dd-cr-rm-cs"]
+  ds:
+    solomon:
+      type: 'grafana-solomon-datasource'
+      regex: '^Solomon Cloud( Preprod| GPN)?$'
+  ui:
+    service:
+      values: ['viewer-ma', 'uploader-ma', 'manager-ma']
+      titles: ['viewer', 'uploader', 'manager']
+    taskprocessor_pool:
+      multi: true
+      hidden: true
+      values: ['manager']
+  replacement:
+    !include ../include/errors.yaml
+
+graphDefaults:
+  width: 6
+  height: 6
+  datasource: '$solomon'
+queryDefaults: { labels: 'project=yc.cr.cloud, cluster=yc.cr.metrics, host!=cluster' }
+
+rows:
+  - title: 'JVM and System'
+    queryDefaults: { labels: 'service=${service}' }
+    graphDefaults: { width: 8 }
+    drilldowns:
+      - subUid: dd-cr-jvm-service
+        tags: [ 'ycp', 'ycp-cr', 'ycp-duty' ]
+        ui:
+          service: service
+          host:
+            multi: true
+            values: [ '*-myt*', '*-sas*', '*-vla*', '*-1-myt',      '*-2-myt',      '*-1-sas',      '*-2-sas',      '*-1-vla',      '*-2-vla' ]
+            titles: [ 'DC myt', 'DC sas', 'DC vla', 'Host IG myt1', 'Host IG myt2', 'Host IG sas1', 'Host IG sas2', 'Host IG vla1', 'Host IG vla2']
+        uiRepeat: host
+        labels: 'host=$host'
+    panels:
+      - type: graph
+        title: '@{jvm_memory_area:title} Memory'
+        repeat: jvm_memory_area
+        queries:
+          - params: { labels: 'name=jvm_memory_bytes_used|jvm_memory_bytes_committed, area=@{jvm_memory_area}' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: ['avg', 'name'] }
+        yAxes: [{ format: bytes }]
+      - type: graph
+        title: 'Sys VM & RSS'
+        queries:
+          - params: { labels: 'name=process_virtual_memory_bytes|process_resident_memory_bytes' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: ['avg', 'name'] }
+      - type: graph
+        title: 'File Descriptors'
+        queries:
+          - params: { labels: 'name=process_open_fds' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: ['max', 'name'], alias: 'max FDs' }
+      - type: graph
+        title: 'Threads'
+        queries:
+          - params: { labels: 'name=jvm_threads_state, state=*' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: ['avg', 'state'] }
+        display: { empty: false }
+      - type: graph
+        title: '% Cores'
+        queries:
+          - params: { labels: 'name=process_cpu_seconds_total' }
+            groupByTime: { max: default }
+            select: { non_negative_derivative: [] }
+        display: { empty: false }
+        yAxes: [{ format: percentunit, decimals: 0 }]
+
+  - title: 'Task Processor - ${taskprocessor_pool} Pool'
+    queryDefaults: { labels: 'service=${service}' }
+    uiRepeat: 'taskprocessor_pool'
+    panels:
+      - type: graph
+        title: 'Task RPS'
+        templates: { name: rps, sumLines: true }
+        queries:
+          - params: { labels: 'name=taskprocessor_task_duration, pool=${taskprocessor_pool}' }
+        display: { empty: false }
+
+      - type: graph
+        title: 'Special Task States'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=taskprocessor_task_failed|taskprocessor_task_resurrected|taskprocessor_task_interrupted, meter_type=count, pool=${taskprocessor_pool}' }
+            groupByTime: { max: default }
+            select: { nn_deriv: [], group_by_labels: ['sum', 'name'] }
+
+      - type: graph
+        title: 'Task Start Delay'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=taskprocessor_task_delay, pool=${taskprocessor_pool}' }
+
+      - type: graph
+        title: 'Task Duration'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=taskprocessor_task_duration, pool=${taskprocessor_pool}' }
+
+  # GRPC Clients (CR dependencies)
+  - title: '@client_app:title'
+    repeat: client_app
+    queryDefaults: { labels: 'service=${service}, app=@{client_app}_client, method=*' }
+    graphDefaults: { width: 8 }
+    drilldowns:
+      - subUid: '@client_app:subUid'
+        tags: [ 'ycp', 'ycp-cr', 'ycp-duty' ]
+        ui:
+          service: service
+          host:
+            multi: true
+            values: [ '*-myt*', '*-sas*', '*-vla*', '*-1-myt',      '*-2-myt',      '*-1-sas',      '*-2-sas',      '*-1-vla',      '*-2-vla' ]
+            titles: [ 'DC myt', 'DC sas', 'DC vla', 'Host IG myt1', 'Host IG myt2', 'Host IG sas1', 'Host IG sas2', 'Host IG vla1', 'Host IG vla2']
+        uiRepeat: host
+        labels: 'host=$host'
+    panels:
+
+      - type: graph
+        title: '@client_app:title Call RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=grpc_requests, meter_type=count' }
+
+      - type: graph
+        title: '@client_app:title Errors (by type)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, status!=OK' }
+            groupByTime: { max: default }
+            select: { diff: [], drop_below: '0', group_by_labels: ['sum', 'status'], alias: '{{status}}' }
+        display: { decimals: 0, empty: false }
+
+      - type: graph
+        title: '@client_app:title Call Durations'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=grpc_durations' }
+
+  - title: YDB GRPC Client
+    queryDefaults: { labels: 'service=${service}, app=kikimr_client, method=*' }
+    graphDefaults: { width: 8 }
+    drilldowns:
+      - subUid: dd-cr-ydb-cs
+        tags: [ 'ycp', 'ycp-cr', 'ycp-duty' ]
+        ui:
+          service: service
+          host:
+            multi: true
+            values: [ '*-myt*', '*-sas*', '*-vla*', '*-myt-1',   '*-myt-2',   '*-1-myt',      '*-2-myt',      '*-sas-1',   '*-sas-2',   '*-1-sas',      '*-2-sas',      '*-vla-1',   '*-vla-2',   '*-1-vla',      '*-2-vla' ]
+            titles: [ 'DC myt', 'DC sas', 'DC vla', 'Host myt1', 'Host myt2', 'Host IG myt1', 'Host IG myt2', 'Host sas1', 'Host sas2', 'Host IG sas1', 'Host IG sas2', 'Host vla1', 'Host vla2', 'Host IG vla1', 'Host IG vla2']
+        uiRepeat: host
+        labels: 'host=$host'
+    panels:
+      - type: graph
+        title: 'KiKiMR Client Call RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=grpc_requests, meter_type=count' }
+
+      - type: graph
+        title: 'KiKiMR Client Errors (by type)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, status!=OK' }
+            groupByTime: { max: default }
+            select: { diff: [], drop_below: '0', group_by_labels: ['sum', 'status'], alias: '{{status}}' }
+        display: { decimals: 0, empty: false }
+
+      - type: graph
+        title: 'KiKiMR Client Call Durations'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=grpc_durations' }
+
+  - title: YDB Tx & Sessions
+    queryDefaults: { labels: 'service=${service}' }
+    drilldowns:
+      - subUid: dd-cr-ydb-tx
+        tags: [ 'ycp', 'ycp-cr', 'ycp-duty' ]
+        ui:
+          service: service
+          host:
+            multi: true
+            values: [ '*-myt*', '*-sas*', '*-vla*', '*-1-myt',      '*-2-myt',      '*-1-sas',      '*-2-sas',      '*-1-vla',      '*-2-vla' ]
+            titles: [ 'DC myt', 'DC sas', 'DC vla', 'Host IG myt1', 'Host IG myt2', 'Host IG sas1', 'Host IG sas2', 'Host IG vla1', 'Host IG vla2']
+        uiRepeat: host
+        labels: 'host=$host'
+    panels:
+
+      - type: graph
+        title: 'Tx Attempt Count'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        yAxes: [{ decimals: 1, format: short, min: 0 }]
+        queries:
+          - params: { labels: 'tx_name=*, name=tx_attempts' }
+
+      - type: graph
+        repeat: tx_duration_sensor
+        title: '@{tx_duration_sensor:title}'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'tx_name=*, name=@{tx_duration_sensor}' }
+
+      - type: graph
+        title: 'Tx Result RPS'
+        queries:
+          - params: { labels: 'tx_name=*, name=tx_result, result=*' }
+            groupByTime: { max: default }
+            select: { nn_deriv: [], group_by_labels: ['sum', 'result'], alias: '{{result}} RPS' }
+
+      - type: graph
+        title: 'Session Count'
+        queries:
+          - params: { labels: 'name=sessions_count, type=active|idle' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'type'] }
+        display: { stack: true }
+
+      - type: graph
+        title: 'Session Timings (Used)'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=sessions_timings, type=used' }
+
+  - title: S3
+    queryDefaults: { labels: 'service=${service}' }
+    drilldowns:
+      - subUid: dd-cr-s3-cs
+        tags: [ 'ycp', 'ycp-cr', 'ycp-duty' ]
+        ui:
+          service: service
+          host:
+            multi: true
+            values: [ '*-myt*', '*-sas*', '*-vla*', '*-1-myt',      '*-2-myt',      '*-1-sas',      '*-2-sas',      '*-1-vla',      '*-2-vla' ]
+            titles: [ 'DC myt', 'DC sas', 'DC vla', 'Host IG myt1', 'Host IG myt2', 'Host IG sas1', 'Host IG sas2', 'Host IG vla1', 'Host IG vla2']
+        uiRepeat: host
+        labels: 'host=$host'
+    panels:
+
+      - type: graph
+        title: 'S3 Attempt Count'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        yAxes: [{ decimals: 1, format: short, min: 0 }]
+        queries:
+          - params: { labels: 'name=storageS3_attempts' }
+
+      - type: graph
+        title: 'S3 Durations'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=storageS3_durations' }
+
+      - type: graph
+        title: 'S3 RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=storageS3_requests, meter_type=count' }
+
+      - type: graph
+        title: 'S3 Errors retries'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=storageS3_statuses, app=storageClientAttempts, status!=200|204|404_expected' }
+            groupByTime: { max: default }
+            select: { diff: [], drop_below: '0', group_by_labels: ['sum', 'status'], alias: '{{status}}' }
+        display: { decimals: 0, empty: false }
+
+      - type: graph
+        title: 'S3 Errors'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=storageS3_statuses, app=storageClient, status!=200|204|404_expected' }
+            groupByTime: { max: default }
+            select: { diff: [], drop_below: '0', group_by_labels: ['sum', 'status'], alias: '{{status}}' }
+        display: { decimals: 0, empty: false }
+
+
+  - title: Storage private API
+    queryDefaults: { labels: 'service=${service}' }
+    drilldowns:
+      - subUid: dd-cr-storage-pr-api
+        tags: [ 'ycp', 'ycp-cr', 'ycp-duty' ]
+        ui:
+          service: service
+          host:
+            multi: true
+            values: [ '*-myt*', '*-sas*', '*-vla*', '*-1-myt',      '*-2-myt',      '*-1-sas',      '*-2-sas',      '*-1-vla',      '*-2-vla' ]
+            titles: [ 'DC myt', 'DC sas', 'DC vla', 'Host IG myt1', 'Host IG myt2', 'Host IG sas1', 'Host IG sas2', 'Host IG vla1', 'Host IG vla2']
+        uiRepeat: host
+        labels: 'host=$host'
+    panels:
+
+      - type: graph
+        title: 'Storage private API Attempt Count'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        yAxes: [{ decimals: 1, format: short, min: 0 }]
+        queries:
+          - params: { labels: 'name=storagePA_attempts' }
+
+      - type: graph
+        title: 'Storage private API Durations'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=storagePA_durations' }
+
+      - type: graph
+        title: 'Storage private API RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=storagePA_requests, meter_type=count' }
+
+      - type: graph
+        title: 'Storage private API Errors (by type)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=storagePA_statuses, status!=200' }
+            groupByTime: { max: default }
+            select: { diff: [], drop_below: '0', group_by_labels: ['sum', 'status'], alias: '{{status}}' }
+        display: { decimals: 0, empty: false }

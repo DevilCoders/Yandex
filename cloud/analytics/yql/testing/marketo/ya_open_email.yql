@@ -1,0 +1,98 @@
+USE hahn;
+PRAGMA yt.InferSchema = '1';
+PRAGMA File('libcrypta_identifier_udf.so', 'yt://hahn/home/crypta/public/udfs/stable/libcrypta_identifier_udf.so');
+PRAGMA Udf('libcrypta_identifier_udf.so');
+
+$export_table = '//home/cloud_analytics/export/marketo_testing/ya_open_email';
+$leads_table = '//home/cloud_analytics/export/marketo_testing/lead';
+$email_status_tbl = '//home/cloud_analytics/emails_status';
+
+$email_to_canonical = ($email) -> {
+    RETURN Identifiers::NormalizeEmail($email);
+};
+
+DEFINE SUBQUERY $last_non_empty_table($path) AS
+    $max_path = (
+        SELECT MAX(Path) AS Path
+        FROM FOLDER($path, 'row_count')
+        WHERE Type = 'table'
+            AND Yson::LookupInt64(Attributes, 'row_count') > 0
+    );
+    SELECT * FROM CONCAT($max_path);
+END DEFINE;
+
+-- INSERT INTO $export_table WITH TRUNCATE
+--     SELECT
+--         Unwrap(LIST(DateTime::ToSeconds(DateTime::FromStringFormat(status.last_opened_at, '%d/%b/%Y:%H:%M:%S'))){0}) AS dwh_created_at,
+--         Unwrap(LIST(DateTime::ToSeconds(DateTime::FromStringFormat(status.last_opened_at, '%d/%b/%Y:%H:%M:%S'))){0}) AS ya_activity_time,
+--         ya_activity_id,
+--         null AS type_name,
+--         Unwrap(LIST($email_to_canonical(status.receiver)){0}) AS email,
+--         LIST(status.email_id){0} AS mailing_id,
+--         null AS device,
+--         null AS is_mobile_device,
+--         null AS ab_test_variant,
+--         LIST(status.email_type){0} AS yaCampaignID
+--     FROM $last_non_empty_table($email_status_tbl) AS status
+--     INNER JOIN $leads_table AS leads
+--         ON $email_to_canonical(status.receiver) = leads.email
+--     WHERE
+--         status.last_opened_at IS NOT NULL
+--     GROUP BY
+--         Digest::Md5Hex(
+--             Unwrap($email_to_canonical(status.receiver)) ||
+--             Unwrap(status.email_id) ||
+--             -- ab_test_variant
+--             Unwrap(status.last_opened_at)
+--         ) AS ya_activity_id
+--     ORDER BY dwh_created_at, email
+-- ;
+
+$export_diff = $export_table || '_diff';
+
+$export_data = (
+    SELECT
+        Unwrap(DateTime::ToSeconds(CurrentUtcTimestamp())) AS dwh_created_at,
+        Unwrap(LIST(DateTime::ToSeconds(DateTime::FromStringFormat(status.last_opened_at, '%d/%b/%Y:%H:%M:%S'))){0}) AS ya_activity_time,
+        ya_activity_id,
+        null AS type_name,
+        Unwrap(LIST($email_to_canonical(status.receiver)){0}) AS email,
+        LIST(status.email_id){0} AS mailing_id,
+        null AS device,
+        null AS is_mobile_device,
+        null AS ab_test_variant,
+        LIST(status.email_type){0} AS yaCampaignID
+    FROM $last_non_empty_table($email_status_tbl) AS status
+    INNER JOIN $leads_table AS leads
+        ON $email_to_canonical(status.receiver) = leads.email
+    WHERE
+        status.last_opened_at IS NOT NULL
+    GROUP BY
+        Digest::Md5Hex(
+            Unwrap($email_to_canonical(status.receiver)) ||
+            Unwrap(status.email_id) ||
+            -- ab_test_variant
+            Unwrap(status.last_opened_at)
+        ) AS ya_activity_id
+);
+
+INSERT INTO $export_diff WITH TRUNCATE
+    SELECT
+        dwh_created_at,
+        ya_activity_time,
+        ya_activity_id,
+        type_name,
+        email,
+        mailing_id,
+        device,
+        is_mobile_device,
+        ab_test_variant,
+        yaCampaignID
+    FROM $export_data AS current_data
+    LEFT ONLY JOIN $export_table AS exp
+        ON current_data.ya_activity_id = exp.ya_activity_id
+ORDER BY dwh_created_at, email;
+
+COMMIT;
+INSERT INTO $export_table SELECT * FROM $export_diff;
+DROP TABLE $export_diff;

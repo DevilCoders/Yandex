@@ -1,0 +1,149 @@
+{
+  "variables": {
+    "endpoint": "{{env `YC_ENDPOINT`}}",
+    "folder_id": "{{env `YC_FOLDER_ID`}}",
+    "subnet_id": "{{env `YC_SUBNET_ID`}}",
+    "user": "{{env `USER`}}",
+    "service_account_id": "{{env `YC_SERVICE_ACCOUNT_ID`}}",
+    "s3_bucket": "{{env `YC_S3_BUCKET`}}",
+    "timestamp": "{{isotime \"2006-01-02t03-04-05z\"}}"
+  },
+  "builders": [
+    {
+      "type": "yandex",
+      "endpoint": "{{user `endpoint`}}",
+      "folder_id": "{{user `folder_id`}}",
+      "subnet_id": "{{user `subnet_id`}}",
+      "zone": "ru-central1-c",
+      "labels": {
+        "skip_update_ssh_keys": "true"
+      },
+      "use_ipv4_nat": false,
+      "use_ipv6": true,
+      "image_name": "platform-base-kubelet-static-selfdns-{{user `timestamp`}}",
+      "image_family": "platform-base-kubelet-static-selfdns",
+      "source_image_family": "ubuntu-1604-lts",
+      "disk_type": "network-ssd",
+      "ssh_username": "ubuntu",
+      "ssh_bastion_host": "bastion.cloud.yandex.net",
+      "ssh_bastion_username": "{{user `user`}}",
+      "ssh_bastion_agent_auth": "true"
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'image prepared by Packer at ' | sudo tee /etc/image_description",
+        "date --rfc-3339 sec | sudo tee -a /etc/image_description",
+        "echo 'nameserver 2a02:6b8:0:3400::5005' | sudo tee /etc/resolv.conf",
+        "echo 'deb http://yandex-xenial.dist.yandex.ru/yandex-xenial stable/all/'   | sudo tee -a /etc/apt/sources.list.d/yandex-xenial.list",
+        "echo 'deb http://yandex-xenial.dist.yandex.ru/yandex-xenial stable/amd64/' | sudo tee -a /etc/apt/sources.list.d/yandex-xenial.list",
+        "echo 'deb http://common.dist.yandex.ru/common stable/all/'                 | sudo tee -a /etc/apt/sources.list.d/common-stable.list",
+        "echo 'deb http://yandex-cloud.dist.yandex.ru/yandex-cloud stable/all/'     | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-stable.list",
+        "echo 'deb http://yandex-cloud.dist.yandex.ru/yandex-cloud stable/amd64/'   | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-stable.list",
+        "echo 'deb http://yandex-cloud.dist.yandex.ru/yandex-cloud testing/all/'    | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-testing.list",
+        "echo 'deb http://yandex-cloud.dist.yandex.ru/yandex-cloud testing/amd64/'  | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-testing.list",
+        "echo 'deb http://yandex-cloud.dist.yandex.ru/yandex-cloud unstable/amd64/' | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-unstable.list",
+        "sleep 150",
+        "sudo apt-get install -y apt-transport-https",
+        "sudo curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -",
+        "echo 'deb https://apt.kubernetes.io/ kubernetes-xenial main' | sudo tee -a /etc/apt/sources.list.d/kubernetes.list",
+        "sudo curl -s https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -",
+        "echo 'deb [arch=amd64] https://download.docker.com/linux/ubuntu xenial stable' | sudo tee -a /etc/apt/sources.list.d/docker-stable.list",
+        "echo '169.254.169.254 metadata.google.internal' | sudo tee -a /etc/hosts"
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "export DEBIAN_FRONTEND=noninteractive",
+        "sudo apt-get update -qq",
+        "sudo apt-get install -y --allow-unauthenticated yandex-archive-keyring",
+        "sudo apt-add-repository universe && sudo apt-get update -qq",
+        "sudo apt-get upgrade -y --allow-unauthenticated --option=Dpkg::Options::=--force-confold"
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'Prepare environment information'",
+        "sudo mkdir -p /etc/yc",
+        "echo \"{{user `endpoint`}}\" | sudo tee -a /etc/yc/endpoint"
+      ]
+    },
+    {
+      "type": "salt-masterless",
+      "bootstrap_args": "stable 2019.2.5",
+      "local_state_tree": "{{template_dir}}/salt_base"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'Purge Salt packages'",
+        "sudo apt-get -y purge salt-common salt-minion",
+        "sudo rm -rf /srv/salt",
+        "sudo rm -rf /var/cache/salt",
+        "sudo rm -rf /var/lib/cloud",
+        "sudo rm -ff /var/lib/dhcp/*.leases",
+        "echo 'List installed packages and versions'",
+        "dpkg -l",
+        "ls -al /var/lib/dpkg/"
+      ]
+    },
+    {
+      "type": "salt-masterless",
+      "bootstrap_args": "stable 2019.2.5",
+      "local_state_tree": "{{template_dir}}/salt_base_kubelet_selfdns"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'Setting selfdns-client token'",
+        "sudo sed -i \"s/token.*/token = {{user `selfdns_token`}}/\" /etc/yandex/selfdns-client/default.conf"
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'Purge Salt packages'",
+        "sudo apt-get -y purge salt-common salt-minion",
+        "sudo rm -rf /srv/salt",
+        "sudo rm -rf /var/cache/salt",
+        "echo 'List installed packages and versions'",
+        "dpkg -l",
+        "sudo systemctl stop kubelet",
+        "ls -la /var/lib/kubelet/pki/",
+        "sudo rm -rf /var/lib/kubelet/pki/* || true",
+        "sudo sync",
+        "ls -la /var/lib/kubelet/pki/"
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'Setting resolv.conf to use /run/resolvconf'",
+        "sudo ln -sf /run/resolvconf/resolv.conf /etc/resolv.conf"
+      ]
+    }
+  ],
+  "post-processors": [
+    {
+      "type": "manifest",
+      "output": "{{ pwd }}/manifest.json",
+      "strip_path": true
+    },
+    {
+      "type": "yandex-export",
+      "subnet_id": "{{user `subnet_id`}}",
+      "zone": "ru-central1-c",
+      "service_account_id": "{{user `service_account_id`}}",
+      "disk_size": "20",
+      "disk_type": "network-ssd",
+      "paths": [
+        "s3://{{user `s3_bucket`}}/platform-base-kubelet-static-selfdns-{{user `timestamp`}}.qcow2"
+      ],
+      "keep_input_artifact": true
+    }
+  ]
+}

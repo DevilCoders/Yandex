@@ -1,0 +1,36 @@
+{% extends "vpc_api_base_alert.j2" %}
+
+{% set service = "vpc-api-{level}-in-logs".format(level=level) %}
+
+{% macro prog() %}
+let ts = series_sum(
+    non_negative_derivative({
+        cluster='cloud_{{env}}_vpc-api'
+        ,service='vpc-config-plane'
+        ,sensor='log4j2_appender_total'
+        ,host='vpc-api-*'
+        ,level='{{ level }}'
+    })
+);
+
+// It's ok, just no warns of errors in logs
+ok_if(count(ts) == 0);
+
+let message_freq = avg(ts);
+
+alarm_if(message_freq > {{ alarm_limit }});
+warn_if(message_freq > {{ warn_limit }});
+{% endmacro %}
+
+{% block main %}
+    "name": "VPC API {{ level }} in logs {{env}}",
+    "annotations": {
+        "message_freq": "[[expression.message_freq]]",
+        "description": "VPC API {{ level }} in logs: [[expression.message_freq]]",
+        "host": "{{ solomon_host() }}",
+        "service": "{{ service }}",
+        "dashboard": "{{ vpc_api_dashboard() }}",
+        "wiki": "{{ wiki_url(service) }}" 
+    },
+    "type": {{ type_expression() }}
+{% endblock %}

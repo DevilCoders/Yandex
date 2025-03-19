@@ -1,0 +1,130 @@
+uid: trail-service-validation
+refresh: 1m
+title: Audit Trails Event Validation by Service
+
+tags:
+  - yc-trails
+  - yc-audit-trails
+links:
+  - { title: 'Events by Type', url: 'https://grafana.yandex-team.ru/d/trail-service-val-by-type' }
+  - { title: 'Dashboards', tags: [yc-trails] }
+
+variables:
+  ui:
+    !include include/_datasources.yaml
+    !include include/_projects.yaml
+    host:
+      multi: true
+      hidden: true
+      values:
+        - 'prp-*'
+  uiQuery:
+    service:
+      inheritLabels: false
+      labels: 'project=${project}, cluster=trail, service=service, host=${host}'
+      label: 'eventService'
+      regex: '^.*$'
+    eventType:
+      inheritLabels: false
+      labels: 'project=${project}, cluster=trail, service=service, host=${host}, eventService=${service}, sensor=eventDistributorUnparsed'
+      multi: true
+      hidden: true
+      label: 'eventType'
+      regex: '^.*$'
+    eventTypeAll:
+      inheritLabels: false
+      labels: 'project=${project}, cluster=trail, service=service, host=${host}, eventService=${service}'
+      multi: true
+      hidden: true
+      label: 'eventType'
+      regex: '^.*$'
+    validationErrorType:
+      inheritLabels: false
+      labels: 'project=${project}, cluster=trail, service=service, host=${host}, eventService=${service}, sensor=eventDistributorUnparsed'
+      multi: true
+      hidden: true
+      label: 'validationErrorType'
+      regex: '^.*$'
+  replacement:
+    !include ../include/errors.yaml
+
+
+graphDefaults:
+  datasource: ${datasource}
+  width: 6
+  height: 6
+
+queryDefaults:
+  dropNan: false
+  labels: 'project=${project}, cluster=trail, service=service, host=${host}, eventService=${service}'
+  defaultTimeWindow: $__interval
+
+rows:
+  - title: Events
+    panels:
+      - type: graph
+        title: Total in $service
+        queries:
+          - params: { labels: 'sensor=eventDistributorSuccess' }
+            select: { group_by_labels: [sum, sensor], integrate_fn: [ ], diff: [], drop_below: '0', alias: 'success' }
+          - params: { labels: 'sensor=eventDistributorUnparsed' }
+            select: { group_by_labels: [sum, sensor], integrate_fn: [ ], diff: [], drop_below: '0', alias: 'unparsed' }
+          - params: { labels: 'sensor=eventDistributorUnparsed, validationErrorType=UNPARSED|NOT_REGISTERED|BAD_EVENT_METADATA|BAD_EVENT_TYPE|BAD_CREATED_AT|BAD_CLOUD_ID' }
+            select: { group_by_labels: [sum, sensor], integrate_fn: [ ], diff: [], drop_below: '0', alias: 'critical' }
+        draw:
+          - { color: '#3e3', alias: 'success' }
+          - { color: '#ee3', alias: 'unparsed' }
+          - { color: '#e33', alias: 'critical' }
+        display: { stack: false }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Successful in $service
+        display: { empty: false, stack: true }
+        yAxes: [ { min: 0 } ]
+        queries:
+          - params: { labels: 'sensor=eventDistributorSuccess' }
+            select: { group_by_labels: [sum, eventType], integrate_fn: [ ], diff: [], drop_below: '0', alias: '{{eventType}}' }
+      - type: graph
+        title: Critical in $service
+        display: { empty: false, stack: true }
+        yAxes: [ { min: 0 } ]
+        queries:
+          - params: { labels: 'sensor=eventDistributorUnparsed, validationErrorType=UNPARSED|NOT_REGISTERED|BAD_EVENT_METADATA|BAD_EVENT_TYPE|BAD_CREATED_AT|BAD_CLOUD_ID' }
+            select: { group_by_labels: [sum, eventType, validationErrorType], integrate_fn: [ ], diff: [], drop_below: '0', alias: '{{eventType}} {{validationErrorType}}' }
+      - type: graph
+        title: Unparsed in $service
+        display: { empty: false, stack: true }
+        yAxes: [ { min: 0 } ]
+        queries:
+          - params: { labels: 'sensor=eventDistributorUnparsed' }
+            select: { group_by_labels: [sum, eventType], integrate_fn: [ ], diff: [], drop_below: '0', alias: '{{eventType}}' }
+  - title: Parse errors
+    panels:
+      - type: graph
+        title: $validationErrorType
+        uiRepeat: validationErrorType
+        display: { empty: false, stack: true }
+        yAxes: [ { min: 0 } ]
+        queries:
+          - params: { labels: 'sensor=eventDistributorUnparsed, validationErrorType=$validationErrorType' }
+            select: { group_by_labels: [sum, eventType], integrate_fn: [ ], diff: [], drop_below: '0', alias: '{{eventType}}' }
+  - title: Unparsed Events
+    panels:
+      - type: graph
+        title: $eventType
+        uiRepeat: eventType
+        display: { empty: false, stack: true }
+        yAxes: [ { min: 0 } ]
+        queries:
+          - params: { labels: 'sensor=eventDistributorUnparsed, eventType=$eventType, validationErrorType=*' }
+            select: { group_by_labels: [sum, validationErrorType], integrate_fn: [ ], diff: [], drop_below: '0', alias: '{{validationErrorType}}' }
+  - title: Events Latency
+    panels:
+      - type: graph
+        title: $eventTypeAll
+        templates: { name: percentile, groupLines: true, format: solomon, sensor: raw }
+        uiRepeat: eventTypeAll
+        queries:
+          - params: { labels: 'sensor=statisticsCollectorEventsLatency, eventType=$eventTypeAll' }
+        yAxes: [ { format: s } ]
+

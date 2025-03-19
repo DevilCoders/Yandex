@@ -1,0 +1,55 @@
+api_path: /shards/
+entities:
+  # Формат имени: <сервис>@<кластер>
+{% if env != "israel" %}
+  {% for service in kubelet_services %}
+    {% for cluster in kubelet_clusters %}
+  {{ service }}@{{ cluster }}:
+    template: ../../base/shard.j2
+    {% endfor %}
+  {{ service }}@bootstrap:
+    template: ../../base/shard.j2
+    context:
+      cluster_id: {{ project_id + "_" + "cloud_bootstrap" if env == "prod" else project_id + "_" + "cloud_bootstrap_" + env }}
+      cluster_name: {{ "cloud_bootstrap" if env == "prod" else "cloud_bootstrap_" + env }}
+  {% endfor %}
+
+  {% for service in kubelet_hw_services %}
+    {% for cluster in kubelet_hw_clusters %}
+  {{ service }}@{{ cluster }}:
+    template: ../../base/shard.j2
+    {% endfor %}
+  {% endfor %}
+{% endif %}
+
+  {% for az in zones_by_env[env] %}
+  eds-operator@bootstrap-hw_{{ az.prefix }}:
+    template: ../../base/shard.j2
+  eds-operator@bootstrap_{{ az.prefix }}:
+    template: ../../base/shard.j2
+    context:
+{% if env != "israel" %}
+      cluster_id: {{ project_id + "_" + "cloud_bootstrap" + "_" + az.prefix if env == "prod" else project_id + "_" + "cloud_bootstrap_" + env + "_" + az.prefix }}
+      cluster_name: {{ "cloud_bootstrap" + "_" + az.prefix if env == "prod" else "cloud_bootstrap_" + env + "_" + az.prefix }}
+{% endif %}
+  {% endfor %}
+
+  {% for az in zones_by_env[env] %}
+  xds-provider@xds-provider_{{ az.prefix }}:
+    template: ../../base/shard.j2
+  {% endfor %}
+
+{% for cluster in locallb_clusters %}
+{%   for az in zones_by_env[env] %}
+  locallb@{{ cluster + "_" + az.prefix }}:
+    template: ../../base/shard.j2
+{%   endfor %}
+{% endfor %}
+
+  k-rail@bootstrap:
+    template: ../../base/shard.j2
+    context:
+{% if env != "israel" %}
+      cluster_id: {{ project_id + "_" + "cloud_bootstrap" if env == "prod" else project_id + "_" + "cloud_bootstrap_" + env }}
+      cluster_name: {{ "cloud_bootstrap" if env == "prod" else "cloud_bootstrap_" + env }}
+{% endif %}

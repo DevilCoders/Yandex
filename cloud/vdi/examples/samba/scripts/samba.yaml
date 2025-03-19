@@ -1,0 +1,73 @@
+#cloud-config
+datasource:
+  Ec2:
+    strict_id: false
+write_files:
+  - content: |
+      127.0.0.1 localhost
+      ${ ip } ${ instance_fqdn }  ${ instance_name }
+    path: /etc/cloud/templates/hosts.debian.tmpl
+  - content: |
+      #!/bin/bash
+
+      echo "install packets"
+      apt update -y 
+      DEBIAN_FRONTEND=noninteractive apt upgrade -y
+      DEBIAN_FRONTEND=noninteractive apt install samba winbind smbclient krb5-user -y
+
+      echo "configure dns"
+      systemctl disable systemd-resolved
+      systemctl stop systemd-resolved
+      sed -i "s/nameserver 127.0.0.53/nameserver ${ ip }/" /etc/resolv.conf
+      sed -i "s/search ru-central1.internal auto.internal/search ru-central1.internal auto.internal ${ realm_name }/" /etc/resolv.conf
+
+      echo "provision samba"
+      pkill "samba|smbd|nmbd|winbindd"
+      rm /etc/samba/smb.conf
+      samba-tool domain provision \
+        --server-role=dc \
+        --use-rfc2307 \
+        --dns-backend=SAMBA_INTERNAL \
+        --realm=${ realm_name } \
+        --domain=${ domain_name } \
+        --adminpass=${ admin_pass } 
+
+      cp /usr/local/samba/private/krb5.conf /etc/krb5.conf
+      sed -i "s/dns forwarder = .*/dns forwarder = ${ dns_forwarder }/" /etc/samba/smb.conf
+
+      cat << EOF > /etc/systemd/system/samba-ad-dc.service
+      [Unit]
+      Description=Samba Active Directory Domain Controller
+      After=network.target remote-fs.target nss-lookup.target
+
+      [Service]
+      Type=forking
+      ExecStart=/usr/local/samba/sbin/samba -D
+      PIDFile=/usr/local/samba/var/run/samba.pid
+      ExecReload=/bin/kill -HUP $MAINPID
+
+      [Install]
+      WantedBy=multi-user.target
+      EOF
+
+      # samba-ad-dc will start'em
+      systemctl mask smbd nmbd winbind
+      systemctl disable smbd nmbd winbind
+
+      systemctl unmask samba-ad-dc
+      systemctl enable samba-ad-dc
+
+      echo "done"
+      touch /var/tmp/done
+    path: "/var/tmp/provision.sh"
+    permissions: "0740"
+ssh_pwauth: no
+users:
+  - name: ${ ssh_user }
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    ssh-authorized-keys:
+      - ${ ssh_key }
+runcmd:
+  - /var/tmp/provision.sh
+  - shutdown -r 0

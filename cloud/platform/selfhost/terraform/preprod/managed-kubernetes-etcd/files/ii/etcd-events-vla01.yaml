@@ -1,0 +1,114 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    scheduler.alpha.kubernetes.io/critical-pod: ""
+  creationTimestamp: null
+  labels:
+    component: etcd-events
+    tier: control-plane
+  name: etcd-events
+  namespace: kube-system
+spec:
+  containers:
+  - command:
+    - etcd
+    - --advertise-client-urls=https://[2a02:6b8:c0e:501:0:f806:0:201]:4379
+    - --cert-file=/etc/kubernetes/pki/etcd/server.crt
+    - --client-cert-auth=true
+    - --data-dir=/var/lib/etcd/etcd-events
+    - --initial-advertise-peer-urls=https://[2a02:6b8:c0e:501:0:f806:0:201]:4380
+    - --initial-cluster-state=existing
+    - --initial-cluster-token=k8s-etcd-events
+    - --initial-cluster=k8s-etcd-vla01=https://[2a02:6b8:c0e:501:0:f806:0:201]:4380,k8s-etcd-sas01=https://[2a02:6b8:c02:901:0:f806:0:201]:4380,k8s-etcd-myt01=https://[2a02:6b8:c03:501:0:f806:0:201]:4380
+    - --key-file=/etc/kubernetes/pki/etcd/server.key
+    - --listen-client-urls=https://127.0.0.1:4379,https://[::1]:4379,https://[2a02:6b8:c0e:501:0:f806:0:201]:4379
+    - --listen-metrics-urls=http://127.0.0.1:4381,http://[::1]:4381
+    - --listen-peer-urls=https://127.0.0.1:4380,https://[::1]:4380,https://[2a02:6b8:c0e:501:0:f806:0:201]:4380
+    - --log-output=stderr
+    - --metrics=extensive
+    - --name=k8s-etcd-vla01
+    - --peer-cert-file=/etc/kubernetes/pki/etcd/peer.crt
+    - --peer-client-cert-auth=true
+    - --peer-key-file=/etc/kubernetes/pki/etcd/peer.key
+    - --peer-trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt
+    - --quota-backend-bytes=4294967296
+    - --snapshot-count=10000
+    - --trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt
+    image: cr.yandex/crp7nvlkttssi7kapoho/mk8s/etcd:3.3.17
+    imagePullPolicy: IfNotPresent
+    livenessProbe:
+      exec:
+        command:
+        - /bin/sh
+        - -ec
+        - ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:4379 --cacert=/etc/kubernetes/pki/etcd/ca.crt
+          --cert=/etc/kubernetes/pki/etcd/healthcheck-client.crt --key=/etc/kubernetes/pki/etcd/healthcheck-client.key
+          get foo
+      failureThreshold: 8
+      initialDelaySeconds: 15
+      timeoutSeconds: 15
+    name: etcd-events
+    resources:
+      requests:
+        cpu: 100m
+    volumeMounts:
+    - mountPath: /var/lib/etcd
+      name: etcd-data
+    - mountPath: /etc/kubernetes/pki/etcd/ca.crt
+      name: etc-kubernetes-pki-etcd-ca-crt
+      readOnly: true
+    - mountPath: /etc/kubernetes/pki/etcd/healthcheck-client.crt
+      name: etc-kubernetes-pki-etcd-healthcheck-client-crt
+      readOnly: true
+    - mountPath: /etc/kubernetes/pki/etcd/healthcheck-client.key
+      name: etc-kubernetes-pki-etcd-healthcheck-client-key
+      readOnly: true
+    - mountPath: /etc/kubernetes/pki/etcd/peer.crt
+      name: etc-kubernetes-pki-etcd-peer-crt
+      readOnly: true
+    - mountPath: /etc/kubernetes/pki/etcd/peer.key
+      name: etc-kubernetes-pki-etcd-peer-key
+      readOnly: true
+    - mountPath: /etc/kubernetes/pki/etcd/server.crt
+      name: etc-kubernetes-pki-etcd-server-crt
+      readOnly: true
+    - mountPath: /etc/kubernetes/pki/etcd/server.key
+      name: etc-kubernetes-pki-etcd-server-key
+      readOnly: true
+  hostNetwork: true
+  priorityClassName: system-cluster-critical
+  volumes:
+  - hostPath:
+      path: /var/lib/etcd
+      type: DirectoryOrCreate
+    name: etcd-data
+  - hostPath:
+      path: /etc/kubernetes/pki/etcd/ca.crt
+      type: FileOrCreate
+    name: etc-kubernetes-pki-etcd-ca-crt
+  - hostPath:
+      path: /etc/kubernetes/pki/etcd/healthcheck-client.crt
+      type: FileOrCreate
+    name: etc-kubernetes-pki-etcd-healthcheck-client-crt
+  - hostPath:
+      path: /etc/kubernetes/pki/etcd/healthcheck-client.key
+      type: FileOrCreate
+    name: etc-kubernetes-pki-etcd-healthcheck-client-key
+  - hostPath:
+      path: /etc/kubernetes/pki/etcd/peer.crt
+      type: FileOrCreate
+    name: etc-kubernetes-pki-etcd-peer-crt
+  - hostPath:
+      path: /etc/kubernetes/pki/etcd/peer.key
+      type: FileOrCreate
+    name: etc-kubernetes-pki-etcd-peer-key
+  - hostPath:
+      path: /etc/kubernetes/pki/etcd/server.crt
+      type: FileOrCreate
+    name: etc-kubernetes-pki-etcd-server-crt
+  - hostPath:
+      path: /etc/kubernetes/pki/etcd/server.key
+      type: FileOrCreate
+    name: etc-kubernetes-pki-etcd-server-key
+status: {}

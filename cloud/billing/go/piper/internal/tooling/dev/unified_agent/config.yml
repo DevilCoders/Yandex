@@ -1,0 +1,77 @@
+status:
+  port: "${UA_STATUS_PORT:-16241}"
+  host: null
+
+agent_log:
+  priority: "${UA_LOG_PRIORITY:-NOTICE}"
+
+storages:
+  - name: main
+    plugin: fs
+    config:
+      directory: /var/lib/yandex/unified_agent/main
+      max_partition_size: 100mb
+      max_segment_size: 10mb
+
+channels:
+  # - name: cloud_monitoring
+  #   channel:
+  #     pipe:
+  #       - storage_ref:
+  #           name: main
+  #     output:
+  #       plugin: yc_metrics
+  #       config:
+  #         url: "${UA_CLOUD_MONITORING_URL:-https://monitoring.api.cloud.yandex.net/monitoring/v2/data/write}"
+  #         folder_id: "$FOLDER_ID"
+  #         iam:
+  #           cloud_meta: {}
+  - name: debug_logs
+    channel:
+      output:
+        plugin: debug
+        id: debug_logs
+        config:
+          file_name: ./data/logs.txt
+          delimiter: "==="
+
+  - name: debug_metrics
+    channel:
+      fanout:
+        - channel:
+            output:
+              plugin: debug
+              id: debug_metrics
+              config:
+                file_name: ./data/metrics.txt
+                delimiter: "\n===\n"
+        - channel:
+            output:
+              plugin: metrics_pull
+              id: pull_metrics
+              config:
+                port: 2113
+
+routes:
+  - input:
+      plugin: metrics_pull
+      config:
+        url: http://localhost:9741/metrics
+        format:
+          prometheus: {}
+        poll_period: 15s
+        project: piper_test
+        service: local
+    channel:
+      channel_ref:
+        name: debug_metrics
+  - input:
+      plugin: grpc
+      config:
+        uri: localhost:3113
+    channel:
+      channel_ref:
+        name: debug_logs
+
+import:
+  - /etc/yandex/unified_agent/conf.d/*.yml

@@ -1,0 +1,198 @@
+---
+# Source: logbroker/templates/jobs/migrate.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate-logbroker-0.1.0
+  namespace: logbroker
+  labels:
+    helm.sh/chart: logbroker-0.1.0
+    app.kubernetes.io/name: logbroker
+    app.kubernetes.io/instance: dev
+    app.kubernetes.io/version: "stable"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    "helm.sh/hook": post-install
+    "helm.sh/hook-weight": "-5"
+spec:
+  ttlSecondsAfterFinished: 60
+  template:
+    metadata:
+      name: migrate-logbroker-0.1.0
+      labels:
+        helm.sh/chart: logbroker-0.1.0
+        app.kubernetes.io/name: logbroker
+        app.kubernetes.io/instance: dev
+        app.kubernetes.io/version: "stable"
+        app.kubernetes.io/managed-by: Helm
+    spec:
+      serviceAccountName: logbroker-sa
+      securityContext: {}
+      restartPolicy: OnFailure
+      terminationGracePeriodSeconds: 0
+      initContainers:
+        - name: sql-source
+          command: ["cp", "-r"]
+          args:
+            - /source
+            - /scripts
+          volumeMounts:
+            - mountPath: /scripts
+              name: scripts
+          image: "for-minikube/dev-ydb-sql:stable"
+          imagePullPolicy: Never
+      containers:
+        - name: migrate
+          command: ["run_scripts.sh"]
+          args:
+            - /scripts
+          env:
+            - name: YDB_PROFILE
+              value: service
+          volumeMounts:
+            - mountPath: /scripts
+              name: scripts
+          image: "for-minikube/dev-ydb-client:stable"
+          imagePullPolicy: Never
+      volumes:
+        - name: scripts
+          emptyDir: {}
+---
+# Source: logbroker/templates/namespace.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: logbroker
+  labels:
+    helm.sh/chart: logbroker-0.1.0
+    app.kubernetes.io/name: logbroker
+    app.kubernetes.io/instance: dev
+    app.kubernetes.io/version: "stable"
+    app.kubernetes.io/managed-by: Helm
+---
+# Source: logbroker/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: logbroker-sa
+  namespace: logbroker
+  labels:
+    helm.sh/chart: logbroker-0.1.0
+    app.kubernetes.io/name: logbroker
+    app.kubernetes.io/instance: dev
+    app.kubernetes.io/version: "stable"
+    app.kubernetes.io/managed-by: Helm
+---
+# Source: logbroker/templates/config_map.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dev-logbroker
+  namespace: logbroker
+  labels:
+    helm.sh/chart: logbroker-0.1.0
+    app.kubernetes.io/name: logbroker
+    app.kubernetes.io/instance: dev
+    app.kubernetes.io/version: "stable"
+    app.kubernetes.io/managed-by: Helm
+data:
+  topics: topic1,topic2
+  partitions-per-topic: "4"
+---
+# Source: logbroker/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: ydb
+  namespace: logbroker
+  labels:
+    helm.sh/chart: logbroker-0.1.0
+    app.kubernetes.io/name: logbroker
+    app.kubernetes.io/instance: dev
+    app.kubernetes.io/version: "stable"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  clusterIP: None
+  ports:
+    - port: 2145
+      appProtocol: yc/logbroker
+      name: logbroker
+      protocol: TCP
+      targetPort: 2145
+  selector:
+    app.kubernetes.io/name: logbroker
+    app.kubernetes.io/instance: dev
+---
+# Source: logbroker/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dev-logbroker
+  namespace: logbroker
+  labels:
+    helm.sh/chart: logbroker-0.1.0
+    app.kubernetes.io/name: logbroker
+    app.kubernetes.io/instance: dev
+    app.kubernetes.io/version: "stable"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: logbroker
+      app.kubernetes.io/instance: dev
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: client
+      labels:
+        app.kubernetes.io/name: logbroker
+        app.kubernetes.io/instance: dev
+    spec:
+      serviceAccountName: logbroker-sa
+      securityContext: {}
+      hostname: server
+      subdomain: ydb
+      terminationGracePeriodSeconds: 0
+      containers:
+        - name: server
+          securityContext: {}
+          image: "for-minikube/dev-ydb:stable"
+          imagePullPolicy: Never
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: GRPC_PORT
+              value: "2145"
+            - name: LOGBROKER_CREATE_TOPICS
+              valueFrom:
+                configMapKeyRef:
+                  name: dev-logbroker
+                  key: topics
+            - name: LOGBROKER_TOPICS_PARTITIONS
+              valueFrom:
+                configMapKeyRef:
+                  name: dev-logbroker
+                  key: partitions-per-topic
+          resources: {}
+        - name: client
+          securityContext: {}
+          image: "for-minikube/dev-ydb-client:stable"
+          imagePullPolicy: Never
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: YDB_PROFILE
+              value: default
+          resources: {}

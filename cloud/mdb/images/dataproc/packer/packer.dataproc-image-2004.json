@@ -1,0 +1,126 @@
+{
+    "variables": {
+        "folder_id": "{{  env `FOLDER_ID` }}",
+        "zone": "{{ env `ZONE` }}",
+        "product_id": "{{ env `PRODUCT_ID` }}",
+        "bootdir": "/tmp/bootstrap",
+        "commit": "{{ env `COMMIT` }}",
+        "image_family": "dataproc-image-{{ user `version` | replace_all `.` `-` }}",
+        "branch": "{{ env `YA_BRANCH` | lower }}"
+    },
+    "builders": [
+        {
+            "disk_size_gb": "15",
+            "disk_type": "network-hdd",
+            "endpoint": "{{ user `endpoint` }}",
+            "subnet_id": "{{ user `subnet_id` }}",
+            "folder_id": "{{ user `folder_id` }}",
+            "image_description": "Yandex Cloud Dataproc Image version {{ user `version` }}",
+            "image_family": "{{ user `image_family` }}",
+            "image_labels": {
+                "branch": "{{ user `branch` }}",
+                "commit": "{{ user `commit` }}"
+            },
+            "image_product_ids": "{{ user `product_id` }}",
+            "image_name": "{{ user `image_family` }}-{{ user `branch` | replace_all `users/` `` }}-{{ timestamp }}",
+            "instance_mem_gb": "8",
+            "platform_id": "standard-v2",
+            "source_image_family": "{{ user `image_family` }}-base",
+            "source_image_folder_id": "{{ user `folder_id` }}",
+            "ssh_username": "ubuntu",
+            "type": "yandex",
+            "use_internal_ip": "{{ user `use_internal_ip` }}",
+            "use_ipv4_nat": "{{ user `use_ipv4_nat` }}",
+            "use_ipv6": "{{ user `use_ipv6` }}",
+            "zone": "{{ user `zone` }}"
+        }
+    ],
+    "provisioners": [
+        {
+            "inline": [
+                "mkdir -p {{ user `bootdir` }}"
+            ],
+            "type": "shell"
+        },
+        {
+            "destination": "{{ user `bootdir` }}/dataproc.gpg",
+            "source": "../bootstrap/dataproc.gpg",
+            "type": "file"
+        },
+        {
+            "destination": "{{ user `bootdir` }}/pillar",
+            "source": "../bootstrap/pillar",
+            "type": "file"
+        },
+        {
+            "destination": "{{ user `bootdir` }}/salt",
+            "source": "../bootstrap/salt",
+            "type": "file"
+        },
+        {
+            "destination": "{{ user `bootdir` }}/salt_minion",
+            "source": "../bootstrap/conf/salt_minion",
+            "type": "file"
+        },
+        {
+            "destination": "{{ user `bootdir` }}/vm-image-template.sls",
+            "source": "../bootstrap/pillar/vm-image-template.sls",
+            "type": "file"
+        },
+        {
+            "destination": "{{ user `bootdir` }}/dataproc-start.sh",
+            "source": "../bootstrap/dataproc-start.sh",
+            "type": "file"
+        },
+        {
+            "destination": "{{ user `bootdir` }}/dataproc_init_actions.py",
+            "source": "../bootstrap/dataproc_init_actions.py",
+            "type": "file"
+        },
+        {
+            "destination": "{{ user `bootdir` }}/dataproc-start-syslog.conf",
+            "source": "../bootstrap/dataproc-start-syslog.conf",
+            "type": "file"
+        },
+        {
+            "destination": "{{ user `bootdir` }}/dataproc-diagnostics.sh",
+            "source": "../bootstrap/dataproc-diagnostics.sh",
+            "type": "file"
+        },
+        {
+            "execute_command": "chmod +x {{ .Path }}; sudo {{ .Vars }} {{ .Path }}",
+            "script": "scripts/bootstrap-image-2004.sh",
+            "timeout": "15m",
+            "type": "shell"
+        }
+    ],
+    "post-processors": [
+        {
+            "type": "manifest",
+            "output": "{{ pwd }}/yandex-builder-manifest.json",
+            "strip_path": true
+        },
+        [
+            {
+                "name": "export_to_s3",
+                "type": "yandex-export",
+                "use_ipv6": true,
+                "use_ipv4_nat": true,
+                "folder_id": "{{ user `folder_id` }}",
+                "endpoint": "{{ user `endpoint` }}",
+                "subnet_id": "{{ user `subnet_id` }}",
+                "zone": "{{ user `zone` }}",
+                "service_account_id": "{{ user `service_account_id` }}",
+                "paths": [
+                    "s3://ycloud-assembly-workshop-artifacts/compute-images/dataproc/{{ user `image_family` }}-{{ user `branch` | replace_all `users/` `` }}-{{ timestamp }}.qcow2"
+                ],
+                "keep_input_artifact": false
+            },
+            {
+                "type": "manifest",
+                "output": "{{ pwd }}/yandex-export-manifest.json",
+                "strip_path": true
+            }
+        ]
+    ]
+}

@@ -1,0 +1,59 @@
+api_path: /shards/
+entities:
+  # Формат имени: <сервис>@<кластер>
+
+  # Внимание!
+  # При добавлении нового шарда нужно добавить его в мониторинг квот и fetch/push
+  # (Пример см. Juggler агрегаты:
+  # compute-node-solomon-quotas - https://bb.yandex-team.ru/projects/CLOUD/repos/yc-monitoring/browse/juggler/roles/compute/tasks/compute-node.yml#176).
+  # compute-node-solomon-fetch-status https://bb.yandex-team.ru/projects/CLOUD/repos/yc-monitoring/browse/juggler/roles/compute/tasks/compute-node.yml#152
+  # compute-node-solomon-push-status https://bb.yandex-team.ru/projects/CLOUD/repos/yc-monitoring/browse/juggler/roles/compute/tasks/compute-node.yml#165
+
+  resources@scheduler:
+    template: ../../base/shard.j2
+
+  compute_resources@scheduler:
+    template: ../../base/shard.j2
+
+  compute@compute:
+    template: ../../base/shard.j2
+
+  compute_node@compute:
+    template: ../../base/shard.j2
+
+  gpu_servicevm@compute:
+    template: ../../base/shard.j2
+
+  gpu_gpud@compute:
+    template: ../../base/shard.j2
+
+  solomon_agent@compute:
+    template: ../../base/shard.j2
+    {% if env == "prod" %}
+    context:
+      ttl_days: 1
+    {% endif %}
+
+  {% for az in zones_by_env[env] %}
+  # Устаревший шард
+  internals@compute_{{ az.prefix }}:
+    template: ../../base/shard.j2
+
+  # Шард 'sys@compute' разделен по AZ, т.к. в нем много метрик (чтобы не упираться в лимит).
+  sys@compute_{{ az.prefix }}:
+    template: ../../base/shard.j2
+    {% if env in ("testing", "preprod") %}
+    context:
+      ttl_days: 1
+    {% endif %}
+    {% if env == "prod" %}
+    context:
+      ttl_days: 14
+    {% endif %}
+  {% endfor %}
+
+  compute_health@compute_health:
+    template: ../../base/shard.j2
+
+  sys_scheduler@compute_health:
+    template: ../../base/shard.j2

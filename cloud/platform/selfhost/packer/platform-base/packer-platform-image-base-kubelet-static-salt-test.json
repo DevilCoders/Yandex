@@ -1,0 +1,111 @@
+{
+  "variables": {
+    "endpoint":  "{{env `YC_ENDPOINT`}}",
+    "service_account_key_file": "{{env `YC_SA_KEY_FILE`}}",
+    "ssh_private_key_file": "{{env `SSH_PRIVATE_KEY_FILE`}}",
+    "folder_id": "{{env `YC_FOLDER_ID`}}",
+    "source_folder_id": "{{env `YC_SOURCE_FOLDER_ID`}}",
+    "subnet_id": "{{env `YC_SUBNET_ID`}}",
+
+    "commit_revision": "{{env `COMMIT_REVISION`}}",
+    "commit_author":   "{{env `COMMIT_AUTHOR`}}",
+    "commit_message":  "{{env `COMMIT_MESSAGE`}}"
+  },
+  "builders": [
+    {
+      "type":      "yandex",
+      "endpoint":  "{{user `endpoint`}}",
+      "service_account_key_file": "{{user `service_account_key_file`}}",
+      "folder_id": "{{user `folder_id`}}",
+      "subnet_id": "{{user `subnet_id`}}",
+      "zone":      "ru-central1-c",
+      "labels": {
+        "skip_update_ssh_keys": "true"
+      },
+
+      "use_ipv4_nat": false,
+      "use_ipv6":     true,
+
+      "image_name":   "platform-base-kubelet-static-{{isotime | clean_resource_name}}",
+      "image_family": "platform-base-kubelet-static",
+      "image_labels": {
+        "commit_revision": "{{user `commit_revision` | lower}}",
+        "commit_author":   "{{user `commit_author`   | lower}}"
+      },
+      "image_description": "based on commit (https://a.yandex-team.ru/arc/commit/{{user `commit_revision`}}) by {{user `commit_author`}}@ with message '{{user `commit_message`}}'",
+      "source_image_folder_id": "{{user `source_folder_id`}}",
+      "source_image_family":    "platform-base",
+      "disk_type":    "network-ssd",
+
+      "ssh_username":         "ubuntu",
+      "ssh_private_key_file": "{{user `ssh_private_key_file`}}"
+    }
+  ],
+
+  "provisioners": [
+    {
+      "type": "shell",
+      "inline": [
+        "sudo rm -f /etc/apt/apt.conf.d/99ipv4-only",
+        "sudo rm /var/lib/apt/lists/lock",
+        "sudo rm /var/cache/apt/archives/lock",
+        "sudo rm /var/lib/dpkg/lock*",
+        "sudo dpkg --configure -a"
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "sudo apt-get update -qq",
+        "sleep 10",
+        "sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common",
+        "sudo curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -",
+        "echo 'deb http://apt.kubernetes.io/ kubernetes-xenial main' | sudo tee -a /etc/apt/sources.list.d/kubernetes.list"
+        ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "sudo rm -rf /srv/salt",
+        "sudo rm -rf /var/cache/salt"
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'Prepare environment information'",
+        "sudo mkdir -p /etc/yc",
+        "echo \"{{user `endpoint`}}\" | sudo tee -a /etc/yc/endpoint"
+      ]
+    },
+    {
+      "type": "salt-masterless",
+      "bootstrap_args": "stable 2017.7.7",
+      "local_state_tree": "{{template_dir}}/salt_base_kubelet"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'Purge Salt packages'",
+        "sudo apt-get -y purge salt-common salt-minion",
+        "sudo rm -rf /srv/salt",
+        "sudo rm -rf /var/cache/salt",
+        "echo 'List installed packages and versions'",
+        "dpkg -l",
+        "sudo systemctl stop kubelet",
+        "ls -la /var/lib/kubelet/pki/",
+        "sudo rm -rf /var/lib/kubelet/pki/* || true",
+        "sudo sync",
+        "ls -la /var/lib/kubelet/pki/"
+      ]
+    }
+  ],
+  "post-processors": [
+    {
+      "type": "manifest",
+      "output": "{{ pwd }}/manifest.json",
+      "strip_path": true
+    }
+  ]
+}
+

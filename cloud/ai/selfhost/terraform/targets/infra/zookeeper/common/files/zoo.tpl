@@ -1,0 +1,11 @@
+dataDir=/zk/data
+dataLogDir=/zk/datalog
+tickTime=2000
+initLimit=5
+syncLimit=2
+autopurge.snapRetainCount=3
+autopurge.purgeInterval=0
+maxClientCnxns=60
+clientPort=17006
+quorumListenOnAllIPs=true
+4lw.commands.whitelist=stat, ruok, conf, isro

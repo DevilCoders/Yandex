@@ -1,0 +1,693 @@
+import typing
+from dataclasses import dataclass
+from datetime import datetime
+
+from cloud.ai.lib.python.datetime import format_datetime, parse_datetime
+
+
+@dataclass
+class SourceAudio:
+    index: int
+    url: str
+    honeypots_urls: typing.List[str]
+    honeypots_active: typing.List[bool]
+
+    def __lt__(self, other: 'SourceAudio'):
+        return self.index < other.index
+
+    def sort_key(self):
+        return self.index
+
+    def to_yson(self) -> dict:
+        return {
+            'index': self.index,
+            'url': self.url,
+            'honeypots_urls': self.honeypots_urls,
+            'honeypots_active': self.honeypots_active,
+        }
+
+    @staticmethod
+    def from_yson(fields: dict) -> 'SourceAudio':
+        return SourceAudio(
+            index=fields['index'],
+            url=fields['url'],
+            honeypots_urls=fields['honeypots_urls'],
+            honeypots_active=fields['honeypots_active'],
+        )
+
+
+@dataclass
+class Submission:
+    login: str
+    id: str
+    records_s3_bucket: str
+    records_s3_dir_key: str
+    received_at: datetime
+
+    def __lt__(self, other: 'Submission'):
+        if self.login == other.login:
+            return self.id < other.id
+        else:
+            return self.login < other.login
+
+    def sort_key(self):
+        return self.login + self.id
+
+    def to_yson(self) -> dict:
+        return {
+            'login': self.login,
+            'id': self.id,
+            'records_s3_bucket': self.records_s3_bucket,
+            'records_s3_dir_key': self.records_s3_dir_key,
+            'received_at': format_datetime(self.received_at),
+        }
+
+    @staticmethod
+    def from_yson(fields: dict) -> 'Submission':
+        return Submission(
+            login=fields['login'],
+            id=fields['id'],
+            records_s3_bucket=fields['records_s3_bucket'],
+            records_s3_dir_key=fields['records_s3_dir_key'],
+            received_at=parse_datetime(fields['received_at']),
+        )
+
+
+@dataclass
+class EvaluationEntry:
+    login: str
+    submission_id: str
+    evaluation_id: str
+    audio_index: int
+    left_audio_url: str
+    right_audio_url: str
+    reference_audio_url: str
+    chosen_audio_url: str
+    pool_id: str
+    assignment_id: str
+    received_at: datetime
+
+    def __lt__(self, other: 'EvaluationEntry'):
+        if self.login == other.login:
+            if self.submission_id == other.submission_id:
+                if self.evaluation_id == other.evaluation_id:
+                    return self.audio_index < other.audio_index
+                else:
+                    return self.evaluation_id < other.evaluation_id
+            else:
+                return self.submission_id < other.submission_id
+        else:
+            return self.login < other.login
+
+    def sort_key(self):
+        return self.login + self.submission_id + self.evaluation_id + str(self.audio_index)
+
+    def to_yson(self) -> dict:
+        return {
+            'login': self.login,
+            'submission_id': self.submission_id,
+            'evaluation_id': self.evaluation_id,
+            'audio_index': self.audio_index,
+            'left_audio_url': self.left_audio_url,
+            'right_audio_url': self.right_audio_url,
+            'reference_audio_url': self.reference_audio_url,
+            'chosen_audio_url': self.chosen_audio_url,
+            'pool_id': self.pool_id,
+            'assignment_id': self.assignment_id,
+            'received_at': format_datetime(self.received_at),
+        }
+
+    @staticmethod
+    def from_yson(fields: dict) -> 'EvaluationEntry':
+        return EvaluationEntry(
+            login=fields['login'],
+            submission_id=fields['submission_id'],
+            evaluation_id=fields['evaluation_id'],
+            audio_index=fields['audio_index'],
+            left_audio_url=fields['left_audio_url'],
+            right_audio_url=fields['right_audio_url'],
+            reference_audio_url=fields['reference_audio_url'],
+            chosen_audio_url=fields['chosen_audio_url'],
+            pool_id=fields['pool_id'],
+            assignment_id=fields['assignment_id'],
+            received_at=parse_datetime(fields['received_at']),
+        )
+
+
+@dataclass
+class Evaluation:
+    login: str
+    score: float
+    wins: int
+    total: int
+    submission_id: str
+    submitted_at: datetime
+    evaluation_id: str
+    evaluated_at: datetime
+
+    def __lt__(self, other: 'Evaluation'):
+        if self.login == other.login:
+            if self.submission_id == other.submission_id:
+                return self.evaluation_id < other.evaluation_id
+            else:
+                return self.submission_id < other.submission_id
+        else:
+            return self.login < other.login
+
+    def sort_key(self):
+        return self.login + self.submission_id + self.evaluation_id
+
+    def to_yson(self) -> dict:
+        return {
+            'login': self.login,
+            'score': self.score,
+            'wins': self.wins,
+            'total': self.total,
+            'submission_id': self.submission_id,
+            'submitted_at': format_datetime(self.submitted_at),
+            'evaluation_id': self.evaluation_id,
+            'evaluated_at': format_datetime(self.evaluated_at),
+        }
+
+    @staticmethod
+    def from_yson(fields: dict) -> 'Evaluation':
+        return Evaluation(
+            login=fields['login'],
+            score=fields['score'],
+            wins=fields['wins'],
+            total=fields['total'],
+            submission_id=fields['submission_id'],
+            submitted_at=parse_datetime(fields['submitted_at']),
+            evaluation_id=fields['evaluation_id'],
+            evaluated_at=fields['evaluated_at'],
+        )
+
+
+markup_records_indexes = [
+    385,
+    402,
+    662,
+    663,
+    794,
+    1107,
+    1132,
+    1158,
+    1224,
+    1247,
+    1519,
+    1525,
+    1592,
+    1631,
+    1756,
+    1854,
+    2005,
+    2012,
+    2028,
+    2045,
+    2152,
+    2167,
+    2348,
+    2460,
+    2531,
+    2543,
+    2615,
+    2795,
+    2816,
+    2978,
+    2996,
+    3086,
+    3315,
+    3564,
+    3724,
+    4192,
+    4195,
+    4279,
+    4381,
+    4419,
+    4523,
+    4548,
+    4721,
+    4748,
+    4754,
+    4950,
+    5048,
+    5079,
+    5395,
+    5613,
+    5691,
+    5827,
+    5980,
+    6236,
+    6279,
+    6308,
+    6357,
+    6551,
+    6567,
+    6722,
+    6725,
+    7119,
+    7314,
+    7397,
+    7518,
+    7526,
+    7542,
+    7566,
+    7643,
+    7647,
+    7651,
+    8082,
+    8183,
+    8251,
+    8340,
+    8343,
+    8427,
+    8520,
+    8525,
+    8529,
+    8587,
+    8669,
+    8712,
+    8852,
+    8985,
+    9116,
+    9247,
+    9252,
+    9353,
+    9403,
+    9674,
+    9727,
+    9728,
+    9774,
+    9834,
+    9863,
+    9940,
+    9942,
+    10035,
+    10130,
+]
+
+revaluate_markup_records_indexes = [
+    1205,
+    1220,
+    1284,
+    1297,
+    1310,
+    1319,
+    1325,
+    1355,
+    1366,
+    1370,
+    1382,
+    1384,
+    1391,
+    1400,
+    1401,
+    1413,
+    1427,
+    1428,
+    1433,
+    1440,
+    1453,
+    1473,
+    1490,
+    1491,
+    1526,
+    1535,
+    1540,
+    1542,
+    1781,
+    1789,
+    1799,
+    1820,
+    1823,
+    1833,
+    1845,
+    1850,
+    1851,
+    1865,
+    1874,
+    1891,
+    1892,
+    1894,
+    1897,
+    1903,
+    1905,
+    1913,
+    1928,
+    1933,
+    1938,
+    1941,
+    1947,
+    1948,
+    1949,
+    1953,
+    1961,
+    1971,
+    1974,
+    1977,
+    1978,
+    1980,
+    1984,
+    2021,
+    2026,
+    2033,
+    2050,
+    3827,
+    3925,
+    3974,
+    4055,
+    4080,
+    4109,
+    4208,
+    4265,
+    4304,
+    4357,
+    4380,
+    4394,
+    4458,
+    4525,
+    4510,
+    4650,
+    4699,
+    4724,
+    4757,
+    4775,
+    4809,
+    4832,
+    4850,
+    4901,
+    4975,
+    5025,
+    5152,
+    5225,
+    5255,
+    5304,
+    5344,
+    5389,
+    5429,
+    5487,
+    5507,
+    5534,
+    5606,
+    5635,
+    5731,
+    5785,
+    5850,
+    5950,
+    5998,
+    6073,
+    6104,
+    6134,
+    6185,
+    6250,
+    6299,
+    6330,
+    6352,
+    6409,
+    6433,
+    6473,
+    6483,
+    6530,
+    6556,
+    6575,
+    6600,
+    6634,
+    6650,
+    6672,
+    6723,
+    6755,
+    6784,
+    6798,
+    6816,
+    6825,
+    6899,
+    6845,
+    7030,
+    7100,
+    7110,
+    7126,
+    7147,
+    7205,
+    7167,
+    7225,
+    7261,
+    7274,
+    7285,
+    7301,
+    7314,
+    7324,
+    7344,
+    7350,
+    7371,
+    7375,
+    7391,
+    7406,
+    7415,
+    7433,
+    7444,
+    7452,
+    7465,
+    7476,
+    7492,
+    7497,
+    7500,
+    7517,
+    7521,
+    7543,
+    7672,
+    7691,
+    7701,
+    7723,
+    7734,
+    7762,
+    7787,
+    7798,
+    7825,
+    7841,
+    7847,
+    7860,
+    7871,
+    7875,
+    7901,
+    7913,
+    7935,
+    7947,
+    7967,
+    7995,
+    8025,
+    8060,
+    8071,
+    8095,
+    8132,
+    8158,
+    8180,
+    8201,
+    8221,
+    8246,
+    8266,
+    8276,
+    8289,
+    8322,
+    8336,
+    8345,
+    8368,
+    8389,
+    8401,
+    8422,
+    8445,
+    8452,
+    8499,
+    8507,
+    8530,
+    8541,
+    8593,
+    8596,
+    8610,
+    8627,
+    8641,
+    8657,
+    8668,
+    8681,
+    8700,
+    8714,
+    8730,
+    8751,
+    8741,
+    8850,
+    9045,
+    9050,
+    9061,
+    9077,
+    9078,
+    9188,
+    9282,
+    9300,
+    9335,
+    9350,
+    9360,
+    9423,
+    9440,
+    9467,
+    9525,
+    9539,
+    9544,
+    9665,
+    9675,
+    9690,
+    9721,
+    9725,
+    9727,
+    9730,
+    9742,
+    9760,
+    9815,
+    9816,
+    9820,
+    9825,
+    9862,
+    9827,
+    9882,
+    9884,
+    9894,
+    9900,
+    9904,
+    9910,
+    9930,
+    9925,
+    9942,
+    9946,
+    9963,
+    9982,
+    9974,
+    9990,
+    9995,
+    9996,
+    10000,
+    10001,
+    10017,
+    10021,
+    10030,
+    10040,
+    10052,
+    10058,
+    10073,
+    10074,
+    10081,
+    10091,
+    10133,
+    10140,
+    10149,
+    10152,
+    10158,
+    10160,
+    10166,
+    10169,
+    10173,
+    10183,
+    10191,
+    10197,
+    10199,
+]
+
+revaluate_markup_records_indexes_small = [
+    1382,
+    1428,
+    1440,
+    1526,
+    1820,
+    1833,
+    1845,
+    1850,
+    1851,
+    1865,
+    1874,
+    1891,
+    1892,
+    1903,
+    1938,
+    1953,
+    1961,
+    1971,
+    1974,
+    1977,
+    1978,
+    1984,
+    2021,
+    2050,
+    3827,
+    3974,
+    4304,
+    4394,
+    4525,
+    4724,
+    4775,
+    5429,
+    5850,
+    6134,
+    6299,
+    6409,
+    6483,
+    6530,
+    6798,
+    6845,
+    6899,
+    7100,
+    7110,
+    7147,
+    7167,
+    7285,
+    7344,
+    7452,
+    7476,
+    7492,
+    7497,
+    7500,
+    7521,
+    7787,
+    7860,
+    7875,
+    8025,
+    8132,
+    8158,
+    8180,
+    8201,
+    8246,
+    8289,
+    8336,
+    8389,
+    8401,
+    8541,
+    8593,
+    8596,
+    8627,
+    8641,
+    8657,
+    8714,
+    8751,
+    9188,
+    9350,
+    9360,
+    9423,
+    9440,
+    9525,
+    9544,
+    9675,
+    9721,
+    9742,
+    9820,
+    9884,
+    9900,
+    9942,
+    9974,
+    9982,
+    9990,
+    10000,
+    10040,
+    10074,
+    10091,
+    10133,
+    10152,
+    10158,
+    10169,
+    10173,
+]

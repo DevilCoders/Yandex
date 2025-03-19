@@ -1,0 +1,38 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro prog() %}
+
+let max_response_time_ms = avg({
+  project='{{ project_id }}',
+  cluster='cloud_{{ env }}_oct',
+  service='contrail_api',
+  host='oct*',             // to avoid aggregates, such as 'Vla', 'Sas', 'Myt'
+  type='percentile',
+  metric='response_time_ms',
+  source='nginx',
+  percentile='100',
+  log_name='contrail-api-ssl_access.log' // must specify name, because we have old and new name
+}); // This is an average [by 300-second window] of the value 'maximum [per each 30-sec] response time ms'.
+
+// TODO: To be adjusted after metrics collection starts!
+let is_red = max_response_time_ms > 7000;
+let is_yellow = max_response_time_ms > 3000;
+
+alarm_if(is_red);
+warn_if(is_yellow);
+{% endmacro %}
+
+
+{% block main %}
+    "name": "contrail-api response time @ {{ env }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "host": "{{ svm_fqdn() }}",
+        "tags": "Solomon",
+        "max_response_time_ms": "[[expression.max_response_time_ms]]",
+        "service": "contrail-api-response-time",
+        "description": "Check if oct-head or contrail-api is overloaded (CPU Usage). Search for long queries in service logs."
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

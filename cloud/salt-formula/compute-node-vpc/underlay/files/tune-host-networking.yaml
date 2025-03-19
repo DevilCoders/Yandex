@@ -1,0 +1,13 @@
+{%- set hostname = grains['nodename'] -%}
+{%- set zone_id = salt['grains.get']('cluster_map:hosts:%s:location:zone_id' % hostname, pillar['placement']['dc']) -%}
+
+vhost_interface: {{ salt['underlay.interfaces']().dataplane }}
+system_interfaces: [ {{ salt['underlay.interfaces']().management }}, eth1]
+nic_service_irq: 4
+tx_queue_len: 10000
+
+# CLOUD-20960: Disable tx-gso-partial as it forces kernel code to produce oversized
+# segments which break vrouter
+{% set tx_gso_partial = False if zone_id in ("ru-central1-a", "ru-lab1-c") else True %}
+vhost_offloads:
+  tx-gso-partial: {{ tx_gso_partial }}

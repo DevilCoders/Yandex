@@ -1,0 +1,191 @@
+{% set selfhost_team = [
+    "biowimm",
+    "iandreyev",
+    "intar",
+    "korn-m",
+    "madixi",
+    "megaeee",
+    "neevin",
+    "nekto",
+    "syndicut",
+    "tyryshkin-sm",
+    "yazikovnik",
+    "zverevgeny",
+    "robot-vpc-solomon"]
+%}
+
+{% macro owners(_owners) -%}
+owners:
+  {% for owner in _owners -%}
+  - {{ owner }}
+  {% endfor -%}
+{% endmacro -%}
+
+{% macro selfhost_owners() %}
+{{ owners(selfhost_team) }}
+{% endmacro %}
+
+{% set environments = dict() %}
+{{ environments.update(prod=dict(name="prod", datacenters=["vla", "sas", "myt"], azs=["ru-central1-a", "ru-central1-b", "ru-central1-c"])) }}
+{{ environments.update(israel=dict(name="israel", datacenters=["il1-a"], azs=["il1-a"])) }}
+{{ environments.update(preprod=dict(name="preprod", datacenters=["vla", "sas", "myt"], azs=["ru-central1-a", "ru-central1-b", "ru-central1-c"])) }}
+{{ environments.update(testing=dict(name="testing", datacenters=["vla", "sas", "myt"], azs=["ru-central1-a", "ru-central1-b", "ru-central1-c"])) }}
+{{ environments.update(dev=dict(name="dev", datacenters=["vla", "sas", "myt"], azs=["ru-central1-a", "ru-central1-b", "ru-central1-c"])) }}
+
+{% macro _escalations_filter_entry(id="''", host="''", namespace="''", project="''", recipient="''", service="''", tags=[]) %}
+    - escalation_id: {{ id }}
+      host: {{ host }}
+      namespace: {{ namespace }}
+      project: {{ project }}
+      recipients:
+      - {{ recipient }}
+      service: {{ service }}
+      tags: {{ tags }}
+{% endmacro %}
+
+{% macro escalations_options_filter(recipients) %}
+    filters:
+  {%- for recipient in recipients -%}
+      {{ _escalations_filter_entry(recipient=recipient) }}
+  {%- endfor -%}
+{% endmacro %}
+
+{% macro escalations_options_filter_selfhost() %}
+{{ escalations_options_filter(selfhost_team) }}
+{% endmacro %}
+
+{% macro _downtimes_options_filter_entry(id="''", host="''", instance="''", namespace="''", project="''", service="''", source="''", tags=[], user="''") %}
+    - downtime_id: {{ id }}
+      host: {{ host }}
+      instance: {{ instance }}
+      namespace: {{ namespace }}
+      project: {{ project }}
+      service: {{ service }}
+      source: {{ source }}
+      tags: {{ tags }}
+      user: {{ user }}
+{% endmacro %}
+
+{%- macro downtimes_options_filter_by_user(users) %}
+    filters:
+  {%- for user in users -%}
+      {{- _downtimes_options_filter_entry(user=user) -}}
+  {%- endfor -%}
+{%- endmacro -%}
+
+{% macro downtimes_options_filter_selfhost() -%}
+{{- downtimes_options_filter_by_user(selfhost_team) -}}
+{%- endmacro -%}
+
+{% macro downtimes_options_filter_by_host(hosts) %}
+    filters:
+  {%- for host in hosts -%}
+      {{- _downtimes_options_filter_entry(host=host) -}}
+  {%- endfor -%}
+{%- endmacro -%}
+
+{% macro _notifications_options_filter_entry(host="''", login="''", method="''", service="''", status="''") %}
+    - host: {{ host }}
+      login: {{ login }}
+      method: {{ method }}
+      service: {{ service }}
+      status: {{ status }}
+{% endmacro %}
+
+{% macro notifications_options_filter(logins) %}
+    filters:
+  {%- for login in logins -%}
+      {{ _notifications_options_filter_entry(login=login) }}
+  {%- endfor -%}
+{%- endmacro -%}
+
+{% macro notifications_options_filter_selfhost() -%}
+{{ notifications_options_filter(selfhost_team) }}
+{%- endmacro -%}
+
+{% macro aggregate_checks_options_filter_hosts(hosts) %}
+    filters:
+  {%- for host in hosts -%}
+      {{- _aggregate_checks_options_filter_entry(host=host) -}}
+  {%- endfor -%}
+{% endmacro -%}
+
+{% macro aggregate_checks_options_filter(entries) %}
+    filters:
+  {%- for entry in entries -%}
+      {{- _aggregate_checks_options_filter_entry(**entry) -}}
+  {%- endfor -%}
+{% endmacro -%}
+
+{%- macro _aggregate_checks_options_filter_entry(host="''", namespace="''", project="''", recipients=[], responsibles=[], service="''", tags=[]) %}
+    - host: {{ host }}
+      namespace: {{ namespace }}
+      project: {{ project }}
+      recipients: {{ recipients }}
+      responsibles: {{ responsibles }}
+      service: {{ service }}
+      tags: {{ tags }}
+{% endmacro %}
+
+{%- macro aggregate_checks_options_filter_hosts_tags(hosts, tags) %}
+    filters:
+    {%- for host in hosts -%}
+      {{- _aggregate_checks_options_filter_entry(host=host, tags=tags) }}
+    {%- endfor -%}
+{%- endmacro -%}
+
+{% macro aggregate_checks_options_filter_tags(tags) %}
+    filters:
+      {{- _aggregate_checks_options_filter_entry(tags=tags) -}}
+{%- endmacro -%}
+
+{% macro widget(name, component_type, col, row, colspan=1, rowspan=1, links=[], elements_in_row=0, view_type="COMPACT") %}
+  col: {{ col }}
+  colspan: {{ colspan }}
+  component_type: {{ component_type }}
+  elements_in_row: {{ elements_in_row }}
+  links: {{ links }}
+  name: "{{ name }}"
+  row: {{ row }}
+  rowspan: {{ rowspan }}
+  view_type: {{ view_type }}
+{%- endmacro -%}
+
+{% macro aggregate_checks_options(limit=5) %}
+  aggregate_checks_options:
+    include_mutes: false
+    limit: {{ limit }}
+    project: ''
+    sort:
+      field: DEFAULT
+      order: DESC
+    statuses: []
+{%- endmacro -%}
+
+{% macro downtimes_options() %}
+  downtimes_options:
+    exclude_future: false
+    include_expired: false
+    include_warnings: false
+    page: 0
+    page_size: 0
+    project: ''
+    service_providers: []
+    service_providers_mode: ALL
+    sort_by: END_TIME
+    sort_order: ASC
+{%- endmacro -%}
+
+{% macro notifications_options() %}
+  notifications_options:
+    interval: 604800
+    page_size: 0
+{%- endmacro -%}
+
+{% macro escalations_options() %}
+  escalations_options:
+    only_running: true
+    page: 0
+    page_size: 5
+    project: ycloud
+{%- endmacro -%}

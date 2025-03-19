@@ -1,0 +1,10 @@
+RECURSE(
+    client
+    meta
+    qtool
+    reports
+    testdb
+    uniq
+    usage
+    utility
+)

@@ -1,0 +1,69 @@
+uid: ycpDemoDuty4
+folderId: 178688
+title: Duty dashboard (platform team) DEMO - step 4
+refresh: 3m
+
+variables:
+  ui:
+    cluster: { values: [prod, preprod] }
+  replacement:
+    4xx: CANCELLED|INVALID_ARGUMENT|NOT_FOUND|ALREADY_EXISTS|PERMISSION_DENIED|RESOURCE_EXHAUSTED|FAILED_PRECONDITION|ABORTED|OUT_OF_RANGE|UNAUTHENTICATED
+    503: UNAVAILABLE
+    5xx: UNKNOWN|DEADLINE_EXCEEDED|UNIMPLEMENTED|INTERNAL|DATA_LOSS
+
+graphDefaults: { width: 8, height: 6 }
+
+rows:
+  - title: API Gateway
+    graphDefaults: { datasource: 'Solomon Cloud' }
+    queryDefaults: { labels: 'project=platform, cluster=cloud_${cluster}_api-gateway, service=api_gateway_ma, host!=cluster, system=*, grpc_type=*, grpc_service=yandex.cloud' }
+    panels:
+      - type: graph
+        templates: { name: rps, rate: ui }
+        title: 'Gateway rps ($cluster)'
+        queries:
+          - params: { labels: 'grpc_method!=all, name=grpc_server_request_total' }
+
+      - type: graph
+        templates: { name: errors }
+        title: 'Gateway and envoy errors ($cluster)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'grpc_method!=all, name=grpc_server_response_total, grpc_code=Unknown|DeadlineExceeded|Unimplemented|Internal|DataLoss, upstream_error=true' }
+        draw: [{ alias: 'gw upstream 5xx', color: '#b20', at: left }]
+
+      - type: graph
+        templates: { name: percentile, groupLines: true, format: solomon }
+        title: 'Gateway response duration ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_server_response_duration_seconds' }
+
+  - title: API Adapter
+    graphDefaults: { datasource: 'Solomon' }
+    queryDefaults: { labels: 'project=yandexcloud, cluster=cloud_${cluster}_api-adapter, app=cloud-api-adapter_server, service=api_adapter, host=cluster, method=all' }
+    panels:
+      - type: graph
+        templates: { name: rps, rate: ui }
+        title: 'Adapter $rateUnit ($cluster)'
+        queries:
+          - params: { labels: 'sensor=grpc_requests, meter_type=count' }
+
+      - type: graph
+        templates: { name: errors }
+        title: 'Adapter errors ($cluster)'
+        queries:
+          - params: { labels: 'sensor=grpc_statuses, status=@4xx' }
+          - params: { labels: 'sensor=grpc_statuses, status=@503' }
+          - params: { labels: 'sensor=grpc_statuses, status=@5xx' }
+        draw:
+          - { alias: '4xx', color: '#147', at: right }
+          - { alias: '503', color: '#da7', at: left }
+          - { alias: '5xx', color: '#b20', at: left }
+
+      - type: graph
+        templates: { name: percentile, groupLines: true }
+        title: 'Adapter response duration ($cluster)'
+        queries:
+          - params: { labels: 'sensor=grpc_durations' }
+
+  # ... other service rows ...

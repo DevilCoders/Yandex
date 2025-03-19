@@ -1,0 +1,121 @@
+USE hahn;
+PRAGMA yt.InferSchema = '1';
+PRAGMA yson.Strict = 'false';
+PRAGMA yson.AutoConvert = 'true';
+PRAGMA yt.Pool = "cloud_analytics_pool";
+
+PRAGMA File('libcrypta_identifier_udf.so', 'yt://hahn/home/crypta/public/udfs/stable/libcrypta_identifier_udf.so');
+PRAGMA Udf('libcrypta_identifier_udf.so');
+
+$forms_tbl = "//statbox/forms-statistics-log";
+$passport_uid_ba_tbl = "//home/cloud_analytics/clients/passport_uid_ba";
+$iam = '//home/cloud_analytics/import/iam/cloud_owners/1h';
+$dst_path = "%DST_PATH%";
+
+$dst_cleanup_interval = DateTime::IntervalFromDays(7);
+$table_name_date_format = '%Y-%m-%dT%H:%M:%S';
+$datetime_format = DateTime::Format($table_name_date_format);
+$datetime_parse = DateTime::Parse($table_name_date_format);
+
+-- Данные заполняемые под каждую форму индивидуально
+$form_created = DateTime::MakeDate(Datetime("%FORM_CREATED%"));
+$form_id = "%FORM_ID%";
+
+-- Вспомогательные запросы и функции
+DEFINE SUBQUERY $last_non_empty_table($path) AS
+    $max_path = (
+        SELECT MAX(Path) AS Path
+        FROM FOLDER($path, 'row_count')
+        WHERE Type = 'table'
+            AND Yson::LookupInt64(Attributes, 'row_count') > 0
+    );
+    SELECT * FROM CONCAT($max_path);
+END DEFINE;
+
+$last_uploaded_date = (
+    SELECT MAX(DateTime::MakeDate($datetime_parse(TableName(Path))))
+    FROM FOLDER($dst_path, 'row_count')
+    WHERE Type == 'table'
+);
+    
+$unparsed_dates = (
+    SELECT AGGREGATE_LIST(Path)
+    FROM FOLDER($forms_tbl)
+    WHERE Type == 'table'
+        AND CAST(TableName(Path) AS Date) >= ($last_uploaded_date ?? $form_created)
+);
+
+$email_to_canonical = ($email) -> {
+    RETURN Identifiers::NormalizeEmail($email);
+};
+
+$parse_questions = ($questions) -> {
+    $qs = Yson::ConvertToList(Yson::ParseJson($questions));
+    RETURN ToDict(ListMap($qs, ($rec) -> {
+        RETURN AsTuple(Yson::ConvertToString($rec["slug"]), Yson::Serialize($rec["answer"]));
+    }));
+};
+
+-- Парсим форму
+$form_info = (
+    SELECT $parse_questions(questions) AS answers,
+           uid,
+           login,
+           CAST(unixtime AS Uint64) AS unixtime
+    FROM EACH($unparsed_dates)
+    WITH SCHEMA Struct<uid:string?, unixtime:string, login:string?, survey_id:string?, questions:string?>
+    WHERE survey_id = $form_id
+);
+
+$str = ($x) -> {
+    RETURN Yson::ConvertToString($x ?? Yson::FromString(""));
+};
+
+-- Строим таблицу
+$dst_table = $dst_path || "/"
+    || $datetime_format(CurrentUtcTimestamp()) ?? "";
+
+$history_table = $dst_path || "_history";
+
+INSERT INTO $dst_table WITH TRUNCATE
+SELECT f.unixtime AS created_time,
+       $form_id AS form_id,
+       f.uid AS yandex_puid,
+       f.login AS yandex_login,
+       p.billing_account_id AS ba_id,
+       iam.timezone AS timezone,
+       %ANSWERS%
+    FROM $form_info AS f
+    LEFT JOIN $passport_uid_ba_tbl AS p
+    ON p.passport_uid = f.uid
+    LEFT JOIN $last_non_empty_table($iam) AS iam
+    ON iam.passport_uid = f.uid
+    LEFT ONLY JOIN $history_table AS history
+    ON f.unixtime = history.created_time
+    ORDER BY created_time, yandex_puid;
+
+COMMIT;
+
+-- Сохраняем исторические данные
+INSERT INTO $history_table
+SELECT * FROM $dst_table
+ORDER BY created_time, yandex_puid;
+
+COMMIT;
+
+-- Удаляем старые и пустые таблицы
+DEFINE ACTION $drop_table($table_path) AS
+    DROP TABLE $table_path;
+END DEFINE;
+
+$tables_to_delete = (
+    SELECT AGGREGATE_LIST(Path)
+    FROM FOLDER($dst_path, 'row_count')
+    WHERE Type == 'table' AND (
+        DateTime::MakeTimestamp($datetime_parse(TableName(Path))) < CurrentUtcTimestamp() - $dst_cleanup_interval
+        OR Yson::LookupInt64(Attributes, 'row_count') = 0
+    )
+);
+
+EVALUATE FOR $tb_ts IN $tables_to_delete
+    DO $drop_table($tb_ts);

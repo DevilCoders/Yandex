@@ -1,0 +1,33 @@
+{% extends "./base_alert.j2" %}
+
+{% set checkExpression = "value > " + value_limit %}
+{% set description = "YCM " + env | upper + " Validation API Errors" %}
+{% set windowSecs = 300 %}
+
+{% macro prog() %}
+let data = group_lines(
+  'sum',
+  non_negative_derivative({
+    project='{{ project_id }}',
+    service='{{ solomon_service }}',
+    cluster='cloud_{{ env }}_ycm_cluster',
+    host='validation-*',
+    {{ sensor_label }}='servlet_statuses',
+    app='*server',
+    status='5*'
+  })
+);
+let value = max(data);
+{% endmacro %}
+
+{% block main %}
+  "name": "YCM {{ env | upper }} Validation API errors",
+  "groupByLabels": ["cluster", "host"],
+  "annotations": {
+    "jugglerService": "[[labels.cluster]]--[[labels.host]]--validationApiErrors",
+    "description": "[[expression.value]] HTTP errors on [[labels.host]]",
+    "wikiUrl": "https://nda.ya.ru/t/y6lo4ASr5B3PF7",
+    "jugglerTags" : "{{ jugglerTags }}"
+  },
+  "type": {{ type_expression() }}
+{% endblock %}

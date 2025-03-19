@@ -1,0 +1,299 @@
+{#
+    NOTE: if_reasons are still used by instance health dashboards
+    FIXME(CLOUD-97020): for now "Same flow and rflow" triggers audit, so
+                        we marked "Flow: Audit entry" as flaky error once again
+ #}
+
+{% set dropstats = {
+    "l3_route_errors": {
+        "title": "L3 major route errors",
+        "colspan": 2,
+        "cause": "User/VRouter: Invalid packet destination or route inconsistency",
+        "multiplier": 10,
+        "smooth": true,
+        "if_reasons": [
+            "if_ds_discard",
+            "if_ds_flow_action_drop",
+            "if_ds_flow_drop_no_src_route",
+            "if_ds_flow_drop_no_dst_route"
+        ],
+        "snh_reasons": [
+            "Discard",
+            "Flow action DROP",
+            "Flow: No source route",
+            "Flow: No destination route"
+        ]
+    },
+    "l2_l3_minor_route_errors": {
+        "title": "L2/L3 minor route errors",
+        "cause": "User/VRouter: Invalid packet destination or route inconsistency",
+        "multiplier": 1,
+        "smooth": true,
+        "if_reasons": [
+            "if_ds_invalid_nh",
+            "if_ds_invalid_source",
+            "if_ds_nowhere_to_go",
+            "if_ds_invalid_mcast_source",
+            "if_ds_l2_no_route",
+            "if_ds_outer_link_local",
+            "if_ds_mcast_in_l3_network",
+            "if_ds_flow_drop_same_flow_rflow_key",
+            "if_ds_flow_drop_neither_addr_is_private",
+            "if_ds_flow_drop_asymmetric_response"
+        ],
+        "snh_reasons": [
+            "Invalid NextHop",
+            "Invalid source",
+            "Nowhere to Go",
+            "Invalid Multicast source",
+            "No L2 Route",
+            "Outer Link Local Packets",
+            "Mcast in L3 network",
+            "Flow: Same flow and rflow",
+            "Flow: Neither address is private",
+            "Flow: Asymmetric response",
+        ]
+    },
+    "route_inconsistency": {
+        "title": "Invalid nh/rt/itf",
+        "cause": "VRouter: Route inconsistency",
+        "multiplier": 0.1,
+        "smooth": true,
+        "if_reasons": [
+            "if_ds_invalid_if",
+            "if_ds_interface_tx_discard",
+            "if_ds_interface_rx_discard",
+            "if_ds_invalid_label",
+            "if_ds_drop_pkt_loop"
+        ],
+        "snh_reasons": [
+            "Invalid Interface",
+            "Interface TX discard",
+            "Interface RX discard",
+            "Invalid Label",
+            "Packet Loop",
+        ],
+    },
+    "drop_new_flows": {
+        "title": "Drop NEW flows",
+        "cause": "User: Flow limit is hit",
+        "multiplier": 1,
+        "smooth": true,
+        "if_reasons": [
+            "if_ds_drop_new_flow",
+            "if_ds_flow_drop_flow_limit"
+        ],
+        "snh_reasons": [
+            "Drop NEW flows",
+            "Flow: Flow limit reached",
+        ],
+    },
+    "flow_establish_errors": {
+        "title": "Flow establish problems",
+        "cause": "VRouter: Slow or overloaded flow establishment",
+        "multiplier": 0.5,
+        "smooth": false,
+        "if_reasons": [
+            "if_ds_flow_unusable",
+            "if_ds_flow_table_full"
+        ],
+        "snh_reasons": [
+            "Flow Unusable",
+            "Flow Table is full",
+        ],
+    },
+    "flaky_flow_establish_errors": {
+        "title": "Flaky flow establish problems",
+        "cause": "VRouter: Slow or overloaded flow establishment (flaky metrics)",
+        "multiplier": 0.5,
+        "smooth": true,
+        "if_reasons": [
+            "if_ds_flow_queue_limit_exceeded",
+            "if_ds_flow_nat_no_rflow",
+            "if_ds_flow_drop_audit_entry"
+        ],
+        "snh_reasons": [
+            "Flow Queue Limit Exceeded",
+            "No rflow on NAT flow",
+            "Flow: Audit entry",
+        ],
+    },
+    "flow_drop_evict": {
+        "title": "Flow evict drop",
+        "cause": "User/VRouter: Slow flow deletion or packet after RST/FIN pair",
+        "multiplier": 1000,
+        "smooth": true,
+        "if_reasons": [
+            "if_ds_flow_evict",
+            "if_ds_flow_drop_no_reverse_flow",
+        ],
+        "snh_reasons": [
+            "Flow Evict",
+            "Flow: No reverse flow",
+        ],
+    },
+    "bad_packets": {
+        "title": "Bad packets",
+        "cause": "User: Invalid or unsupported packets",
+        "multiplier": 10,
+        "smooth": true,
+        "if_reasons": [
+            "if_ds_invalid_arp",
+            "if_ds_pull",
+            "if_ds_ttl_exceeded",
+            "if_ds_invalid_protocol",
+            "if_ds_invalid_packet",
+            "if_ds_cksum_err",
+            "if_ds_frag_err",
+            "if_ds_fragment_queue_fail",
+            "if_ds_flow_drop_unavailable_intf"
+        ],
+        "snh_reasons": [
+            "Invalid Arp",
+            "Pull Fails",
+            "TTL Exceeded",
+            "Invalid Protocol",
+            "Invalid packets",
+            "Checksum errors",
+            "Fragment errors",
+            "Fragment queue fail",
+            "Flow: Interface unavailable",
+        ],
+    },
+    "clone_resize_failure": {
+        "title": "Clone/resize failures",
+        "cause": "VRouter: Bug or not enough memory",
+        "multiplier": 0.1,
+        "smooth": false,
+        "if_reasons": [
+            "if_ds_push",
+            "if_ds_head_alloc_fail",
+            "if_ds_pcow_fail",
+            "if_ds_mcast_clone_fail",
+            "if_ds_no_memory",
+            "if_ds_rewrite_fail",
+            "if_ds_trap_original"
+        ],
+        "snh_reasons": [
+            "Push Fails",
+            "Head alloc fails",
+            "PCOW Fails",
+            "Mcast Clone fail",
+            "Memory failures",
+            "Rewrite failures",
+            "Original Packet Trapped",
+        ],
+    },
+    "internal_bugs": {
+        "title": "Internal bugs",
+        "cause": "VRouter: Internal bugs",
+        "multiplier": 0.1,
+        "smooth": true,
+        "if_reasons": [
+            "if_ds_trap_no_if",
+            "if_ds_flow_no_memory",
+            "if_ds_interface_drop",
+            "if_ds_mcast_df_bit",
+            "if_ds_misc",
+            "if_ds_no_fmd",
+            "if_ds_invalid_vnid",
+            "if_ds_unused_1",
+            "if_ds_unused_2",
+            "if_ds_unused_3",
+            "if_ds_unused_4",
+            "if_ds_unused_5",
+            "if_ds_unused_6",
+            "if_ds_unused_7",
+            "if_ds_flow_drop_ipV4_fwd_dis",
+            "if_ds_flow_drop_unavailable_vrf",
+            "if_ds_flow_drop_vrf_change",
+            "if_ds_flow_drop_reverse_flow_change",
+            "if_ds_flow_drop_nat_change",
+            "if_ds_flow_drop_linklocal_src_nat",
+            "if_ds_flow_drop_policy",
+            "if_ds_flow_drop_out_policy",
+            "if_ds_flow_drop_no_mirror_entry",
+            "if_ds_flow_drop_key_change",
+            "if_ds_flow_drop_port_nat_in_fat_flow"
+        ],
+        "snh_reasons": [
+            "Trap No Interface",
+            "Flow No Memory",
+            "Interface drop",
+            "Jumbo Mcast pkt with DF bit",
+            "No Fmd",
+            "Invalid VnId",
+            "Unused 1",
+            "Unused 2",
+            "Unused 3",
+            "Unused 4",
+            "Unused 5",
+            "Unused 6",
+            "Unused 7",
+            "Flow: IPv4 forwarding disabled",
+            "Flow: VRF unavailable",
+            "Flow: VRF change",
+            "Flow: Reverse flow change",
+            "Flow: NAT changed",
+            "Flow: LinkLocal source NAT failed",
+            "Flow: Policy",
+            "Flow: Out policy",
+            "Flow: No mirror entry",
+            "Flow: Key change",
+            "Flow: Port NAT in fat flow",
+        ],
+    },
+    "cloned_drops": {
+        "title": "Cloned drops",
+        "cause": "User/VRouter: Packet was cloned before drop",
+        "multiplier": 1,
+        "if_reasons": [
+            "if_ds_duplicated",
+            "if_ds_cloned_original"
+        ],
+        "snh_reasons": [
+            "Duplicated",
+            "Cloned original",
+        ],
+    },
+    "sg_drops": {
+        "title": "SG drops",
+        "cause": "User/VRouter: Security Group rules",
+        "multiplier": 1,
+        "if_reasons": [
+            "if_ds_flow_drop_unknown",
+            "if_ds_flow_drop_sg",
+            "if_ds_flow_drop_out_sg",
+            "if_ds_flow_drop_reverse_sg",
+            "if_ds_flow_drop_reverse_out_sg",
+            "if_ds_flow_invalid_first_pkt"
+        ],
+        "snh_reasons": [
+            "Flow: Unknown",
+            "Flow: SG",
+            "Flow: Out SG",
+            "Flow: Reverse SG",
+            "Flow: Reverse out SG",
+            "Flow Invalid First Pkt",
+        ],
+    }
+} %}
+
+
+{% set drop_graph_reasons = {
+        "bad_packets_route_errors": (
+            dropstats.l3_route_errors.if_reasons +
+            dropstats.l2_l3_minor_route_errors.if_reasons +
+            dropstats.bad_packets.if_reasons),
+        "flow_errors": (
+            dropstats.drop_new_flows.if_reasons +
+            dropstats.flow_establish_errors.if_reasons +
+            dropstats.flaky_flow_establish_errors.if_reasons +
+            dropstats.flow_drop_evict.if_reasons),
+        "bugs": (
+            dropstats.route_inconsistency.if_reasons +
+            dropstats.clone_resize_failure.if_reasons +
+            dropstats.internal_bugs.if_reasons),
+        "sg": (
+            dropstats.sg_drops.if_reasons)
+    } %}

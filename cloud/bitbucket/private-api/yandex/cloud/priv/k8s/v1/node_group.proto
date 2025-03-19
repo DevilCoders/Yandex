@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.k8s.v1;
+
+import "google/protobuf/timestamp.proto";
+
+import "yandex/cloud/priv/k8s/v1/maintenance.proto";
+import "yandex/cloud/priv/k8s/v1/version.proto";
+import "yandex/cloud/priv/k8s/v1/node.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/k8s/v1;k8s";
+option java_outer_classname = "PMKNG";
+
+message NodeGroup {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    PROVISIONING = 1;
+    RUNNING = 2;
+    RECONCILING = 3;
+    STOPPING = 4;
+    STOPPED = 5;
+    DELETING = 6;
+    STARTING = 7;
+  }
+
+  string id = 1;
+  string cluster_id = 2;
+  google.protobuf.Timestamp created_at = 3;
+  string name = 4;
+  string description = 5;
+  map<string, string> labels = 6;
+
+  Status status = 7;
+
+  NodeTemplate node_template = 8;
+
+  ScalePolicy scale_policy = 9;
+  NodeGroupAllocationPolicy allocation_policy = 10;
+  DeployPolicy deploy_policy = 19;
+
+  string instance_group_id = 11;
+
+  // Kubernetes components version nodes use.
+  // Deprecated, use version_info.current_version.
+  string node_version = 12;
+
+  VersionInfo version_info = 13;
+
+  NodeGroupMaintenancePolicy maintenance_policy = 14;
+
+  // private-only
+  bool static_reserved_resources = 15;
+
+  repeated string allowed_unsafe_sysctls = 16;
+  repeated Taint node_taints = 17;
+  map<string, string> node_labels = 18;
+}
+
+message ScalePolicy {
+  oneof scale_type {
+    option (exactly_one) = true;
+    FixedScale fixed_scale = 1;
+    AutoScale auto_scale = 2;
+  }
+
+  message FixedScale {
+    int64 size = 1 [(value) = "0-100"];
+  }
+
+  message AutoScale {
+    int64 min_size = 1 [(value) = "0-100"];
+    int64 max_size = 2 [(value) = "0-100"];
+    int64 initial_size = 3 [(value) = "0-100"];
+  }
+}
+
+message NodeGroupAllocationPolicy {
+  repeated NodeGroupLocation locations = 1;
+}
+
+message NodeGroupLocation {
+  string zone_id = 1 [(required) = true];
+  string subnet_id = 2;
+}
+
+message NodeGroupMaintenancePolicy {
+  bool auto_upgrade = 1;
+  bool auto_repair = 2;
+
+  MaintenanceWindow maintenance_window = 3;
+}
+
+message DeployPolicy {
+  int64 max_unavailable = 1 [(value) = "0-100"];
+  int64 max_expansion = 2 [(value) = "0-100"];
+}

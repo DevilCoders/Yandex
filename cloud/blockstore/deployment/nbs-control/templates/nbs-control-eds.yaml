@@ -1,0 +1,75 @@
+apiVersion: datadoghq.com/v1alpha1
+kind: ExtendedDaemonSet
+metadata:
+  name: nbs-control
+  namespace: nbs-control
+  annotations:
+    # hack to perform rolling update pods if configMap change
+    checksum/config: {{ include (print $.Template.BasePath "/nbs-control-configmap.yaml") . | sha256sum }}
+spec:
+  strategy:
+    rollingUpdate:
+      maxParallelPodCreation: 1
+      maxUnavailable: 1
+      slowStartIntervalDuration: 1m
+  template:
+    spec:
+      nodeSelector:
+        nbs-control: "1"
+      hostNetwork: true
+      containers:
+      - name: yandex-cloud-blockstore-server
+        image: cr.yandex/crpmrci5rfvf3uu8np78/yandex-cloud-blockstore-server:{{ .Chart.AppVersion }}
+        command: ["/bin/bash", "-c", "source /Berkanavt/nbs-server/cfg/nbs_server.cfg && /usr/bin/blockstore-server ${nbs_arg}"]
+        securityContext:
+          capabilities:
+            add:
+              - SYS_PTRACE
+              - SYS_ADMIN
+        volumeMounts:
+          - name: nbs-control-configs
+            mountPath: /Berkanavt/nbs-server/cfg/
+          - name: etc-yc-nbs
+            mountPath: /etc/yc/nbs/
+          - name: var-log
+            mountPath: /var/log/
+            readOnly: false
+          - name: dev-log
+            mountPath: /dev/log
+            readOnly: false
+      - name: yandex-cloud-blockstore-http-proxy
+        image: cr.yandex/crpmrci5rfvf3uu8np78/yandex-cloud-blockstore-http-proxy:{{ .Chart.AppVersion }}
+        command: ["/bin/bash", "-c", "/usr/bin/blockstore-http-proxy --config=/Berkanavt/nbs-server/cfg/nbs-http-proxy.txt"]
+        securityContext:
+          capabilities:
+            add:
+              - SYS_PTRACE
+              - SYS_ADMIN
+        volumeMounts:
+          - name: nbs-control-configs
+            mountPath: /Berkanavt/nbs-server/cfg/
+          - name: etc-yc-nbs
+            mountPath: /etc/yc/nbs/
+          - name: var-log
+            mountPath: /var/log/
+            readOnly: false
+          - name: dev-log
+            mountPath: /dev/log
+            readOnly: false
+
+      volumes:
+      - name: nbs-control-configs
+        configMap:
+          name: nbs-control
+      - name: etc-yc-nbs
+        hostPath:
+          type: DirectoryOrCreate
+          path: /etc/yc/nbs/
+      - name: var-log
+        hostPath:
+          type: Directory
+          path: /var/log/
+      - name: dev-log
+        hostPath:
+          type: Socket
+          path: /dev/log

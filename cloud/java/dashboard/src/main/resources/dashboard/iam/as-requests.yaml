@@ -1,0 +1,79 @@
+id: 507644
+uid: iam-as-requests
+title: IAM AccessService Requests
+folderId: 412692
+refresh: 1m
+
+tags: [ 'iam', 'iam-as-requests' ]
+links:
+  !include shared/links.yaml as-requests
+
+graphDefaults: { datasource: '${ds}', width: 12, height: 7 }
+queryDefaults:
+  labels: 'project=yc.iam.service-cloud, service=access-service, cluster=access-service-${cluster}, host=${host:pipe}, remote_service=${remote_service:pipe}'
+  dropNan: true
+
+variables:
+  ui:
+    !include shared/datasources.yaml
+  uiQuery:
+    !include shared/clusters.yaml 'access-service'
+    host:
+      labels: 'host=@all_hosts, remote_service=*'
+      multi: true
+    remote_service:
+      labels: 'host=@all_hosts, remote_service=*'
+      multi: true
+  replacement:
+    !include shared/replacements.yaml
+    !include shared/errors.yaml
+
+rows:
+  - title: 'AccessService Requests'
+    panels:
+      - type: graph
+        title: 'Requests RPS'
+        templates:
+          - { name: rps, sumLines: [ 'remote_service' ] }
+          - { name: patchSelect, before: last, add: { moving_avg: [ 1m ] } }
+          - { name: patchSelect, after: last, add: { alias: '{{remote_service}}' } }
+        queries:
+          - params: { labels: 'sensor=as_requests_by_service' }
+        display: { stack: true, sort: decreasing, fill: 10 }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: 'Requests Without IDs RPS'
+        templates:
+          - { name: rps, sumLines: [ 'remote_service' ] }
+          - { name: patchSelect, before: last, add: { moving_avg: [ 1m ] } }
+          - { name: patchSelect, after: last, add: { alias: '{{remote_service}}' } }
+        queries:
+          - params: { labels: 'sensor=as_requests_without_id_by_service' }
+        display: { stack: true, sort: decreasing, fill: 10 }
+        yAxes: [ { min: 0 } ]
+
+    drilldowns:
+      - subUid: dd-as-requests-by-host
+        title: 'AccessService Requests by Hosts'
+        tags: [ 'iam-as-requests', 'iam-as-requests-host' ]
+        ui:
+          ds: ds
+        uiQuery:
+          cluster: cluster
+          host: host
+          remote_service: remote_service
+        uiRepeat: host
+        labels: 'host=${host}'
+
+      - subUid: dd-as-requests-by-app
+        title: 'AccessService Requests by Remote Services'
+        tags: [ 'iam-as-requests', 'iam-as-requests-app' ]
+        ui:
+          ds: ds
+        uiQuery:
+          cluster: cluster
+          host: host
+          remote_service: remote_service
+        uiRepeat: remote_service
+        labels: 'remote_service=${remote_service}'

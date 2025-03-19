@@ -1,0 +1,2 @@
+include:
+  - autoscale-agent

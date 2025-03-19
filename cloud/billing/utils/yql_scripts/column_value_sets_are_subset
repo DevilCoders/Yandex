@@ -1,0 +1,28 @@
+$tmp = "{source_table}";
+$current = "{backup_table}";
+
+$columns_to_check = [
+    'sku_name',
+];
+
+DEFINE ACTION $check($field_name) AS
+    $cur = (SELECT ToSet(AGGREGATE_LIST_DISTINCT(CAST(TableRow().$field_name as String))) AS tmp FROM $tmp);
+    $back = (SELECT ToSet(AGGREGATE_LIST_DISTINCT(CAST(TableRow().$field_name as String))) AS current FROM $current);
+    INSERT INTO @tmp_table
+    SELECT
+        SetDifference(current, tmp) AS in_current_but_not_in_tmp,
+        SetDifference(tmp, current) AS in_tmp_but_not_in_current,
+        IF(DictLength(SetDifference(current, tmp)) == 0, 'OK', 'ALERT') AS has_problems,
+        $field_name as field_name
+    FROM (
+        SELECT $cur AS tmp, $back AS current
+    );
+END DEFINE;
+
+EVALUATE FOR $field_name in $columns_to_check
+DO $check($field_name);
+
+COMMIT;
+
+SELECT * FROM @tmp_table
+WHERE has_problems != "OK";

@@ -1,0 +1,48 @@
+{%- import "common/kikimr/init.sls" as vars with context %}
+
+{% set endpoints = salt['grains.get']('cluster_map:load_balancer:endpoints') %}
+{% set microcosm = pillar.get('microcosm') %}
+
+grpcServer:
+  port: {{ endpoints.microcosm.port }}
+
+compute:
+  host: {{ endpoints.api_adapter.host }}
+  port: {{ endpoints.api_adapter.port }}
+
+gauthling:
+  host: gauthling.is.not.here.anymore
+  port: 1234
+  enabled: false
+
+kikimr:
+  host: {{ endpoints.microcosm_kikimr_grpc.host }}
+  port: {{ endpoints.microcosm_kikimr_grpc.port }}
+  tablespace: /{{ vars.ydb_domain }}/{{ vars.microcosm_database }}/microcosm/
+
+metrics:
+  pullPort: 8765
+
+timeout:
+  resourceStatusSync: PT1M
+
+features:
+  syncResourceStatuses: {{ microcosm.features.sync_resource_statuses }}
+
+# TODO: add autoScale and alertClient config keys to pillars
+autoScale:
+  apiUrl: https://solomon-prestable.yandex-team.ru/api/v2
+  project: yandexcloud
+  cluster: cloud_prod_compute
+  service: compute
+  oAuth: todo@
+  serverContext: /scale
+  serverPort: 5556
+  serverThreadCount: 5
+
+alertClient:
+  host: solomon-pre-alert-02.search.yandex.net
+  port: 8799
+  project: yandexcloud
+  webHookRepeatPeriod: PT1M
+  webHookUrl: http://{{ endpoints.microcosm.host }}:{{ endpoints.microcosm.port }}/scale

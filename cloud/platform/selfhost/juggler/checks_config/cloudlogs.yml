@@ -1,0 +1,145 @@
+---
+- hosts: localhost
+  gather_facts: false
+  pre_tasks:
+    - juggler_facts:  jserver_api={{ jserver_api }}
+      tags:
+        - always
+  post_tasks:
+    - juggler_cleanup:
+
+  tasks:
+################################ CLOUD LOGS ###################################
+    - name: cloudlogs__preprod
+      include_role:
+        name: cloudlogs
+      vars:
+        app: "cloudlogs"
+        env: "preprod"
+        cgroup: "{{ v.conductor_group }}"
+        unreachable_host: "{{ v.conductor_group }}"
+        service_responsibles: "{{ responsibles.cloudlogs }}"
+        tags:
+          - "yc-cloudlogs"
+          - "yc-cloudlogs-{{ env }}"
+          - "yc-cloudlogs-{{ env }}-app"
+          - "yc-cloudlogs-{{ env }}-app-{{ v.tag_suffix }}"
+      loop_control:
+        loop_var: v
+      with_items:
+        - conductor_group: cloud_preprod_cloudlogs_log-groups
+          tag_suffix:      log-groups
+        - conductor_group: cloud_preprod_cloudlogs_log-events 
+          tag_suffix:      log-events
+        - conductor_group: cloud_preprod_cloudlogs_ydbs
+          tag_suffix:      ydb-sender-go
+        - conductor_group: cloud_preprod_cloudlogs_log-cleaner
+          tag_suffix:      log-cleaner
+    - name: cloudlogs__prod
+      include_role:
+        name: cloudlogs
+      vars:
+        app: "cloudlogs"
+        env: "prod"
+        cgroup: "{{ v.conductor_group }}"
+        unreachable_host: "{{ v.conductor_group }}"
+        service_responsibles: "{{ responsibles.cloudlogs }}"
+        tags:
+          - "yc-cloudlogs"
+          - "yc-cloudlogs-{{ env }}"
+          - "yc-cloudlogs-{{ env }}-app"
+          - "yc-cloudlogs-{{ env }}-app-{{ v.tag_suffix }}"
+      loop_control:
+        loop_var: v
+      with_items:
+        - conductor_group: cloud_prod_cloudlogs_log-groups
+          tag_suffix:      log-groups
+        - conductor_group: cloud_prod_cloudlogs_log-events 
+          tag_suffix:      log-events
+        - conductor_group: cloud_prod_cloudlogs_ydbs
+          tag_suffix:      ydb-sender-go
+        - conductor_group: cloud_prod_cloudlogs_log-cleaner
+          tag_suffix:      log-cleaner
+
+############################# CLOUD LOGS INFRA ################################
+    - name: cloudlogs-infra__preprod
+      include_role:
+        name: infra
+      vars:
+        host: cloudlogs-preprod
+        env: "preprod"
+        service: "{{v.service}}"
+        service_responsibles: "{{ responsibles.cloudlogs }}"
+        tags:
+        - "yc-cloudlogs"
+        - "yc-cloudlogs-{{ env }}"
+        - "yc-cloudlogs-{{ env }}-infra"
+        - "yc-cloudlogs-{{ env }}-infra-{{ v.service }}"
+        flap: { stable: 0, critical: 0 }
+      loop_control:
+        loop_var: v
+      with_items:
+      - service: "minor-maintenance"
+      - service: "minor-issue"
+      - service: "major-maintenance"
+      - service: "major-issue"
+
+    - name: cloudlogs-infra__prod
+      include_role:
+        name: infra
+      vars:
+        host: cloudlogs-prod
+        env: "prod"
+        service: "{{v.service}}"
+        service_responsibles: "{{ responsibles.cloudlogs }}"
+        tags:
+        - "yc-cloudlogs"
+        - "yc-cloudlogs-{{ env }}"
+        - "yc-cloudlogs-{{ env }}-infra"
+        - "yc-cloudlogs-{{ env }}-infra-{{ v.service }}"
+        flap: { stable: 0, critical: 0 }
+      loop_control:
+        loop_var: v
+      with_items:
+      - service: "minor-maintenance"
+      - service: "minor-issue"
+      - service: "major-maintenance"
+      - service: "major-issue"
+    
+    - name: cloudlogs-e2e__preprod
+      juggler_check: ''
+      args: "{{ default_check | hash_merge( default_timed_limits, item ) }}"
+      vars:
+        app: "e2e"
+        env: "preprod"
+        namespace: "ycloud"
+        unreachable_host: "teamcity-cloud-logs"
+        children: "teamcity-cloud-logs:e2e-preprod-cloudlogs"
+        tags: "{{ item.tags }}"
+      with_items:
+        - service: e2e-preprod-cloudlogs
+          host: yc-logs
+          ttl: 9000
+          tags:
+            - "yc-cloudlogs"
+            - "yc-cloudlogs-{{ env }}"
+            - "yc-cloudlogs-teamcity-{{ env }}-e2e"
+
+    - name: cloudlogs-e2e__prod
+      juggler_check: ''
+      args: "{{ default_check | hash_merge( default_timed_limits, item ) }}"
+      vars:
+        app: "e2e"
+        env: "prod"
+        namespace: "ycloud"
+        unreachable_host: "teamcity-cloud-logs"
+        children: "teamcity-cloud-logs:e2e-prod-cloudlogs"
+        tags: "{{ item.tags }}"
+      with_items:
+        - service: e2e-prod-cloudlogs
+          host: yc-logs
+          ttl: 9000
+          tags:
+            - "yc-cloudlogs"
+            - "yc-cloudlogs-{{ env }}"
+            - "yc-cloudlogs-teamcity-{{ env }}-e2e"

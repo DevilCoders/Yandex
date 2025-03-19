@@ -1,0 +1,238 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.mdb.kafka.v1;
+
+import "google/protobuf/wrappers.proto";
+import "yandex/cloud/api/tools/options.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/mdb/kafka/v1;kafka";
+option java_outer_classname = "KFCN";
+
+message ConnectorSpec {
+  // Name of the connector.
+  string name = 1;
+
+  // Maximum number of tasks. Default is the number of brokers
+  google.protobuf.Int64Value tasks_max = 2;
+
+  // Properties passed with connector config to Connect service
+  // Example: 'sync.topics.config.enabled: true'
+  map<string, string> properties = 3;
+
+  // User-defined settings for a topic.
+  oneof connector_config {
+    ConnectorConfigMirrorMakerSpec connector_config_mirrormaker = 10;
+    ConnectorConfigS3SinkSpec connector_config_s3_sink = 11;
+  }
+}
+
+message UpdateConnectorSpec {
+  // Maximum number of tasks. Default is the number of brokers
+  google.protobuf.Int64Value tasks_max = 1;
+
+  // Properties passed with connector config to Connect service
+  // Example: 'sync.topics.config.enabled: true'
+  map<string, string> properties = 2;
+
+  // User-defined settings for a topic.
+  oneof connector_config {
+    ConnectorConfigMirrorMakerSpec connector_config_mirrormaker = 10;
+    UpdateConnectorConfigS3SinkSpec connector_config_s3_sink = 11;
+  }
+}
+
+message ThisClusterSpec {
+}
+
+message ExternalClusterConnectionSpec {
+  string bootstrap_servers = 1;
+  string sasl_username = 2;
+  string sasl_password = 3;
+  string sasl_mechanism = 4;
+  string security_protocol = 5;
+  string ssl_truststore_certificates = 6;
+}
+
+message ClusterConnectionSpec {
+  string alias = 1;
+
+  oneof cluster_connection {
+    ThisClusterSpec this_cluster = 2;
+    ExternalClusterConnectionSpec external_cluster = 3;
+  }
+}
+
+message ConnectorConfigMirrorMakerSpec {
+  ClusterConnectionSpec source_cluster = 1;
+  ClusterConnectionSpec target_cluster = 2;
+  string topics = 3;
+  google.protobuf.Int64Value replication_factor = 4;
+}
+
+message Connector {
+  enum Health {
+    option (cloud.api.tools.enumeration).lint_skip.unspecified_value = true;
+
+    // State of the connector is unknown.
+    HEALTH_UNKNOWN = 0;
+
+    // Connector is running.
+    ALIVE = 1;
+
+    // Connector is failed to start.
+    DEAD = 2;
+  }
+
+  enum Status {
+    option (cloud.api.tools.enumeration).lint_skip.unspecified_value = true;
+
+    // Connector state is unknown.
+    STATUS_UNKNOWN = 0;
+
+    // Connector is running normally.
+    RUNNING = 1;
+
+    // Connector encountered a problem and cannot operate.
+    ERROR = 2;
+
+    // Connector paused.
+    PAUSED = 3;
+  }
+
+  // Name of the connector.
+  string name = 1;
+
+  // Maximum number of tasks. Default is the number of brokers
+  google.protobuf.Int64Value tasks_max = 2;
+
+  // Properties passed with connector config to Connect service
+  // Example: 'sync.topics.config.enabled: true'
+  map<string, string> properties = 3;
+
+  // Connector health.
+  Health health = 4;
+
+  // Current status of the connector.
+  Status status = 5;
+
+  // ID of the Apache Kafka cluster that the connector belongs to.
+  string cluster_id = 6;
+
+  // User-defined settings for a topic.
+  oneof connector_config {
+    ConnectorConfigMirrorMaker connector_config_mirrormaker = 10;
+    ConnectorConfigS3Sink connector_config_s3_sink = 11;
+  }
+
+}
+
+message ThisCluster {
+}
+
+message ExternalClusterConnection {
+  string bootstrap_servers = 1;
+  string sasl_username = 2;
+  string sasl_mechanism = 3;
+  string security_protocol = 4;
+}
+
+message ClusterConnection {
+  string alias = 1;
+
+  oneof cluster_connection {
+    ThisCluster this_cluster = 2;
+    ExternalClusterConnection external_cluster = 3;
+  }
+}
+
+message ConnectorConfigMirrorMaker {
+  ClusterConnection source_cluster = 1;
+  ClusterConnection target_cluster = 2;
+  string topics = 3;
+  google.protobuf.Int64Value replication_factor = 4;
+}
+
+// Specification for S3Connection -
+// settings of connection to AWS-compatible S3 storage, that
+// are source or target of Kafka S3-connectors.
+// YC Object Storage is AWS-compatible.
+message S3ConnectionSpec {
+  string bucket_name = 1;
+  oneof storage {
+    ExternalS3StorageSpec external_s3 = 2;
+  }
+}
+
+message ExternalS3StorageSpec {
+  string access_key_id = 1;
+  string secret_access_key = 2;
+  string endpoint = 3;
+  // Default is 'us-east-1'
+  string region = 4;
+}
+
+// Resource for S3Connection -
+// settings of connection to AWS-compatible S3 storage, that
+// are source or target of Kafka S3-connectors.
+// YC Object Storage is AWS-compatible.
+message S3Connection {
+  string bucket_name = 1;
+  oneof storage {
+    ExternalS3Storage external_s3 = 2;
+  }
+}
+
+message ExternalS3Storage {
+  string access_key_id = 1;
+  string endpoint = 2;
+  // Default is 'us-east-1'
+  string region = 3;
+}
+
+// Specification for Kafka S3-Sink Connector
+message ConnectorConfigS3SinkSpec {
+  // List of Kafka topics, separated by ','.
+  string topics = 1 [(required) = true];
+
+  // The compression type used for files put on GCS.
+  // The supported values are: `gzip`, `snappy`, `zstd`, `none`.
+  // Optional, the default is `none`.
+  string file_compression_type = 2;
+
+  // Max records per file.
+  google.protobuf.Int64Value file_max_records = 3;
+
+  // Credentials for connecting to S3 storage
+  S3ConnectionSpec s3_connection = 4 [(required) = true];
+}
+
+// Specification for update Kafka S3-Sink Connector
+message UpdateConnectorConfigS3SinkSpec {
+  // List of Kafka topics, separated by ','.
+  string topics = 1;
+
+  // Max records per file.
+  google.protobuf.Int64Value file_max_records = 2;
+
+  // Credentials for connecting to S3 storage
+  S3ConnectionSpec s3_connection = 3;
+}
+
+// An Apache Kafka® S3-Sink
+// connector resource.
+message ConnectorConfigS3Sink {
+  // List of Kafka topics, separated by ','
+  string topics = 1;
+
+  // The compression type used for files put on GCS.
+  // The supported values are: `gzip`, `snappy`, `zstd`, `none`.
+  // Optional, the default is `none`.
+  string file_compression_type = 2;
+
+  // Max records per file.
+  google.protobuf.Int64Value file_max_records = 3;
+
+  // Credentials for connecting to S3 storage
+  S3Connection s3_connection = 4;
+}

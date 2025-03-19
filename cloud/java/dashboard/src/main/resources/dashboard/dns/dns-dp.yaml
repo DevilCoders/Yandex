@@ -1,0 +1,763 @@
+uid: ycDnsDp
+refresh: 1m
+title: DNS DP
+
+tags: [ 'ycp', 'ycp-dns', 'ycp-dns-dp', 'ycp-duty', 'ycp-top', 'ycp-drilldown' ]
+links:
+  #  - { title: 'Solomon Auth (${cluster})', vars: false, url: 'https://solomon.cloud-${cluster}.yandex-team.ru' }
+  - { tags: [ 'ycp-dns' ] }
+  - { title: 'SLO', vars: false, url: 'https://grafana.private-api.ycp.cloud.yandex.net/d/7j62UsGGk/dns' }
+  - { title: 'V-routers Summary', vars: false, url: 'https://solomon.yandex-team.ru/?project=yandexcloud&dashboard=compute_node_dns_${cluster}' }
+  - { title: 'User vm health', vars: false, url: 'https://solomon.yandex-team.ru/?project=yandexcloud&cluster=cloud_${cluster}_compute&service=compute&dashboard=compute-instance-health&l.instance_id=INSTANCE_ID&b=1h&e=' }
+  - { title: 'Compute Node Net', vars: false, url: 'https://solomon.yandex-team.ru/?project=yandexcloud&cluster=cloud_${cluster}&service=sys&dashboard=compute_node_network_metrics_${cluster}&l.host=HOST_ID' }
+
+variables:
+  ui:
+    cluster:
+      values: [ prod, preprod, testing, gpn ]
+    forward_resolver:
+      multi: true
+      values: [
+          '[2a0d:d6c0:0:1a::466]:53',
+          '[2a0d:d6c0:0:ff1b::309]:53',
+          '[2a0d:d6c0:0:1c::c1]:53',
+          '[2a0d:d6c0:0:ff1b::b7]:53',
+          '[2a03:90c0:999d::1]:53',
+          '[2a02:6b8::1:1]:53',
+          '[2a02:6b8:0:3400::1]:53',
+          '[2a02:6b8:0:3400::5005]:53',
+          '[2a02:6b8:0:3400::1023]:53',
+          '[2606:4700:4700::1001]:53'
+      ]
+      titles: [
+          'CloudDNS PROD',
+          'CloudDNS preprod',
+          'CloudDNS Canary PROD',
+          'CloudDNS Canary preprod',
+          'G-Core',
+          'ns-cache',
+          'dns-cache',
+          'ns64-cache',
+          'dns64-cache',
+          'CloudFlare'
+      ]
+    dns_cluster:
+      values: [ 'vpc', 'yndx', 'infra', 'inet', 'exp', 'lab' ]
+      titles: [ 'VPC', 'YNDX', 'INFRA', 'INET', 'exp (prod only)', 'lab (testing only)' ]
+    zone:
+      values: [ '*', 'myt', 'sas', 'vla' ]
+  uiQuery:
+    slice:
+      includeAllValue: '-*-'
+      labels: 'host!=cluster'
+      label: 'host'
+      regex: '^\w+-\w+(-main-|-primary-|-secondary-|-lb-|-canary-|-shadow-|-1-|-2-|-)\w+-\w+\d+$'
+    number:
+      includeAllValue: "*"
+      labels: 'host!=cluster'
+      label: 'host'
+      regex: '^\w+-\w+-\w+-\w+-\w+?(\d+)$'
+  repeat:
+    dc:
+      values: [ Vla, Sas, Myt ]
+      titles: [ VLA, SAS, MYT ]
+  replacement:
+    host: 'dns-${dns_cluster}${slice}*-${zone}${number}' # after ${slice}, '*' is a ${cluster}, but that would break at testing
+    !include ../include/errors.yaml
+
+graphDefaults:
+  datasource: 'Solomon Cloud'
+  width: 8
+  height: 6
+
+queryDefaults:
+  dropNan: false
+  labels: 'project=dns, service=coredns, cluster=${cluster}, dns-cluster=${dns_cluster}, dns-project=dpl, host=@host'
+
+rows:
+  - title: Golden Signals
+    panels:
+      - type: graph
+        title: 'RPS'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        yAxes: [ { format: short, min: 0 } ]
+        queries:
+          - params: { labels: 'name=dnscache_serve_dns_duration_seconds' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ 'sum', 'type' ],  non_negative_derivative: [ ], drop_above: "1000000", alias: '{{type}}' }
+
+      - type: graph
+        title: 'In-flight Requests'
+        queries:
+          - params: { labels: 'name=in_flight_summary_max' }
+            select: { group_lines: [ 'sum' ], alias: 'all' }
+          - params: { labels: 'name=in_flight_forwards_summary_max' }
+            select: { group_lines: [ 'sum' ], alias: 'forward' }
+        display: { empty: false }
+        yAxes: [ { format: short, min: 0 } ]
+
+      - type: graph
+        title: 'Request Durations'
+        templates: { name: percentile, groupLines: true, levels: [ "50", "75", "90", "95", "99", "99.9", "100" ], format: solomon }
+        queries:
+          - params: { labels: 'name=coredns_dns_request_duration_seconds, type=-, server=all' }
+
+      - type: graph
+        title: 'Instances Count'
+        description: 'Лимиты (для прода): inet 30; vpc lb  vla-33  sas-27  myt-30'
+        params: { width: 4 }
+        queries:
+          - params: { labels: 'name=go_threads' }
+            groupByTime: { max: 'default' }
+            select: { group_lines: [ 'count' ], alias: 'count all chosen hosts' }
+        display: { legend: false, fill: 0 }
+
+      - type: graph
+        title: 'Replications RPS'
+        params: { width: 6 }
+        templates: { name: rps }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=dnscache_replication_duration_seconds_count' }
+        display: { legend: false }
+
+      - type: graph
+        params: { width: 6 }
+        title: 'Errors'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        templates: { name: errors }
+        queries:
+          - params: { labels: 'name=dnscache_logs, level=error' }
+          - params: { labels: 'name=dnscache_logs, level=warn' }
+        display: { stack: false }
+        draw:
+          - { alias: 'errors', color: '#b20' }
+          - { alias: 'warns', color: '#da7' }
+
+      - type: graph
+        title: 'Authoritative Request Durations'
+        templates: { name: percentile, groupLines: true, levels: [ "50", "75", "90", "95", "99", "99.9", "100" ], format: solomon }
+        queries:
+          - params: { labels: 'name=dnscache_serve_dns_duration_seconds, type=authoritative' }
+
+  - title: 'Forwarding (common)'
+    panels:
+      - type: graph
+        title: 'In-flight Requests (all)'
+        params: { width: 6 }
+        queries:
+          - params: { labels: 'name=in_flight_forwards_requests_summary_max' }
+            select: { group_lines: [ 'sum' ], alias: 'forward' }
+        display: { empty: false }
+        yAxes: [ { format: short, min: 0 } ]
+
+      - type: graph
+        title: 'Fan-out'
+        params: { width: 6 }
+        templates: { name: rps, sumLines: [ n ] }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=dnscache_forwarder_choice, address="*"' }
+        display: { empty: false }
+
+      - type: graph
+        title: 'Fan-out Winners'
+        params: { width: 6 }
+        templates: { name: rps, sumLines: [ address ] }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=dnscache_forwarder_choice, n="*"' }
+        display: { empty: false }
+
+      - type: graph
+        title: 'Fan-out Why'
+        params: { width: 6 }
+        templates: [ { name: rps, sumLines: [ n ] }, { name: patchSelect, after: last, add: { alias: '{{reason}}' } } ]
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=dnscache_forwarder_choice_why' }
+        display: { empty: false, stack: true }
+
+  - title: 'Forwarding ${forward_resolver}'
+    uiRepeat: forward_resolver
+    collapsed: true
+    queryDefaults: { labels: 'to=${forward_resolver}' }
+    panels:
+      - type: graph
+        title: 'RPS'
+        templates: { name: rps }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=coredns_forward_requests_total' }
+
+      - type: graph
+        title: 'Responses (by RCode)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=coredns_forward_responses_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ 'sum', 'rcode' ], alias: '{{rcode}}' }
+        display: { decimals: 1, empty: false, stack: false }
+
+      - type: graph
+        title: 'Request Durations'
+        templates: { name: percentile, groupLines: true, levels: [ "50", "75", "90", "95", "99", "99.9", "100" ], format: solomon }
+        queries:
+          - params: { labels: 'name=coredns_forward_request_duration_seconds, type=-' }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: 'Fan-out'
+        templates: { name: rps, sumLines: [ n ] }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=dnscache_forwarder_choice, to=-, address=${forward_resolver}' }
+        display: { empty: false }
+
+      - type: graph
+        title: 'Connections cache hits'
+        description: 'Reused sockets'
+        templates: { name: rps, sumLines: [ n ] }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=coredns_forward_conn_cache_hits_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ 'sum', 'proto' ], alias: '{{proto}}' }
+        display: { decimals: 1, empty: false, stack: true }
+
+      - type: graph
+        title: 'Connections cache misses'
+        description: 'New opened sockets'
+        templates: { name: rps, sumLines: [ n ] }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=coredns_forward_conn_cache_misses_total' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ 'sum', 'proto' ], alias: '{{proto}}' }
+        display: { decimals: 1, empty: false, stack: true }
+
+  - title: 'EDS'
+    collapsed: true
+    panels:
+      - type: graph
+        title: 'Zones count per request'
+        templates: { name: percentile, groupLines: true, levels: [ "50", "75", "90", "95", "99", "99.9", "100" ], format: solomon }
+        queries:
+          - params: { labels: 'name=dnscache_glob_request_weight, type=zones' }
+            groupByTime: { max: 'default' }
+        yAxes: [ { format: short } ]
+
+      - type: graph
+        title: 'Records weight per request'
+        templates: { name: percentile, groupLines: true, levels: [ "50", "75", "90", "95", "99", "99.9", "100" ], format: solomon }
+        queries:
+          - params: { labels: 'name=dnscache_glob_request_weight, type=records' }
+            groupByTime: { max: 'default' }
+        yAxes: [ { format: short } ]
+
+#      - type: graph
+#        title: 'Records count per request'
+#        queries:
+#          - params: { labels: 'name=dnscache_glob_request_weight, type=found_records' }
+#            groupByTime: { max: 'default' }
+#            select: { group_by_labels: [ sum, host ], diff: [ ], percentile_group_lines: "50", alias: Found p50 }
+#          - params: { labels: 'name=dnscache_glob_request_weight, type=used_records' }
+#            groupByTime: { max: 'default' }
+#            select: { group_by_labels: [ sum, host ], diff: [ ], percentile_group_lines: "50", alias: Used p50 }
+#
+#          - params: { labels: 'name=dnscache_glob_request_weight, type=found_records' }
+#            groupByTime: { max: 'default' }
+#            select: { group_by_labels: [ sum, host ], diff: [ ], percentile_group_lines: "90", alias: Found p90 }
+#          - params: { labels: 'name=dnscache_glob_request_weight, type=used_records' }
+#            groupByTime: { max: 'default' }
+#            select: { group_by_labels: [ sum, host ], diff: [ ], percentile_group_lines: "90", alias: Used p90 }
+#
+#          - params: { labels: 'name=dnscache_glob_request_weight, type=found_records' }
+#            groupByTime: { max: 'default' }
+#            select: { group_by_labels: [ sum, host ], diff: [ ], percentile_group_lines: "99", alias: Found p99 }
+#          - params: { labels: 'name=dnscache_glob_request_weight, type=used_records' }
+#            groupByTime: { max: 'default' }
+#            select: { group_by_labels: [ sum, host ], diff: [ ], percentile_group_lines: "99", alias: Used p99 }
+#
+#          - params: { labels: 'name=dnscache_glob_request_weight, type=found_records' }
+#            groupByTime: { max: 'default' }
+#            select: { group_by_labels: [ sum, host ], diff: [ ], percentile_group_lines: "100", alias: Found p100 }
+#          - params: { labels: 'name=dnscache_glob_request_weight, type=used_records' }
+#            groupByTime: { max: 'default' }
+#            select: { group_by_labels: [ sum, host ], diff: [ ], percentile_group_lines: "100", alias: Used p100 }
+
+
+      - type: graph
+        title: 'Authoritative Request Durations'
+        templates: { name: percentile, groupLines: true, levels: [ "50", "75", "90", "95", "99", "99.9", "100" ], format: solomon }
+        queries:
+          - params: { labels: 'name=dnscache_serve_dns_duration_seconds, type=glob' }
+
+  - title: 'Cache'
+    panels:
+      - type: graph
+        title: 'Cache Touch Delay (max by hosts)'
+        description: 'Delay since last cache touch (change with or without actual update)'
+        queries:
+          - params: { labels: 'name=cache_touch_delay_max' }
+            select: { group_lines: [ 'max' ], alias: 'max' }
+        yAxes: [ { format: s, min: 0 } ]
+        display: { legend: false, empty: false, decimals: 2 }
+
+      - type: graph
+        title: 'Cache Update Delay (max by hosts)'
+        description: 'Delay since last cache actual update'
+        queries:
+          - params: { labels: 'name=cache_update_delay_max' }
+            select: { group_lines: [ 'max' ], alias: 'max' }
+        yAxes: [ { format: s, min: 0 } ]
+        display: { legend: false, empty: false, decimals: 2 }
+
+      - type: graph
+        title: 'Cache Propagation Time'
+        description: 'Time for changes to reach data plane'
+        queries:
+          - params: { labels: 'name=cache_propagation_time_min' }
+            select: { group_lines: [ 'min' ], alias: 'min' }
+          - params: { labels: 'name=cache_propagation_time_max' }
+            select: { group_lines: [ 'max' ], alias: 'max' }
+        yAxes: [ { format: s, min: 0 } ]
+        display: { decimals: 2 }
+
+      - type: graph
+        title: 'Views count'
+        params: { width: 5 }
+        queries:
+          - params: { labels: 'name=dnscache_stats,type=view_count' }
+            select: { group_lines: [ 'min' ], alias: 'min' }
+          - params: { labels: 'name=dnscache_stats,type=view_count' }
+            select: { group_lines: [ 'max' ], alias: 'max' }
+        display: { empty: false }
+
+      - type: graph
+        title: 'Zones count'
+        params: { width: 5 }
+        queries:
+          - params: { labels: 'name=dnscache_stats,type=zones_count' }
+            select: { group_lines: [ 'min' ], alias: 'min' }
+          - params: { labels: 'name=dnscache_stats,type=zones_count' }
+            select: { group_lines: [ 'max' ], alias: 'max' }
+        #          - params: { labels: 'name=dnscache_stats,type=zones_count' }
+        #            expr: "alias(group_lines('max', group_lines('max', {@labels,name='dnscache_stats',type=zones_count}) ) - group_lines('min', {@labels, name='dnscache_stats',type=zones_count}) ), 'diff')"
+        #            select: { group_lines: [ 'max' ], alias: 'diff' }
+        display: { empty: false }
+      #        draw: [{ alias: 'diff', at: right }]
+
+      - type: graph
+        title: 'RecordSet count'
+        params: { width: 5 }
+        queries:
+          - params: { labels: 'name=dnscache_stats,type=record_sets_count' }
+            select: { group_lines: [ 'min' ], alias: 'min' }
+          - params: { labels: 'name=dnscache_stats,type=record_sets_count' }
+            select: { group_lines: [ 'max' ], alias: 'max' }
+        display: { empty: false }
+
+      - type: graph
+        title: 'Unlinked Zones count'
+        params: { width: 3 }
+        queries:
+          - params: { labels: 'name=unlinked_zones_summary' }
+            select: { group_lines: [ 'max' ] }
+        display: { empty: false }
+
+      - type: graph
+        title: 'Updates/Deletes (all objects)'
+        params: { width: 6 }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=dnscache_changes,operation=del' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_lines: [ 'avg' ], alias: 'deletes' }
+          - params: { labels: 'name=dnscache_changes,operation=update' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_lines: [ 'avg' ], alias: 'updates' }
+        yAxes: [ { format: short, min: 0 } ]
+        display: { empty: false }
+
+  - title: 'Billing'
+    panels:
+      - type: graph
+        title: 'Count metrics billed per second'
+        templates: { name: rps }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=dnscache_billing_metrics_number' }
+
+      - type: graph
+        title: 'Count metrics filtered per second'
+        templates: { name: rps }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=dnscache_filterd_billing' }
+
+      - type: graph
+        title: 'Count metrics dropped per second'
+        templates: { name: rps }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=dnscache_billing_metrics_drop' }
+
+  - title: Types/Sizes/Drops
+    panels:
+      - type: graph
+        title: 'Requests (by type)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=coredns_dns_requests_total, server=all, type!=all' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ 'sum', 'type' ], alias: '{{type}}' }
+        display: { stack: true, empty: false }
+
+      - type: graph
+        title: 'Responses (by RCode)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=coredns_dns_responses_total, server=all' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ 'sum', 'rcode' ], alias: '{{rcode}}' }
+        display: { decimals: 1, empty: false, stack: false }
+
+      - type: graph
+        title: 'Ratelimiter Drops'
+        queries:
+          - params: { labels: 'name=dnscache_dropped_requests' }
+            select: { group_by_labels: [ 'sum', 'limit' ], non_negative_derivative: [ ], alias: '{{limit}}' }
+        yAxes: [ { format: short, min: 0 } ]
+
+      - type: graph
+        title: 'Request Size'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=coredns_dns_request_size_bytes, server=all' }
+        yAxes: [ { format: bytes } ]
+
+      - type: graph
+        title: 'Response Size'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=coredns_dns_response_size_bytes, server=all' }
+        yAxes: [ { format: bytes } ]
+
+      - type: graph
+        title: 'Buffer Errors'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'service=node-exporter_ma,name=node_netstat_Udp6_InErrors' }
+            select: { diff: [ ], alias: 'udp6-in-errors {{host}}' }
+          - params: { labels: 'service=node-exporter_ma,name=node_netstat_Udp_InErrors' }
+            select: { diff: [ ], alias: 'udp4-in-errors {{host}}' }
+        display: { empty: false, sort: decreasing }
+        yAxes: [ { format: short, min: 0 } ]
+
+  - title: Host
+    queryDefaults:
+      labels: 'project=dns, service=node-exporter_ma, cluster=${cluster}, dns-cluster=${dns_cluster}, dns-project=dpl, host=@host'
+    panels:
+      - type: graph
+        title: 'CPU (mode - overall)'
+        description: '100% - одно ядро. Лимиты (для прода): vpc main 16 (lb 4); inet 4; infra 2'
+        params: { width: 6 }
+        templates:
+          - { name: patchSelect, before: last, add: { moving_avg: [ 30s ] } }
+        display: { legend: false, fill: 0 }
+        yAxes: [ { format: percentunit, decimals: 1 } ]
+        queryDefaults:
+          labels: 'name=node_cpu_seconds_total, cpu=*'
+        queries:
+          - params: { labels: 'mode=user' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, host ], percentile_group_lines: "50", alias: user p50 }
+          - params: { labels: 'mode=user' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, host ],  percentile_group_lines: "99", alias: user p99 }
+          - params: { labels: 'mode=system' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, host ], percentile_group_lines: "50", alias: system p50 }
+          - params: { labels: 'mode=system' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, host ], percentile_group_lines: "99", alias: system p99 }
+          - params: { labels: 'mode=iowait' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, host ],  percentile_group_lines: "50", alias: iowait p50 }
+          - params: { labels: 'mode=iowait' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, host ],  percentile_group_lines: "99", alias: iowait p99 }
+          - params: { labels: 'mode=steal' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, host ],  percentile_group_lines: "50", alias: steal p50 }
+          - params: { labels: 'mode=steal' }
+            groupByTime: { max: 'default' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, host ],  percentile_group_lines: "99", alias: steal p99 }
+      - type: graph
+        title: 'la1'
+        description: 'Load Average – скользящее среднее System Load за 1m: https://en.wikipedia.org/wiki/Load_(computing)'
+        params: { width: 6 }
+        queries:
+          - params: { labels: 'name=node_load1|system_n_cpus' }
+            select: { group_lines: [ 'max' ], alias: 'max' }
+          - params: { labels: 'name=node_load1|system_n_cpus' }
+            select: { group_lines: [ 'min' ], alias: 'min' }
+        display: { empty: false }
+        yAxes: [ { format: short, min: 0 } ]
+      - type: graph
+        title: 'eth0: total bytes/s'
+        params: { width: 6 }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=node_network_receive_bytes_total, device=eth0' }
+            select: { non_negative_derivative: [ ], group_lines: [ 'sum' ], alias: 'rx' }
+          - params: { labels: 'name=node_network_transmit_bytes_total, device=eth0' }
+            select: { non_negative_derivative: [ ], group_lines: [ 'sum' ], alias: 'tx', math: "* -1" }
+        yAxes: [ { format: Bps } ]
+      - type: graph
+        title: 'eth0: total packets/s'
+        params: { width: 6 }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=node_network_receive_packets_total, device=eth0' }
+            select: { non_negative_derivative: [ ], group_lines: [ 'sum' ], alias: 'rx' }
+          - params: { labels: 'name=node_network_transmit_packets_total, device=eth0' }
+            select: { non_negative_derivative: [ ], group_lines: [ 'sum' ], alias: 'tx', math: "* -1" }
+        yAxes: [ { format: pps } ]
+      - type: graph
+        title: 'Memory'
+        description: 'Лимиты (для прода): vpc main 32 (lb 20); inet 12; infra 6 (lb 10)'
+        params: { width: 6 }
+        display: { legend: false, fill: 0 }
+        yAxes: [ { format: decbytes, decimals: 1 } ]
+        queries:
+          - params: { labels: 'name=node_memory_AnonPages_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "50", alias: AnonPages_bytes p50 }
+          - params: { labels: 'name=node_memory_AnonPages_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "99", alias: AnonPages_bytes p99 }
+          - params: { labels: 'name=node_memory_Cached_bytes|node_memory_Buffers_bytes|node_memory_Writeback_bytes|node_memory_Dirty_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "50", alias: Cached+Buffers+Writeback+Dirty_bytes p50 }
+          - params: { labels: 'name=node_memory_Cached_bytes|node_memory_Buffers_bytes|node_memory_Writeback_bytes|node_memory_Dirty_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "99", alias: Cached+Buffers+Writeback+Dirty_bytes p99 }
+          - params: { labels: 'name=node_memory_Slab_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "50", alias: Slab_bytes p50 }
+          - params: { labels: 'name=node_memory_Slab_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "99", alias: Slab_bytes p99 }
+          - params: { labels: 'name=node_memory_SUnreclaim_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "50", alias: SUnreclaim_bytes p50 }
+          - params: { labels: 'name=node_memory_SUnreclaim_bytes' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ sum, host ], percentile_group_lines: "99", alias: SUnreclaim_bytes p99 }
+      - type: graph
+        title: 'la15'
+        description: 'Load Average – скользящее среднее System Load за 15m: https://en.wikipedia.org/wiki/Load_(computing)'
+        params: { width: 6 }
+        queries:
+          - params: { labels: 'name=node_load15|system_n_cpus' }
+            select: { group_lines: [ 'max' ], alias: 'max' }
+          - params: { labels: 'name=node_load15|system_n_cpus' }
+            select: { group_lines: [ 'min' ], alias: 'min' }
+        display: { empty: false }
+        yAxes: [ { format: short, min: 0 } ]
+      - type: graph
+        title: 'kubelet total bytes/s'
+        description: 'Сколько байт отправили в kubelet'
+        params: { width: 6 }
+        queries:
+          - params: { labels: 'name=iptables_bytes_total, table=filter, chain=INPUT, target=KUBE-FIREWALL' }
+            groupByTime: { avg: '1m' }
+            select: { non_negative_derivative: [ ], group_lines: [ 'sum' ], alias: 'v4' }
+          - params: { labels: 'name=ip6tables_bytes_total, table=filter, chain=INPUT, target=KUBE-FIREWALL' }
+            groupByTime: { avg: '1m' }
+            select: { non_negative_derivative: [ ], group_lines: [ 'sum' ], alias: 'v6' }
+        display: { empty: false }
+        yAxes: [ { format: Bps } ]
+      - type: graph
+        title: 'kubelet total packets/s'
+        description: 'Сколько пакетов отправили в kubelet'
+        params: { width: 6 }
+        queries:
+          - params: { labels: 'name=iptables_packets_total, table=filter, chain=INPUT, target=KUBE-FIREWALL' }
+            groupByTime: { avg: '1m' }
+            select: { non_negative_derivative: [ ], group_lines: [ 'sum' ], alias: 'v4' }
+          - params: { labels: 'name=ip6tables_packets_total, table=filter, chain=INPUT, target=KUBE-FIREWALL' }
+            groupByTime: { avg: '1m' }
+            select: { non_negative_derivative: [ ], group_lines: [ 'sum' ], alias: 'v6' }
+        display: { empty: false }
+        yAxes: [ { format: pps } ]
+      - type: graph
+        title: 'IO'
+        params: { width: 6 }
+        templates:
+          - { name: patchSelect, before: last, add: { moving_avg: [ 1m ] } }
+        display: { legend: false, fill: 0 }
+        yAxes: [ { format: s, decimals: 1 } ]
+        queryDefaults:
+          labels: 'device=*'
+        queries:
+          - params: { labels: 'name=node_disk_read_time_seconds_total' }
+            groupByTime: { max: 'default' }
+            select: { diff: [ ], drop_below: "0", group_by_labels: [ sum, host ], percentile_group_lines: "50", alias: disk_read_time_seconds p50 }
+          - params: { labels: 'name=node_disk_read_time_seconds_total' }
+            groupByTime: { max: 'default' }
+            select: { diff: [ ], drop_below: "0", group_by_labels: [ sum, host ], percentile_group_lines: "99", alias: disk_read_time_seconds p99 }
+          - params: { labels: 'name=node_disk_write_time_seconds_total' }
+            groupByTime: { max: 'default' }
+            select: { diff: [ ], drop_below: "0", group_by_labels: [ sum, host ], percentile_group_lines: "50", alias: disk_write_time_seconds p50 }
+          - params: { labels: 'name=node_disk_write_time_seconds_total' }
+            groupByTime: { max: 'default' }
+            select: { diff: [ ], drop_below: "0", group_by_labels: [ sum, host ], percentile_group_lines: "99", alias: disk_write_time_seconds p99 }
+      - type: graph
+        title: 'Sockets in use (max by hosts)'
+        params: { width: 6 }
+        display: { legend: false, fill: 0, sort: decreasing }
+        queries:
+          - params: { labels: 'name=node_sockstat_*_inuse' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ 'max', 'name' ], alias: '{{name}}' }
+      - type: graph
+        title: 'netfilter bandwidth drops: total bytes/s'
+        description: 'Сколько байт дропнули правилами iptables/ip6tables. Защита от ddos на уровне ОС перед приложением coredns'
+        params: { width: 6 }
+        queries:
+          - params: { labels: 'name=iptables_bytes_total, table=mangle, chain=INPUT, target=DROP' }
+            groupByTime: { avg: '1m' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, opt ], alias: '{{opt}}' }
+          - params: { labels: 'name=ip6tables_bytes_total, table=mangle, chain=INPUT, target=DROP' }
+            groupByTime: { avg: '1m' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, opt ], alias: '{{opt}}' }
+        display: { empty: false }
+        yAxes: [ { format: Bps } ]
+      - type: graph
+        title: 'netfilter bandwidth drops: total packets/s'
+        description: 'Сколько пакетов дропнули правилами iptables/ip6tables. Защита от ddos на уровне ОС перед приложением coredns'
+        params: { width: 6 }
+        queries:
+          - params: { labels: 'name=iptables_packets_total, table=mangle, chain=INPUT, target=DROP' }
+            groupByTime: { avg: '1m' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, opt ], alias: '{{opt}}' }
+          - params: { labels: 'name=ip6tables_packets_total, table=mangle, chain=INPUT, target=DROP' }
+            groupByTime: { avg: '1m' }
+            select: { non_negative_derivative: [ ], group_by_labels: [ sum, opt ], alias: '{{opt}}' }
+        display: { empty: false }
+        yAxes: [ { format: pps } ]
+
+  - title: Application
+    panels:
+      - type: graph
+        title: 'Panic Count'
+        queries:
+          - params: { labels: 'name=coredns_panics_total' }
+            groupByTime: { max: 'default' }
+            select: { alias: '{{host}}' }
+        display: { empty: false }
+
+      - type: graph
+        title: 'GC/s'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=go_gc_duration_seconds_count' }
+            groupByTime: { max: default }
+            select: { non_negative_derivative: [ ] }
+        display: { empty: false }
+        yAxes: [ { format: short, decimals: 0 } ]
+
+      - type: graph
+        title: 'GC Durations (s)'
+        yAxes: [ { format: 's' } ]
+        queries:
+          - params: { labels: 'name=go_gc_duration_seconds' }
+            groupByTime: { max: 'default' }
+            select: { group_by_labels: [ 'avg', 'quantile' ] }
+
+      - type: graph
+        title: '% Cores'
+        queries:
+          - params: { labels: 'name=process_cpu_seconds_total' }
+            groupByTime: { max: default }
+            select: { non_negative_derivative: [ ] }
+        display: { empty: false }
+        yAxes: [ { format: percentunit, decimals: 0 } ]
+
+
+      - type: graph
+        title: 'Goroutines'
+        queries:
+          - params: { labels: 'name=go_goroutines' }
+            groupByTime: { max: 'default' }
+            select: { alias: '{{host}}' }
+        display: { empty: false }
+
+      - type: graph
+        title: 'Threads'
+        queries:
+          - params: { labels: 'name=go_threads' }
+            groupByTime: { max: 'default' }
+            select: { alias: '{{host}}' }
+        display: { empty: false }
+
+      - type: graph
+        title: 'File Descriptors'
+        queries:
+          - params: { labels: 'name=process_open_fds' }
+            groupByTime: { max: 'default' }
+            select: { alias: '{{host}}' }
+        display: { empty: false }
+
+      - type: graph
+        title: 'Memory'
+        display: { legend: false, fill: 0 }
+        yAxes: [ { format: decbytes, decimals: 1 } ]
+        queries:
+          - params: { labels: 'name=process_virtual_memory_bytes|process_resident_memory_bytes' }
+            groupByTime: { max: 'default' }
+            select: { alias: '{{host}} {{name}}' }
+
+      - type: graph
+        title: 'Go Memory (memstats)'
+        queries:
+          - params: { labels: 'name=go_memstats_alloc_bytes' }
+            groupByTime: { max: 'default' }
+            select: { alias: '{{host}}' }
+        display: { empty: false }
+        yAxes: [ { format: decbytes, decimals: 1 } ]
+
+  - title: Vrouter (for vpc clusters only)
+    graphDefaults: { datasource: 'Solomon' }
+    queryDefaults: { labels: 'project=yandexcloud, service=oct_vrouter, cluster=cloud_${cluster}_compute, dns-cluster=-, dns-project=-' }
+    panels:
+      - type: graph
+        repeat: dc
+        title: 'RPS @{dc:title}'
+        templates: { name: rps, sensor: rate }
+        queries:
+          - params: { labels: 'metric_group=DnsInfo, metric=dns_requests_per_second, host=@{dc}' }
+            groupByTime: { max: 'default' }
+
+      - type: graph
+        repeat: dc
+        title: 'Time to Client @{dc:title}'
+        description: 'Время, за которое vrouter ответил клиенту'
+        templates: { name: percentile, sensor: raw, groupLines: true, format: 'time_ms' }
+        queries:
+          - params: { labels: 'metric_group=DnsLatency, metric=client_response_time, host=@{dc}' }
+            groupByTime: { max: 'default' }
+        yAxes: [ { format: ms, min: 0 } ]
+
+      - type: graph
+        repeat: dc
+        title: 'Time to Server @{dc:title}'
+        description: 'Время, за которое vrouter получил ответ от dns dp. Это время больше времени клиента из-за включенного fanout'
+        templates: { name: percentile, sensor: raw, groupLines: true, format: 'time_ms' }
+        queries:
+          - params: { labels: 'metric_group=DnsLatency, metric=server_response_time, host=@{dc}' }
+            groupByTime: { max: 'default' }
+        yAxes: [ { format: ms, min: 0 } ]

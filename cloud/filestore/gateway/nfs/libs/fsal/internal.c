@@ -1,0 +1,8 @@
+#include "internal.h"
+
+////////////////////////////////////////////////////////////////////////////////
+
+fsal_errors_t yfs_service2fsal_error(int *retval) {
+    // TODO
+    return ERR_FSAL_SERVERFAULT;
+}

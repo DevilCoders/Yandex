@@ -1,0 +1,45 @@
+$date_format = DateTime::Format("%Y-%m-%d");
+$now = Unwrap(RemoveTimezone(CurrentTzDate("Europe/Moscow")));
+$start = Unwrap(RemoveTimezone(DateTime::MakeTzDate(DateTime::StartOfMonth($now - Interval("P2D")))));
+
+$data = (SELECT
+SUM(`reports`.cost) as total,
+`date`,
+bu
+FROM
+$reports_table as `reports`
+INNER JOIN
+$billing_accounts_table as `accounts`
+ON
+reports.billing_account_id = accounts.billing_account_id
+INNER JOIN
+`//statbox/heavy-dict/abc/last` as abc
+ON String::AsciiToLower(`accounts`.name) = String::AsciiToLower(`abc`.slug) and $date_format(`reports`.`date`) = `abc`.`date`
+WHERE $date_format(`reports`.`date`) > "2021-09-30"
+and abc.billing_in = "balance"
+GROUP BY abc.top_to_oebs as bu, `reports`.`date` as `date`
+);
+
+
+$result = (SELECT
+$product_id as `product_id`,
+cast(data.total as double) as amount,
+case when data.bu = "mlu" then "taxi" else data.bu end as project_id,
+$date_format(`date`) as `date`
+FROM
+$data as data
+);
+DEFINE ACTION $data_to_day_table($day) AS
+    $path = $base_dest || $day;
+    INSERT INTO $path
+    WITH TRUNCATE
+    SELECT
+        *
+    FROM $result
+    WHERE `date` = $day;
+    COMMIT;
+END DEFINE;
+
+
+EVALUATE FOR $day in ListFromRange($start, Unwrap($now+Interval("P1D")))
+    DO $data_to_day_table(cast($day as string));

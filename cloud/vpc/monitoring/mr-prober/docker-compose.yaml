@@ -1,0 +1,126 @@
+# `condition` in `depends_on` is supported in compose file version 2.* or in docker-compose version from 1.29
+# https://docs.docker.com/compose/compose-file/compose-file-v2/
+version: '2.4'
+
+# common environment variables
+x-env-variables-common: &x-env-variables-common
+  HOST: api
+  DEBUG: ${DEBUG:-True}
+  CLUSTER_ID: ${CLUSTER_ID:-1}
+
+  # if there is a need to connect locally running services to another DB, you can override the following variable
+  DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@db:5432/postgres}
+
+  # if there is a need to connect locally running services to another S3, you can override the following variables
+  S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+  # the keys listed below are generated for a test installation and do not represent any secrecy
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-T6C4JXZ35SC68EC3YCVU}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-4qYJgJXtSu4P+yFJ7abgiphnwABM5cJcLAVAqR8H}
+
+volumes:
+  db-data:
+  minio-data:
+
+services:
+  agent:
+    build:
+      context: .
+      dockerfile: ./agent/Dockerfile
+    environment: *x-env-variables-common
+    volumes:
+      - .:/mr_prober:ro
+      - ./logs:/mr_prober/logs
+    depends_on:
+      minio-init:
+        condition: service_started
+      minio:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: ./api/Dockerfile
+    environment: *x-env-variables-common
+    volumes:
+      - .:/mr_prober:ro
+    ports:
+      - 8080:8080
+    depends_on:
+      db-init:
+        condition: service_started
+      db:
+        condition: service_healthy
+      minio-init:
+        condition: service_started
+      minio:
+        condition: service_healthy
+
+  # this service performs the initial initialization of a locally running postgresql installation:
+  #  - applies the DB scheme
+  db-init:
+    build:
+      context: .
+      dockerfile: ./api/Dockerfile
+    environment: *x-env-variables-common
+    volumes:
+      - .:/mr_prober:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    command: "alembic upgrade head"
+
+  db:
+    image: postgres:13.6
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PGDATA: /var/lib/postgresql/data/pgdata
+    healthcheck:
+      test: "pg_isready -d postgres -U postgres"
+      interval: 2s
+      timeout: 1s
+      retries: 15
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2022-02-12T00-51-25Z
+    hostname: minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    command: minio server --console-address ":9001" /data
+    environment:
+      MINIO_ROOT_USER: minio123
+      MINIO_ROOT_PASSWORD: minio123
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 2s
+      timeout: 1s
+      retries: 15
+
+  # this service performs the initial initialization of a locally running minio installation:
+  #  - adds authorization keys
+  #  - creates the necessary buckets
+  minio-init:
+    image: minio/mc
+    environment: *x-env-variables-common
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      set -e;
+      mc alias set mr-prober-s3 "$${S3_ENDPOINT}" minio123 minio123;
+      mc admin user add mr-prober-s3 "$${S3_ACCESS_KEY_ID}" "$${S3_SECRET_ACCESS_KEY}";
+      mc admin policy set mr-prober-s3 readwrite "user=$${S3_ACCESS_KEY_ID}";
+      mc mb mr-prober-s3/mr-prober-agent-configurations;
+      mc mb mr-prober-s3/mr-prober-cluster-states;
+      mc mb mr-prober-s3/mr-prober-logs;
+      exit 0;
+      "

@@ -1,0 +1,184 @@
+---
+{% set mdb_logsdb_consumer_porto_test_user_password = yav('ver-01e61vbfqkm5c10ncgms3xjxgn', 'mdb-logsdb-consumer-porto-test-user-password') %}
+{% set mdb_logsdb_consumer_porto_prod_user_password = yav('ver-01e61vbfqkm5c10ncgms3xjxgn', 'mdb-logsdb-consumer-porto-prod-user-password') %}
+# Token can be obtained here:
+# https://wiki.yandex-team.ru/transfer-manager/replication/quickstart/
+token: {{ env.get('TOKEN') }}
+# Folder ID of MDB sink Clickhouse cluster
+folder_id: fooi5vu9rdejqc3p4b60  # mdb-internal
+endpoint: https://cdc.n.yandex-team.ru
+transfers:
+  # postgresql-log
+  # Porto-Test
+  - service: postgres
+    src:
+      consumer: mdb/porto/test/logsdb-consumer
+      topic: mdb/porto/test/postgresql-logs
+      fields: &pg-logs
+        - name: datetime
+          type: DATETIME
+        - name: log_format
+          type: STRING
+        - name: log_time
+          type: DATETIME
+        - name: timestamp
+          type: DATETIME
+        - name: user_name
+          type: STRING
+        - name: database_name
+          type: STRING
+        - name: process_id
+          type: UINT32
+        - name: connection_from
+          type: STRING
+        - name: session_id
+          type: STRING
+        - name: session_line_num
+          type: UINT32
+        - name: command_tag
+          type: STRING
+        - name: session_start_time
+          type: DATETIME
+        - name: virtual_transaction_id
+          type: STRING
+        - name: transaction_id
+          type: UINT64
+        - name: error_severity
+          type: STRING
+        - name: sql_state_code
+          type: STRING
+        - name: message
+          type: STRING
+        - name: detail
+          type: STRING
+        - name: hint
+          type: STRING
+        - name: internal_query
+          type: STRING
+        - name: internal_query_pos
+          type: UINT32
+        - name: context
+          type: STRING
+        - name: query
+          type: STRING
+        - name: query_pos
+          type: UINT32
+        - name: location
+          type: STRING
+        - name: application_name
+          type: STRING
+        - name: ms
+          type: UINT32
+        - name: cluster
+          type: STRING
+        - name: hostname
+          type: STRING
+        - name: origin
+          type: STRING
+    dst: &dst-porto-test
+      database: mdb
+      mdb_cluster_id: mdbnq9ar9md7hmkg2kju
+      user: tm_writer
+      password:
+        raw: {{ mdb_logsdb_consumer_porto_test_user_password }}
+
+  # Porto-Prod
+  - service: postgres
+    src:
+      consumer: mdb/porto/prod/logsdb-consumer
+      topic: mdb/porto/prod/postgresql-logs
+      fields: *pg-logs
+    dst: &dst-porto-prod
+      database: mdb
+      mdb_cluster_id: mdbmas2jjul3ct5q39sm
+      user: tm_writer
+      password:
+        raw: {{ mdb_logsdb_consumer_porto_prod_user_password }}
+
+  # pgbouncer-log
+  # Porto-Test
+  - service: pgbouncer
+    src:
+      consumer: mdb/porto/test/logsdb-consumer
+      topic: mdb/porto/test/pgbouncer-logs
+      fields: &pgbouncer-logs
+        - name: timestamp
+          type: DATETIME
+        - name: session_id
+          type: STRING
+        - name: db
+          type: STRING
+        - name: user
+          type: STRING
+        - name: source
+          type: STRING
+        - name: text
+          type: STRING
+        - name: pid
+          type: UINT32
+        - name: level
+          type: STRING
+        - name: ms
+          type: UINT16
+        - name: cluster
+          type: STRING
+        - name: hostname
+          type: STRING
+        - name: log_time
+          type: DATETIME
+        - name: origin
+          type: STRING
+        - name: log_format
+          type: STRING
+    dst: *dst-porto-test
+
+  # Porto-Prod
+  - service: pgbouncer
+    src:
+      consumer: mdb/porto/prod/logsdb-consumer
+      topic: mdb/porto/prod/pgbouncer-logs
+      fields: *pgbouncer-logs
+    dst: *dst-porto-prod
+
+  # odyssey-log
+  # Porto-Test
+  - service: odyssey_original
+    src:
+      consumer: mdb/porto/test/logsdb-consumer
+      topic: mdb/porto/test/odyssey-logs
+      fields: &odyssey-logs
+        - name: unixtime
+          type: DATETIME
+        - name: cid
+          type: STRING
+        - name: sid
+          type: STRING
+        - name: db
+          type: STRING
+        - name: user
+          type: STRING
+        - name: ctx
+          type: STRING
+        - name: msg
+          type: STRING
+        - name: pid
+          type: UINT32
+        - name: level
+          type: STRING
+        - name: ms
+          type: UINT32
+        - name: cluster
+          type: STRING
+        - name: hostname
+          type: STRING
+        - name: origin
+          type: STRING
+    dst: *dst-porto-test
+
+  # Porto-Prod
+  - service: odyssey_original
+    src:
+      consumer: mdb/porto/prod/logsdb-consumer
+      topic: mdb/porto/prod/odyssey-logs
+      fields: *odyssey-logs
+    dst: *dst-porto-prod

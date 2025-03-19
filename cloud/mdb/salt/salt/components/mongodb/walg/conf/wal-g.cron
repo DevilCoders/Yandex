@@ -1,0 +1,17 @@
+{% from "components/mongodb/walg/map.jinja" import walg, s3 with context %}
+{% set mongodb = salt.slsutil.renderer('salt://components/mongodb/defaults.py?saltenv=' ~ saltenv) %}
+
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
+MAILTO=''
+
+{% set condition = '' %}
+{% if salt.pillar.get('data:dbaas:shard_hosts', [])|length > 1 %}
+{%   set config = mongodb.config.get('mongod') %}
+{%   if mongodb.use_mongocfg %}
+{%     set config = mongodb.config.get('mongocfg') %}
+{%   endif %}
+{%   set condition = 'test $(/usr/bin/mongo --quiet --norc --port ' + config.net.port | string + config.cli.ssl_cli_args + ' --eval "db.isMaster().secondary" | tail -n 1) == "true" &&' %}
+{% endif %}
+
+{{ walg.backup_cron_minutes }} {{ walg.purge_cron_hours }} * * * mdb-backup {{condition}} /usr/local/bin/walg_wrapper.sh -l /etc/wal-g/zk-flock-purge.json -t {{walg.purge_timeout_mins}} -s $((RANDOM \% 120)) purge {{walg.retain_period_days}} >>{{walg.logdir}}/purge.log 2>&1
+{{ walg.backup_cron_minutes }} {{ walg.backup_cron_hours }} * * * mdb-backup {{condition}} /usr/local/bin/walg_wrapper.sh -l /etc/wal-g/zk-flock-regular_backup.json -t {{walg.backup_timeout_mins + 10}} -s $((RANDOM \% {{ walg.sleep_secs }})) backup_create >>{{walg.logdir}}/regular_backup.log 2>&1

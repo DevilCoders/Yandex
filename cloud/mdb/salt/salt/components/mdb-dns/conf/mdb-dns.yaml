@@ -1,0 +1,55 @@
+{% set env = salt['pillar.get']('yandex:environment', 'dev').split('-') %}
+{% set use_slayer = salt['pillar.get']('data:dnsapi:use_slayer', True) %}
+{% set use_compute = salt['pillar.get']('data:dbaas:vtype') == 'compute' %}
+dnsapi:
+{% if use_slayer %}
+    slayer:
+        baseurl: {{ salt['pillar.get']('data:dnsapi:slayer:baseurl', 'http://someurl') }}
+        account: {{ salt['pillar.get']('data:dnsapi:slayer:account', 'someaccount') }}
+        token: {{ salt['pillar.get']('data:dnsapi:slayer:token', 'sometoken') }}
+        fqdnsuffix: {{ salt['pillar.get']('data:dnsapi:slayer:fqdnsuffix', 'db.yandex.net') }}
+        loghttp: false
+        loghttpbody: false
+        maxrec: 1
+        resolvens: ns-cache.yandex.net
+{% if 'prod' in env %}
+        upthreads: 64
+{% else %}
+        upthreads: 2
+{% endif %}
+{% endif %}
+{% if use_compute %}
+    compute:
+        grpcurl: {{ salt['pillar.get']('data:dnsapi:compute:grpcurl') }}
+        baseurl: ""
+        token: ""
+        fqdnsuffix: {{ salt['pillar.get']('data:dnsapi:compute:fqdnsuffix', 'db.yandex.net') }}
+        loghttp: false
+        loghttpbody: false
+        maxrec: 8
+{% if 'prod' in env %}
+        upthreads: 8
+{% else %}
+        upthreads: 2
+{% endif %}
+{% endif %}
+dnsman:
+    dnsapi:
+        slayer: {{ use_slayer }}
+        compute: {{ use_compute }}
+    capath: "/opt/yandex/allCAs.pem"
+    dnsttl: 12s
+    upddur: 4s
+    cachettl: 2h
+    cleandur: 12h
+    cleanrange: 72h
+loglevel: Info
+loghttp: false
+loghttpbody: false
+service_account:
+  id: {{ salt['dbaas.pillar']('data:dnsapi:service_account:id') }}
+  key_id: {{ salt['dbaas.pillar']('data:dnsapi:service_account:key_id') }}
+  private_key: {{ salt['dbaas.pillar']('data:dnsapi:service_account:private_key') | yaml_encode }}
+app_name: mdb-dns
+environment:
+  {{ salt['dbaas.pillar']('data:environment') | yaml(False) | indent(4) }}

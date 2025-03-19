@@ -1,0 +1,132 @@
+USE hahn;
+
+PRAGMA yt.InferSchema = '10';
+PRAGMA File('libcrypta_identifier_udf.so', 'yt://hahn/home/crypta/public/udfs/stable/libcrypta_identifier_udf.so');
+PRAGMA Udf('libcrypta_identifier_udf.so');
+
+$export_to = '%MQL_DST_TABLES_PREFIX%/mql';
+$mql_history_table = '%MQL_DST_TABLES_PREFIX%/mql_history';
+$mql_delta_table = '%MQL_DST_TABLES_PREFIX%/mql_delta';
+$change_score_table = '%MQL_SRC_TABLES_PREFIX%/change_score';
+$dwh_scoring_tbl = '//home/cloud_analytics/scoring/leads/leads';
+$dyn_table = '//home/cloud_analytics/leads/dyn_table';
+$table_name_date_format = '%Y-%m-%dT%H:%M:%S';
+$dt_parse = DateTime::Parse($table_name_date_format);
+$dt_format = DateTime::Format($table_name_date_format);
+$dst_table = $export_to || '/' || $dt_format(CurrentUtcDatetime()) ?? '';
+$dst_cleanup_interval = DateTime::IntervalFromDays(31);
+
+DEFINE SUBQUERY $last_non_empty_table($path) AS
+    $max_path = (
+        SELECT MAX(Path) AS Path
+        FROM FOLDER($path, 'row_count')
+        WHERE Type = 'table'
+            AND Yson::LookupInt64(Attributes, 'row_count') > 0
+    );
+    SELECT * FROM CONCAT($max_path);
+END DEFINE;
+
+$email_to_canonical = ($email) -> {
+    RETURN Identifiers::NormalizeEmail($email);
+};
+
+$dwh_scoring = (
+    SELECT
+        billing_account_id,
+        MAX(score) AS score
+    FROM $dwh_scoring_tbl
+    GROUP BY billing_account_id
+);
+
+$lead_scores = (
+    SELECT
+        email,
+        lead_id,
+        score_id,
+        MAX_BY(new_value, marketo_id) AS score_points
+    FROM $change_score_table
+        GROUP BY email, lead_id, score_id
+);
+
+$mql_score_structure = (
+    SELECT
+        email,
+        score_date,
+        mql_mkto_id,
+        lead_dwh_id,
+        score_points,
+        'MQL' AS mkto_status,
+        first_name,
+        last_name,
+        phone,
+        timezone,
+        SUM(
+            CAST(chs.new_value AS Int8) -
+            IF(chs.old_value Is Null, 0, CAST(chs.old_value AS Int8))
+        ) AS attr_points,
+        campaign_name,
+        score_type_id,
+        Null AS attr_name,
+        Null AS attr_value,
+        ba_id,
+        dwh_score,
+        client_name
+    FROM $mql_delta_table AS mql_delta
+    LEFT JOIN $change_score_table as chs
+        ON mql_delta.lead_id = chs.lead_id
+    LEFT JOIN $dyn_table AS leads
+        ON mql_delta.lead_dwh_id = leads.dwh_id
+    LEFT JOIN $dwh_scoring AS dwh_scoring
+        ON dwh_scoring.billing_account_id = leads.ba_id
+    LEFT JOIN $lead_scores AS lead_scores
+        ON mql_delta.lead_id = lead_scores.lead_id
+        AND chs.score_id = lead_scores.score_id
+    LEFT ONLY JOIN $mql_history_table AS mql_history
+        ON mql_history.lead_dwh_id = mql_delta.lead_dwh_id
+    WHERE
+        leads.mkto_phone IS NOT Null
+    GROUP BY
+        $email_to_canonical(mql_delta.email) AS email,
+        chs.lead_id AS mql_mkto_id,
+        chs.score_name AS score_type_id,
+        leads.mkto_phone AS phone,
+        leads.mkto_timezone AS timezone,
+        mql_delta.campaign_name AS campaign_name,
+        mql_delta.lead_dwh_id AS lead_dwh_id,
+        DateTime::ToMicroseconds(DateTime::FromSeconds(CAST(mql_delta.created AS Uint32))) AS score_date,
+        leads.first_name AS first_name,
+        leads.last_name AS last_name,
+        lead_scores.score_points AS score_points,
+        leads.ba_id AS ba_id,
+        IF(leads.mkto_person_type = 'company', leads.mkto_person_name, Null) AS client_name,
+        CAST(dwh_scoring.score AS String) AS dwh_score
+);
+
+INSERT INTO $dst_table WITH TRUNCATE
+    SELECT * FROM $mql_score_structure;
+
+INSERT INTO $mql_history_table
+    SELECT * FROM $mql_delta_table AS delta
+    LEFT ONLY JOIN $mql_history_table AS history
+        ON delta.lead_dwh_id = history.lead_dwh_id
+    ORDER BY marketo_id;
+
+COMMIT;
+
+-- Cleanup old tables
+
+DEFINE ACTION $drop_table($table_path) AS
+    DROP TABLE $table_path;
+END DEFINE;
+
+$tables_to_delete = (
+    SELECT AGGREGATE_LIST(Path)
+    FROM FOLDER($export_to, 'row_count')
+    WHERE Type == 'table' AND (
+        DateTime::MakeTimestamp($dt_parse(TableName(Path))) < CurrentUtcTimestamp() - $dst_cleanup_interval
+        OR Yson::LookupInt64(Attributes, 'row_count') = 0
+    )
+);
+
+EVALUATE FOR $tb_ts IN $tables_to_delete
+    DO $drop_table($tb_ts);

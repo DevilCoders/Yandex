@@ -1,0 +1,150 @@
+{% from "dashboards/cloudgate/common.j2" import project, environments, render_link, render_link2, render_owners, owners, render_env_link, render_dc_link %}
+
+{% macro render_cloudgate_environment_dashboard(env_key) %}
+{% set env = environments[env_key] %}
+{% set env_name = env["name"] %}
+{% set datacenters = env["datacenters"] %}
+
+name: YC.Cloudgate, {{ env_name | upper }}
+description: |-
+  Подробности — на страничках [Помощи](https://wiki.yandex-team.ru/cloud/devel/loadbalancing/duty/?from=%2Fcloud%2Fdevel%2Floadbalancing%2Fciduty%2F), [График дежурств](https://abc.yandex-team.ru/services/networkloadbalancer/duty/), [страница дежурного VPC](https://wiki.yandex-team.ru/cloud/devel/sdn/duty/), [CGW HowTo](https://wiki.yandex-team.ru/cloud/devel/cloudgate/HowTo/) Для прода, препрода и тестинга за тремя точками ⋮ есть ссылки на подробные дашборды стендов. Ниже иные полезные дашборды:
+{{ render_owners(owners) }}
+links:
+  - title: Дашборд Cloudgate
+    url: https://juggler.yandex-team.ru/dashboards/yc-cloudgate/?project=ycloud
+  {{ render_env_link() }}
+  {{ render_dc_link(env_key) }}
+  - title: VPC
+    url: https://juggler.yandex-team.ru/dashboards/ycloud_virtual_network/?project=ycloud
+  - title: Внешняя связность
+    url: https://stats.uptimerobot.com/K1wmlFQ8n
+  {{ render_link2(env_name, "prod",    "InfraTimeline", "https://infra.yandex-team.ru/timeline?preset=WsArbP4U7H2&autorefresh=false&status=all&filter=&fullscreen=false") }}
+  {{ render_link2(env_name, "preprod", "InfraTimeline", "https://infra.yandex-team.ru/timeline?preset=ZT6ykC5XoJd&autorefresh=false&status=all&filter=&fullscreen=false") }}
+  {{ render_link2(env_name, "testing", "InfraTimeline", "https://infra.yandex-team.ru/timeline?preset=KGn5zx7NwaJ&autorefresh=false&status=all&filter=&fullscreen=false") }}
+  - title: DutyTickets
+    url: https://st.yandex-team.ru/CLOUDDUTY/order:updated:false/filter?resolution=empty()&tags=duty-ticket&components=47231%7C79442%7C47229%7C47237%7C56600
+  - title: График ошибок
+    url: https://monitoring.yandex-team.ru/projects/yandexcloud/explorer/queries?q.0.s=top%2830%2C%20%22avg%22%2C%20%7Bproject%3D%22yandexcloud%22%2C%20cluster%3D%22cloud_prod_cloudgate%22%2C%20service%3D%22juggler-events%22%2C%20status%3D%22CRIT%22%7D%29&range=1h&normz=off&colors=auto&type=area&interpolation=linear&dsp_method=auto&dsp_aggr=default&dsp_fill=default
+components:
+  - name: Эскалации
+    component_type: ESCALATIONS
+    escalations_options:
+      page_size: 10
+      page: 0
+      only_running: false
+      filters:
+        - {project: {{ project }}, tags: [yc-cgw]}
+        - {project: {{ project }}, tags: [yc-cgw-dc]}
+        - {project: {{ project }}, tags: [yc-cgw-nat]}
+        - {project: {{ project }}, tags: [yc-cgw-ipv4]}
+        - {project: {{ project }}, tags: [yc-cgw-ipv6]}
+        - {project: {{ project }}, tags: [yc-cloudgate]}
+        - {project: {{ project }}, tags: [yc-loadbalancer]}
+    col: 1
+    row: 1
+    colspan: 10
+    rowspan: 1
+    view_type: DETAILED
+    elements_in_row: 2
+    links:
+      - title: График дежурств
+        url: https://abc.yandex-team.ru/services/networkloadbalancer/duty/
+
+  - name: Downtimes
+    component_type: DOWNTIMES
+    downtimes_options:
+      exclude_future: false
+      include_expired: false
+      filters:
+        - {project: {{ project }}, tags: [yc-prod, yc-cgw]}
+        - {project: {{ project }}, tags: [yc-prod, yc-cgw-dc]}
+        - {project: {{ project }}, tags: [yc-prod, yc-cgw-nat]}
+        - {project: {{ project }}, tags: [yc-prod, yc-cgw-ipv4]}
+        - {project: {{ project }}, tags: [yc-prod, yc-cgw-ipv6]}
+        - {project: {{ project }}, tags: [yc-prod, yc-cloudgate]}
+        - {project: {{ project }}, tags: [yc-prod, yc-loadbalancer]}
+        {% for owner in owners %}- user: {{ owner }}
+        {% endfor %}
+      sort_by: ID
+      sort_order: DESC
+      page_size: 0
+      page: 0
+      include_warnings: false
+    col: 1
+    row: 2
+    colspan: 10
+    rowspan: 2
+    view_type: DETAILED
+    elements_in_row: 2
+    links: []
+
+{% for dc in datacenters %}
+{% set width = (30 / loop.length) | int %}
+  - name: {{ dc | upper }}
+    component_type: AGGREGATE_CHECKS
+    aggregate_checks_options:
+      sort:
+        field: DEFAULT
+        order: DESC
+      limit: 20
+      statuses: []
+      include_mutes: false
+      filters:
+        - {project: {{ project }}, tags: [visible, yc-{{ env_name }}, yc-{{ dc }}, yc-cgw]}
+        - {project: {{ project }}, tags: [visible, yc-{{ env_name }}, yc-{{ dc }}, yc-cgw-dc]}
+        - {project: {{ project }}, tags: [visible, yc-{{ env_name }}, yc-{{ dc }}, yc-cgw-nat]}
+        - {project: {{ project }}, tags: [visible, yc-{{ env_name }}, yc-{{ dc }}, yc-cgw-ipv4]}
+        - {project: {{ project }}, tags: [visible, yc-{{ env_name }}, yc-{{ dc }}, yc-cgw-ipv6]}
+        - {project: {{ project }}, tags: [visible, yc-{{ env_name }}, yc-{{ dc }}, yc-cloudgate]}
+        - {project: {{ project }}, tags: [visible, yc-{{ env_name }}, yc-{{ dc }}, yc-loadbalancer]}
+        - {host: cloudgate_az_{{ env_name }}_{{ dc }}}
+    col: {{ 11 + width * loop.index0 }}
+    row: 1
+    colspan: {{ (30 / loop.length) | int }}
+    rowspan: 2
+    view_type: DETAILED
+    elements_in_row: 2
+    links:
+      {{ render_link(env_name, "israel", dc, "il1-a", "Детальнее по IL1-A", "https://juggler.yandex-team.ru/dashboards/yc-cloudgate-israel-il1-a/?project=ycloud") }}
+      {{ render_link(env_name, "israel", dc, "il1-a", "Solomon@israel", "https://solomon.yandexcloud.co.il/?project=yc.yandexcloud.serviceCloud") }}
+{% endfor %}
+
+  - name: AZ
+    component_type: AGGREGATE_CHECKS
+    aggregate_checks_options:
+      sort:
+        field: DEFAULT
+        order: DESC
+      limit: 3
+      statuses: []
+      include_mutes: false
+      filters:
+        - {host: yc_cloudgate_az_{{ env_name }}}
+    col: 41
+    row: 1
+    colspan: 10
+    rowspan: 2
+    view_type: DETAILED
+    elements_in_row: 2
+  - name: E2E
+    component_type: AGGREGATE_CHECKS
+    aggregate_checks_options:
+      sort:
+        field: DEFAULT
+        order: DESC
+      limit: 20
+      statuses: []
+      include_mutes: false
+      filters:
+        - {project: {{ project }}, host: yc_loadbalancer_e2e-launcher_{{ env_name }}}
+    col: 41
+    row: 2
+    colspan: 10
+    rowspan: 2
+    view_type: DETAILED
+    elements_in_row: 2
+    links:
+      {{ render_link(env_name, "israel", "", "", "Детальнее по IL1-A", "https://juggler.yandex-team.ru/dashboards/yc-cloudgate-israel-il1-a/") }}
+{% endmacro %}
+
+{{ render_cloudgate_environment_dashboard("israel") }}

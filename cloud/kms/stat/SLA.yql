@@ -1,0 +1,143 @@
+USE hahn;
+
+$cluster = "prod";
+--$cluster = "preprod";
+
+-- Size of window in days.
+$num_days = 30;
+
+-- Percent of failed requests to ok requests to mark bucket as downtime
+$downtime_fail_threshold = 0.1;
+
+$group_in_buckets_script =
+@@def group_in_buckets(rows):
+    # OK
+    ok_statuses = set([0])
+    # UNKNOWN, RESOURCE_EXHAUSTED, ABORTED, UNIMPLEMENTED, INTERNAL, UNAVAILABLE, DATA_LOSS
+    fail_statuses = set([2, 8, 10, 13, 14, 15])
+    # Maximum request duration to be considered ok (in ms).
+    max_ok_duration = 5000
+    # Round time to 5min buckets
+    time_bucket = 5 * 60
+
+    ok_by_time = {}
+    fail_by_time = {}
+    for r in rows:
+        # Round time to bucket.
+        rt = (r.unixtime // time_bucket) * time_bucket
+        if r.grpc_status_code in ok_statuses and r.duration < max_ok_duration:
+            ok_by_time[rt] = ok_by_time.get(rt, 0) + 1
+        elif r.grpc_status_code in fail_statuses or r.duration >= max_ok_duration:
+            fail_by_time[rt] = fail_by_time.get(rt, 0) + 1
+
+    all_times = set(ok_by_time.keys()).union(fail_by_time.keys())
+    result = []
+    for t in all_times:
+        ok = ok_by_time.get(t, 0)
+        fail = fail_by_time.get(t, 0)
+        result.append({"unixtime": t, "ok": ok, "fail": fail})
+    return result
+@@;
+
+$group_in_buckets_http_script =
+@@def group_in_buckets_http(rows):
+    # OK
+    ok_status = 200
+    # Maximum request duration to be considered ok (in ms).
+    max_ok_duration = 5000
+    # Round time to 5min buckets
+    time_bucket = 5 * 60
+
+    ok_by_time = {}
+    fail_by_time = {}
+    for r in rows:
+        # Round time to bucket.
+        rt = (r.unixtime // time_bucket) * time_bucket
+        if r.status == ok_status and r.duration < max_ok_duration:
+            ok_by_time[rt] = ok_by_time.get(rt, 0) + 1
+        else:
+            fail_by_time[rt] = fail_by_time.get(rt, 0) + 1
+
+    all_times = set(ok_by_time.keys()).union(fail_by_time.keys())
+    result = []
+    for t in all_times:
+        ok = ok_by_time.get(t, 0)
+        fail = fail_by_time.get(t, 0)
+        result.append({"unixtime": t, "ok": ok, "fail": fail})
+    return result
+@@;
+
+$group_in_buckets = Python3::group_in_buckets(
+    Callable<(Stream<Struct<unixtime:uint64?, duration:uint64?, grpc_status_code:uint64?>>)
+    -> List<Struct<unixtime:uint64, ok:uint64, fail:uint64>>>,
+    $group_in_buckets_script
+);
+
+$group_in_buckets_http = Python3::group_in_buckets_http(
+    Callable<(Stream<Struct<unixtime:uint64?, duration:uint64?, status:uint64?>>)
+    -> List<Struct<unixtime:uint64, ok:uint64, fail:uint64>>>,
+    $group_in_buckets_http_script
+);
+
+$today = CurrentUtcDate();
+$window = CAST("P" || CAST($num_days AS string) || "D" AS Interval);
+$first_day = $today - $window;
+$table_paths_1d = (SELECT AGGREGATE_LIST(Path) FROM (
+    SELECT Path
+    FROM FOLDER("logs/yc-kms-access-" || $cluster || "/1d")
+    WHERE Type = "table"
+    AND CAST(TableName(Path) AS date) BETWEEN $first_day AND $today
+));
+
+$tables_paths_30min = (SELECT AGGREGATE_LIST(Path) FROM (
+    SELECT Path
+    FROM FOLDER("logs/yc-kms-access-" || $cluster || "/30min")
+    WHERE Type = "table"
+));
+
+$data = (
+    SELECT unixtime, duration, grpc_status_code
+    FROM EACH(ListExtend($table_paths_1d, $tables_paths_30min))
+    WHERE app = 'kms-data-plane' and client_app IS NULL
+);
+
+$monitoring_data = (
+    SELECT unixtime, duration, status
+    FROM EACH(ListExtend($table_paths_1d, $tables_paths_30min))
+    WHERE app = 'kms-monitoring' and client_app = 'kms'
+);
+
+$buckets = (
+    SELECT unixtime, SUM(ok) AS ok, SUM(fail) AS fail
+    FROM (PROCESS $data USING $group_in_buckets(TableRows()))
+    GROUP BY unixtime
+);
+
+$monitoring_buckets = (
+    SELECT unixtime, SUM(ok) AS ok, SUM(fail) AS fail
+    FROM (PROCESS $monitoring_data USING $group_in_buckets_http(TableRows()))
+    GROUP BY unixtime
+);
+
+$num_buckets = SELECT COUNT(*) FROM $buckets;
+$num_uptime_buckets = SELECT COUNT(*) FROM $buckets WHERE fail < ok * $downtime_fail_threshold;
+
+$num_monitoring_buckets = SELECT COUNT(*) FROM $monitoring_buckets;
+$num_monitoring_uptime_buckets = SELECT COUNT(*) FROM $monitoring_buckets WHERE fail < ok * $downtime_fail_threshold;
+
+$target_table_name = "home/cloud/kms/kms-sla-" || CAST($num_days AS string) || "d-" || $cluster;
+
+$cur_time = CurrentUtcDateTime();
+
+INSERT INTO $target_table_name
+SELECT CAST($today AS string) AS cur_date, CAST($cur_time AS string) AS cur_time,
+$num_uptime_buckets * 100.0 / $num_buckets AS availability,
+$num_uptime_buckets AS num_uptime_buckets, $num_buckets AS num_buckets;
+
+$target_monitoring_table_name = "home/cloud/kms/kms-sla-monitoring-" || CAST($num_days AS string) || "d-" || $cluster;
+
+INSERT INTO $target_monitoring_table_name
+SELECT CAST($today AS string) AS cur_date, CAST($cur_time AS string) AS cur_time,
+$num_monitoring_uptime_buckets * 100.0 / $num_monitoring_buckets AS availability,
+$num_monitoring_uptime_buckets AS num_monitoring_uptime_buckets, $num_monitoring_buckets AS num_monitoring_buckets;
+

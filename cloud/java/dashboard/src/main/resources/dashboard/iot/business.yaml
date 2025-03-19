@@ -1,0 +1,42 @@
+uid: ycpIoTBusiness
+refresh: 10m
+title: IoT business
+tags: [ 'ycp', 'ycp-iot' ]
+
+variables:
+  ui:
+    cluster: { values: [prod, preprod] }
+  replacement:
+    !include ../include/errors.yaml
+
+graphDefaults: { datasource: 'Solomon Cloud', width: 8, height: 6 }
+queryDefaults: { labels: 'host=!cluster' }
+
+rows:
+  - title: MQTT selfping
+    graphDefaults: { width: 8, height: 6 }
+    queryDefaults: { labels: 'project=cloud_iot, cluster=${cluster}, service=mqtt-broker-ma' }
+    drilldowns:
+      - subUid: dd_iot_mqtt_selfping_host
+        tags: [ 'ycp', 'ycp-iot' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [ '*-*', '*-myt*', '*-sas*', '*-vla*' ]
+            titles: [ 'Cluster', 'DC myt', 'DC sas', 'DC vla' ]
+        uiRepeat: host
+        labels: 'host=$host'
+    panels:
+
+      - type: graph
+        title: 'SLO (MQTT selfping errors) ($cluster)'
+        display: { stack: true }
+        queries:
+          - params: { labels: 'name=self_ping_status_failure' }
+            groupByTime: { max: '1m' }
+            select: { diff: [], drop_below: "0", group_lines: [sum], alias: 'FAIL' }
+          - params: { labels: 'name=self_ping_status_success' }
+            groupByTime: { max: '1m' }
+            select: { diff: [], drop_below: "0", group_lines: [sum], alias: 'OK' }
+        draw: [{ alias: 'FAIL', color: '#db0000' }, { alias: 'OK', color: '#92db00' }]

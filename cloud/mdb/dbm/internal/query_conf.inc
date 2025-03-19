@@ -1,0 +1,52 @@
+
+RESOURCE_FILES(
+    PREFIX cloud/mdb/dbm/internal/
+    query_conf/allocate_disk.sql
+    query_conf/create_transfer.sql
+    query_conf/create_volume_backup.sql
+    query_conf/delete_container.sql
+    query_conf/delete_container_volumes.sql
+    query_conf/delete_dom0_disks.sql
+    query_conf/delete_transfer.sql
+    query_conf/delete_volume_backups.sql
+    query_conf/drop_volume_backup.sql
+    query_conf/get_container.sql
+    query_conf/get_container_volumes.sql
+    query_conf/get_containers.sql
+    query_conf/get_dom0_disks.sql
+    query_conf/get_dom0_flags.sql
+    query_conf/get_dom0_info.sql
+    query_conf/get_free_disk.sql
+    query_conf/get_geo_locker.sql
+    query_conf/get_pillar.sql
+    query_conf/get_transfer.sql
+    query_conf/get_transfer_by_container.sql
+    query_conf/get_transfers.sql
+    query_conf/get_volume_backups.sql
+    query_conf/get_volume_by_disk_id.sql
+    query_conf/get_volumes.sql
+    query_conf/init_volumes_backup.sql
+    query_conf/insert_container.sql
+    query_conf/insert_volume.sql
+    query_conf/lock_current_dom0.sql
+    query_conf/lock_geo.sql
+    query_conf/lock_most_busy_dom0.sql
+    query_conf/lock_most_busy_dom0_without_raw_disks.sql
+    query_conf/lock_most_free_dom0.sql
+    query_conf/lock_most_free_dom0_with_space_reserve.sql
+    query_conf/lock_most_free_dom0_without_raw_disks.sql
+    query_conf/lock_most_free_dom0_without_raw_disks_with_space_reserve.sql
+    query_conf/mark_container_deleted.sql
+    query_conf/mark_pending_delete_volume_backup.sql
+    query_conf/move_container.sql
+    query_conf/move_volumes.sql
+    query_conf/swap_disks.sql
+    query_conf/unsafe_delete_container.sql
+    query_conf/update_container.sql
+    query_conf/update_dom0_allow_new_hosts.sql
+    query_conf/update_volume.sql
+    query_conf/upsert_cluster.sql
+    query_conf/upsert_dom0.sql
+    query_conf/upsert_dom0_disk.sql
+)
+

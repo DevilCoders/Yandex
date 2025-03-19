@@ -1,0 +1,30 @@
+{% set odyssey_user = salt['pillar.get']('data:odyssey:user', 'postgres') %}
+[Unit]
+Description=Odyssey
+After=network.target
+Conflicts=pgbouncer.service
+
+[Service]
+{% if salt.pillar.get('data:database_slice:enable', False) and salt.dbaas.is_dataplane() %}
+Slice=database.slice
+{% endif %}
+Type=forking
+PIDFile=/var/run/odyssey/odyssey.pid
+ExecStartPre=/bin/mkdir -p /var/log/odyssey
+ExecStartPre=/bin/chown -R {{ odyssey_user }}:{{ odyssey_user }} /var/log/odyssey
+ExecStartPre=/bin/mkdir -p /var/run/odyssey
+ExecStartPre=/bin/chown -R {{ odyssey_user }}:{{ odyssey_user }} /var/run/odyssey
+RuntimeDirectory=odyssey
+RuntimeDirectoryMode=0775
+ExecStart=/usr/bin/odyssey /etc/odyssey/odyssey.conf
+ExecReload=/usr/local/yandex/odyssey-restart.sh $MAINPID
+WorkingDirectory=/etc/odyssey/
+PermissionsStartOnly=true
+Restart=on-failure
+User={{ odyssey_user }}
+Group={{ odyssey_user }}
+LimitNOFILE={{ (salt['pillar.get']('data:config:odyssey:global_client_max', '32000') | int) * 2 + 30 }}
+LimitCORE=6442450944
+
+[Install]
+WantedBy=multi-user.target

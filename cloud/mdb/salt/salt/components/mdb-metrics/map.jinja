@@ -1,0 +1,54 @@
+{% set mdb_metrics = salt['grains.filter_by']({
+    'Debian': {
+        'version': '431-9b82404',
+        'main': {
+            'yasm_tags_cmd': '/usr/local/yasmagent/mail_postgresql_getter.py',
+        },
+        'configs': {
+            'dom0porto':    ['system', 'sys_porto'],
+            'porto':        ['sys_porto'],
+            'compute':      ['system'],
+            'sys_common':   ['sys_diskusage'],
+            'instance_userfault_broken': ['instance_userfault_broken'],
+            'dbaas':        ['dbaas_config'],
+            'ch_common':    ['ch_system_metrics', 'ch_system_async_metrics', 'ch_system_events', 'ch_query_log', 'ch_replication', 'ch_disk_parts', 'ch_sli', 'ch_config', 'ch_load_monitor'],
+            'ch_merges':    ['ch_merges'],
+            'zk_common':    ['zk_mntr', 'zk_sli', 'load_monitor'],
+            'mongodb_common': ['mongodb_db_size', 'mongodb_db_stats', 'mongodb_server_status', 'mongodb_replication', 'mongodb_top', 'mongodb_sli', 'load_monitor'],
+            'mongodb_sharding': ['mongodb_sharding_health', 'mongodb_sharding_stats'],
+            'mongodb_baremetal': ['mongodb_db_size', 'mongodb_db_stats', 'mongodb_server_status', 'mongodb_replication', 'system'],
+            'redis_common' : ['redis_stats', 'redis_sentinel_status', 'redis_sli', 'redis_oom', 'load_monitor', 'redis_slowlog'],
+            'mysql_common' : ['mysql_stats', 'mysql_replication_lag', 'sys_diskusage_by_binlog_and_relaylog', 'mysql_sli', 'mysql_fileio', 'mysql_latency', 'mysql_sessions', 'load_monitor', 'mysql_config'],
+            'pg_common':    ['pg_wait_statistic', 'sys_disk_usage_by_path', 'sys_path_size', 'pg_conns_by_role', 'pg_wal_rate', 'pg_replication', 'pg_proc_stat', 'pg_sli', 'pgbouncer', 'pg_log'],
+            'es_common' :   ['es_stats', 'es_sli'],
+            'es_kibana' :   ['kibana_stats'],
+            'pg_unmanaged': ['pg_conns', 'pg_db_size', 'sys_cgroups', 'pg_db_stats', 'pg_locks', 'load_monitor'],
+            'pg_s3db':      ['pg_s3db_chunks_counters_queue', 'pg_s3db_schema_version', 'pg_s3db_chunks', 'pg_s3db_chunks_counters', 'pg_s3db_bucket_proc', 'pg_s3db_chunks_size', 'pg_s3db_maintenance_queue'],
+            'pg_s3meta':    ['pg_s3meta_schema_version', 'pg_s3meta_chunks', 'pg_s3meta_bucket_proc', 'pg_s3meta_shards_disbalance', 'pg_s3meta_buckets_disbalance', 'pg_s3meta_move_queue'],
+            'dbaas_internal_api' : ['internal_api_stat'],
+            'mdb-internal-api' : ['mdb-internal-api'],
+            'mdb-health' : ['mdb-health'],
+            'mdb-dns' : ['mdb-dns'],
+            'mdb-katan' : ['mdb-katan'],
+            'mdb-search-producer' : ['mdb-search-producer'],
+            'mdb_cms' : ['mdb_cms'],
+            'mdb-cms-instance-api': ['mdb-cms-instance-api'],
+            'mdb-cms-instance-autoduty': ['mdb-cms-instance-autoduty'],
+            'mdb-mlock' : ['mdb-mlock'],
+            'mdb-secrets' : ['mdb-secrets'],
+            'nginx' : ['nginx_stat'],
+            'kafka' : ['kafka_sli', 'kafka_prometheus', 'kafka_adminapi', 'kafka_connect'],
+            'dataproc-manager' : ['dataproc_health'],
+        },
+        'is_burst': salt['pillar.get']('data:dbaas:flavor:cpu_fraction', 100) < 100,
+        'cluster_type_supports_send_backwards': salt['pillar.get']('data:dbaas:cluster_type') in ['mongodb_cluster', 'clickhouse_cluster', 'redis_cluster', 'elasticsearch_cluster'],
+        'min_burst_interval': 60,
+        'send_backwards_interval': 15,
+        'send_backwards_times': 3,
+    },
+}, merge=salt['pillar.get']('data:mdb_metrics')) %}
+
+{% if 'pg_unmanaged' in mdb_metrics['configs'] %}
+{% from "components/pg-dbs/unmanaged/db_map.jinja" import dbs_dict with context %}
+{% do mdb_metrics.update({'unmanaged_databases': dbs_dict.keys()}) %}
+{% endif %}

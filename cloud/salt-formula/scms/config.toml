@@ -1,0 +1,20 @@
+{%- import "common/kikimr/init.sls" as vars with context %}
+
+{%- set lb_endpoints = grains['cluster_map']['load_balancer']['endpoints'] -%}
+
+{%- set kikimr_iam_host = 'localhost' if vars.subdomains|length > 1 else lb_endpoints.iam_kikimr_grpc.host %}
+{%- set kikimr_iam_port = pillar['kikimr_tenant_ports'][vars.iam_database]['grpc_port'] if vars.subdomains|length > 1 or vars.base_role == 'cloudvm' else lb_endpoints.iam_kikimr_grpc.port %}
+[scms]
+master_key = "/var/lib/yc/scms/master.key"
+
+# Period in seconds close to midnight during which datestamp for the next
+# (or previous) day can be used.
+allowed_datestamp_shift = 3600
+
+[endpoint]
+host = "[::]"
+port = 4340
+
+[endpoints.kikimr.scms]
+host = "{{ salt['grains.get']('overrides:kikimr_endpoint', (kikimr_iam_host, kikimr_iam_port)|join(':')) }}"
+root = "/{{ vars.ydb_domain }}/{{ vars.iam_database }}/{{ grains['cluster_map']['stand_type'] }}/{{ salt['grains.get']('overrides:kikimr_id', salt['grains.get']('cluster_map:kikimr:shared_dir')) }}/scms"

@@ -1,0 +1,32 @@
+---
+- hosts: localhost
+  gather_facts: false
+  pre_tasks:
+    - juggler_facts: jserver_api={{ jserver_api }}
+  vars:
+    - env: "private-gpn-1"
+    - telegramLogin: "YcMarkeplaceProdMonitoring"
+    - api_limits:
+      - { warn: '20%', crit: '50%', day_start: 1, day_end: 7, time_start: 0, time_end: 23 }
+    - queue_limits: "{{ off_check_limits }}"
+    - balancer: "mkt.private-api.gpn.yandexcloud.net"
+    - default_limits: "{{ off_check_limits }}"
+    - default_limits_99perc_crit: "{{ off_check_limits }}"
+    - default_limits_logic_and:
+      - {day_end: 7, day_start: 1, time_end: 23, time_start: 0, aggregator: 'more_than_limit_is_crit', aggregator_kwargs: {percent: '101'}}
+  roles:
+    - role: api
+      vars:
+        children: CGROUP%cloud_private-gpn_private-gpn-1_marketplace-api
+        host: "yc-marketplace-api-{{ env }}"
+        tags: ['{{ common_tag }}', '{{ common_tag }}-{{ env }}', '{{ common_tag }}-api']
+
+    - role: queue
+      vars:
+        children: CGROUP%cloud_private-gpn_private-gpn-1_marketplace-queue
+        host: "yc-marketplace-queue-{{ env }}"
+        tags: ['{{ common_tag }}', '{{ common_tag }}-{{ env }}', '{{ common_tag }}-queue']
+
+  post_tasks:
+    - juggler_cleanup:
+      tags: [ 'yc-marketplace' ]

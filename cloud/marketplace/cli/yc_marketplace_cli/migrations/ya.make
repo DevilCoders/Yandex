@@ -1,0 +1,64 @@
+OWNER(g:cloud-marketplace)
+
+PY3_LIBRARY()
+
+PY_SRCS(
+    __init__.py
+    0000_initial.py
+    0001_publisher_s3_logo.py
+    0002_task_group_id.py
+    0003_task_kind.py
+    0004_migrate_publisher_logo.py
+    0005_task_data.py
+    0006_publisher_requests.py
+    0007_publisher_billing_acc_id.py
+    0008_product_add_vendor.py
+    0009_product_fill_vendor_defaults.py
+    0010_product_add_meta.py
+    0011_create_i18n_table.py
+    0012_family_add_meta.py
+    0013_change_indexes_for_family.py
+    0014_change_indexes_for_family.py
+    0015_change_indexes_for_version.py
+    0016_change_indexes_for_version.py
+    0017_create_partner_requests_table.py
+    0018_create_isv_table.py
+    0019_create_var_table.py
+    0020_publisher_add_passport_uid.py
+    0021_default_categories_for_partners.py
+    0022_add_task_export_tables.py
+    0023_del_col_incentives_from_isv.py
+    0024_add_ba_to_publisher.py
+    0025_test_external_migrations.py
+    0026_add_metadata_2_migrations.py
+    0027_publisher_add_meta.py
+    0028_isv_rm_folder.py
+    0029_publisher_rm_folder.py
+    0030_rm_agreement.py
+    0031_version_rm_agreements.py
+    0032_product_rm_folder.py
+    0033_family_rm_folder.py
+    0034_version_rm_folder.py
+    0035_avatar_rm_folder.py
+    0036_product_add_ba.py
+    0037_family_add_ba.py
+    0038_version_add_ba.py
+    0039_var_rm_folder.py
+    0040_create_forms.py
+    0041_product_families_add_form_id_column.py
+    0042_create_os_product_slug.py
+    0043_forms_add_metadata_tmpl.py
+    0044_simple_product.py
+    0045_sku_drafts.py
+    0046_sku_drafts_meta.py
+    0047_saas_product.py
+    0048_product_to_sku_binding.py
+    0049_product_license_rules.py
+    0050_eula.py
+    0051_eula_table.py
+    0052_blueprints_table.py
+    0053_builds_table.py
+    0054_blueprints_add_commit_hash.py
+)
+
+END()

@@ -1,0 +1,46 @@
+{% extends "../../base/dashboard.j2" %}
+
+{% macro render_row_azs(title, metric_group, graph, graphMode=None, colspan=0, subgraphs=[("", "")]) %}
+{
+  {% set base_query = "l.metric_group=" + metric_group + "&graph=" + graph + "&stack=true&downsamplingAggr=max" %}
+  "panels": [
+    {% for az in zones_by_env[env] %}
+        {% for subgraph, extra_selectors in subgraphs %}
+            {% set query = "l.host=" ~ compute_node_selector(az.prefix) ~ "&" ~ base_query ~ extra_selectors %}
+            {% if graphMode %}
+                {% set query = query ~ "&graphMode=" ~ graphMode %}
+            {% endif %}
+            {{ render_panel(title=title, subtitle=subgraph + " @ " + az.prefix|upper, cluster="cloud_" + env + "_compute",
+                            service="oct_vrouter", query=query, colspan=colspan) }}
+            {% if not loop.last %},{% endif %}
+        {% endfor %}
+        {% if not loop.last %},{% endif %}
+    {% endfor %}
+  ]
+}
+{% endmacro %}
+
+{% set feature_flag_graphs = [
+    ("Interface Flags", " on Agent", "agent_vmi_feature_flags"),
+    ("Network Flags", " on Agent", "agent_vn_feature_flags"),
+    ("Flags", "on Interfaces", "vmi_feature_flags"),
+    ("Flags", "on Networks", "vn_feature_flags"),
+] %}
+
+{% block rows %}
+[
+    {{ render_row_azs("VRouter Versions Release Timeline", "BuildInfo", "vrouter_versions",
+                      graphMode=graphMode, colspan=2) }},
+    {{ render_row_azs("VRouter Versions", "BuildInfo", "vrouter_versions",
+                       graphMode="pieChart",
+                       subgraphs=[(" (Agent)", "&component=agent"),
+                                  (" (Module)", "&component=vrouter")]) }},
+    {% for mode, submode, metric in feature_flag_graphs %}
+        {{ render_row_azs(mode, "FeatureFlags", "vrouter_feature_flags",
+                          graphMode="bars",
+                          subgraphs=[("Enabled " ~ submode, "&metric=" ~ metric ~ "&state=enabled"),
+                                     ("Disabled " ~ submode, "&metric=" ~ metric ~ "&state=!enabled")]) }}
+        {% if not loop.last %},{% endif %}
+    {% endfor %}
+]
+{% endblock %}

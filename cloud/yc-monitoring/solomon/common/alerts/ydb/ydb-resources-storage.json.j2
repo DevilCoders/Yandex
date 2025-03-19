@@ -1,0 +1,59 @@
+{% extends "../../../base/alert.j2" %}
+{%- set ydb_project = 'kikimr' if env not in ('israel',) else 'yc.ydb.ydbaas-cloud' %}
+
+{% set windowSecs = 600 %}
+{% set delaySecs = 30 %}
+
+{% macro prog() %}
+let limit = {
+  project='{{ ydb_project }}',
+  cluster='{{ cluster }}',
+  service='ydb',
+  cloud_id='*',
+  host='cluster|-',
+  database='{{ database }}',
+  name='resources.storage.limit_bytes'
+  };
+
+let usage = {
+  project='{{ ydb_project }}',
+  cluster='{{ cluster }}',
+  service='ydb',
+  cloud_id='*',
+  host='cluster|-',
+  database='{{ database }}',
+  name='resources.storage.used_bytes'
+  };
+
+let one_hundred_percent = 100;
+let usage_avg = avg(usage);
+let limit_avg = avg(limit);
+
+// ok for unlimited quota
+let usage_percent_str = 'unlimited';
+let description = 'unlimited database storage quota';
+ok_if(limit_avg == 0);
+
+let quota_utilization_percent = usage_avg/limit_avg * one_hundred_percent;
+let usage_percent_str = to_fixed(quota_utilization_percent, 2) + '%';
+let is_red = quota_utilization_percent >= {{ red_threshold }};
+let is_yellow = quota_utilization_percent  >= {{ yellow_threshold }};
+let description = 'Checks database storage quota usage percentage: '+usage_percent_str;
+
+alarm_if(is_red);
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+  "id": "{{ id }}",
+  "name": "{{ name }}",
+  "type": {{ type_expression() }},
+  "annotations": {
+    "details": "[[expression.description]]",
+    "service": "{{ serviceName }}",
+    "docs": "https://docs.yandex-team.ru/yc-monitoring/ydb/{{ serviceName }}",
+    "usage_percent": "[[expression.usage_percent_str]]",
+    "host": "{{ host }}",
+    "database": "{{ database }}"
+  }
+{% endblock %}

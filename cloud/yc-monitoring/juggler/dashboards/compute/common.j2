@@ -1,0 +1,124 @@
+{% set compute_api_team = ["sievlev", "fatalerr", "vbalakhanov", "k1noo", "mudrykaa", "frystile"] %}
+{% set compute_node_team = ["konishchev", "mbobrov", "l2k1", "zasimov-a", "simonov-d", "xelez", "xpahos", "alexcrush", "klyushinmisha", "gentoonofb"] %}
+
+{% macro render_links() %}
+links:
+  - title: Страница дежурного
+    url: 'https://wiki.yandex-team.ru/cloud/compute/duty/'
+  - title: Дежурный тикет
+    url: 'https://st.yandex-team.ru/CLOUDDUTY/order:updated:false/filter?resolution=empty()&components=47220'
+  - title: '[Общий дашборд]'
+    url: 'https://juggler.yandex-team.ru/dashboards/ycloud_compute'
+  - title: '[API]'
+    url: 'https://juggler.yandex-team.ru/dashboards/ycloud_compute_api'
+  - title: '[Node]'
+    url: 'https://juggler.yandex-team.ru/dashboards/ycloud_compute_node'
+  - title: Даунтаймы
+    url: 'https://juggler.yandex-team.ru/dashboards/ycloud_compute_downtimes/'
+  - title: PROD
+    url: 'https://juggler.yandex-team.ru/dashboards/ycloud_compute_prod/'
+  - title: PREPROD
+    url: 'https://juggler.yandex-team.ru/dashboards/ycloud_compute_preprod/'
+  - title: TESTING
+    url: 'https://juggler.yandex-team.ru/dashboards/ycloud_compute_testing/'
+{% endmacro %}
+
+{% macro render_owners(owners) %}
+owners:
+  - robot-vpc-solomon
+  {% for owner in owners -%}
+  - {{ owner }}
+  {% endfor %}
+{% endmacro %}
+
+{% macro render_notifications(owners) %}
+  - component_type: NOTIFICATIONS
+    view_type: DETAILED
+    name: 'Notifications (last 2), by login'
+    col: 1
+    row: 1
+    colspan: 2
+    rowspan: 0
+    elements_in_row: 0
+    links: []
+    notifications_options:
+      filters:
+        {% for owner in owners -%}
+        - login: {{ owner }}
+        {% endfor %}
+      page_size: 2
+      interval: 604800
+{% endmacro %}
+
+{% macro render_ci_checks(teams, limit) %}
+  - component_type: AGGREGATE_CHECKS
+    view_type: DETAILED
+    name: 'CI'
+    col: 3
+    row: 1
+    colspan: 2
+    rowspan: 0
+    elements_in_row: 0
+    links: []
+    aggregate_checks_options:
+          filters:
+            {% for team in teams %}
+            - {service: compute-*-nightly, tags: [{{ team }}]}
+            - {service: compute-*-fuzz*, tags: [{{ team }}]}
+            - {service: compute-big-ci-build, tags: [{{ team }}]}
+            {% endfor %}
+          include_mutes: false
+          sort:
+            field: DEFAULT
+            order: DESC
+          limit: {{ limit }}
+          statuses: []
+{% endmacro %}
+
+{% macro render_cluster_checks(env, col, row, rowspan, teams, limit=30) %}
+  - component_type: AGGREGATE_CHECKS
+    view_type: DETAILED
+    name: {{ env | upper }}
+    col: {{ col }}
+    row: {{ row }}
+    colspan: 0
+    rowspan: {{ rowspan }}
+    elements_in_row: 0
+    links:
+      - title: Подробный дэшборд {{ env | upper }}
+        url: https://juggler.yandex-team.ru/dashboards/ycloud_compute_{{ env }}/
+    aggregate_checks_options:
+      filters:
+        {% for team in teams %}
+        - {host: yc_common_head_{{ env }}, tags: [{{ team }}]}
+        - {host: yc_compute_head_{{ env }}, tags: [{{ team }}]}
+        - {host: yc_common_compute_{{ env }}, tags: [{{ team }}]}
+        - {host: yc_compute_compute_{{ env }}, tags: [{{ team }}]}
+        - {host: yc_common_serialssh_{{ env }}, tags: [{{ team }}]}
+        - {host: yc_compute_serialssh_{{ env }}, tags: [{{ team }}]}
+        - {host: yc_compute_backup_{{ env }}, tags: [{{ team }}]}
+        - {host: yc_compute_logbroker_{{ env }}, tags: [{{ team }}]}
+        - {host: yc_compute_tools_{{ env }}, tags: [{{ team }}]}
+        - {host: yc_compute_scheduler_{{ env }}, tags: [{{ team }}]}
+        {% endfor %}
+      include_mutes: false
+      sort:
+        field: DEFAULT
+        order: DESC
+      limit: {{ limit }}
+      statuses: []
+{% endmacro %}
+
+{% macro render_compute_dashboard(name, owners, teams) %}
+name: {{ name }}
+{{ render_owners(owners) }}
+{{ render_links() }}
+components:
+{{ render_notifications(owners) }}
+{{ render_ci_checks(teams=teams, limit=10) }}
+{{ render_cluster_checks("prod",           col=1, row=2, rowspan=2, teams=teams) }}
+{{ render_cluster_checks("preprod",        col=2, row=2, rowspan=2, teams=teams) }}
+{{ render_cluster_checks("testing",        col=3, row=2, rowspan=2, teams=teams) }}
+{{ render_cluster_checks("israel",         col=4, row=2, rowspan=2, teams=teams) }}
+
+{% endmacro %}

@@ -1,0 +1,132 @@
+service_account_id: ajecqbab27og73umh5r9 # iot-deployer
+name: iot-mqtt
+description: IG-managed IoT mqtt backend
+scale_policy:
+  fixed_scale:
+    size: 6
+deploy_policy:
+  max_unavailable: 2
+  max_expansion: 0
+allocation_policy:
+  zones:
+    - zone_id: ru-central1-a
+    - zone_id: ru-central1-b
+    - zone_id: ru-central1-c
+health_checks_spec:
+  health_check_specs:
+    - http_options:
+        port: 8081
+        path: /onlycode?labels=balancer_stopper
+      interval: 10s
+      timeout: 5s
+      unhealthy_threshold: 5
+      healthy_threshold: 2
+
+load_balancer_spec:
+  target_group_spec:
+    name: iot-mqtt-ig2
+    description: IG-managed IoT mqtt backend target group
+    address_names: ["ig-v6addr", "ig-v4addr"]
+
+instance_template:
+  name: iot-mqtt-{instance.index}-{instance.internal_dc}
+  hostname: iot-mqtt-{instance.index}-{instance.internal_dc}
+  platform_id: standard-v2
+  service_account_id: aje7s14jmivmruolknc7 # mqtt
+  labels:
+    yandex-dns: ig
+    conductor-group: iot-mqtt
+    layer: iaas
+    abc_svc: ycmqtt
+    env: prod
+    environment: prod
+  resources_spec:
+    memory: 4G
+    cores: 4
+    core_fraction: 100
+  boot_disk_spec:
+    mode: READ_WRITE
+    disk_spec:
+      image_id: ${IMAGE_ID}
+      type_id: network-ssd
+      size: 20g
+  secondary_disk_specs:
+    - mode: READ_WRITE
+      device_name: data
+      disk_spec:
+        type_id: network-hdd
+        size: 10g
+  network_interface_specs:
+  - subnet_ids:
+    - 'e9b9e47n23i7a9a6iha7'
+    - 'e2lt4ehf8hf49v67ubot'
+    - 'b0c7crr1buiddqjmuhn7'
+    primary_v4_address_spec:
+      name: "ig-v4addr"
+    primary_v6_address_spec:
+      name: "ig-v6addr"
+
+  metadata:
+    internal_dc: "{instance.internal_dc}"
+    osquery_tag: "ycloud-svc-iot"
+    shortname: "iot-mqtt-{instance.index}-{instance.internal_dc}"
+    nsdomain: "{instance.internal_dc}.ycp.cloud.yandex.net"
+    skm: "${SKM_MD}"
+    k8s-runtime-bootstrap-yaml: " "
+    jaeger_endpoint: "jaeger-collector.private-api.ycp.cloud.yandex.net:443"
+    push_client_tvm_client_id: 2011886
+    push_client_tvm_server_id: 2001059
+    push_client_topic: yc-iot/mqtt-logs-prod
+    tvmtool_local_authtoken: 54e3f6071c733b6f992eebeab9e015eb
+    solomon_cluster: "prod"
+    iot_mqtt_production:                           "true"
+    iot_mqtt_tvm_auth_token:                       54e3f6071c733b6f992eebeab9e015eb
+    iot_mqtt_logbroker_connection_address:         "lb.etn03iai600jur7pipla.ydb.mdb.yandexcloud.net"
+    iot_mqtt_logbroker_producer_topic:             "/b1g7usbinne7lipkpvc1/yc-iot/mqtt"
+    iot_mqtt_logbroker_producer_topic_perm:        "/b1g7usbinne7lipkpvc1/yc-iot/permanents"
+    iot_mqtt_logbroker_producer_topic_mon:         "/b1g7usbinne7lipkpvc1/yc-iot/monitoring"
+    iot_mqtt_metrics_subsystem:                    "cloud_mqtt_prod"
+    iot_mqtt_billing_logbroker_connection_address: "vla.logbroker.yandex.net"
+    iot_mqtt_billing_logbroker_topic:              "/yc/billing-iot-traffic"
+    iot_mqtt_selfping_topicprefix:                 "$devices/aregn1ve25dgdti0q49j/events/selfping"
+    iot_mqtt_selfping_perm_topicprefix:            "$devices/aregn1ve25dgdti0q49j/state/selfping"
+    iot_mqtt_logbroker_producer_use_sa_auth:       "true"
+    iot_mqtt_logbroker_producer_perm_use_sa_auth:  "true"
+    iot_mqtt_logbroker_producer_mon_use_sa_auth:   "true"
+    iot_mqtt_billing_logbroker_use_sa_auth:        "false"
+    iot_mqtt_logbroker_connection_database:        "/global/b1gvcqr959dbmi1jltep/etn03iai600jur7pipla"
+    iot_mqtt_billing_logbroker_connection_database: " "
+    iot_log_level: info
+    iot_database_endpoint: "ydb-iot-dpl.cloud.yandex.net:2136"
+    iot_database_driver: "/global/iot-dpl"
+    iot_remote_sub_group_id: cl1q0ii349avvfo9qhvd
+    cloud_logs_push_client_master_addr: "lb.etn03iai600jur7pipla.ydb.mdb.yandexcloud.net"
+    cloud_logs_push_client_database: "/global/b1gvcqr959dbmi1jltep/etn03iai600jur7pipla"
+    cloud_logs_push_client_topic:  "/yc.logs.cloud/yc-logs"
+
+    user-data: |
+      #cloud-config
+      fs_setup:
+        - device: /dev/disk/by-id/virtio-logs
+          filesystem: ext4
+          overwrite: false
+          partition: auto
+      mounts:
+        - [ /dev/disk/by-id/virtio-logs, /data, auto, "defaults,errors=remount-ro", "0", "2" ]
+        - [ /data/fluent, /var/log/fluent, none, "defaults,bind", "0", "0" ]
+        - [ /data/yc-iot, /var/log/yc-iot, none, "defaults,bind", "0", "0" ]
+      runcmd:
+        - chmod 777 /data
+        - mkdir -p /data/fluent /data/yc-iot
+        - chown -R td-agent:td-agent /data/fluent
+        - chown -R td-agent:td-agent /data/yc-iot
+        - chmod 0755 /data/fluent
+        - chmod 0755 /data/yc-iot
+        - mount --make-rprivate /data
+        - mount -o bind /data/fluent /var/log/fluent
+        - mount -o bind /data/yc-iot /var/log/yc-iot
+      bootcmd:
+        - echo "[Journal]" > /etc/systemd/journald.conf
+        - echo "SystemMaxUse=500M" >> /etc/systemd/journald.conf
+
+

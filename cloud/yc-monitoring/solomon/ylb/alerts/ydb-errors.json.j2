@@ -1,0 +1,37 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro svm_fqdn() -%}
+	[[labels.host]].{{ svm_domains[env] }}
+{%- endmacro %}
+
+{% macro prog() %}
+let errors = non_negative_derivative({
+	cluster='cloud_{{ env }}_ylb',
+	service='{{ service }}',
+	host!='cluster',
+	name='ydb_error',
+	env='{{ env }}'
+	} + constant_line(0, 5m));
+
+let description = 'Too much errors for ydb requests';
+
+let is_red = max(errors) > 1;
+alarm_if(is_red);
+
+let is_yellow = max(errors) > 0.5;
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+	"id": "{{ id }}",
+	"name": "{{ name }}",
+	"description": "",
+	"groupByLabels": ["host"],
+	"annotations": {
+		"details": "[[expression.description]]",
+		"host": "{{ svm_fqdn() }}",
+		"service": "{{ serviceName }}{{ service_suffix }}",
+		"wiki": "https://docs.yandex-team.ru/yc-monitoring/cgw/{{ serviceName }}"
+	},
+	"type": {{ type_expression() }}
+{% endblock %}

@@ -1,0 +1,39 @@
+{% extends "../../base/graph.j2" %}
+
+{% block parameters %}
+{
+	"name": "cluster",
+	"value": "cloud_{{ env }}_ylb"
+},
+{
+	"name": "service",
+	"value": "loadbalancer_ctrl"
+},
+{
+	"name": "host",
+	"value": "lb-ctrl*"
+},
+{
+	"name": "node_id",
+	"value": "loadbalancer-node*|*lb-node*"
+}
+{% endblock %}
+
+{% block elements %}
+{{
+	render_element(
+		"[[host]] total for [[node_id]]",
+		"group_by_labels({name='node_watcher_rules', host='[[host]]'}, as_vector('host', 'node_id'), v -> group_lines('sum', v))",
+	)
+}},
+{% for event in ["insert", "enable", "disable", "remove"] %}
+{{
+	render_element(
+		"[[host]] "+event+" -> [[node_id]]",
+		"group_by_labels({name='node_watcher_rules_event_"+event+"', host='[[host]]', node_id='[[node_id]]'}, as_vector('host', 'node_id'), v -> diff(group_lines('sum', v)))",
+		stack="true",
+		area="true",
+	)
+}}{{ "," if not loop.last else "" }}
+{% endfor %}
+{% endblock %}

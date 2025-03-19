@@ -1,0 +1,41 @@
+{% extends "../../base/dashboard.j2" %}
+
+{% set parameters = [
+    ("cluster", "cloud_" + env + "_scheduler"),
+    ("service", "resources"),
+    ("platform", "*"),
+    ("host_group", "all")
+] %}
+
+{% macro render_row_azs(title, graph, extra_params="") %}
+    { "panels": [
+    {% for az in zones_by_env[env] %}
+        {{ render_panel(title + " " + az.zone, "[[cluster]]", "[[service]]",
+             query="platform=[[platform]]&host_group=[[host_group]]&graph=" + graph +
+                    "&zone_id=" + az.zone + "&norm=false" + extra_params) }}
+        {% if not loop.last %},{% endif %}
+    {% endfor %}
+    ] }
+{% endmacro %}
+
+{% block rows %}
+[
+    { "panels": [
+    {{ render_panel("Free CPU Cores", "[[cluster]]", "[[service]]", colspan=3,
+            query="zone_id=!all_zones&l.host_group=[[host_group]]&metric=cores_free&" +
+                  "node_name=!all_nodes&graph=auto&graphMode=heatmap&interpolate=none&" +
+                  "greenValue=30&yellowValue=20&redValue=10&violetValue=-10&" +
+                  "l.platform=[[platform]]&secondaryGraphMode=distribution",
+            subtitle="Heat map (green - 30, yellow - 20, red - 10, violet - 0)") }}
+    ] },
+    {{ render_row_azs("CPU Cores", "compute-resources-cores") }},
+    {{ render_row_azs("CPU Cores (used by instance type)", "compute-resources-cores-used-by-instance-type", extra_params="&cs=gradient") }},
+
+    {{ render_row_azs("MEM", "compute-resources-memory") }},
+    {{ render_row_azs("MEM (used by instance type)", "compute-resources-memory-used-by-instance-type", extra_params="&cs=gradient") }},
+
+    {{ render_row_azs("NVMe", "compute-resources-nvme") }},
+
+    {{ render_row_azs("GPU", "compute-resources-gpu") }}
+]
+{% endblock %}

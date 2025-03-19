@@ -1,0 +1,44 @@
+[Unit]
+Description=Zookeeper
+After=network.target
+Documentation=https://issues.apache.org/jira/projects/ZOOKEEPER/issues
+
+[Service]
+User=zookeeper
+Group=zookeeper
+ExecStartPre=!/bin/mkdir -p {{ dataDir }}
+ExecStartPre=!/bin/chown zookeeper:zookeeper {{ dataDir }}
+ExecStart=/usr/local/yandex/start-zk.sh
+WorkingDirectory={{ dataDir }}
+# ZK process should be killed by OOM-killer first.
+OOMScoreAdjust=1000
+
+Restart=always
+RestartSec=2
+# ExitCode 199 means, that environment file wasn't found. no need to try to restart
+RestartPreventExitStatus=199
+
+# file size
+LimitFSIZE=infinity
+{% if salt.pillar.get('data:database_slice:enable', False) and salt.dbaas.is_dataplane() %}
+Slice=database.slice
+{% else %}
+# cpu time
+LimitCPU=infinity
+# virtual memory size
+LimitAS=infinity
+{% endif %}
+# open files
+#LimitNOFILE=64000
+LimitNOFILE=infinity
+# processes/threads
+#LimitNPROC=64000
+LimitNPROC=infinity
+# locked memory
+LimitMEMLOCK=infinity
+# total threads (user+kernel)
+TasksMax=infinity
+TasksAccounting=false
+
+[Install]
+WantedBy=multi-user.target

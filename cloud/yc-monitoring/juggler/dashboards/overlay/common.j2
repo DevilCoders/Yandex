@@ -1,0 +1,164 @@
+{#
+Set the environments dictionary.
+It contains information about all stand where our checks are deployed.
+#}
+{% set environments = dict() %}
+{{ environments.update(prod=dict(name="prod", datacenters=["vla", "sas", "myt"], azs=["ru-central1-a", "ru-central1-b", "ru-central1-c"], datacenters_with_meeseeks=["vla", "sas", "myt"])) }}
+{{ environments.update(israel=dict(name="israel", datacenters=["il1-a"], azs=["il1-a"], datacenters_with_meeseeks=[])) }}
+{{ environments.update(preprod=dict(name="preprod", datacenters=["vla", "sas", "myt"], azs=["ru-central1-a", "ru-central1-b", "ru-central1-c"], datacenters_with_meeseeks=["vla", "sas"])) }}
+{{ environments.update(testing=dict(name="testing", datacenters=["vla", "sas", "myt"], azs=["ru-central1-a", "ru-central1-b", "ru-central1-c"], datacenters_with_meeseeks=["vla", "sas", "myt"])) }}
+
+{#
+Following parameters specify the layout of components for dashboards with all environments together.
+Length of array should be equal to environments count (see above).
+#}
+{% set all_environments_cols = [1, 11, 22, 32, 32 ] %}
+{% set all_environments_rows = [1, 1, 1, 1, 2] %}
+{% set all_environments_rowspans = [2, 2, 2, 1, 1] %}
+
+
+{% macro render_owners(owners) %}
+owners:
+  {% for owner in owners -%}
+  - {{ owner }}
+  {% endfor %}
+{% endmacro %}
+
+{% macro render_virtual_network_owners() %}
+{{ render_owners(["andgein", "kostya-k", "alg37", "sklyaus", "egorskvortsov", "kriomant", "v-tereschenko", "robot-vpc-solomon"]) }}
+{% endmacro %}
+
+
+{% macro render_virtual_network_environment_dashboard(env_key) %}
+{% set env = environments[env_key] %}
+{% set env_name = env["name"] %}
+address: ycloud_virtual_network_{{ env_name }}
+name: Yandex.Cloud Virtual Network, {{ env_name | upper }}
+description: |-
+  Исходники дашбордов храним [в гите](https://bb.yandex-team.ru/projects/CLOUD/repos/yc-monitoring/browse/juggler/dashboards). Подробности — на [странице дежурного](https://wiki.yandex-team.ru/cloud/devel/sdn/duty/).
+{{ render_virtual_network_owners() }}
+links:
+  - title: 'Общий дашборд всех стендов'
+    url: https://juggler.yandex-team.ru/dashboards/ycloud_virtual_network
+components:
+  {% for dc in env["datacenters"] %}
+  - name: World Connectivity Errors @ {% if loop.index == 1 %}{{ env_name | upper }}{% endif %} {{ dc | upper}}
+    component_type: AGGREGATE_CHECKS
+    aggregate_checks_options:
+      sort:
+        field: DEFAULT
+        order: DESC
+      limit: 2
+      statuses:
+        - CRIT
+        - WARN
+      include_mutes: false
+      filters:
+        - namespace: ycloud
+          tags: ["yc-network", "yc-overlay"]
+          host: yc_network_mr_prober_world_*_{{ env_name }}_{{ dc }}
+    col: {{ loop.index0 * 4 + 1 }}
+    row: 1
+    colspan: 4
+    rowspan: 1
+    view_type: COMPACT
+    elements_in_row: 2
+    links: []
+  {% endfor %}
+   {% for dc in env["datacenters"] %}
+  - name: compute-nodes @ {% if loop.index == 1 %}{{ env_name | upper }}{% endif %} {{ dc | upper}}
+    component_type: AGGREGATE_CHECKS
+    aggregate_checks_options:
+      sort:
+        field: DEFAULT
+        order: DESC
+      limit: 7
+      statuses: []
+      include_mutes: false
+      filters:
+        - namespace: ycloud
+          tags: ["yc-network", "yc-overlay"]
+          host: yc_network_compute_{{ env_name }}_{{ dc }}
+        {% if dc in env["datacenters_with_meeseeks"] %}
+        - namespace: ycloud
+          tags: ["yc-network", "yc-overlay"]
+          host: yc_network_mr_prober_meeseeks_{{ env_name }}_{{ dc }}
+        {% endif %}
+    col: {{ loop.index0 * 4 + 1 }}
+    row: 2
+    colspan: 4
+    rowspan: 1
+    view_type: DETAILED
+    elements_in_row: 2
+    links: []
+  {% endfor %}
+  {% for dc in env["datacenters"] %}
+  - name: oct-heads @ {% if loop.index == 1 %}{{ env_name | upper }}{% endif %} {{ dc | upper }}
+    component_type: AGGREGATE_CHECKS
+    aggregate_checks_options:
+      sort:
+        field: DEFAULT
+        order: DESC
+      limit: 7
+      statuses: []
+      include_mutes: false
+      filters:
+        - namespace: ycloud
+          tags: ["yc-network", "yc-overlay"]
+          host: yc_network_oct_head_{{ env_name }}_{{ dc }}
+        - namespace: ycloud
+          tags: ["yc-network", "yc-overlay"]
+          host: yc_network_oct_control_{{ env_name }}_{{ dc }}
+    col: {{ loop.index0 * 4 + 1 }}
+    row: 3
+    colspan: 4
+    rowspan: 1
+    view_type: DETAILED
+    elements_in_row: 2
+    links: []
+  {% endfor %}
+  {% for az in env["azs"] %}
+  - name: solomon @ {% if loop.index == 1 %}{{ env_name | upper }}{% endif %} {{ az }}
+    component_type: AGGREGATE_CHECKS
+    aggregate_checks_options:
+      sort:
+        field: DEFAULT
+        order: DESC
+      limit: 7
+      statuses: []
+      include_mutes: false
+      filters:
+        - namespace: ycloud
+          tags: ["yc-network"]
+          host: solomon-alert-cloud_{{ env_name }}_head_{{ az }}
+    col: {{ loop.index0 * 4 + 1 }}
+    row: 4
+    colspan: 4
+    rowspan: 1
+    view_type: DETAILED
+    elements_in_row: 2
+    links: []
+  {% endfor %}
+  {% for dc in env["datacenters"] %}
+  - name: vpc-control @ {% if loop.index == 1 %}{{ env_name | upper }}{% endif %} {{ dc | upper }}
+    component_type: AGGREGATE_CHECKS
+    aggregate_checks_options:
+      sort:
+        field: DEFAULT
+        order: DESC
+      limit: 7
+      statuses: []
+      include_mutes: false
+      filters:
+        - namespace: ycloud
+          tags: ["yc-network", "yc-overlay"]
+          host: yc_network_vpc_control_{{ env_name }}_{{ dc }}
+    col: {{ loop.index0 * 4 + 1 }}
+    row: 5
+    colspan: 4
+    rowspan: 1
+    view_type: DETAILED
+    elements_in_row: 2
+    links: []
+  {% endfor %}
+{% endmacro %}

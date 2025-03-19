@@ -1,0 +1,21 @@
+info: Cluster maintenance
+supports_offline: true
+clusters_selection:
+  db: >-
+    SELECT c.cid
+      FROM dbaas.clusters c
+      JOIN dbaas.pillar p on (c.cid = p.cid)
+     WHERE c.type = 'kafka_cluster'
+       AND c.status IN ('RUNNING', 'STOPPED')
+       AND CAST(p.value #>> '{data,kafka,use_plain_sasl}' AS bool) IS NOT true
+       AND env IN ('dev', 'qa', 'prod')
+pillar_change: >-
+  SELECT 1 FROM dbaas.pillar p WHERE p.cid = :cid
+worker:
+  operation_type: kafka_cluster_modify
+  task_type: kafka_cluster_maintenance
+  task_args:
+    enable_plain_sasl: true
+  timeout: 4h
+max_delay_days: 14
+min_days: 7

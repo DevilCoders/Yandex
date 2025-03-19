@@ -1,0 +1,43 @@
+---
+- include: tasks/common.yml
+  tags: ["vpc-api"]
+  vars:
+    silent_checks: ["oom-killer", "salt-minion_version", "solomon-agent"]
+    custom_notifications: []
+
+- include: tasks.yaml
+  tags: ["vpc-api"]
+
+- include: tasks_az.yaml
+  tags: ["vpc-api"]
+  with_items: "{{ datacenters|default(omit) }}"
+  loop_control:
+    loop_var: dc
+
+- include: solomon.yaml
+  tags: ["vpc-api"]
+  vars:
+    host: "yc_network_vpc_api_{{ env }}_solomon"
+    children:
+      - cloud_{{ env }}_vpc-api_solomon
+
+- include: resources.yaml
+  tags: ["vpc-api"]
+  when: env in ["prod", "preprod"]  # we monitor resources only at preprod and prod
+  vars:
+    host: "cloud_{{ env }}_head_solomon"
+    allocator_resources_check: "{{ (default_check if env == 'prod' else default_check_notify_daytime) | hash_merge({'refresh_time': 60, 'ttl': 900, 'aggregator': 'logic_or'}) }}"
+
+- include: resources_az.yaml
+  tags: ["vpc-api"]
+  when: env in ["prod", "preprod"]  # we monitor resources only at preprod and prod
+  vars:
+    host: "cloud_{{ env }}_head{% if az is defined %}_{{ az }}{% endif %}_solomon"
+    allocator_resources_check: "{{ (default_check if env == 'prod' else default_check_notify_daytime) | hash_merge({'refresh_time': 60, 'ttl': 900, 'aggregator': 'logic_or'}) }}"
+  with_items: "{{ availability_zones|default(omit) }}"
+  loop_control:
+    loop_var: az
+
+- include: tasks/local-lb.yml
+  tags: ["vpc-api"]
+  when: env in ["testing", "preprod"]  # we use local_lb only in testing&preprod now

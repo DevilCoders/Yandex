@@ -1,0 +1,192 @@
+# Link: https://grafana.yandex-team.ru/d/cloud-l7-als
+#
+# How to update:
+#
+# Get token from https://oauth.yandex-team.ru/authorize?response_type=token&client_id=12225edea41e4add87aaa4c4896431f1
+#
+# $ export GRAFANA_OAUTH_TOKEN=...
+#
+# $ cd ~/arcadia/cloud/java/dashboard/src/main/resources/dashboard
+# $ docker run --rm -it -v `pwd`:/data/ -e GRAFANA_OAUTH_TOKEN="$GRAFANA_OAUTH_TOKEN" registry.yandex.net/cloud/platform/dashboard:latest java -jar build/java-dashboard.jar upload /data/l7/als.yaml
+#
+
+uid: cloud-l7-als
+title: Cloud L7 ALS
+refresh: 1m
+tags: [l7, als]
+
+variables:
+  ui:
+    env:
+      values:
+        - prod
+        - preprod
+    color:
+      values:
+        - green
+        - blue
+
+graphDefaults:
+  datasource: 'Solomon Cloud'
+  width: 6
+  height: 8
+
+queryDefaults:
+  dropNan: true
+  labels: >-
+    project=platform,
+    service=l7-als_ma,
+    cluster=cloud_${env}_als
+
+rows:
+  - title: Green/Blue
+    queryDefaults:
+      labels: >-
+        color=*,
+        host=cluster
+
+    panels:
+      - type: graph
+        title: Memory allocated in heap
+        yAxes: [ { format: bytes } ]
+        !include include/draw-green-blue.yaml
+        queries:
+          - params: { labels: 'name=process_resident_memory_bytes' }
+            select: { group_by_labels: [ sum, color ] }
+            groupByTime: { max: default }
+
+      - type: graph
+        title: Cloud Logs Reported per second
+        yAxes: [ { decimals: 0, format: short, min: 0 } ]
+        !include include/draw-green-blue.yaml
+        queries:
+          - params: { labels: 'name=cloud_logs_reported_messages' }
+            select: { group_by_labels: [ sum, color ], non_negative_derivative: [ ] }
+            groupByTime: { max: default }
+
+      - type: graph
+        title: Cloud Logs Reported bytes per second
+        yAxes: [ { format: bytes } ]
+        !include include/draw-green-blue.yaml
+        queries:
+          - params: { labels: 'name=cloud_logs_reported_bytes' }
+            select: { group_by_labels: [ sum, color ], non_negative_derivative: [ ] }
+            groupByTime: { max: default }
+
+      - type: graph
+        title: Cloud Logs Discarded
+        yAxes: [ { decimals: 0, format: short, min: 0 } ]
+        !include include/draw-green-blue.yaml
+        queries:
+          - params: { labels: 'name=cloud_logs_discarded_messages_counter' }
+            select: { non_negative_derivative: [ ] }
+            groupByTime: { max: default }
+
+      # Metrics
+      - type: graph
+        title: Metrics pusher errors
+        yAxes: [ { decimals: 0, format: short, min: 0 } ]
+        !include include/draw-green-blue.yaml
+        queries:
+          - params: { labels: 'name=ma_push_errors' }
+            select: { group_by_labels: [ sum, color ], non_negative_derivative: [ ] }
+            groupByTime: { max: default }
+
+      - type: graph
+        title: Sensors Pushed per second
+        yAxes: [ { decimals: 0, format: short, min: 0 } ]
+        !include include/draw-green-blue.yaml
+        queries:
+          - params: { labels: 'name=als_metrics_pushed_sensors_total' }
+            select: { non_negative_derivative: [ ] }
+            groupByTime: { max: default }
+
+      - type: graph
+        title: Metrics pusher bytes
+        yAxes: [ { format: bytes } ]
+        !include include/draw-green-blue.yaml
+        queries:
+          - params: { labels: 'name=ma_push_bytes_total' }
+            select: { group_by_labels: [ sum, color ], non_negative_derivative: [ ] }
+            groupByTime: { max: default }
+
+      - type: graph
+        title: Metrics Discarded
+        yAxes: [ { decimals: 0, format: short, min: 0 } ]
+        !include include/draw-green-blue.yaml
+        queries:
+          - params: { labels: 'name=als_metrics_discarded_messages_total' }
+            select: { group_by_labels: [ sum, color ], non_negative_derivative: [ ] }
+            groupByTime: { max: default }
+
+  - title: Detailed for selected color
+    queryDefaults:
+      labels: >-
+        color=${color},
+        host=!cluster
+
+    collapsed: true
+    panels:
+      - type: graph
+        title: Memory allocated in heap
+        yAxes: [ { format: bytes } ]
+        queries:
+          - params: { labels: 'name=process_resident_memory_bytes' }
+            groupByTime: { max: default }
+
+      - type: graph
+        title: Cloud Logs Reported per second
+        yAxes: [ { decimals: 0, format: short, min: 0 } ]
+        queries:
+          - params: { labels: 'name=cloud_logs_reported_messages' }
+            select: { group_by_labels: [ sum, host ], non_negative_derivative: [ ] }
+            groupByTime: { max: default }
+
+      - type: graph
+        title: Cloud Logs Reported bytes per second
+        yAxes: [ { format: bytes } ]
+        queries:
+          - params: { labels: 'name=cloud_logs_reported_bytes' }
+            select: { group_by_labels: [ sum, host ], non_negative_derivative: [ ] }
+            groupByTime: { max: default }
+
+      - type: graph
+        title: Cloud Logs Discarded
+        yAxes: [ { decimals: 0, format: short, min: 0 } ]
+        queries:
+          - params: { labels: 'name=cloud_logs_discarded_messages_counter' }
+            select: { non_negative_derivative: [ ] }
+            groupByTime: { max: default }
+
+      # Metrics
+      - type: graph
+        title: Metrics pusher errors
+        yAxes: [ { decimals: 0, format: short, min: 0 } ]
+        queries:
+          - params: { labels: 'name=ma_push_errors' }
+            select: { group_by_labels: [ sum, host ], non_negative_derivative: [ ] }
+            groupByTime: { max: default }
+
+      - type: graph
+        title: Sensors Pushed per second
+        yAxes: [ { decimals: 0, format: short, min: 0 } ]
+        queries:
+          - params: { labels: 'name=als_metrics_pushed_sensors_total' }
+            select: { non_negative_derivative: [ ] }
+            groupByTime: { max: default }
+
+      - type: graph
+        title: Metrics pusher bytes
+        yAxes: [ { format: bytes } ]
+        queries:
+          - params: { labels: 'name=ma_push_bytes_total' }
+            select: { group_by_labels: [ sum, host ], non_negative_derivative: [ ] }
+            groupByTime: { max: default }
+
+      - type: graph
+        title: Metrics Discarded
+        yAxes: [ { decimals: 0, format: short, min: 0 } ]
+        queries:
+          - params: { labels: 'name=als_metrics_discarded_messages_total' }
+            select: { non_negative_derivative: [ ] }
+            groupByTime: { max: default }

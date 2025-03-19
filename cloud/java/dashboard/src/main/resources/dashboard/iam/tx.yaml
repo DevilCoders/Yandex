@@ -1,0 +1,89 @@
+id: 526131
+uid: iam-tx
+title: IAM TX
+folderId: 412692
+refresh: 1m
+
+tags: [ 'iam', 'iam-tx' ]
+links:
+  !include shared/links.yaml tx
+
+graphDefaults: { datasource: '${ds}', width: 8, height: 6 }
+queryDefaults:
+  labels: 'project=yc.iam.service-cloud, service=${service}, cluster=${service}-${cluster}, host=@all_hosts, tx_name=${tx_name}'
+  dropNan: true
+  defaultTimeWindow: '1m'
+
+variables:
+  ui:
+    !include shared/services.yaml
+    !include shared/datasources.yaml
+  uiQuery:
+    !include shared/clusters.yaml '${service}'
+    !include shared/hosts.yaml
+    tx_name:
+      labels: 'tx_name=*'
+  replacement:
+    !include shared/replacements.yaml
+
+rows:
+  - title: 'TX'
+    drilldowns:
+      - subUid: dd-by-host
+        title: 'TX by host'
+        tags: [ 'iam-tx', 'iam-tx-by-host' ]
+        ui:
+          service: service
+          ds: ds
+        uiQuery:
+          cluster: cluster
+          host: host
+          tx_name: tx_name
+        uiRepeat: host
+        labels: 'host=${host}'
+
+      - subUid: dd-by-tx-name
+        title: 'TX by tx_name'
+        tags: [ 'iam-tx', 'iam-tx-by-tx-name' ]
+        ui:
+          service: service
+          ds: ds
+        uiQuery:
+          cluster: cluster
+          host: host
+          tx_name:
+            labels: 'tx_name=*'
+            multi: true
+        uiRepeat: tx_name
+
+    panels:
+      - type: graph
+        title: 'TX Results'
+        templates: [ { name: rps, sumLines: [ result ] }, { name: alias, alias: '{{result}}' } ]
+        queries:
+          - params: { labels: 'sensor=tx_result' }
+
+      - type: graph
+        title: 'TX Attempt Duration'
+        templates: { name: percentile, groupLines: true }
+        queries:
+          - params: { labels: 'sensor=tx_attempt_duration_seconds' }
+
+      - type: graph
+        title: 'TX Total Duration'
+        templates: { name: percentile, groupLines: true }
+        queries:
+          - params: { labels: 'sensor=tx_total_duration_seconds' }
+
+      - type: graph
+        title: 'TX Retries'
+        templates: [ { name: rps, sumLines: [ reason ] }, { name: alias, alias: '{{reason}}' } ]
+        queries:
+          - params: { labels: 'sensor=tx_retries' }
+
+      - type: graph
+        title: 'TX Attempts'
+        templates: { name: percentile, groupLines: true }
+        queries:
+          - params: { labels: 'sensor=tx_attempts' }
+        yAxes: [ { format: short } ]

@@ -1,0 +1,40 @@
+{% extends "../../../base/alert.j2" %}
+
+{% set idc="network-ping-external-targets" %}
+{% set description="Кластеры meeseeks и world-*, пробер network-ping.\\n\\n" +
+"Алерт на то, что с одного хоста недоступно 2 или больше внешних таргета." %}
+
+{% set windowSecs=120 %}
+{% set delaySecs=15 %}
+{% set resolvedEmptyPolicy="RESOLVED_EMPTY_NO_DATA" %}
+{% set checkExpression="" %}
+
+{% macro prog() %}
+// CLOUD-99819. Исключаем гугловые таргеты 142.251.1.102 и 8.8.8.8, так как они слишком часто флапают
+let fails = {project="{{ project_id }}", cluster="*", service="metrics", metric="fail", host!="{{ az_names }}", cluster_slug="meeseeks|world-*", prober_slug="network-ping", matrix_host!="10.*|192.168.*|172.*|142.251.1.102|8.8.8.8"};
+
+let cluster_slug = get_label(fails, "cluster_slug");
+let window = cluster_slug == "meeseeks" ? 1m : 20s;
+
+let fails_count = max(group_lines('sum', group_by_time(window, 'sum', fails)));
+alarm_if(fails_count >= 2);
+{% endmacro %}
+
+{% block main %}
+    "name": "[meeseeks/world-*] ICMP availability of external targets",
+    "groupByLabels": [
+        "cluster",
+        "host",
+        "cluster_slug"
+	],
+    "annotations": {
+        "host": "[[labels.host]]",
+        "stand": "[[labels.cluster]]",
+        "service": "ping-external-targets",
+        "cluster": "[[labels.cluster_slug]]",
+        "fails graph": "{{ solomon_endpoint }}/?project={{ project_id }}&service=metrics&l.metric=fail&cluster=[[labels.cluster]]&l.prober_slug=network-ping&l.host=[[labels.host]]&l.cluster_slug=[[labels.cluster_slug]]&graph=auto&b=1h&e=&downsamplingFill=previous",
+        "logs": "{{ s3_viewer_url }}/mr-prober-logs?key=[[labels.cluster]]%2Fprobers%2F[[labels.cluster_slug]]%2F[[labels.host]]%2Fnetwork-ping%2F",
+        "unavailable targets count": "[[expression.fails_count]]"
+    },
+    "type": {{ type_expression() }}
+{% endblock %}

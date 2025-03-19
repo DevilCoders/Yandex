@@ -1,0 +1,42 @@
+version: '3.2'
+
+services:
+  mdb-health_test:
+    container_name: mdb-health_test_mdbh_${DC_RUN_ID}
+    build: .
+    environment:
+      - MDBH_DS_REDIS_ADDRS=redis:6379
+      - MDBH_SS_PG_ADDRS=metadb:5432
+      - MDBH_CLUSTERKEYOVERRIDE=_test_public_key.pem
+      - MDBH_INTEGRATION_TEST_CLIENT_CA_CERT=../../../_test_CA.crt
+      - MDBH_INTEGRATION_TEST_CLIENT_CLUSTER_PRIVATE_KEY=../../../_test_private_key.pem
+    hostname: mdb-health_test
+    user: ${DC_USER_ID}:${DC_GROUP_ID}
+    volumes:
+      - type: bind
+        source: ../
+        target: /go/src/a.yandex-team.ru/cloud/mdb/
+    depends_on:
+      - redis
+      - metadb
+  redis:
+    container_name: mdb-health_test_redis_${DC_RUN_ID}
+    image: redis:5.0.3
+    hostname: redis
+  metadb:
+    container_name: mdb-health_test_metadb_${DC_RUN_ID}
+    build: ../dbaas_metadb
+    healthcheck:
+      test: ["CMD-SHELL", "sudo -u postgres psql dbaas_metadb -1 -c 'SELECT count(*) FROM dbaas.clusters'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    environment:
+      - NOSTOP=1
+      - SKIPTESTS=1
+    hostname: metadb
+
+networks:
+  default:
+    external:
+      name: ${DC_NETWORK_NAME}

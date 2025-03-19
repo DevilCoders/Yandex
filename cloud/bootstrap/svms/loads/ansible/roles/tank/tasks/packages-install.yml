@@ -1,0 +1,34 @@
+---
+- name: Add repo from for tank's packages
+  template: src={{ item.src }} dest={{ item.dest }}
+  with_items:
+    - { src: "load.j2", dest: "/etc/apt/sources.list.d/yandex-load-xenial.list" }
+
+- name: Check tankapi dir
+  stat: path='/var/lib/tankapi'
+  register: tankapi_dir
+
+- name: Install packages yandex tank
+  apt: pkg="{{ item }}" state=latest update_cache=yes
+  ignore_errors: True
+  with_items:
+    - yandex-tank-internal
+    
+- name: Create dir for tankapi
+  file: path='/var/lib/tankapi' state=directory owner=lunapark
+  when: tankapi_dir.stat.exists == false
+
+- name: Install packages for load_tanks
+  apt: pkg="{{ item }}" state=latest
+  with_items:
+    - parallel
+    - phantom
+    - phantom-ssl
+
+# For use ipv6-only tanks with old tankapi
+- name: Change to ipv6 only
+  lineinfile: dest=/etc/init/tankapi.conf state=present regexp='^exec /usr/bin/tankapi.*' line='exec /usr/bin/tankapi -6 2>&1'
+  when: ansible_all_ipv4_addresses == []
+  ignore_errors: yes
+  notify:
+    - 'Restart tankapi'

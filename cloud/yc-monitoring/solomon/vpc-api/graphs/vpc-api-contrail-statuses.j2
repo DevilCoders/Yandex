@@ -1,0 +1,48 @@
+{% extends "vpc-api-base.j2" %}
+
+{% set id_suffix = id_suffix | default("contrail_statuses") %}
+{% set name = name | default("vpc api contrail statuses") %}
+{% set transform = "DIFFERENTIATE" %}
+{% set only_errors = only_errors | default(false) %}
+
+{% macro contrail_http_errors(zone, host="none", method="none", status="none") %}
+avg({
+    sensor='http_statuses'
+    ,app='contrail'
+    ,zone='{{zone}}'
+    {% if only_errors %}
+        ,status!='200|409|404'
+    {% elif status != 'none' %}
+        ,status='{{ status }}'
+    {% endif %}
+    {% if host != 'none' %}
+        ,host='{{host}}'
+    {% endif %}
+    {% if method != 'none' %}
+        ,method='{{ method }}'
+    {% endif %}
+}) by (zone, method)
+{% endmacro %}
+
+{% block additional_params %}
+    ,{
+        "name": "host",
+        "value": "cluster"
+    }
+    ,{
+        "name": "method",
+        "value": "*"
+    }
+    {% if not only_errors %}
+    ,{
+        "name": "status",
+        "value": "*"
+    }
+    {% endif %}
+{% endblock %}
+
+{% block elements %}
+    {% for zone in az_zones %}
+        {{ render_element("", contrail_http_errors(zone) | to_prog) }}
+    {% if not loop.last %},{% endif %}{% endfor %}
+{% endblock %}

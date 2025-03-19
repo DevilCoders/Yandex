@@ -1,0 +1,67 @@
+domain ip6 {
+{% if salt.dbaas.is_compute() %}
+{%   set region = salt['pillar.get']('data:dbaas:region', 'ru-central1') %}
+    table mangle {
+        chain OUTPUT {
+            mod owner uid-owner 'postgres'
+            MARK set-mark 4;
+
+            # wal-g is run from postgres user so we need separate rule
+{%   for host in salt['pillar.get']('data:access:user_hosts', []) %}
+            mod owner uid-owner 'postgres'
+            mod tcp proto tcp daddr '{{ host.fqdn }}' dport {{ host.port }}
+            MARK set-mark 8;
+{%   endfor %}
+
+            # Needed until pgsync is run from postgres user
+            # DBAASEXTERNALNETS
+            mod owner uid-owner 'postgres'
+            mod tcp proto tcp dport 2181
+{%   if region == 'il1' %}
+            mod u32 u32 "0x20&0xffffffff=0x9000001b"
+{%   else %}
+            mod u32 u32 "0x20&0xffffffff=0xf802"
+{%   endif %}
+            MARK set-mark 8;
+
+{%   for project_id in salt.mdb_network.get_external_project_ids(exclude_user_project_id=true) %}
+            mod owner uid-owner 'postgres'
+            mod tcp proto tcp sport 6432
+            mod u32 u32 "0x20&0xffffffff={{ project_id }}"
+            MARK set-mark 8;
+{%   endfor %}
+        }
+    }
+{% endif %}
+{% if salt.dbaas.is_porto() and salt.mdb_network.is_in_user_project_id() %}
+{%   set ip6_user_addr = salt.mdb_network.ip6_porto_user_addr() %}
+{%   set ip6_control_addr = salt.mdb_network.ip6_porto_control_addr() %}
+{%   set cluster_hosts = salt['pillar.get']('data:dbaas:cluster_hosts', None) %}
+    table nat {
+        chain POSTROUTING {
+            outerface eth0 {
+{%   for host in salt['pillar.get']('data:access:user_hosts', []) %}
+                # wal-g is run from postgres user so we need separate rule
+                mod owner uid-owner 'postgres'
+                mod tcp proto tcp daddr '{{ host.fqdn }}' dport {{ host.port }}
+                SNAT to {{ ip6_control_addr }};
+{%   endfor %}
+
+                # Needed until pgsync is run from postgres user
+                mod owner uid-owner 'postgres'
+                mod tcp proto tcp dport 2181
+                mod u32 u32 "0x20&0xffffffff=0x1589"
+                SNAT to {{ ip6_control_addr }};
+
+{%   if cluster_hosts %}
+                mod tcp proto tcp daddr ( {{ cluster_hosts | join(' ') }} ) dport ( 5432 )
+                SNAT to {{ ip6_user_addr }};
+{%   endif %}
+
+                mod owner uid-owner 'postgres'
+                SNAT to {{ ip6_user_addr }};
+            }
+        }
+    }
+{% endif %}
+}

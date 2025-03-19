@@ -1,0 +1,64 @@
+use chyt.hahn/cloud_analytics;
+INSERT INTO "//home/cloud_analytics/emailing/sender/CLOUDANA-724_company_total_samples"
+    SELECT
+        t0.paid,
+        t0.mdb_consumption,
+        t1.billing_account_id as billing_account_id,
+        email,
+        mail_promo,
+        mail_feature,
+        mail_testing,
+        mail_billing,
+        mail_event,
+        mail_tech,
+        mail_info,
+        multiIf(
+            modulo(sipHash64(billing_account_id), 3) IN (0,1), 'test',
+            'control'
+        ) as group,
+        toString(addDays(NOW(), 0)) as time,
+        time as time_
+    FROM(
+        SELECT
+            billing_account_id,
+            SUM(
+                multiIf(toDate(event_time) < addDays(toDate(NOW()), 0) AND toDate(event_time) >= addDays(toDate(NOW()), -30), real_consumption, 0)
+            ) as paid,
+            SUM(multiIf(service_name = 'mdb' AND toDate(event_time) < addDays(toDate(NOW()), 0), real_consumption + trial_consumption, 0)) as mdb_consumption
+        FROM "//home/cloud_analytics/cubes/acquisition_cube/cube"
+        WHERE
+            event IN ('day_use')
+        GROUP BY
+            billing_account_id
+        HAVING
+            paid > 0
+            AND paid < 4000
+            AND mdb_consumption = 0
+    ) as t0
+    INNER JOIN(
+        SELECT
+            billing_account_id,
+            multiIf(
+                user_settings_email LIKE '%@yandex.%' OR user_settings_email LIKE '%@ya.%',CONCAT(lower(replaceAll(splitByString('@',assumeNotNull(user_settings_email))[1], '.', '-')), '@yandex.ru'),
+                lower(user_settings_email)
+            ) as email,
+            mail_promo,
+            mail_feature,
+            mail_testing,
+            mail_billing,
+            mail_event,
+            mail_tech,
+            mail_info,
+            mail_promo
+        FROM "//home/cloud_analytics/cubes/acquisition_cube/cube"
+        WHERE
+            event IN ('ba_created')
+            AND (
+                ba_person_type = 'company'
+                OR is_corporate_card = 1
+            )
+            AND segment IN ('Mass', 'ISV Program', 'VAR')
+            AND billing_account_id NOT IN (SELECT DISTINCT billing_account_id FROM concatYtTablesRange("//home/cloud_analytics/emailing/experiments/upsell/individuals"))
+            AND billing_account_id NOT IN (SELECT DISTINCT billing_account_id FROM concatYtTablesRange("//home/cloud_analytics/emailing/experiments/upsell/mdb_on_vm"))
+    ) as t1
+    ON t0.billing_account_id = t1.billing_account_id

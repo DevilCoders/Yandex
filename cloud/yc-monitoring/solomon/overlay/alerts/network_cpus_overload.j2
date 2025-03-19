@@ -1,0 +1,45 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro prog() %}
+let min_idletime_core_1 = avg({
+  project='{{ project_id }}',
+  cluster='cloud_{{ env }}_compute_*',
+  service='sys',
+  path='/System/IdleTime',
+  cpu='1'
+});
+
+let min_idletime_core_2 = avg({
+  project='{{ project_id }}',
+  cluster='cloud_{{ env }}_compute_*',
+  service='sys',
+  path='/System/IdleTime',
+  cpu='2'
+});
+
+let min_idletime = min(as_vector(min_idletime_core_1, min_idletime_core_2));
+
+let text = 'Idletimes: [core_1: ' + min_idletime_core_1 + ', core_2: ' + min_idletime_core_2 + ']';
+
+let is_red = min_idletime < 200;
+let is_yellow = min_idletime < 400;
+
+let trafficColor = is_red ? 'red' : (is_yellow ? 'yellow' : 'green');
+{% endmacro %}
+
+
+{% block main %}
+    "name": "network_cpus_overload @ {{ env }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "host": "{{ compute_node_fqdn() }}",
+        "tags": "Solomon",
+        "dashboard": "{{ compute_node_network_metrics_url() }}",
+        "min_idletime": "[[expression.min_idletime]]",
+        "trafficLight.color": "[[expression.trafficColor]]",
+        "text": "[[expression.text]]",
+        "service": "network-cpus-overload"
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

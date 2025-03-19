@@ -1,0 +1,70 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro prog() %}
+let space_root = last({
+    project='{{ project_id }}',
+    cluster='cloud_{{ env }}',
+    service='sys',
+    path='/Filesystem/FreeB',
+    host='*build-agent-*',
+    mountpoint='/'
+});
+let total_root = last({
+    project='{{ project_id }}',
+    cluster='cloud_{{ env }}',
+    service='sys',
+    path='/Filesystem/SizeB',
+    host='*build-agent-*',
+    mountpoint='/'
+});
+let space_srvchroot = last({
+    project='{{ project_id }}',
+    cluster='cloud_{{ env }}',
+    service='sys',
+    path='/Filesystem/FreeB',
+    host='*build-agent-*',
+    mountpoint='/srv/chroot'
+});
+let total_srvchroot = last({
+    project='{{ project_id }}',
+    cluster='cloud_{{ env }}',
+    service='sys',
+    path='/Filesystem/SizeB',
+    host='*build-agent-*',
+    mountpoint='/srv/chroot'
+});
+let GB = 1024*1024*1024;
+
+let space_root_in_gb = to_fixed(space_root / GB, 2);
+let space_root_in_percent = space_root / total_root * 100;
+let space_root_expr = to_fixed(space_root_in_percent, 0) + '% (' + space_root_in_gb + 'Gb)';
+
+let space_srvchroot_in_gb = to_fixed(space_srvchroot / GB, 2);
+let space_srvchroot_in_percent = space_srvchroot / total_srvchroot * 100;
+let space_srvchroot_expr = to_fixed(space_srvchroot_in_percent, 0) + '% (' + space_srvchroot_in_gb + 'Gb)';
+
+let is_red = space_root_in_percent < 10 || space_srvchroot_in_percent < 10;
+let is_yellow = space_root_in_percent < 20 || space_srvchroot_in_percent < 20;
+let trafficColor = is_red ? 'red' : (is_yellow ? 'yellow' : 'green');
+
+alarm_if(is_red);
+warn_if(is_yellow);
+
+{% endmacro %}
+
+
+{% block main %}
+    "name": "Monitor free disk space on build agents",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "host": "[[labels.host]].bootstrap.cloud-preprod.yandex.net",
+        "free_space_on_/": "[[ expression.space_root_expr ]]",
+        "free_space_on_/srv/chroot": "[[ expression.space_srvchroot_expr ]]",
+        "tags": "vpc-solomon, vpc-infra, build-agent",
+        "trafficLight.color": "[[ expression.trafficColor ]]",
+        "service": "build_agent_disk_space",
+        "description": "Red when free disk space < 10%, yellow when < 20%"
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

@@ -1,0 +1,44 @@
+{%- macro sanitize_quotes(id) -%}
+{{ id | replace('\'', '"') }}
+{%- endmacro -%}
+
+{
+    "id": "ydb_slo_1d_slo_{{ folder_id }}_join",
+    "projectId": "{{ project_id }}",
+    "name": "SLO for 1 day (join)",
+    "version": 3,
+    "createdBy": "mbabich",
+    "createdAt": "2019-12-19T11:38:04Z",
+    "updatedBy": "mbabich",
+    "updatedAt": "2020-05-25T18:19:42Z",
+    "state": "ACTIVE",
+    "severity": "SEVERITY_UNSPECIFIED",
+    "groupByLabels": [
+        "database"
+    ],
+    "notificationChannels": {{ sanitize_quotes(notifications_channels) }},
+    "channels": {{ sanitize_quotes(channels) }},
+    "type": {
+        "expression": {
+            "program": "let checks = group_lines('sum', {\n    project='{{ project_id }}',\n    cluster='{{ folder_id }}',\n    service='availability',\n    host='ydb-*',\n    sensor='Availability',\n    check_type='join',\n    database!='total'\n});\nlet oks = transform(checks, 'heaviside');\nlet oks_count = count(oks);\nlet oks_sum = sum(oks);\nlet slo = (oks_sum * 100) / oks_count;\nlet slo_text = to_fixed(slo, 3) + '%';\n\nalarm_if(slo < 99.9);\nwarn_if(slo < 99.99);",
+            "checkExpression": ""
+        }
+    },
+    "annotations": {
+        "slo": "[[expression.slo_text]]",
+        "ok_count": "[[expression.oks_count]]",
+        "ok_sum": "[[expression.oks_sum]]",
+        "host": "{{ env }}_{{ folder_id }}",
+        "service": "[[labels.database]]_join_1d",
+        "tags": "ydb_slo,ydb_slo_join,ydb_slo_1d"
+    },
+    "periodMillis": 86400000,
+    "delaySeconds": 300,
+    "windowSecs": 86400,
+    "delaySecs": 300,
+    "description": "",
+    "resolvedEmptyPolicy": "RESOLVED_EMPTY_DEFAULT",
+    "noPointsPolicy": "NO_POINTS_DEFAULT",
+    "labels": {},
+    "serviceProviderAnnotations": {}
+}

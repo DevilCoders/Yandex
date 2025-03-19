@@ -1,0 +1,146 @@
+{%- set lb_endpoints = grains['cluster_map']['load_balancer']['endpoints'] -%}
+{%- set test_mode = salt['grains.get']('overrides:test_mode', False) %}
+{%- set hostname = grains['nodename'] %}
+{%- set mem_total = grains['mem_total'] %}
+{%- set stand_type = grains['cluster_map']['stand_type'] %}
+{%- set system_cores = [] %}
+{%- set deallocation_delay = salt['pillar.get']('compute-node:deallocation:delay', False) %}
+{%- set generate_random_instance_id_signature_key = salt['pillar.get']('secrets:metadata:generate_random_key', False) %}
+{%- set base_role = salt['grains.get']('cluster_map:hosts:%s:base_role' % hostname) %}
+{%- set host_tags = salt['grains.get']('cluster_map:hosts:%s:tags' % hostname) %}
+{%- if test_mode %}
+test_mode: true
+{%- endif %}
+{%- set enable_features = salt['pillar.get']('compute-node:enable_features', [])[:] %}
+{%- set gpu = salt['grains.get']('GPU:available', False) -%}
+{%- set gpu_hardware_platform = salt['pillar.get']('gpu_hardware_platform') %}
+{%- set environment = grains["cluster_map"]["environment"] -%}
+{%- set zone_id = grains['cluster_map']['hosts'][hostname]['zone_id'] -%}
+{%- set shared_cores_limit = {} %}
+
+{%- if gpu %}
+  {%- do enable_features.append("gpu") %}
+{%- endif %}
+
+enable_features: {{ enable_features }}
+
+{% if generate_random_instance_id_signature_key %}
+metadata_instance_id_signature_key: {{ salt['grains.get_or_set_hash']('instance_id_signature_key', 32, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') }}
+{% else %}
+metadata_instance_id_signature_key: 'fake_random_value'
+{% endif %}
+
+system_account:
+  private_key: /var/lib/yc/compute-node/system_account.json
+
+{% if zone_id == "ru-central1-a" and environment in ("testing", "pre-prod") %}
+vsock:
+  enabled: true
+  min_cid: 1000
+  max_cid: 20000
+
+accounting:
+  labels: true
+{% endif %}
+
+endpoints:
+  compute_private:
+    url: http://{{ lb_endpoints.compute.host }}:{{ lb_endpoints.compute.port }}/private
+  identity:
+    url: http://{{ lb_endpoints.identity_public.host }}:{{ lb_endpoints.identity_public.port }}
+  serialproxy:
+    url: http://localhost:9602
+  compute_metadata:
+    url: http://localhost:6771
+
+compute_resources:
+{%- for platform in salt["pillar.get"]("hardware_platform") %}
+  {%- if platform["gpu"] == gpu and salt["grains.get"]("cpu_model") in platform["cpus"] %}
+  {%- do shared_cores_limit.update({"cores": 6 if platform["name"] == "xeon-gold-6230" and not gpu else 4}) %}
+  hardware_platform: {{ platform["name"] }}
+  {%- if gpu %}
+  gpu_hardware_platform: {{ gpu_hardware_platform }}
+  {%- endif %}
+  {%- endif %}
+{%- endfor %}
+
+  numa_nodes:
+{%- if stand_type == 'virtual' %}
+  {%- set system_memory = '6G' %}
+  {%- do shared_cores_limit.update({"cores": grains['num_cpus']}) %}
+  {%- do system_cores.append([]) %}
+{%- elif base_role == 'compute-node-vm' %}
+  {%- set system_memory = '1G' %}
+  {%- set total_cpus = grains['num_cpus'] %}
+  {%- set system_cpus = [0] if total_cpus > 1 else [] %}
+  {%- do shared_cores_limit.update({"cores": total_cpus - system_cpus|length}) %}
+  {%- do system_cores.append(system_cpus) %}
+  {%- for numa in range(grains['num_sockets'] - 1) %}
+      {%- do system_cores.append([]) %}
+  {%- endfor %}
+{%- else %}
+  {%- set numa0_cores = [] %}
+  {%- for cores_type in ['system', 'network', 'nbs'] %}
+    {%- do numa0_cores.extend(salt['cmd.shell']("/usr/bin/python3 /usr/bin/isolate_cpu.py show --type %s --string" % cores_type).split(",")|map('int')) %}
+  {%- endfor %}
+  {%- do system_cores.append(numa0_cores) %}
+  {%- set numa1_cores = [] %}
+  {%- for cores_type in ['kikimr'] %}
+    {%- do numa1_cores.extend(salt['cmd.shell']("/usr/bin/python3 /usr/bin/isolate_cpu.py show --type %s --string" % cores_type).split(",")|map('int')) %}
+  {%- endfor %}
+  {%- do system_cores.append(numa1_cores) %}
+  {%- set system_memory = '24G' %}
+  {%- if not pillar['compute-node']['limit_shared_cores'] %}
+  {%- do shared_cores_limit.update({"cores": grains['num_cpus'] // 2}) %}
+  {%- endif %}
+{%- endif %}
+
+{%- for cores in system_cores %}
+    - system_cores: {{ cores }}
+      system_memory: {{ system_memory }}
+      shared_cores_limit: {{ shared_cores_limit.cores }}
+{%- endfor %}
+
+dns:
+  internal_zone: {{ pillar['dns']['virtual_dns']['internal_zone'] }}
+
+nbs:
+  plugin_path: /var/lib/nbs/libblockstore-plugin.so
+  client_config_path: /etc/yc/nbs/client/client.txt
+
+{% set zone_id = salt['grains.get']('cluster_map:hosts:%s:location:zone_id' % hostname, pillar['placement']['dc']) %}
+{% set rack = salt['grains.get']('cluster_map:hosts:%s:location:rack' % hostname, 'virtual#a.1.01:1A1') %}
+placement:
+  availability_zone: {{ zone_id }}
+  fault_domain: {{ rack }}
+
+hypervisor:
+  allow_software_virtualization: {{ salt['pillar.get']('compute-node:allow_software_virtualization', 'false') }}
+  allow_nested_virtualization: {{ salt['pillar.get']('compute-node:allow_nested_virtualization', 'false') }}
+  enable_shared_memory: true
+
+{% set nvme_disk_set = salt['grains.get']('cluster_map:hosts:%s:nvme_disks:disk_set' % hostname) %}
+{% set nvme_disks = grains['cluster_map']['nvme']['disk_sets'][nvme_disk_set] if nvme_disk_set else []  %}
+nvme_disks: {{ nvme_disks }}
+
+internal_data_disk_store: /var/lib/yc/compute-node/keys
+
+{%- if test_mode %}
+# Use a very big value to not interfere with tests
+deallocation:
+  delay: 3600
+{%- else %}
+{%- if deallocation_delay %}
+deallocation:
+  delay: {{ deallocation_delay }}
+{%- endif %}
+{%- endif %}
+
+{%- if 'leroy-prod' in host_tags %}
+tap_interface_tx_queue_len: "120000"
+{%- endif %}
+
+serverless:
+  storage_url_prefix: "https://storage.yandexcloud.net/serverless-engine-dist/"
+  public_keys:
+    - LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQ0lqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FnOEFNSUlDQ2dLQ0FnRUF3eTBzdTB0TTRzVFVSYk04SkNlVQo0a1E0MnNhRWZhVnU1c2YyMEJkZ2ZEc0xWak1sdm9BbEZNeWdpeHlMdTQyc2dIWVFLSnNzTXBDcHRKaC9MYnVlCkh1eHJYaTJ0VDY0aTdqSnNnUTRJWFJCMkVCZkZ3N2RRSzIwRUVOaHI1TlBXemhlUFpTZ0xhTkwyWFgwa2s0eE8KMzQyODFmK2U3Ukl5dnV1TmkrOWp1TDRjR1MwTHNRbHF2U3RvbVdmMVNNK3VkZ29qWnFHU01UNkQwb0hsbEZHbApvZ2dFYWZreGVkNGFsZkd3ZkIwQVU2bGVucUJmR3BmY01mellKSVhpNjYzWk1LeGlPeEpEdU01QUdralhlamhSCmFWeWdpeUkvVEdpUEQrQS9sRVdLTzFTWlhyVVJjMUNwSk5GTXRrSTU0VmduWnNabVoxRFdWWHNIbHRmSHBlLzcKNnNKYjM2QnFUYVkvZDYyeGJQZVRhVVFsTGtsaFduRWY1Z0VKUnR1QjU0VjdoT0FTOE53d2dzSzk5U2FhRFZOYQpoUUxqbVRMc2FpeDdGcFQ1MU55d3lvN0J4ZUNPZlZpakhWOFc1eWUxTVNGZEF3dnpSaHhoQUlKWDlqeHR2NmRyCkRQTnBXSGVwbmk3Q1VWRjc5bDhRWEE1MzhBMnk4aVd2V3FFWThGVVhkVTJVVjg1ZmNLNGMxb3J4N1ByVk5nTGkKVUI3bmlOUzNPNm9Jb0xrMHdHWHoyaGRvWjNjcVlPVUZLSTBGZ0pyQ3J3VzVWR00zaXJFaDFQMWRqWWJYUlMxRgpsY0NqNHZvL3YzSjhNcUl4d20yLzRuemFtcXB5VmxTNUFRUTdIYWpOamF1ZU5NZkQ4cEgrOU9VSERKTGlQUFlFCmZ2Tit1NStDalpVbEw1NXd4Nm54NkxzQ0F3RUFBUT09Ci0tLS0tRU5EIFBVQkxJQyBLRVktLS0tLQo=

@@ -1,0 +1,270 @@
+logger:
+  level: info
+  file_pattern: /var/log/schecker/schecker-swiss-knife-{date}-{index}.log
+  max_files: 5
+  max_size: 1gi
+schecker:
+  tls:
+    verify: true
+  http_timeout: 5
+  severities: # according https://wiki.yandex-team.ru/cloud/regulations/security-fixes/
+    critical:
+      days: 7
+    high:
+      days: 14
+    medium:
+      days: 90
+    low:
+      days: -1
+    none:
+      days: -1
+
+db:
+  host: env://SCHECKER_DB_HOST # rc1c-i5gr2biafpi1ztwg.mdb.cloud-preprod.yandex.net
+  port: env://SCHECKER_DB_PORT # 6432
+  name: env://SCHECKER_DB_NAME # schecker_db_preprod
+  user: env://SCHECKER_DB_USER # schecker
+  password: meta://schecker-db-password
+  ssl_mode: verify-full
+  ca_file: /opt/schecker/root.crt
+  conn_timeout: 10
+  cache_ttl: 24h
+
+#splunk:
+#  url: https://search.splunk.yandex.net:8089
+#  tls:
+#    verify: false # Splunk API uses self-signed certificate
+#  limit: 10000
+#  job:
+#    max_checks: 30
+#    check_interval: 10 # in seconds
+#  app: yandex-cloud
+#  http_timeout: 20
+#  username: env://SCHECKER_SPLUNK_USERNAME
+#  password: meta://schecker-splunk-password
+
+clickhouse:
+  hosts:
+    - "c-c9qsd3ugh1p01tqqvjtl.rw.mdb.yandexcloud.net:9440"
+  database: yc-osquery
+  username: schecker
+  password: meta://schecker-clickhouse-password
+  read_timeout: 20
+  packages_table_name: "pack_apps_installed_s"
+
+smtp:
+  addr: smtp.yandex-team.ru:465
+  user: env://SCHECKER_SMTP_USERNAME
+  password: meta://schecker-smtp-password
+
+startrek:
+  url: https://st-api.test.yandex-team.ru/v2
+  token: meta://star-trek-oauth-token
+  tls:
+    verify: true
+  http_timeout: 5
+  create_tickets_at: 7h00m # hour (system time)
+  queues:
+    CLOUD:
+      ticket:
+        type: task
+        priority: normal
+        security: false # additional field fot Security tasks
+        deadline:
+          days: 30
+        close:
+          key: "close"
+    AFISHAPCI:
+      ticket:
+        type: task
+        priority: normal
+        security: true # additional field fot Security tasks
+        close:
+          key: "close"
+
+groups:
+  import:
+    - "groups.config.yaml"
+  conductor:
+    - name: cloud_preprod_compute_vla
+      excluded:
+        # https://st.yandex-team.ru/CLOUD-31966#5db6a072a2b79e001bf5bb30
+        - pkgs: [python2.7, python3.5, python2.7-minimal, python3.5-minimal]
+          until: "2020-11-07T12:00:00Z"
+        # https://st.yandex-team.ru/CLOUD-36915#5e2eb42fa3145f75896a53bb
+        - pkgs: [amd64-microcode, intel-microcode]
+          until: "2100-01-01T12:00:00Z"
+      features:
+        packages_consistency:
+          email:
+            recipients: [ "artbelov@yandex-team.ru" ]
+    - name: cloud_preprod_compute_sas
+      excluded:
+        # https://st.yandex-team.ru/CLOUD-31966#5db6a072a2b79e001bf5bb30
+        - pkgs: [python2.7, python3.5, python2.7-minimal, python3.5-minimal]
+          until: "2020-11-07T12:00:00Z"
+        # https://st.yandex-team.ru/CLOUD-36915#5e2eb42fa3145f75896a53bb
+        - pkgs: [amd64-microcode, intel-microcode]
+          until: "2100-01-01T12:00:00Z"
+      features:
+        packages_consistency:
+          startrek:
+            queue: CLOUD
+            ticket:
+              assignee: artbelov
+              components_ids:
+                - 46077 # component "KMS"
+              tags: [ schecker, preprod, kms-schecker ]
+              followers: [ ]
+#    - name: cloud_prod_compute
+#      excluded:
+#        # https://st.yandex-team.ru/CLOUD-31966#5db6a072a2b79e001bf5bb30
+#        - pkgs: [ python2.7, python3.5, python2.7-minimal, python3.5-minimal ]
+#          until: "2020-11-07T12:00:00Z"
+#        # https://st.yandex-team.ru/CLOUD-36915#5e2eb42fa3145f75896a53bb
+#        - pkgs: [ amd64-microcode, intel-microcode ]
+#          until: "2100-01-01T12:00:00Z"
+#      features:
+#        security_updates:
+#          startrek:
+#            queue: CLOUD
+#            ticket:
+#              assignee: artbelov
+#              components_ids:
+#                - 46077 # component "KMS"
+#              tags: [ schecker, prod ]
+#              followers: [  ]
+    - name: cloud_preprod_kms
+      excluded:
+        # https://st.yandex-team.ru/CLOUD-31966#5db6a072a2b79e001bf5bb30
+        - pkgs: [python2.7, python3.5, python2.7-minimal, python3.5-minimal]
+          until: "2020-11-07T12:00:00Z"
+        # https://st.yandex-team.ru/CLOUD-47674#5ef06fd44dbde62e2b477b14
+        - pkgs: [amd64-microcode, intel-microcode]
+          until: "2100-01-01T12:00:00Z"
+      features:
+        security_updates:
+          email:
+            recipients: ["artbelov@yandex-team.ru"]
+    - name: cloud_prod_kms
+      excluded:
+        # https://st.yandex-team.ru/CLOUD-31966#5db6a072a2b79e001bf5bb30
+        - pkgs: [ python2.7, python3.5, python2.7-minimal, python3.5-minimal ]
+          until: "2020-11-07T12:00:00Z"
+        # https://st.yandex-team.ru/CLOUD-47674#5ef06fd44dbde62e2b477b14
+        - pkgs: [ amd64-microcode, intel-microcode ]
+          until: "2100-01-01T12:00:00Z"
+      features:
+        security_updates:
+          startrek:
+            queue: CLOUD
+            ticket:
+              assignee: artbelov
+              components_ids:
+                - 46077 # component "KMS"
+              tags: [schecker, preprod, kms-schecker]
+              followers: []
+  folder:
+    - name: folder_preprod_certificate_manager
+      folder_id: aoehdr81kgmuudc48h60
+      excluded:
+        # https://st.yandex-team.ru/CLOUD-31966#5db6a072a2b79e001bf5bb30
+        - pkgs: [python2.7, python3.5, python2.7-minimal, python3.5-minimal]
+          until: "2020-11-07T12:00:00Z"
+        # https://st.yandex-team.ru/CLOUD-47674#5ef06fd44dbde62e2b477b14
+        - pkgs: [amd64-microcode, intel-microcode]
+          until: "2100-01-01T12:00:00Z"
+      features:
+        security_updates:
+          email:
+            recipients: ["artbelov@yandex-team.ru"]
+    - name: folder_prod_certificate_manager
+      folder_id: b1g35p5i7e2sm037rgu1
+      excluded:
+        # https://st.yandex-team.ru/CLOUD-47674#5ef06fd44dbde62e2b477b14
+        - pkgs: [ amd64-microcode, intel-microcode ]
+          until: "2100-01-01T12:00:00Z"
+      features:
+        security_updates:
+          startrek:
+            queue: CLOUD
+            ticket:
+              assignee: artbelov
+              components_ids:
+                - 46084 # component "CertificateManager"
+              tags: [schecker, prod, ycm_schecker]
+              followers: []
+    - name: cloud_preprod_lockbox
+      folder_id: aoe2fnrknrpgsho3chc5
+      excluded:
+        # https://st.yandex-team.ru/CLOUD-47674#5ef06fd44dbde62e2b477b14
+        - pkgs: [amd64-microcode, intel-microcode]
+          until: "2100-01-01T12:00:00Z"
+      features:
+        security_updates:
+          startrek:
+            queue: CLOUD
+            ticket:
+              assignee: artbelov
+              components_ids:
+                - 46084 # component "CertificateManager"
+              tags: [schecker, preprod, lockbox-schecker]
+    - name: cloud_prod_lockbox
+      folder_id: b1gf9hkellnabo48ppjp
+      excluded:
+        # https://st.yandex-team.ru/CLOUD-47674#5ef06fd44dbde62e2b477b14
+        - pkgs: [ amd64-microcode, intel-microcode ]
+          until: "2100-01-01T12:00:00Z"
+      features:
+        security_updates:
+          startrek:
+            queue: CLOUD
+            ticket:
+              assignee: artbelov
+              components_ids:
+                - 46084 # component "CertificateManager"
+              tags: [ schecker, prod, lockbox-schecker ]
+  dns:
+    - name: dns_preprod_mdb_adapter
+      pattern: mdb-adapter-preprod-*.mdb-adapter.cloud-preprod.yandex.net
+      excluded:
+        # https://st.yandex-team.ru/CLOUD-47674#5ef06fd44dbde62e2b477b14
+        - pkgs: [ amd64-microcode, intel-microcode ]
+          until: "2100-01-01T12:00:00Z"
+      features:
+        security_updates:
+          startrek:
+            queue: CLOUD
+            ticket:
+              assignee: artbelov
+              tags: [ schecker, preprod, mdb_adapter_schecker ]
+              followers: [ ]
+    - name: dns_cloud_preprod_api-adapter_ig
+      pattern: api-adapter-preprod-*.api-adapter.cloud-preprod.yandex.net
+      excluded:
+        # https://st.yandex-team.ru/CLOUD-31966#5db6a072a2b79e001bf5bb30
+        - pkgs: [python2.7, python3.5, python2.7-minimal, python3.5-minimal]
+          until: "2020-11-07T12:00:00Z"
+        # https://st.yandex-team.ru/CLOUD-47674#5ef06fd44dbde62e2b477b14
+        - pkgs: [amd64-microcode, intel-microcode]
+          until: "2100-01-01T12:00:00Z"
+      features:
+        security_updates:
+          startrek:
+            queue: CLOUD
+            ticket:
+              assignee: artbelov
+              tags: [schecker, preprod, api-adapter]
+              followers: [ ]
+
+usn:
+  url: https://usn.ubuntu.com
+
+cve:
+  url: https://cve.mitre.org/cgi-bin/cvename.cgi?name=
+
+regulation:
+  url: https://wiki.yandex-team.ru/cloud/regulations/security-fixes/
+
+feedback:
+  email: yc-infra@yandex-team.ru

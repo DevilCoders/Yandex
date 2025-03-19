@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+# -*-coding: utf-8 -*-
+# vim: sw=4 ts=4 expandtab ai
+
+import argparse
+
+from collections import Counter
+import re
+import subprocess
+import time
+
+from yc_monitoring import report_status_and_exit, Status
+
+NAMED_DUMP_FILE = "/etc/contrail/dns/named_dump.db"
+NAMED_DUMP_TIMEOUT_SEC = 180
+NAMED_DUMP_COMMAND = "/usr/bin/contrail-rndc -c /etc/contrail/dns/contrail-rndc.conf dumpdb -zones"
+
+
+START_VIEW_REGEX = re.compile(r"; Start view (\S+)")
+START_ZONE_REGEX = re.compile(r"; Zone dump of '([^']+)'")
+RECORD_REGEX = re.compile(r"^(\S+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(\S+)$")
+
+
+def parse_zones_dump(file_name: str) -> dict:
+    result = Counter()
+
+    view, zone = None, None
+    with open(file_name) as f:
+        for line in f:
+            view_match = START_VIEW_REGEX.search(line)
+            if view_match:
+                view = view_match.group(1)
+                continue
+
+            zone_match = START_ZONE_REGEX.search(line)
+            if zone_match:
+                zone = zone_match.group(1)
+                continue
+
+            record_match = RECORD_REGEX.search(line)
+            if record_match:
+                record_name, record_class, record_type = record_match.group(1, 3, 4)
+                if view is None:
+                    raise ValueError("Unknown view for record {!r}".format(record_name))
+                if zone is None:
+                    raise ValueError("Unknown zone for record {!r}".format(record_name))
+                key = (view, zone, record_name, record_class, record_type)
+                result[key] += 1
+
+    return result
+
+
+def check_for_duplicates(dump_file_name: str, verbose: bool):
+    duplicates = []
+    views_with_duplicates = set()
+    zones_dump = parse_zones_dump(dump_file_name)
+
+    records_counter_by_type = Counter()
+    view_set = set()
+    zone_set = set()
+    for (view, zone, record_name, record_class, record_type), count in zones_dump.items():
+        view_set.add(view)
+        zone_set.add(zone)
+        records_counter_by_type[record_type] += count
+
+        if record_class == "IN" and record_type == "PTR" and count > 1:
+            views_with_duplicates.add(view)
+            duplicates.append("{} {} ({} occurences in {!r})".format(
+                record_name, record_type, count, zone))
+
+    if duplicates:
+        if verbose:
+            message = "\n " + ",\n ".join(duplicates)
+        else:
+            message = "Views with duplicates: {}".format(", ".join(sorted(views_with_duplicates)))
+        report_status_and_exit(Status.WARN, message)
+    else:
+        records_count_stats = ", ".join("{}: {}".format(rt, c) for rt, c in records_counter_by_type.items())
+        report_status_and_exit(Status.OK, "OK: no duplicates. Views: {}, zones: {}, {}".format(
+            len(view_set), len(zone_set), records_count_stats))
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Contrail-DNS check for PTR duplicates")
+    parser.add_argument("--file", metavar="FILE", help="read zones from this file, don't dump from named")
+    parser.add_argument("--verbose", action="store_true")
+    return parser.parse_args()
+
+
+def dump_named_zones():
+    subprocess.check_call(NAMED_DUMP_COMMAND, shell=True)
+    start_time = time.monotonic()
+    while time.monotonic() - start_time < NAMED_DUMP_TIMEOUT_SEC:
+        last_line = subprocess.check_output("tail -n1 {}".format(NAMED_DUMP_FILE), shell=True).decode()
+        if "; Dump complete" in last_line:
+            return
+        time.sleep(1)
+    report_status_and_exit(Status.CRIT, "Named zones dump has timed out after {} seconds."
+                           .format(NAMED_DUMP_TIMEOUT_SEC))
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    if not args.file:
+        dump_named_zones()
+    check_for_duplicates(args.file or NAMED_DUMP_FILE, args.verbose)

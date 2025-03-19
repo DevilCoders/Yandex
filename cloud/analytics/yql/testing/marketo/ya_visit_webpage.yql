@@ -1,0 +1,184 @@
+USE hahn;
+PRAGMA yt.InferSchema = '1';
+PRAGMA File('libcrypta_identifier_udf.so', 'yt://hahn/home/crypta/public/udfs/stable/libcrypta_identifier_udf.so');
+PRAGMA Udf('libcrypta_identifier_udf.so');
+
+$export_table = '//home/cloud_analytics/export/marketo_testing/ya_visit_webpage';
+$leads_table = '//home/cloud_analytics/export/marketo_testing/lead';
+$billing_export_tbl = '//logs/yc-billing-export-sku/1h';
+$metrika_tbl = '//home/cloud_analytics/import/metrika';
+$iam_cloud_owners_tbl = '//home/cloud_analytics/import/iam/cloud_owners/1h';
+
+DEFINE SUBQUERY $last_non_empty_table($path) AS
+    $max_path = (
+        SELECT MAX(Path) AS Path
+        FROM FOLDER($path, 'row_count')
+        WHERE Type = 'table'
+            AND Yson::LookupInt64(Attributes, 'row_count') > 0
+    );
+    SELECT * FROM CONCAT($max_path);
+END DEFINE;
+
+$email_to_canonical = ($email) -> {
+    RETURN Identifiers::NormalizeEmail($email);
+};
+
+$login_to_email = ($login) -> {
+    RETURN IF(String::Contains($login, '@'), $login, $login || '@yandex.ru');
+};
+
+$parse_region_id = ($region_id, $round) -> {
+    RETURN Geo::RoundRegionById(CAST($region_id as Int32), $round).en_name
+};
+
+$grep_service = ($service, $url) -> {
+    RETURN String::Contains($url, $service)
+};
+
+$yc_billing_export_sku = (
+    SELECT name FROM $last_non_empty_table($billing_export_tbl) GROUP By name
+);
+
+$metrika = (
+    SELECT
+        region_id,
+        $email_to_canonical($login_to_email(yandex_login)) AS email,
+        url,
+        event_time,
+        watch_id
+    FROM $last_non_empty_table($metrika_tbl)
+    WHERE yandex_login != ''
+);
+
+$services = (
+    SELECT service1 FROM $yc_billing_export_sku
+    GROUP BY String::SplitToList(name, '.'){0} AS service1
+);
+
+$services_list = (
+    SELECT LIST(service1) FROM $services
+);
+
+$product = ($url) -> {
+    $default_product = 'other';
+    $product_list = ListFilter($services_list, $grep_service, $url);
+    RETURN IF(ListLength($product_list) == 0, $default_product, $product_list{0});
+};
+
+$type = ($url) -> {
+    $default_type = 'other';
+    RETURN
+        CASE
+            WHEN String::Contains($url, 'docs') THEN 'documentation'
+            WHEN String::Contains($url, 'console.') THEN 'console'
+            WHEN String::Contains($url, 'pricing') THEN 'pricing'
+            ELSE $default_type
+        END
+};
+
+$iam = (
+    SELECT
+        $email_to_canonical(user_settings_email) AS user_settings_email,
+        $email_to_canonical(LIST(email){0}) AS email,
+        COUNT(email) AS accounts_cnt -- Temporary hack. See explanation below.
+    FROM $last_non_empty_table($iam_cloud_owners_tbl)
+    WHERE
+        user_settings_email IS NOT null
+    GROUP BY
+        user_settings_email
+        -- For now we just want to create leads from accounts who
+        -- have 1:1 main email and email for notifications
+        -- Later we will decide how to behave in other complex cases.
+);
+
+-- INSERT INTO $export_table WITH TRUNCATE
+--     SELECT
+--         Unwrap(LIST(DateTime::ToSeconds(DateTime::FromString(metrika.event_time))){0}) AS dwh_created_at,
+--         Unwrap(LIST(DateTime::ToSeconds(DateTime::FromString(metrika.event_time))){0}) AS ya_activity_time,
+--         ya_activity_id,
+--         LIST($parse_region_id(metrika.region_id, 'city')){0} AS city,
+--         LIST($parse_region_id(metrika.region_id, 'country')){0} AS country,
+--         Unwrap(LIST(iam.user_settings_email){0}) AS email,
+--         LIST($product(metrika.url)){0} AS product,
+--         '' AS scenario,
+--         '' AS search_query,
+--         0 AS time_spent,
+--         LIST($type(metrika.url)){0} AS type,
+--         LIST(metrika.url){0} AS url,
+--         '' AS visit_source_id,
+--         '' AS visit_source_type,
+--         '' AS ya_campaign_id,
+--         LIST(metrika.watch_id){0} AS watch_id
+--     FROM $metrika AS metrika
+--     JOIN $iam AS iam
+--         ON iam.email = metrika.email
+--     INNER JOIN $leads_table AS leads
+--         ON iam.user_settings_email = leads.email
+--     GROUP BY
+--         Digest::Md5Hex(
+--             Unwrap(iam.user_settings_email) ||
+--             Unwrap(metrika.url) ||
+--             Unwrap(metrika.event_time)
+--         ) AS ya_activity_id
+--     ORDER BY dwh_created_at, email
+-- ;
+
+$export_diff = $export_table || '_diff';
+
+$export_data = (
+    SELECT
+        Unwrap(DateTime::ToSeconds(CurrentUtcTimestamp())) AS dwh_created_at,
+        Unwrap(LIST(DateTime::ToSeconds(DateTime::FromString(metrika.event_time))){0}) AS ya_activity_time,
+        ya_activity_id,
+        LIST($parse_region_id(metrika.region_id, 'city')){0} AS city,
+        LIST($parse_region_id(metrika.region_id, 'country')){0} AS country,
+        Unwrap(LIST(iam.user_settings_email){0}) AS email,
+        LIST($product(metrika.url)){0} AS product,
+        '' AS scenario,
+        '' AS search_query,
+        0 AS time_spent,
+        LIST($type(metrika.url)){0} AS type,
+        LIST(metrika.url){0} AS url,
+        '' AS visit_source_id,
+        '' AS visit_source_type,
+        '' AS ya_campaign_id,
+        LIST(metrika.watch_id){0} AS watch_id
+    FROM $metrika AS metrika
+    JOIN $iam AS iam
+        ON iam.email = metrika.email
+    INNER JOIN $leads_table AS leads
+        ON iam.user_settings_email = leads.email
+    GROUP BY
+        Digest::Md5Hex(
+            Unwrap(iam.user_settings_email) ||
+            Unwrap(metrika.url) ||
+            Unwrap(metrika.event_time)
+        ) AS ya_activity_id
+);
+
+INSERT INTO $export_diff WITH TRUNCATE
+    SELECT
+        dwh_created_at,
+        ya_activity_time,
+        ya_activity_id,
+        city,
+        country,
+        email,
+        product,
+        scenario,
+        search_query,
+        time_spent,
+        type,
+        url,
+        visit_source_id,
+        visit_source_type,
+        ya_campaign_id,
+        watch_id
+    FROM $export_data AS current_data
+    LEFT ONLY JOIN $export_table AS exp
+        ON current_data.ya_activity_id = exp.ya_activity_id
+ORDER BY dwh_created_at, email;
+
+COMMIT;
+INSERT INTO $export_table SELECT * FROM $export_diff;
+DROP TABLE $export_diff;

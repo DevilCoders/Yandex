@@ -1,0 +1,1 @@
+Currently build is semi-automatic, see instructions on https://wiki.yandex-team.ru/cloud/ai/mt/serving-in-cloud/.

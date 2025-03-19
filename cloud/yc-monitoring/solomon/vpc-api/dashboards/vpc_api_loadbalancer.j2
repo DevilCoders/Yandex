@@ -1,0 +1,173 @@
+{% extends "../../base/dashboard.j2" %}
+{% import "../common/vpc-api.j2" as common %}
+
+{% set cluster = "cloud_" + env + "_vpc-api" %}
+{% set ydb_cluster = "yandexcloud_" + env + "_global" %}
+
+{% if env == "prod" %}
+    {% set ydb_database = "/global/ycloud" %}
+{% elif env == "preprod"  %}
+    {% set ydb_database = "/pre-prod_global/ycloud" %}
+{% else %}
+    {% set ydb_database = "/" + env + "_global/ycloud" %}
+{% endif %}
+
+{% set loadbalancer_grpc_methods = "loadbalancer.v1.*" %}
+{% set loadbalancer_grpc_methods_read = "loadbalancer.v1.*Get*|loadbalancer.v1.*List*|loadbalancer.v1.*Resolve*" %}
+{% set loadbalancer_grpc_methods_write = "loadbalancer.v1.*Create*|loadbalancer.v1.*Update*|loadbalancer.v1.*Delete*|loadbalancer.v1.*Remove*|loadbalancer.v1.*Add*|loadbalancer.v1.*Attach*|loadbalancer.v1.*Detach*" %}
+
+{% block parameters %}
+{
+    "name": "cluster",
+    "value": "cloud_{{ env }}_vpc-api"
+},
+{
+    "name": "service",
+    "value": "vpc-config-plane"
+},
+{
+    "name": "host",
+    "value": "cluster"
+}
+{% endblock %}
+
+{% block rows %}
+[
+    { "panels": [
+        {{ render_panel(
+            "rps",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_requests&" +
+                "l.host=[[host]]&" +
+                "l.zone=*&" +
+                "app=vpc-config-plane_server&" +
+				"l.method={}&".format(loadbalancer_grpc_methods),
+            colspan=6,
+        ) }},
+        {{ render_panel(
+            "rps by dc",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_requests_by_dc&" +
+                "app=vpc-config-plane_server&" +
+				"l.method={}&".format(loadbalancer_grpc_methods),
+            colspan=6,
+        ) }}
+    ]},
+    { "panels": [
+        {% for az in zones_by_env[env] %}
+        {{ render_panel(
+            "Latency " + az.zone,
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_latency&" +
+                "zone=" + az.zone + "&" +
+                "app=vpc-config-plane_server&" +
+				"l.method={}&".format(loadbalancer_grpc_methods) +
+                "l.host=[[host]]",
+            colspan=2,
+        ) }},
+		{% endfor %}
+        {{ render_panel(
+            "Latency by method",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_latency_by_method&" +
+                "app=vpc-config-plane_server&" +
+				"l.method={}&".format(loadbalancer_grpc_methods) +
+                "l.host=[[host]]",
+            colspan=2,
+        ) }},
+        {{ render_panel(
+            "api requests timings read",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_grpc_long_request&" +
+                "app=vpc-config-plane_server&" +
+				"l.method={}&".format(loadbalancer_grpc_methods_read) +
+                "l.host=[[host]]&" +
+                "zone=*",
+            colspan=2,
+        ) }},
+        {{ render_panel(
+            "api requests timings write",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_grpc_long_request&" +
+                "app=vpc-config-plane_server&" +
+				"l.method={}&".format(loadbalancer_grpc_methods_write) +
+                "l.host=[[host]]&" +
+                "zone=*",
+            colspan=2,
+        ) }}
+    ]},
+    { "panels": [
+        {{ render_panel(
+            "api error by type",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_grpc_client_errors&" +
+                "app=vpc-config-plane_server&" +
+                "l.host=[[host]]&" +
+                "zone=*&" +
+				"l.method={}&".format(loadbalancer_grpc_methods),
+            colspan=2,
+        ) }},
+        {{ render_panel( "api errors",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_grpc_errors&" +
+                "l.host=[[host]]&" +
+                "app=vpc-config-plane_server&" +
+				"l.method={}&".format(loadbalancer_grpc_methods),
+            colspan=2,
+        ) }},
+        {{ render_panel( "api errors by method",
+            "[[cluster]]", "vpc-config-plane",
+                "graph=[[cluster]]_grpc_errors_by_method&" +
+                "l.host=[[host]]&" +
+                "app=vpc-config-plane_server&" +
+				"l.method={}&".format(loadbalancer_grpc_methods),
+            colspan=2,
+        ) }}
+    ]},
+    { "panels": [
+        {{ render_panel(
+            "Operations slow",
+            "[[cluster]]", "vpc-config-plane",
+                "host=[[host]]&" +
+                "zone=*&" +
+                "service_type=loadbalancer&" +
+                "type=!all&" +
+                "graph=[[cluster]]_ops_slow",
+            colspan=3,
+        ) }},
+        {{ render_panel(
+            "Operations duration",
+            "[[cluster]]", "vpc-config-plane",
+                "host=[[host]]&" +
+                "zone=*&" +
+                "service_type=loadbalancer&" +
+                "type=!all&" +
+                "graph=[[cluster]]_ops_duration",
+            colspan=3,
+        ) }},
+        {{ render_panel(
+            "Operations done",
+            "[[cluster]]", "vpc-config-plane",
+                "sensor=vpc_operation_done&" +
+                "host=[[host]]&" +
+                "zone=*&" +
+                "service_type=loadbalancer&" +
+                "type=!all&" +
+                "graph=[[cluster]]_ops_done",
+            colspan=3,
+        ) }},
+        {{ render_panel(
+            "Operations failed",
+            "[[cluster]]", "vpc-config-plane",
+                "sensor=vpc_operation_failed&" +
+                "host=[[host]]&" +
+                "zone=*&" +
+                "service_type=loadbalancer&" +
+                "errorcode=*" +
+                "type=!all&" +
+                "graph=[[cluster]]_ops_failed",
+            colspan=3,
+        ) }}
+    ]}
+]
+{% endblock %}

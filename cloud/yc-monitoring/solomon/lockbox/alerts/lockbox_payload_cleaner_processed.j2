@@ -1,0 +1,30 @@
+{% extends "./base_alert.j2" %}
+
+{% set checkExpression = "" %}
+{% set description = "Lockbox " + env | upper + " " + resource_type + " processed" %}
+{% set windowSecs = 5 * 60 * 60 %}
+
+{% macro prog() %}
+let data = group_lines('sum', {
+    project='{{ project_id }}',
+    service='service',
+    cluster='cloud_{{ env }}_lockbox_cluster',
+    host='cluster',
+    sensor='{{ sensor }}'
+});
+let value = max(data);
+
+alarm_if(value == 0);
+{% endmacro %}
+
+{% block main %}
+  "name": "[payload-cleaner] Lockbox {{ env | upper }} {{ resource_type }} processed",
+  "groupByLabels": ["cluster", "host"],
+  "annotations": {
+    "jugglerService": "[[labels.cluster]]--[[labels.host]]--all-{{ resource_type }}-processed",
+    "description": "All {{ resource_type }} processed on [[labels.host]]",
+    "wikiUrl": "#",
+    "jugglerTags" : "{{ jugglerTags }}"
+  },
+  "type": {{ type_expression() }}
+{% endblock %}

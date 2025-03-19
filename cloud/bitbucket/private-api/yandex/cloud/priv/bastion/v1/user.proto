@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.bastion.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/bastion/v1;bastion";
+
+service BastionUserService {
+  // LockAndPauseSessions - locks bastion authorisations for the user and
+  // stops transmitting data for all user sessions but keeps them alive;
+  rpc LockAndPauseSessions(LockRequest) returns (LockResponse);
+  // LockAndTerminateSessions - locks bastion authorisations for the user with termination current sessions
+  rpc LockAndTerminateSessions(LockRequest) returns (LockResponse);
+  // Unlock - resume transmitting data for all user sessions; removes authorization block
+  rpc Unlock(UnlockRequest) returns (google.protobuf.Empty);
+  // ListLocked - returns list with all locked users
+  rpc ListLocked(ListLockedRequest) returns (ListLockedResponse);
+}
+
+message LockRequest {
+  oneof message {
+    string session_id = 1 [(length) = "<=100"];
+    string user = 2 [(length) = "<=100"];
+  }
+  string cause = 3 [(length) = "<=1000"];
+}
+
+message LockResponse {
+  // Paused/terminated session IDs
+  repeated string session_ids = 1;
+  string user = 2;
+}
+
+message UnlockRequest {
+  string user = 1 [(length) = "<=100"];
+}
+
+message LockedUser {
+  string user = 1;
+  string cause = 2;
+  google.protobuf.Timestamp locked_at = 3;
+  string locked_by = 4;
+  google.protobuf.Timestamp unlocked_at = 5;
+  string unlocked_by = 6;
+}
+
+message ListLockedRequest {
+  int64 page_size = 1 [(value) = "0-10000"]; // default 1000
+  string page_token = 2 [(length) = "<=100"];
+  string filter = 3 [(length) = "<=1000"];
+}
+
+message ListLockedResponse {
+  repeated LockedUser users = 1;
+  string next_page_token = 2;
+}

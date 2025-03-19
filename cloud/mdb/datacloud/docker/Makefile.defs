@@ -1,0 +1,59 @@
+DC_AWS_ACCOUNT_ID=785415555008
+DC_AWS_REGION=eu-central-1
+DC_AWS_PROFILE=dc-mdb-preprod
+
+YC_REGISTRY?=cr.yandex
+YC_REPOSITORY?=crpjcb1mr2vhfkktu5ss
+YC_PROFILE_NAME?=yc-compute-prod-cp
+
+YC_ISRAEL_PROFILE_NAME=yc-israel-prod-cp
+YC_ISRAEL_REGISTRY=cr.cloudil.com
+YC_ISRAEL_REPOSITORY=crl0f1aveuhvl1od204e
+
+all: base login_dc_aws buildpushtarget_dc_aws login_yc buildpushtarget_yc login_yc_israel buildpushtgarget_yc_isreal clean
+yc: base login_yc buildpushtarget_yc clean
+yc_israel: base login_yc_israel buildpushtarget_yc_israel clean
+dc_aws: base login_dc_aws buildpushtarget_dc_aws clean
+
+login_dc_aws:
+	aws ecr get-login-password --region ${DC_AWS_REGION} --profile ${DC_AWS_PROFILE} | docker login --username AWS --password-stdin ${DC_AWS_ACCOUNT_ID}.dkr.ecr.${DC_AWS_REGION}.amazonaws.com
+
+login_yc:
+	yc iam create-token --profile=${YC_PROFILE_NAME} | docker login \
+         --username iam \
+         --password-stdin \
+         ${YC_REGISTRY}
+
+login_yc_israel:
+	yc iam create-token --profile=${YC_ISRAEL_PROFILE_NAME} | docker login \
+         --username iam \
+         --password-stdin \
+         ${YC_ISRAEL_REGISTRY}
+
+base:
+	cd ../base && ya package pkg.json --docker --docker-registry="" --docker-network=host
+
+build:
+	$(MAKE) base
+	ya package pkg.json --docker --docker-network=host
+
+buildpush_dc_aws:
+	$(MAKE) base
+	ya package pkg.json --docker --docker-network=host --docker-registry=${DC_AWS_ACCOUNT_ID}.dkr.ecr.${DC_AWS_REGION}.amazonaws.com --docker-push
+
+buildpushtarget_dc_aws:
+	ya package pkg.json --docker --docker-network=host --docker-registry=${DC_AWS_ACCOUNT_ID}.dkr.ecr.${DC_AWS_REGION}.amazonaws.com --docker-push
+
+buildpushtarget_yc:
+	ya package pkg.json --docker --docker-network=host --docker-registry=${YC_REGISTRY} --docker-repository=${YC_REPOSITORY} --docker-push
+
+buildpushtarget_yc_israel:
+	ya package pkg.json --docker --docker-network=host --docker-registry=${YC_ISRAEL_REGISTRY} --docker-repository=${YC_ISRAEL_REPOSITORY} --docker-push
+
+digests:
+	docker images -a --digests | head -2
+
+clean:
+	rm -f *.tar.gz; rm -f packages.json
+
+.PHONY = login_dc_aws login_yc login_yc_israel base build buildpush_dc_aws buildpushtarget_dc_aws buildpushtarget_yc buildpushtarget_yc_israel digests clean all dc_aws yc yc_israel

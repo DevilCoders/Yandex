@@ -1,0 +1,105 @@
+uid: yc-kms-monitoring
+refresh: 1m
+title: YC KMS Monitoring
+
+tags: [ 'yc-kms' ]
+
+variables:
+  ui:
+    datasource: { values: [ 'Solomon Cloud', 'Solomon Cloud Preprod' ] }
+    project:
+      values: [ 'kms', 'aoelnudsaq38ftolajvs' ]
+      titles: [ 'Solomon Cloud', 'Solomon Cloud Preprod' ]
+    cluster: { values: [prod, preprod, gpn] }
+  uiQuery:
+    instance:
+      labels: 'project=${project}, cluster=${cluster}, service=service, host=kms-monitoring-*, sensor=cryptoPrivateMonitoringRequests, instance!=*.svc.*'
+      multi: true
+  replacement:
+    !include ../include/errors.yaml
+
+links:
+  - { title: 'L3 kms.yandex', url: 'https://grafana.yandex-team.ru/d/rQPhsZcWk/l3-vs-kms-yandex' }
+  - { title: 'Dashboards', tags: ['yc-kms'] }
+
+graphDefaults: { datasource: '${datasource}', width: 8, height: 6 }
+
+queryDefaults: { labels: 'project=${project}, cluster=${cluster}, service=service, host=kms-monitoring-*' }
+
+rows:
+  - title: Data Plane API Public Monitoring
+    drilldowns:
+      - uid: yc-kms-host-public-monitoring
+        tags: [ 'yc-kms', 'yc-kms-host' ]
+        ui:
+          datasource: datasource
+          project: project
+          cluster: cluster
+        uiQuery:
+          host:
+            multi: true
+        uiRepeat: host
+        labels: 'host=$host'
+
+    panels:
+      - type: graph
+        templates: { name: errors, sensor: rate }
+        title: 'Data plane public monitoring requests ($cluster)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'sensor=cryptoMonitoringRequests' }
+        draw: [{ alias: 'requests' }]
+
+      - type: graph
+        templates: { name: errors, sensor: rate }
+        title: 'Data plane public monitoring error statuses ($cluster)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'sensor=cryptoMonitoringErrorStatuses, status=400|401|404|409|429|499' }
+          - params: { labels: 'sensor=cryptoMonitoringErrorStatuses, status=503' }
+          - params: { labels: 'sensor=cryptoMonitoringErrorStatuses, status=500|501|504' }
+        draw: [{ alias: '4xx', color: '#147' }, { alias: '503', color: '#da7' }, { alias: '5xx', color: '#b20' }]
+
+      - type: graph
+        templates: { name: errors, sensor: rate }
+        title: 'Data plane public monitoring errors ($cluster)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'sensor=cryptoMonitoringCryptoErrors' }
+          - params: { labels: 'sensor=cryptoMonitoringUnknownErrors' }
+        draw: [{ alias: 'cryptoErrors', color: '#b20' }, { alias: 'unknownErrors', color: '#da7' }]
+
+      - type: graph
+        templates: { name: percentile, format: solomon, groupLines: true, sensor: rate }
+        title: 'Data plane public response duration ($cluster)'
+        queries:
+          - params: { labels: 'sensor=cryptoMonitoringDurations' }
+        yAxes: [{ min: 0 }]
+
+  - title: Data Plane API Private Monitoring (per instance)
+    panels:
+      - type: graph
+        uiRepeat: instance
+        templates: { name: errors, sensor: rate }
+        title: 'Data plane private monitoring requests ($instance)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'sensor=cryptoPrivateMonitoringRequests, instance=$instance' }
+        draw: [{ alias: 'requests' }]
+
+      - type: graph
+        uiRepeat: instance
+        templates: { name: errors, sensor: rate }
+        title: 'Data plane private monitoring errors ($instance)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'sensor=cryptoPrivateMonitoringTotalErrors, instance=$instance' }
+        draw: [{ alias: 'totalErrors', color: '#da7' }]
+
+      - type: graph
+        uiRepeat: instance
+        templates: { name: percentile, format: solomon, groupLines: true, sensor: rate }
+        title: 'Data plane private response duration ($instance)'
+        queries:
+          - params: { labels: 'sensor=cryptoPrivateMonitoringDurations, instance=$instance' }
+        yAxes: [{ min: 0 }]

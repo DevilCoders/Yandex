@@ -1,0 +1,26 @@
+{% extends "../../base/alert.j2" %}
+{% macro prog() %}
+let rps = group_by_labels({cluster='cloud_{{ env }}_compute', service='nginx', subsystem='compute-metadata', name='rps', method='*', status='*'}, 'name', v -> group_lines('sum', v));
+let errors = group_by_labels({cluster='cloud_{{ env }}_compute', service='nginx', subsystem='compute-metadata', name='rps', method='*', status='5*'}, 'name', v -> group_lines('sum', v));
+ok_if(count(errors) == 0);
+let error_percent = max(errors/rps * 100);
+
+let is_red = error_percent > {{ red_threshold }};
+let is_yellow = error_percent > {{ yellow_threshold }};
+let trafficColor = is_red ? 'red' : (is_yellow ? 'yellow' : 'green');
+let description = 'Nginx metadata error percent: ' + error_percent + '%';
+{% endmacro %}
+
+{% block main %}
+    "name": "compute metadata error rate @ {{ env }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "tags": "Solomon",
+        "host": "{{ compute_node_fqdn() }}",
+        "service": "compute-metadata-nginx",
+        "trafficLight.color": "[[expression.trafficColor]]",
+        "details": "[[expression.description]]"
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

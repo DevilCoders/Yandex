@@ -1,0 +1,123 @@
+service_account_id: ajecqbab27og73umh5r9 # iot-deployer
+name: iot-subscriptions
+description: IoT subscriptions service
+scale_policy:
+  fixed_scale:
+    size: 3
+deploy_policy:
+  max_unavailable: 1
+  max_expansion: 0
+allocation_policy:
+  zones:
+    - zone_id: ru-central1-a
+    - zone_id: ru-central1-b
+    - zone_id: ru-central1-c
+health_checks_spec:
+  health_check_specs:
+    - http_options:
+        port: 8081
+        path: /onlycode?labels=balancer_stopper
+      interval: 10s
+      timeout: 5s
+      unhealthy_threshold: 5
+      healthy_threshold: 2
+    - tcp_options:
+        port: 443
+      interval: 10s
+      timeout: 5s
+      unhealthy_threshold: 5
+      healthy_threshold: 2
+
+instance_template:
+  name: iot-subscriptions-{instance.index_in_zone}-{instance.internal_dc}
+  hostname: iot-subscriptions-{instance.index_in_zone}-{instance.internal_dc}
+  platform_id: standard-v2
+  service_account_id: ajefufkahgkok4hh49hk # subscriptions
+  labels:
+    yandex-dns: ig
+    conductor-group: iot-subscriptions
+    layer: iaas
+    abc_svc: ycmqtt
+    env: prod
+    environment: prod
+  resources_spec:
+    memory: 2G
+    cores: 2
+    core_fraction: 100
+  boot_disk_spec:
+    mode: READ_WRITE
+    disk_spec:
+      image_id: ${IMAGE_ID}
+      type_id: network-ssd
+      size: 10g
+  secondary_disk_specs:
+    - mode: READ_WRITE
+      device_name: data
+      disk_spec:
+        type_id: network-hdd
+        size: 10g
+  network_interface_specs:
+    - subnet_ids: ['e9b9e47n23i7a9a6iha7', 'e2lt4ehf8hf49v67ubot', 'b0c7crr1buiddqjmuhn7']
+      primary_v4_address_spec:
+        name: "ig-v4addr"
+      primary_v6_address_spec:
+        name: "ig-v6addr"
+
+  metadata:
+    launch_index: "{instance.index}"
+    internal_dc: "{instance.internal_dc}"
+    osquery_tag: "ycloud-svc-iot"
+    shortname: "iot-subscriptions-{instance.index}-{instance.internal_dc}"
+    nsdomain: "{instance.internal_dc}.ycp.cloud.yandex.net"
+    skm: "${SKM_MD}"
+    k8s-runtime-bootstrap-yaml: " "
+    jaeger_endpoint: "jaeger-collector.private-api.ycp.cloud.yandex.net:443"
+    push_client_tvm_client_id: 0  # not used
+    push_client_tvm_server_id: 2001059
+    push_client_topic: yc-iot/subscriptions-logs-prod
+    tvmtool_local_authtoken: 764a5f28530362a00af4d459ea670e2a
+    solomon_cluster: "prod"
+    iot_sub_production:                         "true"
+    iot_sub_logbroker_consumer_client_id:       "/b1g7usbinne7lipkpvc1/yc-iot/subscriptions"
+    iot_sub_perm_logbroker_consumer_client_id:  "/b1g7usbinne7lipkpvc1/yc-iot/subscriptions"
+    iot_sub_mon_logbroker_consumer_client_id:   "/b1g7usbinne7lipkpvc1/yc-iot/subscriptions"
+    iot_sub_logbroker_regular_topics:           "/b1g7usbinne7lipkpvc1/yc-iot/mqtt"
+    iot_sub_logbroker_permanent_topics:         "/b1g7usbinne7lipkpvc1/yc-iot/permanents"
+    iot_sub_logbroker_monitoring_topics:        "/b1g7usbinne7lipkpvc1/yc-iot/monitoring"
+    iot_sub_tvm_auth_token:                     764a5f28530362a00af4d459ea670e2a
+    iot_sub_metrics_subsystem:                  "cloud_subscriptions_prod"
+    iot_sub_logbroker_use_sa_auth:              "true"
+    iot_sub_perm_logbroker_use_sa_auth:         "true"
+    iot_sub_mon_logbroker_use_sa_auth:          "true"
+    iot_access_service_endopint:                "as.private-api.cloud.yandex.net:4286"
+    iot_logbroker_address:                      "lb.etn03iai600jur7pipla.ydb.mdb.yandexcloud.net"
+    iot_logbroker_database:                     "/global/b1gvcqr959dbmi1jltep/etn03iai600jur7pipla"
+    iot_log_level:                              info
+    iot_database_endpoint:                      "ydb-iot-dpl.cloud.yandex.net:2136"
+    iot_database_driver:                        "/global/iot-dpl"
+
+    user-data: |
+      #cloud-config
+      fs_setup:
+        - device: /dev/disk/by-id/virtio-logs
+          filesystem: ext4
+          overwrite: false
+          partition: auto
+      mounts:
+        - [ /dev/disk/by-id/virtio-logs, /data, auto, "defaults,errors=remount-ro", "0", "2" ]
+        - [ /data/fluent, /var/log/fluent, none, "defaults,bind", "0", "0" ]
+        - [ /data/yc-iot, /var/log/yc-iot, none, "defaults,bind", "0", "0" ]
+      runcmd:
+        - chmod 777 /data
+        - mkdir -p /data/fluent /data/yc-iot
+        - chown -R td-agent:td-agent /data/fluent
+        - chown -R td-agent:td-agent /data/yc-iot
+        - chmod 0755 /data/fluent
+        - chmod 0755 /data/yc-iot
+        - mount --make-rprivate /data
+        - mount -o bind /data/fluent /var/log/fluent
+        - mount -o bind /data/yc-iot /var/log/yc-iot
+      bootcmd:
+        - echo "[Journal]" > /etc/systemd/journald.conf
+        - echo "SystemMaxUse=500M" >> /etc/systemd/journald.conf
+

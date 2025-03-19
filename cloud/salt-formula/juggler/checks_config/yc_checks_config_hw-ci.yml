@@ -1,0 +1,154 @@
+---
+- hosts: localhost
+  gather_facts: false
+  pre_tasks:
+      - juggler_facts:  jserver_api={{ jserver_api }}
+        tags:
+          - always
+  vars:
+    - env: "hw-ci"
+    - default_notification_methods: []
+    - default_tags: "{{ check_tags }} + ['{{ common_tag }}', '{{ common_tag }}-{{ env }}']"
+    - default_limits:
+      - {crit: '0', day_end: 5, day_start: 1, time_end: 18, time_start: 10, warn: '0'}
+      - {crit: '100%', day_end: 5, day_start: 1, time_end: 10, time_start: 18, warn: '0'}
+      - {crit: '100%', day_end: 7, day_start: 5, time_end: 23, time_start: 0, warn: '0'}
+    - default_limits_20perc_crit:
+      - {crit: '20%', day_end: 5, day_start: 1, time_end: 18, time_start: 10, warn: '0'}
+      - {crit: '100%', day_end: 5, day_start: 1, time_end: 10, time_start: 18, warn: '0'}
+      - {crit: '100%', day_end: 7, day_start: 5, time_end: 23, time_start: 0, warn: '0'}
+    - default_limits_50perc_crit:
+      - {crit: '50%', day_end: 5, day_start: 1, time_end: 18, time_start: 10, warn: '0'}
+      - {crit: '100%', day_end: 5, day_start: 1, time_end: 10, time_start: 18, warn: '0'}
+      - {crit: '100%', day_end: 7, day_start: 5, time_end: 23, time_start: 0, warn: '0'}
+    - default_limits_99perc_crit:
+      - {crit: '99%', day_end: 5, day_start: 1, "time_end": 18, "time_start": 10, warn: '0'}
+      - {crit: '100%', day_end: 5, day_start: 1, time_end: 10, time_start: 18, warn: '0'}
+      - {crit: '100%', day_end: 7, day_start: 5, time_end: 23, time_start: 0, warn: '0'}
+    - default_limits_logic_and:
+      - {day_end: 5, day_start: 1, time_end: 18, time_start: 10, aggregator: 'logic_and'}
+      - {day_end: 5, day_start: 1, time_end: 10, time_start: 18, aggregator: 'more_than_limit_is_crit', aggregator_kwargs: {percent: '101'}}
+      - {day_end: 7, day_start: 5, time_end: 23, time_start: 0, aggregator: 'more_than_limit_is_crit', aggregator_kwargs: {percent: '101'}}
+    - kiki_children:
+      - CGROUP%cloud_hw-ci_kikimr_global
+      - CGROUP%cloud_hw-ci_kikimr_sas
+      - CGROUP%cloud_hw-ci_kikimr_man2
+      - CGROUP%cloud_hw-ci_kikimr_man1
+
+  roles:
+    - role: head
+      vars:
+        children:
+          - CGROUP%cloud_hw-ci_head
+        host: "yc_common_head_{{ env }}"
+        check_tags: ['{{ common_tag }}-head']
+        role: head
+        unreachable_host: "yc_common_head_{{ env }}"
+        # Recomandation for FLAPS stable = 3*TTL(120),critical = 3*stable
+        flap: { stable: 360, critical: 1080 }
+
+    - role: snapshot
+      vars:
+        children:
+          - CGROUP%cloud_hw-ci_snapshot
+        host: "yc_common_snapshot_{{ env }}"
+        check_tags: ['{{ common_tag }}-snapshot']
+        role: snapshot
+        unreachable_host: "yc_common_snapshot_{{ env }}"
+        # Recomandation for FLAPS stable = 3*TTL(120),critical = 3*stable
+        flap: { stable: 360, critical: 1080 }
+
+    - role: seed
+      vars:
+        children:
+          - CGROUP%cloud_hw-ci_seed
+        host: "yc_infra_seed_{{ env }}"
+        check_tags: ['{{ common_tag }}-seed']
+        role: seed
+        unreachable_host: "yc_infra_seed_{{ env }}"
+        # Recomandation for FLAPS stable = 3*TTL(120),critical = 3*stable
+        flap: { stable: 360, critical: 1080 }
+
+    - role: compute
+      vars:
+        children:
+          - CGROUP%cloud_hw-ci_compute
+        host: "yc_common_compute_{{ env }}"
+        unreachable_host: "yc_infra_compute_{{ env }}"
+        # NOTE(k-zaitsev): Only show warning if all hosts are yellow (skipped the tests)
+        e2e_behind_lock_limits:
+            - {crit: '0', day_end: 5, day_start: 1, time_end: 18, time_start: 10, warn: '99.99%'}
+            - {crit: '100%', day_end: 5, day_start: 1, time_end: 10, time_start: 18, warn: '99.99%'}
+            - {crit: '100%', day_end: 7, day_start: 5, time_end: 23, time_start: 0, warn: '99.99%'}
+        network_limits: "{{ default_limits }}"
+        # Recomandation for FLAPS stable = 3*TTL(120),critical = 3*stable
+        flap: { stable: 360, critical: 1080 }
+
+    - role: oct_head
+      vars:
+        children:
+          - CGROUP%cloud_hw-ci_oct
+        host: "yc_network_oct_head_{{ env }}"
+        check_tags: ['{{ common_tag }}-network', '{{ common_tag }}-oct', '{{ common_tag }}-oct-head']
+        flap: { stable: 0, critical: 0 }
+
+    - role: cloudgate
+      vars:
+        children:
+          - CGROUP%cloud_hw-ci_cloudgate
+        host: "yc_network_cloudgate_{{ env }}"
+        check_tags: ['{{ common_tag }}-cloudgate']
+        flap: { stable: 0, critical: 0 }
+
+    - role: billing
+      vars:
+        host_selector: '(host=yc_billing_hw-ci)'
+        # @svartapetov For now just turn off any notifications on hw-ci
+        # notification_methods: "{{ default_notification_methods + tg_status_notifications }}"
+        children:
+          - CGROUP%cloud_hw-ci_billing
+        host: "yc_common_billing_{{ env }}"
+        check_tags: ['{{ common_tag }}-billing']
+        unreachable_host: "yc_common_billing_{{ env }}"
+        flap: { stable: 0, critical: 0 }
+
+    - role: lb_slb-adapter
+      vars:
+        children:
+          - CGROUP%cloud_hw-ci_slb-adapter
+        host: "yc_loadbalancer_slb-adapter_{{ env }}"
+        check_tags: ['{{ common_tag }}-slb-adapter']
+        flap: { stable: 0, critical: 0 }
+
+    - role: iam
+      vars:
+        children:
+          - CGROUP%cloud_hw-ci_iam
+        host: "yc_common_iam_{{ env }}"
+        check_tags: ['{{ common_tag }}-iam']
+        unreachable_host: "yc_common_iam_{{ env }}"
+        flap: { stable: 0, critical: 0 }
+
+    - role: api-adapter
+      vars:
+        children:
+        - CGROUP%cloud_hw-ci_api-adapter
+        host: "yc_api-adapter_{{ env }}"
+        check_tags: ['{{ common_tag }}-api-adapter']
+        flap: { stable: 0, critical: 0 }
+
+    - role: api-gateway
+      vars:
+        children:
+        - CGROUP%cloud_hw-ci_api-gateway
+        host: "yc_api-gateway_{{ env }}"
+        check_tags: ['{{ common_tag }}-api-gateway']
+        flap: { stable: 0, critical: 0 }
+
+    - role: bootstrap
+      vars:
+        children:
+          - CGROUP%cloud_hw-ci
+        host: "yc_bootstrap_{{ env }}"
+        check_tags: ['{{ common_tag }}-bootstrap']
+        unreachable_host: "yc_bootstrap_{{ env }}"

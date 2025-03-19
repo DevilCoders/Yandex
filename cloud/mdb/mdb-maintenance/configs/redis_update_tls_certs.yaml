@@ -1,0 +1,29 @@
+info: Updating tls certificates
+repeatable: true
+env_order_disabled: true
+supports_offline: true
+clusters_selection:
+  db: >-
+    SELECT c.cid FROM dbaas.clusters c
+             JOIN dbaas.subclusters USING (cid)
+             JOIN dbaas.hosts h USING (subcid)
+             JOIN dbaas.pillar p ON (h.fqdn = p.fqdn)
+             JOIN dbaas.pillar cp ON (c.cid = cp.cid)
+    WHERE dbaas.string_to_iso_timestamptz(p.value ->> 'cert.expiration') < now() + '60 days'::::interval
+      AND cp.value->'data'->'redis'->'tls'->'enabled' = 'true'::::jsonb
+      AND p.fqdn IS NOT NULL
+      AND cp.cid IS NOT NULL
+      AND dbaas.visible_cluster_status(status)
+      AND type = 'redis_cluster'
+    GROUP BY c.cid
+pillar_change: 'SELECT 1'
+worker:
+  operation_type: redis_cluster_modify
+  task_type: redis_cluster_maintenance
+  task_args:
+    update_tls: true
+    restart: true
+    force_tls_certs: true
+  timeout: 24h
+max_delay_days: 21
+min_days: 7

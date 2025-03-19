@@ -1,0 +1,183 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.k8s.v1;
+
+import "google/protobuf/field_mask.proto";
+
+import "yandex/cloud/api/operation.proto";
+import "yandex/cloud/priv/operation/operation.proto";
+import "yandex/cloud/priv/validation.proto";
+import "yandex/cloud/priv/k8s/v1/node_group.proto";
+import "yandex/cloud/priv/k8s/v1/node.proto";
+import "yandex/cloud/priv/k8s/v1/version.proto";
+import "yandex/cloud/priv/billing/v1/light_metric.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/k8s/v1;k8s";
+option java_outer_classname = "PMKNS";
+
+service NodeGroupService {
+  rpc Get(GetNodeGroupRequest) returns (NodeGroup);
+
+  rpc List(ListNodeGroupsRequest) returns (ListNodeGroupsResponse);
+
+  rpc ListNodes(ListNodeGroupNodesRequest) returns (ListNodeGroupNodesResponse);
+
+  rpc Create(CreateNodeGroupRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "CreateNodeGroupMetadata"
+      response: "NodeGroup"
+    };
+  }
+
+  rpc Update(UpdateNodeGroupRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "UpdateNodeGroupMetadata"
+      response: "NodeGroup"
+    };
+  }
+
+  rpc Delete(DeleteNodeGroupRequest) returns (operation.Operation) {
+    option (yandex.cloud.api.operation) = {
+      metadata: "DeleteNodeGroupMetadata"
+      response: "google.protobuf.Empty"
+    };
+  }
+
+  rpc ListOperations(ListNodeGroupOperationsRequest) returns (ListNodeGroupOperationsResponse);
+
+  rpc ListVersions(ListNodeGroupVersionsRequest) returns (ListNodeGroupVersionsResponse);
+  rpc ListUpdateVersions(ListNodeGroupUpdateVersionsRequest) returns (ListNodeGroupUpdateVersionsResponse);
+  rpc SimulateBillingMetrics (CreateNodeGroupRequest) returns (NodeGroupConsoleLightMetricsListResponse);
+}
+
+message GetNodeGroupRequest {
+  string node_group_id = 1 [(required) = true];
+}
+
+message ListNodeGroupsRequest {
+  string folder_id = 1 [(required) = true];
+
+  int64 page_size = 2 [(value) = "0-1000"];
+  string page_token = 3 [(length) = "<=100"];
+  string filter = 4 [(length) = "<=1000"];
+}
+
+message ListNodeGroupsResponse {
+  repeated NodeGroup node_groups = 1;
+  string next_page_token = 2;
+}
+
+message ListNodeGroupNodesRequest {
+  string node_group_id = 1 [(required) = true];
+
+  int64 page_size = 2 [(value) = "0-1000"];
+  string page_token = 3 [(length) = "<=100"];
+}
+
+message ListNodeGroupNodesResponse {
+  repeated Node nodes = 1;
+  string next_page_token = 2;
+}
+
+message DeleteNodeGroupRequest {
+  string node_group_id = 1 [(required) = true];
+}
+
+message DeleteNodeGroupMetadata {
+  string node_group_id = 1;
+}
+
+message UpdateNodeGroupRequest {
+  string node_group_id = 1 [(required) = true];
+  google.protobuf.FieldMask update_mask = 2;
+
+  string name = 3 [(pattern) = "|[a-z]([-a-z0-9]{0,61}[a-z0-9])?"];
+  string description = 4 [(length) = "<=256"];
+  map<string, string> labels = 5 [(size) = "<=64", (length) = "<=63", (pattern) = "[-_./\\@0-9a-z]*", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_./\\@0-9a-z]*"];
+
+  NodeTemplate node_template = 8;
+  ScalePolicy scale_policy = 7;
+  NodeGroupAllocationPolicy allocation_policy = 9;
+  DeployPolicy deploy_policy = 15;
+
+  UpdateVersionSpec version = 10;
+  NodeGroupMaintenancePolicy maintenance_policy = 11;
+
+  repeated string allowed_unsafe_sysctls = 12 [(length) = "<=253", (pattern) = "([a-z0-9]([-_a-z0-9]*[a-z0-9])?\\.)*([a-z0-9][-_a-z0-9]*)?[a-z0-9*]"];
+  repeated Taint node_taints = 13;
+  map<string, string> node_labels = 14;
+}
+
+message UpdateNodeGroupMetadata {
+  string node_group_id = 1 [(required) = true];
+}
+
+message CreateNodeGroupRequest {
+  string cluster_id = 1 [(required) = true];
+
+  string name = 2 [(pattern) = "|[a-z]([-a-z0-9]{0,61}[a-z0-9])?"];
+  string description = 3 [(length) = "<=256"];
+  map<string, string> labels = 4 [(size) = "<=64", (length) = "<=63", (pattern) = "[-_./\\@0-9a-z]*", (map_key).length = "1-63", (map_key).pattern = "[a-z][-_./\\@0-9a-z]*"];
+
+  NodeTemplate node_template = 5 [(required) = true];
+  ScalePolicy scale_policy = 6 [(required) = true];
+  NodeGroupAllocationPolicy allocation_policy = 7;
+  DeployPolicy deploy_policy = 14;
+
+  string version = 8;
+  NodeGroupMaintenancePolicy maintenance_policy = 9;
+
+  repeated string allowed_unsafe_sysctls = 10 [(length) = "<=253", (pattern) = "([a-z0-9]([-_a-z0-9]*[a-z0-9])?\\.)*([a-z0-9][-_a-z0-9]*)?[a-z0-9*]"];
+  // 0 means latest. That's one more reason why revisions must start from 1.
+  int64 specific_revision = 11 [(value) = ">=0"];
+
+  repeated Taint node_taints = 12;
+  map<string, string> node_labels = 13;
+}
+
+message CreateNodeGroupMetadata {
+  string node_group_id = 1;
+}
+
+message AutoUpgradeNodeGroupMetadata {
+  string node_group_id = 1;
+}
+
+message ListNodeGroupOperationsRequest {
+  string node_group_id = 1 [(required) = true];
+
+  int64 page_size = 2 [(value) = "0-1000"];
+  string page_token = 3 [(length) = "<=100"];
+  string filter = 4 [(length) = "<=1000"];
+}
+
+message ListNodeGroupOperationsResponse {
+  repeated operation.Operation operations = 1;
+  string next_page_token = 2;
+}
+
+message ListNodeGroupVersionsRequest {
+  string cluster_id = 1 [(required) = true];
+}
+
+message ListNodeGroupVersionsResponse {
+  // List of available versions for node-group create.
+  repeated string versions = 1;
+
+  // Default version. (can be empty).
+  string default_version = 3;
+}
+
+message ListNodeGroupUpdateVersionsRequest {
+  string node_group_id = 1 [(required) = true];
+}
+
+message ListNodeGroupUpdateVersionsResponse {
+  // List of available versions for node-group update (in most cases it will be one version or empty list).
+  repeated string versions = 1;
+}
+
+message NodeGroupConsoleLightMetricsListResponse {
+  repeated billing.v1.ConsoleLightMetric metrics = 1;
+  repeated billing.v1.ConsoleLightMetric max_price_metrics = 2;
+}

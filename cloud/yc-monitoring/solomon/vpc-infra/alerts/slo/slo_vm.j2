@@ -1,0 +1,29 @@
+{% extends "../base_alert.j2" %}
+
+{% set windowSecs = 14400 %} {# 4h #}
+
+{% macro prog() %}
+let source = {project='{{ solomon_project_id }}', cluster='production', service='alerting_statuses', sensor='alert.evaluation.status', alertId='slo_{{ org }}_meta_{{ vm_id }}_prod', projectId='{{ project_id }}', parentId='-'};
+
+let bads = heaviside(0.5 - abs(source - 4));
+let oks = 1 - bads;
+let all_points = count(oks);
+let oks_sum = sum(oks);
+let slo = (oks_sum * 100) / all_points;
+let slo_text = to_fixed(slo, 3) + '%';
+
+let is_red = slo < 95;
+let trafficColor = is_red ? 'red' : 'green';
+let description = slo_text;
+{% endmacro %}
+
+{% block main %}
+    "name": "{{ alert_name | default(config_name) }}",
+    "annotations": {
+        "vm_id": "{{ vm_id }}",
+        "org": "{{ org }}",
+        "slo": "[[expression.slo_text]]"
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

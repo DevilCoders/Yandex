@@ -1,0 +1,32 @@
+{% extends "../../base/alert.j2" %}
+{% macro prog() %}
+
+let versions = group_lines('count', series_sum('salt_formula_version', {
+  project='{{ project_id }}',
+  cluster='all',
+  service='bootstrap',
+  stand_name='{{ env }}',
+  bootstrap_role='{{ bootstrap_role }}',
+  salt_formula_version='*',
+  host='all',
+  salt_role='{{ salt_role }}'
+}));
+let c_vers = max(versions);
+let is_red = c_vers > 1;
+let is_yellow = c_vers == 0;
+let trafficColor = is_red ? 'red' : (is_yellow ? 'yellow' : 'green');
+let description = 'There are ' + c_vers + ' versions of salt-role {{ salt_role }} on bootstrap role {{ bootstrap_role }}';
+{% endmacro %}
+
+{% block main %}
+    "name": "vpc deploy alert for {{ bootstrap_role }}/{{ salt_role }} on {{ host }} @ {{ env }}",
+    "annotations": {
+        "tags": "vpc-solomon, vpc-infra, yc-{{env}}",
+        "host": "vpc-infra-{{ env }}",
+        "service": "{{ bootstrap_role }}-{{ salt_role }}-diff-versions",
+        "trafficLight.color": "[[expression.trafficColor]]",
+        "details": "[[expression.description]]"
+    },
+    "description": "",
+    "type": {{ type_expression() }}
+{% endblock %}

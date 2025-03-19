@@ -1,0 +1,51 @@
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    namespace: dbaas.mysql
+    host: mysql-e2e.db.yandex.net
+
+  tasks:
+    - juggler_facts: jserver_api=http://juggler-api.search.yandex.net:8998/api
+    - include_vars: ../configs/mm_resps.yml
+    - include_vars: ../configs/notifications_worktime.yml
+
+    - juggler_check:
+        host: "{{ host }}"
+        service: dbaas-e2e-porto-qa-mysql
+        namespace: "{{ namespace }}"
+        aggregator: logic_or
+        notifications: "{{ notifications_sms }}"
+        refresh_time: 3600
+        ttl: 21600
+        children:
+            host: dbaas-e2e01k.db.yandex.net
+            service: dbaas-e2e-porto-qa-mysql
+        __force__: True
+    - juggler_check:
+        host: "{{ host }}"
+        service: dbaas-e2e-compute-preprod-mysql
+        namespace: "{{ namespace }}"
+        aggregator: logic_or
+        notifications: "{{ notifications_sms }}"
+        refresh_time: 3600
+        ttl: 21600
+        children:
+            host: dbaas-e2e-preprod01k.cloud-preprod.yandex.net
+            service: dbaas-e2e-compute-preprod-mysql
+        __force__: True
+    - juggler_check:
+        host: "{{ host }}"
+        service: dbaas-e2e-compute-prod-mysql
+        namespace: "{{ namespace }}"
+        aggregator: logic_or
+        notifications: "{{ notifications }}"
+        refresh_time: 3600
+        ttl: 21600
+        children:
+            host: dbaas-e2e01k.yandexcloud.net
+            service: dbaas-e2e-compute-prod-mysql
+        __force__: True
+
+  post_tasks:
+    - juggler_cleanup: jcheck_mark={{ host }}

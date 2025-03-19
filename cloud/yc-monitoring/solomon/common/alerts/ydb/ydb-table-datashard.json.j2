@@ -1,0 +1,41 @@
+{% extends "../../../base/alert.j2" %}
+{%- set ydb_project = 'kikimr' if env not in ('israel',) else 'yc.ydb.ydbaas-cloud' %}
+
+{% set windowSecs = 300 %}
+{% set delaySecs = 30 %}
+
+{% macro prog() %}
+let used_core_percents = {
+  project='{{ ydb_project }}',
+  cluster='{{ cluster }}',
+  service='ydb',
+  cloud_id='*',
+  host='cluster|-',
+  database='{{ database }}',
+  name='table.datashard.used_core_percents',
+  bin='*'
+  };
+
+let overload_percentile = avg(histogram_percentile(100, used_core_percents));
+let is_red = overload_percentile >= {{ red_threshold }};
+let is_yellow = overload_percentile  >= {{ yellow_threshold }};
+let usage_percent_str = to_fixed(overload_percentile, 2) + '%';
+let description = 'Alert for overloaded shards. We calculate shard overload in %. As potential fix we recommend to reduce the load, enable auto-split or check that load in distributed across the shards: '+usage_percent_str;
+
+alarm_if(is_red);
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+  "id": "{{ id }}",
+  "name": "{{ name }}",
+  "type": {{ type_expression() }},
+  "annotations": {
+    "details": "[[expression.description]]",
+    "service": "{{ serviceName }}",
+    "wiki": "https://docs.yandex-team.ru/yc-monitoring/ydb/{{ serviceName }}",
+    "overload_percentile": "[[expression.usage_percent_str]]",
+    "host": "{{ host }}",
+    "database": "{{ database }}"
+  }
+{% endblock %}

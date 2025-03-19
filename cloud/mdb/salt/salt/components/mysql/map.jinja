@@ -1,0 +1,39 @@
+{% set mysql = salt['grains.filter_by']({
+    'Debian': {
+        'prefix': '/var/lib/mysql',
+        'mdadm_config': '/etc/mdadm/mdadm.conf',
+        'cron_service': 'cron',
+    },
+}, merge=salt['pillar.get']('data:mysql')) %}
+
+{% if salt['pillar.get']('restore-from:cid') %}
+{% set defaults_file = '/home/mysql/.restore.my.cnf' %}
+{% set walg_config = '/etc/wal-g/wal-g-restore.yaml' %}
+{% elif salt['pillar.get']('replica') %}
+{% set defaults_file = '/home/mysql/.replica.my.cnf' %}
+{% set walg_config = '/etc/wal-g/wal-g-replica.yaml' %}
+{% else %}
+{% set defaults_file = '/home/mysql/.my.cnf' %}
+{% set walg_config = '/etc/wal-g/wal-g.yaml' %}
+{% endif %}
+
+{% if salt['pillar.get']('replica') or salt['pillar.get']('data:mysql:replication_source') or salt['mdb_mysql.is_replica'](defaults_file) %}
+{% set is_replica = True %}
+{% else %}
+{% set is_replica = False %}
+{% endif %}
+
+{% do mysql.update({
+    'defaults_file': defaults_file,
+    'walg_config': walg_config,
+    'is_replica': is_replica,
+    'version': {
+        'major': salt['pillar.get']('data:versions:mysql:major_version'),
+        'minor': salt['pillar.get']('data:versions:mysql:minor_version'),
+        'pkg': salt['pillar.get']('data:versions:mysql:package_version'),
+        'num': salt.mdb_mysql.get_major_num(salt['pillar.get']('data:versions:mysql:major_version'))
+    },
+    'xtrabackup_version': {
+        'pkg': salt['pillar.get']('data:versions:xtrabackup:package_version')
+    }
+}) %}

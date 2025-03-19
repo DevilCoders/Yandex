@@ -1,0 +1,156 @@
+regions:
+  - sas
+  - man
+namespace: "ycloud"
+children: "CGROUP%{{ cgroup }}"
+common_tag: yc
+notify_tag: '{{ common_tag }}-notify'
+default_tags: "{{ check_tags }} + ['{{ common_tag }}', '{{ common_tag }}-{{ env }}', '{{ notify_tag }}']"
+common_tags: "{{ default_tags }} + ['{{ common_tag }}-common', '{{ common_tag }}-{{ env }}-common']"
+jserver_api: http://juggler-api.search.yandex.net/api
+default_telegram_statuses: "{{ telegram_statuses | default(['CRIT']) }}"
+default_telegram_notification:
+  - template: on_status_change
+    status: "{{ default_telegram_statuses }}"
+    login: ["{{ telegram_chat_id | default('') }}"]
+    method: [telegram]
+    delay: "{{ telegram_notification_delay | default(0) }}"
+default_notification_methods: [{"template": "phone_escalation", logins: ['robot-zoidberg'] }]
+telegram_notification: "{{ default_telegram_notification if telegram_chat_id is defined and telegram_chat_id|length else [] }}"
+notification_methods: "{{ default_notification_methods }}"
+
+default_check:
+  host: "{{ host }}"
+  namespace: "{{ namespace }}"
+  notifications: "{{ notification_methods }}"
+  flap: "{{ flap }}"
+  meta: {}
+  tags: "{{ default_tags }}" #yc-notify tag for checks with notification
+  children: "{{ children }}"
+  ttl: "{{ttl | default(600)}}"
+  refresh_time: "{{refresh_time | default(120) }}"
+  __force__: true
+
+common_check: "{{ default_check | combine({'tags': common_tags }) }}"
+
+silent_check: "{{ default_check | combine({'tags': default_tags | difference([notify_tag]) + [common_tag+'-temporary'], 'notifications': [] }) }}"
+
+# tags for common checks without phone notification
+common_silent_check: "{{ default_check | combine({'tags': common_tags | difference([notify_tag]) if silent_checks is defined and service in silent_checks else common_tags }) }}"
+
+default_check_with_only_telegram_notification:  "{{ default_check | combine({'notifications': telegram_notification, 'tags': default_tags | difference([notify_tag]) }) }}"
+
+default_limits:
+  - {crit: '0', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '0'}
+default_limits_20perc_crit:
+  - {crit: '20%', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '0'}
+default_limits_50perc_crit:
+  - {crit: '50%', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '0'}
+default_limits_99perc_crit:
+  - {crit: '99%', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '0'}
+default_limits_logic_and:
+  - {day_end: 7, day_start: 1, time_end: 23, time_start: 0, aggregator: 'logic_and'}
+default_limits_one_down:
+  - {day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '0', crit: '1' }
+
+
+off_check_limits:
+  - {crit: "100%", day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: "0"}
+
+default_timed_limits:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+
+default_timed_limits_unreach_skip:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+    unreach_mode: skip
+    unreach_service:
+      - "check": "{{ unreachable_host }}:UNREACHABLE"
+      - "check": "{{ unreachable_host }}:META"
+
+default_timed_limits_unreach_force_ok:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+    unreach_mode: force_ok
+    unreach_service:
+      - "check": "{{ unreachable_host }}:UNREACHABLE"
+      - "check": "{{ unreachable_host }}:META"
+
+default_timed_limits_one_down_unreach_force_ok:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits_one_down }}"
+    unreach_mode: force_ok
+    unreach_service:
+      - "check": "{{ unreachable_host }}:UNREACHABLE"
+      - "check": "{{ unreachable_host }}:META"
+
+off_timed_limits:
+  timed_more_than_limit_is_problem:
+    limits: "{{ off_check_limits }}"
+
+off_timed_limits_with_unreach:
+  timed_more_than_limit_is_problem:
+    limits: "{{ off_check_limits }}"
+    unreach_mode: skip
+    unreach_service: { "check": ":UNREACHABLE" }
+
+timed_limits_20perc_crit:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits_20perc_crit }}"
+
+timed_limits_50perc_crit:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits_50perc_crit }}"
+
+timed_limits_99perc_crit:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits_99perc_crit }}"
+
+default_timed_limits_logic_and:
+  timed:
+    times: "{{ default_limits_logic_and }}"
+
+e2e_behind_lock:
+  timed_more_than_limit_is_problem:
+    limits: "{{ e2e_behind_lock_limits }}"
+    hold_crit: 300
+    unreach_mode: skip
+    unreach_service:
+      - "check": "{{ unreachable_host }}:UNREACHABLE"
+      - "check": "{{ unreachable_host }}:META"
+
+# NOTE(k-zaitsev): CLOUD-11194 used by network checks on compute hosts
+# We need this so as not to meddle with compute's default checks
+default_network_limits_unreach_skip:
+  timed_more_than_limit_is_problem:
+    limits: "{{ network_limits }}"
+    unreach_mode: skip
+    unreach_service:
+      - "check": "{{ unreachable_host }}:UNREACHABLE"
+      - "check": "{{ unreachable_host }}:META"
+
+default_network_limits_unreach_skip_nodata_force_ok:
+  timed_more_than_limit_is_problem:
+    limits: "{{ network_limits }}"
+    nodata_mode: force_ok
+    unreach_mode: skip
+    unreach_service:
+      - "check": "{{ unreachable_host }}:UNREACHABLE"
+      - "check": "{{ unreachable_host }}:META"
+
+slb_adapter_default_time_limits_unreach_nginx:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+    unreach_mode: force_ok
+    unreach_service:
+      - "check": ":UNREACHABLE"
+      - "check": ":nginx-alive"
+
+cgw_known_bugs_default_time_limits_unreach_related:
+  timed_more_than_limit_is_problem:
+    limits: "{{ default_limits }}"
+    unreach_mode: force_ok
+    unreach_service:
+      - "check": ":UNREACHABLE"
+      - "check": ":cgw-known-bugs"

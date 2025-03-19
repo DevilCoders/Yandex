@@ -1,0 +1,1302 @@
+use hahn;
+--PRAGMA yt.Pool = 'cloud_analytics_pool';
+--arc_test
+PRAGMA yson.DisableStrict;
+PRAGMA AnsiInForEmptyOrNullableItemsCollections;
+--functions
+$parse = DateTime::Parse('%Y-%m-%d %H:%M:%S');
+$format = DateTime::Format('%Y-%m-%d');
+$format_full = DateTime::Format('%Y-%m-%d %H:%M:%S');
+
+$today = $format(CurrentUtcDate());
+$path = '//home/cloud_analytics/compute_logs/parsed_logs/' || $today;
+INSERT INTO  $path WITH TRUNCATE
+SELECT 1
+LIMIT 0
+;
+$script = @@
+import numpy as np
+from datetime import datetime, timedelta
+from calendar import monthrange
+def lifetime_range(start, finish):
+    d0 = 1514754000 #2018-01-01 00:00:00
+    step = 3600*4
+    if (start-d0) % step == 0:
+        start0 = start
+    else:
+        start0 = d0 + ((start-d0) // step + 1) * step
+    if start0 > finish:
+        return [start0-step]
+    else:
+        return [start0 + x*step for x in range(np.max([1,(finish-start0) // step + 1]))]
+def flatten(a):
+    res = []
+    for a_ in a:
+        res += list(a_)
+    return sorted(res)
+def convolve(a):
+    a_flat = flatten(list(a))
+    a_short = [a_flat[0]]
+    for i in range(1,len(a_flat)-2, 2):
+        if a_flat[i] != a_flat[i+1]:
+            a_short += [a_flat[i], a_flat[i+1]]
+    a_short += [a_flat[-1]]
+    return [[a_short[i], a_short[i+1]] for i in range(0,len(a_short), 2)]
+def cumsum(a):
+    return list(np.cumsum(list(a)))
+def dates_range_to_today(d0_ = '2018-01-01'):
+    d0 = d0_.decode('UTF-8')
+    return [(datetime.strptime(d0, '%Y-%m-%d') + timedelta(days=i)).strftime('%Y-%m-%d') for i in range((datetime.now() - datetime.strptime(d0, '%Y-%m-%d') ).days)]
+from calendar import monthrange
+def days_in_month(d):
+    d_ = datetime.strptime(d.decode('UTF-8'), '%Y-%m-%d')
+    return monthrange(d_.year, d_.month)[1]
+@@;
+DEFINE SUBQUERY $last_non_empty_table($path) AS
+    $max_path = (
+        SELECT MAX(Path) AS Path
+        FROM FOLDER($path, 'row_count')
+        WHERE Type = 'table'
+            AND Yson::LookupInt64(Attributes, 'row_count') > 0
+    );
+    SELECT * FROM CONCAT($max_path);
+END DEFINE;
+$to_start_of_day = ($timestamp) -> {
+    $start_of_day = DateTime::ToSeconds(DateTime::MakeDatetime(DateTime::StartOfDay(DateTime::FromSeconds(CAST ($timestamp AS Uint32)))));
+    RETURN $start_of_day;
+};
+$to_start_of_hour = ($timestamp) -> {
+    $start_of_hour = DateTime::ToSeconds(DateTime::MakeDatetime(DateTime::StartOf(DateTime::FromSeconds(CAST ($timestamp AS Uint32)),Interval("PT1H"))));
+    RETURN $start_of_hour
+};
+$convolve = Python3::convolve(
+    Callable<(List<List<Uint64?>>)->List<List<Uint64>>>,
+    $script
+);
+$lifetime_range = Python3::lifetime_range(
+    Callable<(Uint64?,Uint64?)->List<Uint64>>,
+    $script
+);
+$cumsum = Python3::cumsum(
+    Callable<(List<Double>)->List<Double>>,
+    $script
+);
+$dates_range_to_today = Python3::dates_range_to_today(
+    Callable<(String)->List<String>>,
+    $script
+);
+$days_in_month = Python3::days_in_month(
+    Callable<(String)->Int64>,
+    $script
+);
+$vm_cores_burst_adjustment = ($x) -> {
+    $node_shared_cores = CAST($x.0 AS Double);
+    $node_cores_free = CAST($x.1 AS Double);
+    $vm_cores_real_sum = CAST($x.2 AS Double);
+    $vm_cores = CAST($x.3 AS Double);
+    $vm_cores_real = CAST($x.4 AS Double);
+    $vm_id = $x.5;
+return ($vm_id, ListMin(AsList(($node_shared_cores+$node_cores_free)*$vm_cores_real/$vm_cores_real_sum, $vm_cores)))
+};
+--parsing logs
+DEFINE ACTION $select($day) as
+    $table_source = '//home/logfeller/logs/yc-billing-metrics/1d/' || $day;
+    $table_destination = '//home/cloud_analytics/compute_logs/parsed_logs/' || $day;
+    $compute_logs = (
+    SELECT
+        *
+    FROM $table_source
+    WHERE `schema` in ('compute.vm.generic.v1', 'mdb.db.generic.v1')
+    );
+    $vm_lifetime = (
+    SELECT
+        resource_id,
+        lifetime_convolved[0] as start,
+        lifetime_convolved[1] as finish
+    FROM (
+        SELECT
+            resource_id,
+            $convolve(AGGREGATE_LIST(lifetime)) as lifetime_convolved
+        FROM (
+            SELECT
+                resource_id,
+                AsList(Yson::LookupUint64(usage, 'start'), Yson::LookupUint64(usage, 'finish')) as lifetime,
+            FROM $compute_logs
+            )
+        GROUP BY resource_id
+        )
+    FLATTEN BY lifetime_convolved
+    );
+    $vm_log_short = (
+        SELECT
+            b.`schema`                                                                                              as `schema`,
+            a.resource_id                                                                                           as vm_id,
+            a.start                                                                                                 as vm_start,
+            a.finish                                                                                                as vm_finish,
+            b.cloud_id                                                                                              as cloud_id,
+            b.folder_id                                                                                             as folder_id,
+            source_id                                                                                               as node_id,
+            COALESCE(COALESCE(Yson::LookupUint64(tags, 'cores'), c.cores),0)                                        as vm_cores,
+            COALESCE(Yson::LookupUint64(tags, 'gpus'), 0)                                                           as vm_gpus,
+            COALESCE(COALESCE(Yson::LookupUint64(tags, 'core_fraction'), c.core_fraction),100)   as vm_core_fraction,
+            COALESCE(COALESCE(Yson::LookupUint64(tags, 'memory')/1024/1024/1024.0, c.memory),0)                                        as vm_memory,
+            COALESCE(Yson::LookupString(tags, 'platform_id'), 'mdb-' || COALESCE(c.platform, ''))                    as node_platform,
+            IF(Yson::LookupBool(tags, 'preemptible') IS NULL, 0, 1)                                                 as vm_preemptible,
+            Yson::LookupUint64(tags, 'public_fips')                                                                 as vm_public_fips,
+            String::JoinFromList(Yson::ConvertToStringList(Yson::Lookup(tags, 'product_ids')),',')                  as vm_product_ids,
+            Yson::ConvertToStringList(Yson::Lookup(tags, 'product_ids'))[0]                                         as vm_product_id,
+            String::JoinFromList(ListMap(DictItems(Yson::ConvertToStringDict(labels)), ($x) -> {RETURN $x.0||':'||$x.1}), ';') as vm_labels_str,
+            labels                                                                                                  as vm_labels,
+            Yson::LookupString(labels, 'managed-kubernetes-cluster-id')                                             as  vm_managed_kubernetes_cluster_id,
+            if (Yson::LookupString(labels, 'managed-kubernetes-cluster-id') is not null, 'mk8s-worker', if(folder_id = 'b1g1d7mruu11c2fpaa1b', 'mk8s-master', if (folder_id = 'b1gdepbkva865gm1nbkq', 'mdb', 'other')))           as vm_origin,
+            Yson::LookupString(tags, 'cluster_id')                                                                  as mdb_cluster_id,
+            Yson::LookupString(tags, 'cluster_type')                                                                as mdb_db_type,
+            Yson::LookupUint64(tags, 'disk_size')/1024/1024/1024.0                                                  as mdb_disk_size,
+            Yson::LookupString(tags, 'disk_type_id')                                                                as mdb_disk_type,
+            Yson::LookupUint64(tags, 'online')                                                                      as mdb_online,
+            Yson::LookupString(tags, 'resource_preset_id')                                                          as mdb_preset,
+            Yson::LookupString(tags, 'compute_instance_id')                                                         as mdb_compute_instance_id,
+            Yson::ConvertToStringList(Yson::Lookup(tags, 'roles'))                                                  as mdb_roles
+        FROM $vm_lifetime as a
+        LEFT JOIN $compute_logs as b
+        ON (a.resource_id = b.resource_id) and (a.start = Yson::LookupUint64(b.usage, 'start'))
+        LEFT JOIN `//home/cloud_analytics/compute_logs/vm_cube/mdb_presets` as c
+        ON  Yson::LookupString(b.tags, 'cluster_type') = c.mdb_cluster AND Yson::LookupString(b.tags, 'resource_preset_id') = c.mdb_preset
+    );
+    INSERT INTO $table_destination WITH TRUNCATE
+    SELECT * FROM $vm_log_short;
+END DEFINE;
+$three_days_from_today =  COALESCE($format(CurrentUtcTimestamp() - Interval('P3D')), '2020-03-01');
+$days = $dates_range_to_today( $three_days_from_today);
+EVALUATE FOR $day IN $days
+    DO $select($day)
+ELSE
+    DO EMPTY_ACTION();
+COMMIT ;
+--cpu util
+$to_start_of_4hour = ($timestamp) -> {
+    $d0 = 1514754000; --2018-01-01 00:00:00
+    $step = 3600*4;
+    $start_of_4hour = CAST ($d0 + (($timestamp-$d0) / $step ) * $step AS Uint32);
+    RETURN $start_of_4hour
+};
+$cpu_util_raw = (
+SELECT
+    $to_start_of_4hour(`timestamp`) as slice_time,
+    `timestamp` as t,
+    instance_id as vm_id,
+    String::Substring(metric,9) as metric,
+    value
+FROM RANGE('//logs/yandexcloud-prod-sli-log/1d', '2020-04-01')
+WHERE metric like 'cpu-util/cpu_%'
+ORDER BY t DESC
+)
+;
+$cpu_util1 = (
+SELECT
+    slice_time,
+    vm_id,
+    AGGREGATE_LIST(AsTuple(slice_time, CAST(SUBSTRING(metric,4,100) AS Uint64),value)) as cpu_load_history,
+FROM $cpu_util_raw
+GROUP BY
+    slice_time,
+    vm_id
+)
+;
+$cpu_util2 = (
+SELECT
+    slice_time,
+    vm_id,
+    AGGREGATE_LIST(AsDict(
+        AsTuple('cpu', metric),
+        AsTuple('max', CAST(cpu_load_max AS String)),
+        AsTuple('min', CAST(cpu_load_min AS String)),
+        AsTuple('avg', CAST(cpu_load_avg AS String)),
+        AsTuple('median', CAST(cpu_load_median AS String)),
+        )
+    ) as cpu_load_metrics
+FROM (
+SELECT
+    slice_time,
+    vm_id,
+    metric,
+    max(value) as cpu_load_max,
+    min(value) as cpu_load_min,
+    avg(value) as cpu_load_avg,
+    median(value) as cpu_load_median
+FROM $cpu_util_raw
+GROUP BY slice_time, vm_id, metric
+)
+GROUP BY slice_time, vm_id
+)
+;
+$cpu_util3 =(
+SELECT
+    slice_time,
+    vm_id,
+    max(cpu_load_max) as cpu_load_max,
+    avg(cpu_load_avg) as cpu_load_avg_avg,
+    max(cpu_load_avg) as cpu_load_avg_max,
+    min(cpu_load_avg) as cpu_load_avg_min,
+    median(cpu_load_avg) as cpu_load_avg_median,
+    min(cpu_load_min) as cpu_load_min
+FROM (
+SELECT
+    slice_time,
+    vm_id,
+    t,
+    max(value) as cpu_load_max,
+    min(value) as cpu_load_min,
+    avg(value) as cpu_load_avg,
+    median(value) as cpu_load_median
+FROM $cpu_util_raw
+GROUP BY slice_time, vm_id, t
+)
+GROUP BY slice_time, vm_id
+)
+;
+$cpu_util = (
+SELECT
+a.slice_time as slice_time,
+a.vm_id as vm_id,
+--cpu_load_history as vm_cpu_load_history,
+cpu_load_metrics as vm_cpu_load_metrics,
+cpu_load_max as vm_cpu_load_max,
+cpu_load_avg_avg as vm_cpu_load_avg_avg,
+cpu_load_avg_max as vm_cpu_load_avg_max,
+cpu_load_avg_min as vm_cpu_load_avg_min,
+cpu_load_avg_median as vm_cpu_load_avg_median,
+cpu_load_min as vm_cpu_load_min
+FROM $cpu_util1 as a
+LEFT JOIN $cpu_util2 as b
+ON a.vm_id = b.vm_id AND a.slice_time = b.slice_time
+LEFT JOIN $cpu_util3 as c
+ON a.vm_id = c.vm_id AND a.slice_time = c.slice_time
+);
+-- making cube
+$compute_logs = (
+SELECT *
+FROM RANGE('//home/cloud_analytics/compute_logs/parsed_logs')
+--WHERE `schema` not like '%mdb%'
+);
+$ba_paid_status_hist =  (
+        SELECT
+            billing_account_id,
+            d,
+            if(sum(real_consumption)>sum(trial_consumption),'paid', 'trial') as ba_paid_status
+        FROM (
+            SELECT billing_account_id, DateTime::MakeDate($parse(event_time)) as d, real_consumption, trial_consumption
+            FROM `//home/cloud_analytics/cubes/acquisition_cube/cube`
+            WHERE event='day_use'
+            )
+        GROUP BY
+            billing_account_id, d
+);
+$ba_time_dependent_tags = (
+SELECT
+    a.d as d,
+    a.billing_account_id as billing_account_id,
+    ba_state,
+    ba_usage_status,
+    vm_is_service,
+    ba_block_reason,
+    ba_sales_name,
+    ba_architect,
+    ba_paid_status
+FROM (
+SELECT
+    d,
+    billing_account_id,
+    AGGREGATE_LIST(ba_state)[0] as ba_state,
+    AGGREGATE_LIST(ba_usage_status)[0] as ba_usage_status,
+    AGGREGATE_LIST(is_service)[0] as vm_is_service,
+    AGGREGATE_LIST(block_reason)[0] as ba_block_reason,
+    AGGREGATE_LIST(sales_name)[0] as ba_sales_name,
+    AGGREGATE_LIST(architect)[0] as ba_architect
+    FROM (
+        SELECT
+            DateTime::MakeDate($parse(event_time)) as d,
+            billing_account_id,
+            ba_state,
+            ba_usage_status,
+            block_reason,
+            if(ba_usage_status = 'service', 'service', 'customer') as is_service,
+            sales_name,
+            architect
+        FROM `//home/cloud_analytics/cubes/acquisition_cube/cube`
+        WHERE
+            event in ('day_use', 'ba_created', 'first_trial_consumption', 'first_paid_consumption')
+    )
+    GROUP BY
+        d,
+        billing_account_id
+    ) as a LEFT JOIN $ba_paid_status_hist as b on a.billing_account_id = b.billing_account_id and a.d = b.d
+);
+$ba_time_independent_tags = (
+    SELECT
+        billing_account_id,
+        MAX_BY(is_fraud, event_time) as is_fraud,
+        MAX_BY(ba_name, event_time) as ba_name,
+        MAX_BY(ba_person_type, event_time) as ba_person_type,
+        MAX_BY(ba_type, event_time) as ba_type,
+        MAX_BY(channel, event_time) as channel,
+        MAX_BY(segment, event_time) as segment,
+        MAX_BY(board_segment, event_time) as board_segment,
+        MAX_BY(user_settings_email, event_time) as user_settings_email,
+        MAX_BY(account_name, event_time) as account_name,
+        $format(DateTime::MakeDate(DateTime::StartOfMonth($parse(MAX_BY(first_ba_created_datetime, event_time))))) as ba_m_cohort,
+        $format(DateTime::MakeDate(DateTime::StartOfWeek($parse(MAX_BY(first_ba_created_datetime, event_time))))) as ba_w_cohort
+    FROM `//home/cloud_analytics/cubes/acquisition_cube/cube`
+    WHERE
+        event in ('day_use', 'ba_created', 'first_trial_consumption', 'first_paid_consumption')
+    GROUP BY
+        billing_account_id
+);
+$folder_ba = (
+    SELECT
+        folder_id, folder_name,
+        AGGREGATE_LIST(cloud_id)[0] as cloud_id,
+        AGGREGATE_LIST(billing_account_id)[0] as billing_account_id
+    FROM (
+        SELECT
+            folder_id,folder_name,
+            p.cloud_id as cloud_id,
+            billing_account_id
+        FROM (
+            SELECT
+                a.folder_id as folder_id,
+                folder_name,
+                COALESCE(a.cloud_id, b.cloud_id_new) as cloud_id
+            FROM (
+                SELECT DISTINCT
+                    folder_id,
+                    cloud_id
+                FROM
+                    $compute_logs
+                ) as a
+            LEFT JOIN (
+                SELECT
+                    folder_id,
+                    AGGREGATE_LIST(cloud_id)[0] as cloud_id_new,
+                    AGGREGATE_LIST(folder_name)[0] as folder_name
+                FROM
+                    $last_non_empty_table('//home/cloud_analytics/import/iam/cloud_folders/1h')
+                GROUP BY folder_id
+                    ) as b
+            ON a.folder_id = b.folder_id
+        ) as p
+        LEFT JOIN (
+            SELECT
+                cloud_id,
+                MAX_BY(billing_account_id,`event_time`) as billing_account_id
+            FROM
+                `//home/cloud_analytics/cubes/acquisition_cube/cube`
+            WHERE event = 'day_use'
+            GROUP BY
+                cloud_id
+        ) as q
+        on p.cloud_id = q.cloud_id
+    )
+    GROUP BY
+        folder_id, folder_name
+);
+$nodes_stats = (
+    SELECT
+        a.t as slice_time,
+        a.node_name as node_id,
+        node_cores_free,
+        node_memory_free,
+        node_on_demand_shared_cores_used,
+        node_cores_disabled,
+        node_shared_cores,
+        node_preemptible_shared_cores_used,
+        node_cores_total,
+        node_preemptible_exclusive_cores_used,
+        node_shared_cores_available,
+        node_memory_disabled,
+        node_on_demand_exclusive_cores_used,
+        node_memory_total,
+        node_e2e_tests_nat_connectivity_value_history,
+        node_e2e_tests_nat_connectivity_values_list,
+        node_e2e_tests_nat_connectivity_max_value,
+        node_e2e_tests_permnet_connectivity_value_history,
+        node_e2e_tests_permnet_connectivity_values_list,
+        node_e2e_tests_permnet_connectivity_max_value,
+        node_e2e_tests_permnet_dns_value_history,
+        node_e2e_tests_permnet_dns_values_list,
+        node_e2e_tests_permnet_dns_max_value
+    FROM (
+    SELECT
+        t,
+        node_name,
+        AVG_IF(`max`, metric='cores_free')                          as node_cores_free,
+        AVG_IF(`max`, metric='memory_free')/1024/1024/1024.0        as node_memory_free,
+        AVG_IF(`max`, metric='on_demand_shared_cores_used')         as node_on_demand_shared_cores_used,
+        AVG_IF(`max`, metric='cores_disabled')                      as node_cores_disabled,
+        AVG_IF(`max`, metric='shared_cores')                        as node_shared_cores,
+        AVG_IF(`max`, metric='preemptible_shared_cores_used')       as node_preemptible_shared_cores_used,
+        AVG_IF(`max`, metric='cores_total')                         as node_cores_total,
+        AVG_IF(`max`, metric='preemptible_exclusive_cores_used')    as node_preemptible_exclusive_cores_used,
+        AVG_IF(`max`, metric='shared_cores_available')              as node_shared_cores_available,
+        AVG_IF(`max`, metric='memory_disabled')/1024/1024/1024.0    as node_memory_disabled,
+        AVG_IF(`max`, metric='on_demand_exclusive_cores_used')      as node_on_demand_exclusive_cores_used,
+        AVG_IF(`max`, metric='memory_total')/1024/1024/1024.0       as node_memory_total
+    FROM RANGE('//home/cloud_analytics/import/solomon/nodes/1mon')
+    GROUP BY t, node_name
+    ) as a LEFT JOIN
+    `//home/cloud_analytics/compute_logs/sli_metrics/nodes/nodes_sliced_pivot` as b
+    ON a.t = b.slice_time and a.node_name = b.node_id
+);
+$vm_lifetime = (
+SELECT
+    vm_id,
+    lifetime_convolved[0] as vm_start,
+    lifetime_convolved[1] as vm_finish
+FROM (
+    SELECT
+        vm_id,
+        $convolve(AGGREGATE_LIST(lifetime)) as lifetime_convolved
+    FROM (
+        SELECT
+            vm_id,
+            AsList(vm_start, vm_finish) as lifetime,
+        FROM $compute_logs
+        )
+    GROUP BY vm_id
+    )
+FLATTEN BY lifetime_convolved
+);
+$capture =  Re2::Capture('\\.[^\\.]+\\.[^\\.]+$');
+$mdb_presets = (
+SELECT DISTINCT
+    mdb_preset,
+    vm_cores,
+    vm_core_fraction,
+    vm_memory
+FROM (
+SELECT
+    String::Substring($capture(sku_name)._0,1) as mdb_preset,
+    cores_number as vm_cores,
+    core_fraction_number as vm_core_fraction,
+    ram_number as vm_memory
+FROM `//home/cloud_analytics/export/billing/sku_tags/sku_tags`
+WHERE service_name = 'mdb'
+)
+);
+$cloud_names = (
+SELECT
+    cloud_id,
+    AGGREGATE_LIST(cloud_name)[0] as cloud_name
+FROM
+    `//home/cloud_analytics/import/iam/cloud_owners_history`
+GROUP BY cloud_id
+);
+$mdb_compute_instance_ids = (
+SELECT
+    vm_id,
+    MAX_BY(mdb_compute_instance_id, vm_start) as mdb_compute_instance_id
+FROM
+    $compute_logs
+WHERE schema = 'mdb.db.generic.v1'
+GROUP BY vm_id
+);
+$mk8s_clusters = (
+SELECT
+    vm_managed_kubernetes_cluster_id,
+    MAX_BY(vm_managed_kubernetes_cluster_size, t) as vm_managed_kubernetes_cluster_size,
+    MAX_BY(vm_managed_kubernetes_cluster_type, t) as vm_managed_kubernetes_cluster_type
+FROM(
+SELECT
+    resource_id as vm_managed_kubernetes_cluster_id,
+    Yson::LookupString(tags,'size') as vm_managed_kubernetes_cluster_size,
+    Yson::LookupString(tags,'type') as vm_managed_kubernetes_cluster_type,
+    Yson::LookupInt64(usage,'start') as t
+FROM RANGE('//home/logfeller/logs/yc-billing-metrics/1d')
+WHERE schema like 'mk8s%'
+)
+GROUP BY vm_managed_kubernetes_cluster_id
+);
+$marketplace_version_names = (
+    SELECT  DISTINCT
+        mkt_version_id,
+        mkt_version_name
+    FROM RANGE('//home/logfeller/logs/yc-billing-rt-enricher-mkt-output/1d')
+);
+$vm_log_short = (
+    SELECT
+        IF(b.schema = 'mdb.db.generic.v1', 'mdb', 'compute')                                                    as vm_type,
+        a.vm_id                                                                                           as vm_id,
+        a.vm_start                                                                                                 as vm_start,
+        a.vm_finish                                                                                                as vm_finish,
+        $lifetime_range(a.vm_start, a.vm_finish)                                                                      as slice_time,
+        d.cloud_id                                                                                              as cloud_id,
+        if(d.cloud_id = 'b1ggh9onj7ljr7m9cici', 'mdb', 'compute') as vm_mdb,
+        h.cloud_name as cloud_name,
+        d.billing_account_id                                                                                    as billing_account_id,
+        b.folder_id                                                                                             as folder_id,
+        d.folder_name as folder_name,
+        node_id                                                                                               as node_id,
+        String::Substring(node_id,0,3)                                                                        as node_az,
+        IF(b.vm_cores = 0, g.vm_cores, b.vm_cores)                                                          as vm_cores,
+        vm_gpus                                                           as vm_gpus,
+        IF(b.vm_core_fraction = 0, g.vm_core_fraction, b.vm_core_fraction)   as vm_core_fraction,
+        IF(b.vm_cores = 0, g.vm_cores, b.vm_cores)*IF(b.vm_core_fraction = 0, g.vm_core_fraction, b.vm_core_fraction)/100.0                                                             as vm_cores_real,
+        IF(b.vm_memory = 0, g.vm_memory, b.vm_memory)                                       as vm_memory,
+        'c'||CAST(IF(b.vm_cores = 0, g.vm_cores, b.vm_cores) AS String)||'_m'||CAST(IF(IF(b.vm_memory = 0, g.vm_memory, b.vm_memory) <1,Math::Round(IF(b.vm_memory = 0, g.vm_memory, b.vm_memory) ,-1),IF(b.vm_memory = 0, g.vm_memory, b.vm_memory) ) AS String) || '_cf' ||CAST(IF(b.vm_core_fraction = 0, g.vm_core_fraction, b.vm_core_fraction) AS String) as vm_config,
+        IF(b.vm_memory = 0, g.vm_memory, b.vm_memory)  / IF(b.vm_cores = 0, g.vm_cores, b.vm_cores)                 as vm_memory_to_cores_ratio,
+        node_platform                                                                 as node_platform,
+        vm_preemptible                                                 as vm_preemptible,
+        vm_public_fips                                                                 as vm_public_fips,
+        vm_product_ids                  as vm_product_ids,
+        vm_product_id as vm_product_id,
+        coalesce(mkt_version_name, vm_product_id)                                                                         as vm_product_name,
+        vm_labels_str as vm_labels_str,
+        vm_labels                                                                                                  as vm_labels,
+        b.vm_managed_kubernetes_cluster_id     as  vm_managed_kubernetes_cluster_id,
+        Yson::LookupString(vm_labels, 'managed-kubernetes-node-group-id') as vm_managed_kubernetes_node_group_id,
+        vm_managed_kubernetes_cluster_size,
+        vm_managed_kubernetes_cluster_type,
+        if (b.vm_managed_kubernetes_cluster_id is not null, 'mk8s-worker', if(b.folder_id = 'b1g1d7mruu11c2fpaa1b', 'mk8s-master', if (b.folder_id = 'b1gdepbkva865gm1nbkq', 'mdb', if(b.folder_id = 'b1gd42o63plo2n3sd46j','data-sphere', 'other'))))           as vm_origin,
+        is_fraud                                                                                                as ba_is_fraud,
+        ba_name                                                                                                 as ba_name,
+        ba_person_type                                                                                          as ba_person_type,
+        ba_type                                                                                                 as ba_type,
+        channel                                                                                                 as ba_channel,
+        segment                                                                                                 as ba_segment,
+        board_segment                                                                                           as ba_board_segment,
+        user_settings_email                                                                                     as ba_user_email,
+        if(account_name='unknown', ba_name, account_name)                                                       as ba_client_name,
+        ba_m_cohort                                                                                             as ba_m_cohort,
+        ba_w_cohort                                                                                             as ba_w_cohort,
+        price_cpu                                                                                               as vm_price_1h_cpu,
+        price_ram                                                                                               as vm_price_1h_ram,
+        price_gpu                                                                                               as vm_price_1h_gpu,
+        (a.vm_finish - a.vm_start) / 3600.0 * IF(b.vm_cores = 0, g.vm_cores, b.vm_cores)  + price_ram*IF(b.vm_memory = 0, g.vm_memory, b.vm_memory)  + price_gpu*vm_gpus
+                                                                                                                as vm_price_lifetime,
+        price_cpu*IF(b.vm_cores = 0, g.vm_cores, b.vm_cores)  + price_ram*IF(b.vm_memory = 0, g.vm_memory, b.vm_memory)  + price_gpu*vm_gpus
+                                                                                                                as vm_price_1h,
+        4*(price_cpu*IF(b.vm_cores = 0, g.vm_cores, b.vm_cores)  + price_ram*IF(b.vm_memory = 0, g.vm_memory, b.vm_memory)  + price_gpu*vm_gpus)
+                                                                                                                as vm_price_4h,
+        0.121260938                                                                                             as vm_cost_1h_cpu,
+        0.029714203                                                                                             as vm_cost_1h_ram,
+        23.38                                                                                             as vm_cost_1h_gpu,
+        (a.vm_finish - a.vm_start) / 3600.0 * (0.121260938*IF(b.vm_cores = 0, g.vm_cores, b.vm_cores) *IF(b.vm_core_fraction = 0, g.vm_core_fraction, b.vm_core_fraction)/100 + 0.029714203*IF(b.vm_memory = 0, g.vm_memory, b.vm_memory)  + 23.38*vm_gpus)
+                                                                                                                as vm_cost_lifetime,
+        0.121260938*IF(b.vm_cores = 0, g.vm_cores, b.vm_cores) *IF(b.vm_core_fraction = 0, g.vm_core_fraction, b.vm_core_fraction)/100 + 0.029714203*IF(b.vm_memory = 0, g.vm_memory, b.vm_memory)  + 23.38*vm_gpus
+                                                                                                                as vm_cost_1h,
+        4*(0.121260938*IF(b.vm_cores = 0, g.vm_cores, b.vm_cores) *IF(b.vm_core_fraction = 0, g.vm_core_fraction, b.vm_core_fraction)/100 + 0.029714203*IF(b.vm_memory = 0, g.vm_memory, b.vm_memory)  + 23.38*vm_gpus)
+                                                                                                                as vm_cost_4h,
+        --mdb attributes
+        mdb_cluster_id                                                                as mdb_cluster_id,
+        mdb_db_type                                                                as mdb_db_type,
+        mdb_disk_size                                               as mdb_disk_size,
+        mdb_disk_type                                                              as mdb_disk_type,
+        mdb_online                                                                   as mdb_online,
+        b.mdb_preset                                                   as mdb_preset,
+        mdb_roles                                                  as mdb_roles,
+        i.mdb_compute_instance_id as mdb_compute_instance_id
+    FROM $vm_lifetime as a
+    LEFT JOIN $compute_logs as b
+    ON (a.vm_id = b.vm_id) and (a.vm_start = b.vm_start )
+    LEFT JOIN $marketplace_version_names as c
+    on b.vm_product_id = c.mkt_version_id
+    LEFT JOIN $folder_ba as d
+    on b.folder_id = d.folder_id
+    LEFT JOIN $ba_time_independent_tags as e
+    ON d.billing_account_id = e.billing_account_id
+    LEFT JOIN `//home/cloud_analytics/compute_logs/compute_prices` as f
+    ON (b.vm_core_fraction = f.core_fraction) AND (b.node_platform = f.platform) AND (b.vm_preemptible = f.preemptible)
+    LEFT JOIN $mdb_presets as g
+    ON b.mdb_preset = g.mdb_preset
+    LEFT JOIN $cloud_names as h
+    ON d.cloud_id = h.cloud_id
+    LEFT JOIN $mdb_compute_instance_ids as i
+    ON b.vm_id = i.vm_id
+    LEFT JOIN $mk8s_clusters as j
+    ON b.vm_managed_kubernetes_cluster_id = j.vm_managed_kubernetes_cluster_id
+);
+$vm_log_4hr = (
+    SELECT
+        vm_type,
+        p.vm_id as vm_id,
+        vm_mdb,
+        vm_start,
+        vm_finish,
+        p.slice_time as slice_time,
+        MIN_OF(vm_finish, p.slice_time) - MAX_OF(vm_start, p.slice_time) as vm_slice_lifetime,
+        if((vm_start<p.slice_time) and (vm_finish>p.slice_time), 'in_slice', 'not_in_slice')                                  as vm_is_in_slice,
+        $format_full(DateTime::FromSeconds(CAST (p.slice_time AS Uint32)))                                           as slice_time_str,
+    if((vm_start<p.slice_time) and (vm_finish>p.slice_time),p.slice_time - vm_start,0)                                                 as vm_age,
+        if((vm_start<p.slice_time) and (vm_finish>p.slice_time),Math::Floor((p.slice_time - vm_start) / 3600.0 / 24.0  /365.0*12.0),0) as vm_age_months,
+        if((vm_start<p.slice_time) and (vm_finish>p.slice_time),Math::Floor((p.slice_time - vm_start) / 3600.0 / 24.0  /7.0),0)        as vm_age_weeks,
+        if((vm_start<p.slice_time) and (vm_finish>p.slice_time),Math::Floor((p.slice_time - vm_start) / 3600.0 / 24.0  ),0)            as vm_age_days,
+        DateTime::MakeDate(DateTime::FromSeconds(CAST (p.slice_time AS Uint32)))                                     as slice_time_day,
+        DateTime::MakeDate(DateTime::StartOfWeek(DateTime::FromSeconds(CAST (p.slice_time AS Uint32))))              as slice_time_week,
+        DateTime::MakeDate(DateTime::StartOfMonth(DateTime::FromSeconds(CAST (p.slice_time AS Uint32))))             as slice_time_month,
+        DateTime::MakeDate(DateTime::StartOfQuarter(DateTime::FromSeconds(CAST (p.slice_time AS Uint32))))           as slice_time_quarter,
+        p.billing_account_id                                                                                as ba_id,
+        cloud_id,
+        cloud_name,
+        folder_id,
+        folder_name,
+        p.node_id as node_id,
+        node_az,
+        vm_cores,
+        vm_gpus,
+        vm_core_fraction,
+        if((vm_start<=p.slice_time) and (vm_finish>=p.slice_time),vm_cores_real,vm_cores_real*(vm_finish-vm_start)/3600/4.0)      as vm_cores_real,
+        vm_memory,
+        if((vm_start<=p.slice_time) and (vm_finish>=p.slice_time),vm_memory,vm_memory*(vm_finish-vm_start)/3600/4.0)              as vm_memory_real,
+        vm_config,
+        vm_memory_to_cores_ratio,
+        node_platform,
+        vm_preemptible,
+        vm_public_fips,
+        vm_product_ids,
+        vm_product_id,
+        vm_product_name,
+        vm_labels_str,
+        vm_labels,
+        vm_managed_kubernetes_cluster_id,
+        vm_managed_kubernetes_node_group_id,
+        vm_managed_kubernetes_cluster_size,
+        vm_managed_kubernetes_cluster_type,
+        vm_origin,
+        coalesce(ba_is_fraud, 0)                                                                            AS ba_is_fraud,
+        coalesce(ba_name, 'Unknown')                                                                        AS ba_name,
+        coalesce(ba_person_type, 'Unknown')                                                                 AS ba_person_type,
+        coalesce(ba_type, 'Unknown')                                                                        AS ba_type,
+        coalesce(ba_channel, 'Unknown')                                                                     AS ba_channel,
+        coalesce(ba_segment, 'Unknown')                                                                     AS ba_segment,
+        coalesce(ba_board_segment, 'Unknown')                                                               AS ba_board_segment,
+        coalesce(ba_user_email, 'Unknown')                                                                  AS ba_user_email,
+        coalesce(ba_client_name, 'Unknown')                                                                 AS ba_client_name,
+        coalesce(ba_state, 'Unknown')                                                                       AS ba_state,
+        coalesce(ba_usage_status, 'Unknown')                                                                AS ba_usage_status,
+        coalesce(vm_is_service, 'Unknown')                                                                  AS vm_is_service,
+        coalesce(ba_block_reason, 'Unknown')                                                                AS ba_block_reason,
+        coalesce(ba_sales_name, 'Unknown')                                                                  AS ba_sales_name,
+        coalesce(ba_architect, 'Unknown')                                                                   AS ba_architect,
+        coalesce(ba_paid_status, 'Unknown')                                                                 AS ba_paid_status,
+        ba_m_cohort,
+        ba_w_cohort,
+        node_cores_free,
+        node_memory_free,
+        node_on_demand_shared_cores_used,
+        node_cores_disabled,
+        node_shared_cores,
+        node_preemptible_shared_cores_used,
+        node_cores_total,
+        node_preemptible_exclusive_cores_used,
+        node_shared_cores_available,
+        node_memory_disabled,
+        node_on_demand_exclusive_cores_used,
+        node_memory_total,
+        node_e2e_tests_nat_connectivity_value_history,
+        node_e2e_tests_nat_connectivity_values_list,
+        node_e2e_tests_nat_connectivity_max_value,
+        node_e2e_tests_permnet_connectivity_value_history,
+        node_e2e_tests_permnet_connectivity_values_list,
+        node_e2e_tests_permnet_connectivity_max_value,
+        node_e2e_tests_permnet_dns_value_history,
+        node_e2e_tests_permnet_dns_values_list,
+        node_e2e_tests_permnet_dns_max_value,
+        vm_price_1h_cpu,
+        vm_price_1h_ram,
+        vm_price_1h_gpu,
+        vm_price_lifetime,
+        vm_price_1h,
+        vm_price_4h,
+        vm_cost_1h_cpu,
+        vm_cost_1h_ram,
+        vm_cost_1h_gpu,
+        vm_cost_lifetime,
+        vm_cost_1h,
+        vm_cost_4h,
+        mdb_cluster_id,
+        mdb_db_type,
+        mdb_disk_size,
+        mdb_disk_type,
+        mdb_online,
+        mdb_preset,
+        mdb_roles,
+        mdb_compute_instance_id,
+        vm_instance_health_value_history,
+        vm_instance_health_values_list,
+        vm_instance_health_max_value,
+        vm_instance_health_min_value,
+        vm_arp_replies_value_history,
+        vm_arp_replies_values_list,
+        vm_arp_replies_max_value,
+        vm_arp_replies_min_value,
+        -- vm_cpu_load_history,
+        vm_cpu_load_metrics,
+        vm_cpu_load_max,
+        vm_cpu_load_avg_avg,
+        vm_cpu_load_avg_max,
+        vm_cpu_load_avg_min,
+        vm_cpu_load_avg_median,
+        vm_cpu_load_min
+    FROM (
+        SELECT *
+        FROM $vm_log_short
+        FLATTEN BY slice_time
+        --WHERE t = $to_start_of_hour(t)
+    ) as p
+    LEFT JOIN $ba_time_dependent_tags as q
+    ON p.billing_account_id = q.billing_account_id and DateTime::MakeDate(DateTime::FromSeconds(CAST (p.slice_time AS Uint32))) = q.d
+    LEFT JOIN $nodes_stats as r
+    ON p.node_id = r.node_id and p.slice_time = r.slice_time
+    LEFT JOIN `//home/cloud_analytics/compute_logs/sli_metrics/instances/instances_sliced_pivot` as s
+    ON p.vm_id = s.vm_id and p.slice_time = s.slice_time and p.node_id = s.node_id
+    LEFT JOIN $cpu_util as t
+    ON p.slice_time = t.slice_time and p.vm_id = t.vm_id
+);
+INSERT INTO `//home/cloud_analytics/compute_logs/vm_cube/tmp/vm_cube_tmp` WITH TRUNCATE
+SELECT * FROM $vm_log_4hr;
+COMMIT;
+$az_count = (
+    SELECT
+    slice_time,
+    ba_id,
+    sum(ba_uses_az) as az_count
+FROM (
+SELECT
+    slice_time,
+    ba_id,
+    az_cores.0 as az,
+    az_cores.1 as cores,
+    base_az,
+    base_az_cores,
+    az_cores.1/base_az_cores as base_az_ratio,
+    if(az_cores.1/base_az_cores<0.5, 0, 1) as ba_uses_az
+FROM (
+SELECT
+    slice_time,
+    ba_id,
+    AGGREGATE_LIST((node_az, cores)) as az_cores,
+    MAX_BY(node_az, cores) as base_az,
+    max(cores) as base_az_cores
+FROM (
+SELECT
+    slice_time,
+    ba_id,
+    node_az,
+    sum(vm_cores_real) as cores
+FROM
+    `//home/cloud_analytics/compute_logs/vm_cube/tmp/vm_cube_tmp`
+WHERE vm_type = 'compute'
+GROUP BY
+    slice_time, ba_id, node_az
+)
+GROUP BY
+    slice_time,
+    ba_id
+)
+FLATTEN BY az_cores
+)
+GROUP BY
+slice_time, ba_id
+);
+$burst_adjustment_shared_cores = (
+SELECT
+slice_time,
+cores_effective_.0 as vm_id,
+cores_effective_.1 as vm_cores_effective_shared_and_free
+FROM (
+SELECT
+    a.node_id as node_id,
+    a.slice_time as slice_time,
+    if (AGGREGATE_LIST(node_shared_cores)[0]+AGGREGATE_LIST(node_cores_free)[0]<sum(vm_cores),
+        ListMap(AGGREGATE_LIST((node_shared_cores, node_cores_free, vm_cores_real_sum, vm_cores,vm_cores_real, vm_id)), $vm_cores_burst_adjustment),
+        AGGREGATE_LIST((vm_id, CAST(vm_cores AS Double)))
+        ) as cores_effective_
+    -- if (AGGREGATE_LIST(node_shared_cores)[0]<sum(vm_cores),
+    --     ListMap(AGGREGATE_LIST((node_shared_cores, 0, vm_cores_real_sum, vm_cores,vm_cores_real, vm_id)), $f),
+    --     AGGREGATE_LIST((vm_id, CAST(vm_cores AS Double)))
+    --     ) as cores_effective2
+FROM
+  `//home/cloud_analytics/compute_logs/vm_cube/tmp/vm_cube_tmp` as a
+LEFT JOIN (
+SELECT
+    node_id,
+    slice_time,
+    --sum(vm_cores) as vm_cores_sum,
+    sum(vm_cores*vm_core_fraction/100) as vm_cores_real_sum
+FROM
+  `//home/cloud_analytics/compute_logs/vm_cube/tmp/vm_cube_tmp`
+WHERE
+    vm_core_fraction < 100 and
+    vm_is_in_slice = 'in_slice'
+GROUP BY node_id, slice_time
+) as b
+ON a.node_id = b.node_id and a.slice_time = b.slice_time
+WHERE
+    vm_core_fraction < 100 and
+    vm_is_in_slice = 'in_slice'
+GROUP BY a.node_id, a.slice_time
+)
+FLATTEN BY cores_effective_
+);
+$burst_adjustment_shared_and_free_cores = (
+SELECT
+slice_time,
+cores_effective_.0 as vm_id,
+cores_effective_.1 as vm_cores_effective_shared
+FROM (
+SELECT
+    a.node_id as node_id,
+    a.slice_time as slice_time,
+    if (AGGREGATE_LIST(node_shared_cores)[0]<sum(vm_cores),
+        ListMap(AGGREGATE_LIST((node_shared_cores, 0, vm_cores_real_sum, vm_cores,vm_cores_real, vm_id)), $vm_cores_burst_adjustment),
+        AGGREGATE_LIST((vm_id, CAST(vm_cores AS Double)))
+        ) as cores_effective_
+FROM
+  `//home/cloud_analytics/compute_logs/vm_cube/tmp/vm_cube_tmp` as a
+LEFT JOIN (
+SELECT
+    node_id,
+    slice_time,
+    --sum(vm_cores) as vm_cores_sum,
+    sum(vm_cores*vm_core_fraction/100) as vm_cores_real_sum
+FROM
+  `//home/cloud_analytics/compute_logs/vm_cube/tmp/vm_cube_tmp`
+WHERE
+    vm_core_fraction < 100 and
+    vm_is_in_slice = 'in_slice'
+GROUP BY node_id, slice_time
+) as b
+ON a.node_id = b.node_id and a.slice_time = b.slice_time
+WHERE
+    vm_core_fraction < 100 and
+    vm_is_in_slice = 'in_slice'
+GROUP BY a.node_id, a.slice_time
+)
+FLATTEN BY cores_effective_
+);
+$vm_log_4hr_final = (
+SELECT
+        a.vm_id as vm_id,
+        vm_type,
+        vm_mdb,
+        vm_start,
+        vm_finish,
+        a.slice_time as slice_time,
+        vm_slice_lifetime,
+        vm_slice_lifetime_sum_cloud,
+        if (a.slice_time in (SELECT ListSortDesc(AGGREGATE_LIST_DISTINCT(slice_time))[1] FROM `//home/cloud_analytics/compute_logs/vm_cube/tmp/vm_cube_tmp`), 1, 0)   as slice_is_last,
+        vm_is_in_slice,
+        slice_time_str,
+        vm_age,
+        vm_age_months,
+        vm_age_weeks,
+        vm_age_days,
+        a.slice_time_day as slice_time_day,
+        slice_time_week,
+        slice_time_month,
+        slice_time_quarter,
+        a.ba_id as ba_id,
+        a.cloud_id as cloud_id, cloud_name,
+        folder_id, folder_name,
+        node_id,
+        node_az,
+        vm_cores,
+        vm_gpus,
+        vm_core_fraction,
+        vm_cores_real,
+        vm_memory,
+        vm_memory_real,
+        COALESCE(vm_cores_effective_shared, vm_cores_real) as vm_cores_effective_shared,
+        COALESCE(vm_cores_effective_shared_and_free ,vm_cores_real) as vm_cores_effective_shared_and_free,
+        vm_config,
+        vm_memory_to_cores_ratio,
+        node_platform,
+        vm_preemptible,
+        vm_public_fips,
+        vm_product_ids,
+        vm_product_id,
+        vm_product_name,
+        vm_labels_str,
+        vm_labels,
+        vm_managed_kubernetes_cluster_id,
+        vm_managed_kubernetes_node_group_id,
+        vm_managed_kubernetes_cluster_size,
+        vm_managed_kubernetes_cluster_type,
+        vm_origin,
+        ba_is_fraud,
+        ba_name,
+        ba_person_type,
+        ba_type,
+        ba_channel,
+        ba_segment,
+        ba_board_segment,
+        ba_user_email,
+        ba_client_name,
+        ba_state,
+        ba_usage_status,
+        vm_is_service,
+        ba_block_reason,
+        ba_sales_name,
+        ba_architect,
+        ba_paid_status,
+        ba_m_cohort,
+        ba_w_cohort,
+        node_cores_free,
+        node_memory_free,
+        node_on_demand_shared_cores_used,
+        node_cores_disabled,
+        node_shared_cores,
+        node_preemptible_shared_cores_used,
+        node_cores_total,
+        node_preemptible_exclusive_cores_used,
+        node_shared_cores_available,
+        node_memory_disabled,
+        node_on_demand_exclusive_cores_used,
+        node_memory_total,
+        node_e2e_tests_nat_connectivity_value_history,
+        node_e2e_tests_nat_connectivity_values_list,
+        node_e2e_tests_nat_connectivity_max_value,
+        node_e2e_tests_permnet_connectivity_value_history,
+        node_e2e_tests_permnet_connectivity_values_list,
+        node_e2e_tests_permnet_connectivity_max_value,
+        node_e2e_tests_permnet_dns_value_history,
+        node_e2e_tests_permnet_dns_values_list,
+        node_e2e_tests_permnet_dns_max_value,
+        vm_price_1h_cpu,
+        vm_price_1h_ram,
+        vm_price_1h_gpu,
+        vm_price_lifetime,
+        vm_price_1h,
+        vm_price_4h,
+        vm_cost_1h_cpu,
+        vm_cost_1h_ram,
+        vm_cost_1h_gpu,
+        vm_cost_lifetime,
+        vm_cost_1h,
+        vm_cost_4h,
+        mdb_cluster_id,
+        mdb_db_type,
+        mdb_disk_size,
+        mdb_disk_type,
+        mdb_online,
+        mdb_preset,
+        mdb_roles,
+        mdb_compute_instance_id,
+        vm_instance_health_value_history,
+        vm_instance_health_values_list,
+        vm_instance_health_max_value,
+        vm_instance_health_min_value,
+        vm_arp_replies_value_history,
+        vm_arp_replies_values_list,
+        vm_arp_replies_max_value,
+        vm_arp_replies_min_value,
+        az_count as ba_az_count,
+        -- vm_cpu_load_history,
+        vm_cpu_load_metrics,
+        vm_cpu_load_max,
+        vm_cpu_load_avg_avg,
+        vm_cpu_load_avg_max,
+        vm_cpu_load_avg_min,
+        vm_cpu_load_avg_median,
+        vm_cpu_load_min,
+        cloud_paid_cons,
+        cloud_trial_cons
+FROM `//home/cloud_analytics/compute_logs/vm_cube/tmp/vm_cube_tmp` as a
+LEFT JOIN $az_count as b
+ON a.ba_id = b.ba_id and a.slice_time = b.slice_time
+LEFT JOIN $burst_adjustment_shared_cores as c
+ON a.vm_id = c.vm_id and a.slice_time = c.slice_time
+LEFT JOIN $burst_adjustment_shared_and_free_cores as d
+ON a.vm_id = d.vm_id and a.slice_time = d.slice_time
+LEFT JOIN (
+SELECT
+    slice_time_day,
+    cloud_id,
+    sum(vm_slice_lifetime) as vm_slice_lifetime_sum_cloud
+FROM `//home/cloud_analytics/compute_logs/vm_cube/tmp/vm_cube_tmp`
+GROUP BY slice_time_day, cloud_id
+) as e
+ON a.slice_time_day = e.slice_time_day and a.cloud_id = e.cloud_id
+LEFT JOIN (
+    SELECT
+        slice_time_day,
+        cloud_id,
+        sum(real_consumption_vat) as cloud_paid_cons,
+        sum(trial_consumption_vat) as cloud_trial_cons
+    FROM (
+    SELECT
+        DateTime::MakeDate($parse(event_time)) as slice_time_day,
+        cloud_id,
+        real_consumption_vat,
+        trial_consumption_vat
+    FROM
+        `//home/cloud_analytics/cubes/acquisition_cube/cube`
+    WHERE event = 'day_use' and service_name = 'compute'
+    )
+GROUP BY slice_time_day, cloud_id
+) as f
+ON a.slice_time_day = f.slice_time_day and a.cloud_id = f.cloud_id
+);
+INSERT INTO `//home/cloud_analytics/compute_logs/vm_cube/vm_cube` WITH TRUNCATE
+SELECT
+        vm_id,
+        vm_type,
+        vm_mdb,
+        vm_start,
+        vm_finish,
+        slice_time,
+        vm_slice_lifetime,
+        slice_is_last,
+        vm_is_in_slice,
+        slice_time_str,
+        vm_age,
+        vm_age_months,
+        vm_age_weeks,
+        vm_age_days,
+        slice_time_day,
+        slice_time_week,
+        slice_time_month,
+        slice_time_quarter,
+        ba_id,
+        cloud_id, cloud_name,
+        folder_id, folder_name,
+        node_id,
+        node_az,
+        vm_cores,
+        vm_gpus,
+        vm_core_fraction,
+        vm_cores_real,
+        vm_cores_effective_shared,
+        vm_cores_effective_shared_and_free,
+        vm_memory,
+        vm_memory_real,
+        vm_config,
+        vm_memory_to_cores_ratio,
+        node_platform,
+        vm_preemptible,
+        vm_public_fips,
+        vm_product_ids,
+        vm_product_id,
+        vm_product_name,
+        vm_labels_str,
+        vm_labels,
+        vm_managed_kubernetes_cluster_id,
+        vm_managed_kubernetes_node_group_id,
+        vm_managed_kubernetes_cluster_size,
+        vm_managed_kubernetes_cluster_type,
+        vm_origin,
+        ba_is_fraud,
+        ba_name,
+        ba_person_type,
+        ba_type,
+        ba_channel,
+        ba_segment,
+        ba_board_segment,
+        ba_user_email,
+        ba_client_name,
+        ba_state,
+        ba_usage_status,
+        vm_is_service,
+        ba_block_reason,
+        ba_sales_name,
+        ba_architect,
+        ba_paid_status,
+        ba_m_cohort,
+        ba_w_cohort,
+        node_cores_free,
+        node_memory_free,
+        node_on_demand_shared_cores_used,
+        node_cores_disabled,
+        node_shared_cores,
+        node_preemptible_shared_cores_used,
+        node_cores_total,
+        node_preemptible_exclusive_cores_used,
+        node_shared_cores_available,
+        node_memory_disabled,
+        node_on_demand_exclusive_cores_used,
+        node_memory_total,
+        node_e2e_tests_nat_connectivity_value_history,
+        node_e2e_tests_nat_connectivity_values_list,
+        node_e2e_tests_nat_connectivity_max_value,
+        node_e2e_tests_permnet_connectivity_value_history,
+        node_e2e_tests_permnet_connectivity_values_list,
+        node_e2e_tests_permnet_connectivity_max_value,
+        node_e2e_tests_permnet_dns_value_history,
+        node_e2e_tests_permnet_dns_values_list,
+        node_e2e_tests_permnet_dns_max_value,
+        vm_price_1h_cpu,
+        vm_price_1h_ram,
+        vm_price_1h_gpu,
+        vm_price_lifetime,
+        vm_price_1h,
+        vm_price_4h,
+        vm_cost_1h_cpu,
+        vm_cost_1h_ram,
+        vm_cost_1h_gpu,
+        vm_cost_lifetime,
+        vm_cost_1h,
+        vm_cost_4h,
+        vm_instance_health_value_history,
+        vm_instance_health_values_list,
+        vm_instance_health_max_value,
+        vm_instance_health_min_value,
+        vm_arp_replies_value_history,
+        vm_arp_replies_values_list,
+        vm_arp_replies_max_value,
+        vm_arp_replies_min_value,
+        ba_az_count,
+        -- vm_cpu_load_history,
+        vm_cpu_load_metrics,
+        vm_cpu_load_max,
+        vm_cpu_load_avg_avg,
+        vm_cpu_load_avg_max,
+        vm_cpu_load_avg_min,
+        vm_cpu_load_avg_median,
+        vm_cpu_load_min,
+        cloud_paid_cons,
+        cloud_trial_cons
+FROM $vm_log_4hr_final
+WHERE vm_type = 'compute';
+INSERT INTO `//home/cloud_analytics/compute_logs/vm_cube/vm_cube_mdb` WITH TRUNCATE
+SELECT
+        a.vm_id as vm_id,
+        a.vm_type as vm_type,
+        a.vm_mdb as vm_mdb,
+        a.vm_start as vm_start,
+        a.vm_finish as vm_finish,
+        a.slice_time as slice_time,
+        a.vm_slice_lifetime as vm_slice_lifetime,
+        a.slice_is_last as slice_is_last,
+        a.vm_is_in_slice as vm_is_in_slice,
+        a.slice_time_str as slice_time_str,
+        a.vm_age as vm_age,
+        a.vm_age_months as vm_age_months,
+        a.vm_age_weeks as vm_age_weeks,
+        a.vm_age_days as vm_age_days,
+        a.slice_time_day as slice_time_day,
+        a.slice_time_week as slice_time_week,
+        a.slice_time_month as slice_time_month,
+        a.slice_time_quarter as slice_time_quarter,
+        a.ba_id as ba_id,
+        a.cloud_id as  cloud_id,
+        a.cloud_name as cloud_name,
+        a.folder_id as  folder_id,
+        a.folder_name as folder_name,
+        a.node_id as node_id,
+        a.node_az as node_az,
+        a.vm_cores as vm_cores,
+        a.vm_gpus as vm_gpus,
+        a.vm_core_fraction as vm_core_fraction,
+        a.vm_cores_real as vm_cores_real,
+        a.vm_memory as vm_memory,
+        a.vm_memory_real as vm_memory_real,
+        a.vm_config as vm_config,
+        a.vm_memory_to_cores_ratio as vm_memory_to_cores_ratio,
+        b.node_platform as node_platform,
+        b.vm_preemptible as vm_preemptible,
+        b.vm_public_fips as vm_public_fips,
+        b.vm_product_ids as vm_product_ids,
+        b.vm_product_id as vm_product_id,
+        b.vm_product_name as vm_product_name,
+        b.vm_labels_str as vm_labels_str,
+        b.vm_labels as vm_labels,
+        b.vm_managed_kubernetes_cluster_id as vm_managed_kubernetes_cluster_id,
+        b.vm_managed_kubernetes_node_group_id as vm_managed_kubernetes_node_group_id,
+        b.vm_managed_kubernetes_cluster_size as vm_managed_kubernetes_cluster_size,
+        b.vm_managed_kubernetes_cluster_type as vm_managed_kubernetes_cluster_type,
+        b.vm_origin as vm_origin,
+        a.ba_is_fraud as ba_is_fraud,
+        a.ba_name as ba_name,
+        a.ba_person_type as ba_person_type,
+        a.ba_type as ba_type,
+        a.ba_channel as ba_channel,
+        a.ba_segment as ba_segment,
+        a.ba_board_segment as ba_board_segment,
+        a.ba_user_email as ba_user_email,
+        a.ba_client_name as ba_client_name,
+        a.ba_state as ba_state,
+        a.ba_usage_status as ba_usage_status,
+        a.vm_is_service as vm_is_service,
+        a.ba_block_reason as ba_block_reason,
+        a.ba_sales_name as ba_sales_name,
+        a.ba_architect as ba_architect,
+        a.ba_paid_status as ba_paid_status,
+        a.ba_m_cohort as ba_m_cohort,
+        a.ba_w_cohort as ba_w_cohort,
+        b.node_memory_free as node_memory_free,
+        b.node_on_demand_shared_cores_used as node_on_demand_shared_cores_used,
+        b.node_cores_disabled as node_cores_disabled,
+        b.node_shared_cores as node_shared_cores,
+        b.node_preemptible_shared_cores_used as node_preemptible_shared_cores_used,
+        b.node_cores_total as node_cores_total,
+        b.node_preemptible_exclusive_cores_used as node_preemptible_exclusive_cores_used,
+        b.node_shared_cores_available as node_shared_cores_available,
+        b.node_memory_disabled as node_memory_disabled,
+        b.node_on_demand_exclusive_cores_used as node_on_demand_exclusive_cores_used,
+        b.node_memory_total as node_memory_total,
+        b.node_e2e_tests_nat_connectivity_value_history as node_e2e_tests_nat_connectivity_value_history,
+        b.node_e2e_tests_nat_connectivity_values_list as node_e2e_tests_nat_connectivity_values_list,
+        b.node_e2e_tests_nat_connectivity_max_value as node_e2e_tests_nat_connectivity_max_value,
+        b.node_e2e_tests_permnet_connectivity_value_history as node_e2e_tests_permnet_connectivity_value_history,
+        b.node_e2e_tests_permnet_connectivity_values_list as node_e2e_tests_permnet_connectivity_values_list,
+        b.node_e2e_tests_permnet_connectivity_max_value as node_e2e_tests_permnet_connectivity_max_value,
+        b.node_e2e_tests_permnet_dns_value_history as node_e2e_tests_permnet_dns_value_history,
+        b.node_e2e_tests_permnet_dns_values_list as node_e2e_tests_permnet_dns_values_list,
+        b.node_e2e_tests_permnet_dns_max_value as node_e2e_tests_permnet_dns_max_value,
+        b.vm_price_1h_cpu as vm_price_1h_cpu,
+        b.vm_price_1h_ram as vm_price_1h_ram,
+        b.vm_price_1h_gpu as vm_price_1h_gpu,
+        b.vm_price_lifetime as vm_price_lifetime,
+        b.vm_price_1h as vm_price_1h,
+        b.vm_price_4h as vm_price_4h,
+        b.vm_cost_1h_cpu as vm_cost_1h_cpu,
+        b.vm_cost_1h_ram as vm_cost_1h_ram,
+        b.vm_cost_1h_gpu as vm_cost_1h_gpu,
+        b.vm_cost_lifetime as vm_cost_lifetime,
+        b.vm_cost_1h as vm_cost_1h,
+        b.vm_cost_4h as vm_cost_4h,
+        a.mdb_cluster_id as mdb_cluster_id,
+        a.mdb_db_type as mdb_db_type,
+        a.mdb_disk_size as mdb_disk_size,
+        a.mdb_disk_type as mdb_disk_type,
+        a.mdb_online as mdb_online,
+        a.mdb_preset as mdb_preset,
+        a.mdb_roles as mdb_roles,
+        a.mdb_compute_instance_id as mdb_compute_instance_id,
+        b.vm_instance_health_value_history as vm_instance_health_value_history,
+        b.vm_instance_health_values_list as vm_instance_health_values_list,
+        b.vm_instance_health_max_value as vm_instance_health_max_value,
+        b.vm_instance_health_min_value as vm_instance_health_min_value,
+        b.vm_arp_replies_value_history as vm_arp_replies_value_history,
+        b.vm_arp_replies_values_list as vm_arp_replies_values_list,
+        b.vm_arp_replies_max_value as vm_arp_replies_max_value,
+        b.vm_arp_replies_min_value as vm_arp_replies_min_value,
+        a.ba_az_count as ba_az_count,
+        -- b.vm_cpu_load_history as vm_cpu_load_history,
+        b.vm_cpu_load_metrics as vm_cpu_load_metrics,
+        b.vm_cpu_load_max as vm_cpu_load_max,
+        b.vm_cpu_load_avg_avg as vm_cpu_load_avg_avg,
+        b.vm_cpu_load_avg_max as vm_cpu_load_avg_max,
+        b.vm_cpu_load_avg_min as vm_cpu_load_avg_min,
+        b.vm_cpu_load_avg_median as vm_cpu_load_avg_median,
+        b.vm_cpu_load_min  as vm_cpu_load_min,
+        b.cloud_paid_cons as cloud_paid_cons,
+        b.cloud_trial_cons as cloud_trial_cons
+FROM (
+SELECT *
+FROM
+$vm_log_4hr_final
+WHERE vm_type = 'mdb'
+) as a
+LEFT JOIN (
+SELECT *
+FROM
+$vm_log_4hr_final
+WHERE vm_type = 'compute'
+) as b
+ON a.slice_time = b.slice_time and a.mdb_compute_instance_id = b.vm_id
+;
+$today = $format(DateTime::FromMicroseconds(YQL::Now()));
+$vm_cube_history_path = '//home/cloud_analytics/compute_logs/vm_cube/history/' || $today;
+INSERT INTO $vm_cube_history_path WITH TRUNCATE
+SELECT * FROM $vm_log_4hr_final;

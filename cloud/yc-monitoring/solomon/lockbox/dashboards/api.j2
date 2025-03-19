@@ -1,0 +1,48 @@
+{% extends "../../base/dashboard.j2" %}
+
+{% set dpl_methods = ["PayloadService/Get"] %}
+{% set cpl_methods = ["SecretService/Get", "SecretService/List", "SecretService/Create",
+    "SecretService/Update", "SecretService/Delete", "SecretService/Activate",
+    "SecretService/Deactivate", "SecretService/ListVersions", "SecretService/AddVersion",
+    "SecretService/ScheduleVersionDestruction", "SecretService/CancelVersionDestruction",
+    "SecretService/ListOperations", "SecretService/ListAccessBindings",
+    "SecretService/SetAccessBindings", "SecretService/UpdateAccessBindings"]
+%}
+
+{% set row_graphs = {
+    "rps" : "grpc_api_requests_rps",
+    "errors" : "grpc_api_statuses_errors",
+    "duration" : "grpc_api_duration"
+   }
+%}
+
+{% set cluster = "cloud_" + env + "_lockbox_cluster" %}
+{% set service = "service" %}
+
+{% macro render_row_panels(title, method, host, app) %}
+{ "panels": [
+    {% for name, graph in row_graphs.items() %}
+        {{ render_panel(
+            title + " " + name,
+            cluster,
+            service,
+            query="graph={}&l.method={}&l.host={}&l.app={}".format(graph, method, host, app))
+        }}
+        {% if not loop.last %},{% endif %}
+    {% endfor %}
+]}
+{% endmacro %}
+
+{% block rows %}
+[
+    {{ render_row_panels("CPL API", "*", "cluster-control-all", "lockbox-control-plane_server") }},
+    {{ render_row_panels("DPL API", "*", "cluster-data-all", "lockbox-data-plane_server") }},
+    {% for method in dpl_methods %}
+        {{ render_row_panels("DPL " + method, "lockbox.v1." + method, "cluster-data-all", "lockbox-data-plane_server") }},
+    {% endfor %}
+    {% for method in cpl_methods %}
+        {{ render_row_panels("CPL " + method, "lockbox.v1." + method, "cluster-control-all", "lockbox-control-plane_server") }}
+        {% if not loop.last %},{% endif %}
+    {% endfor %}
+]
+{% endblock %}

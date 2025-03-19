@@ -1,0 +1,160 @@
+apiVersion: v1
+kind: PodList
+items:
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: app-node-deployer-service
+    namespace: kube-system
+    annotations:
+      config_digest: ${config_digest}
+      scheduler.alpha.kubernetes.io/critical-pod: ""
+  spec:
+    priority: 2000000001
+    priorityClassName: system-cluster-critical
+    hostNetwork: true
+    terminationGracePeriodSeconds: 300
+    initContainers:
+    - name: deploy-configs
+      image: registry.yandex.net/cloud/api/metadata:${metadata_version}
+      volumeMounts:
+      - name: all-configs
+        mountPath: /etc
+        terminationGracePeriodSeconds: 30
+    containers:
+    - name: cadvisor
+      image: cr.yandex/crppns4pq490jrka0sth/cadvisor:${cadvisor_version}
+      ports:
+      - containerPort: 17008
+      command:
+        [ /usr/bin/cadvisor, -logtostderr, --port=17008 ]
+      volumeMounts:
+      - name: root
+        mountPath: /rootfs
+        readOnly: true
+      - name: var-run
+        mountPath: /var/run
+        readOnly: true
+      - name: sys
+        mountPath: /sys
+        readOnly: true
+      - name: var-lib-docker
+        mountPath: /var/lib/docker
+        readOnly: true
+      - name: dev-disk
+        mountPath: /dev/disk
+        readOnly: true
+      - name: etc-secrets
+        mountPath: /etc/secrets
+        readOnly: true
+    - name: ${app_image}
+      image: cr.yandex/crppns4pq490jrka0sth/${app_image}:${app_version}
+      ports:
+      - containerPort: 443
+      ${env_vars}
+      volumeMounts:
+      - name: yandex-configs
+        mountPath: /etc/yandex
+      - name: etc-secrets
+        mountPath: /etc/secrets
+        readOnly: true
+      - name: var-log
+        mountPath: /var/log
+        terminationGracePeriodSeconds: 30
+    - name: solomon-agent
+      image: registry.yandex.net/cloud-ai/solomon-agent:${solomon_version}
+      resources:
+        requests:
+          memory: "384Mi"
+        limits:
+          memory: "384Mi"
+      volumeMounts:
+      - name: solomon-agent-config
+        mountPath: /etc/solomon-agent/
+        readOnly: true
+      - name: etc-secrets
+        mountPath: /etc/secrets
+        readOnly: true
+    - name: push-client
+      image: cr.yandex/crppns4pq490jrka0sth/push-client:${push_client_version}
+      volumeMounts:
+      - name: var-log
+        mountPath: /var/log
+        terminationGracePeriodSeconds: 30
+      - name: var-spool
+        mountPath: /var/spool
+        terminationGracePeriodSeconds: 30
+      - name: push-client-config
+        mountPath: /etc/yandex/statbox-push-client
+        readOnly: true
+      - name: etc-secrets
+        mountPath: /etc/secrets
+        readOnly: true
+    - name: logrotate
+      image: cr.yandex/crppns4pq490jrka0sth/logrotate:${logrotate_version}
+      volumeMounts:
+      - name: logrotate-config
+        mountPath: /etc/logrotate.d
+        readOnly: true
+      - name: etc-secrets
+        mountPath: /etc/secrets
+        readOnly: true
+    volumes:
+    - name: all-configs
+      hostPath:
+        path: /etc
+        type: DirectoryOrCreate
+    - name: yandex-configs
+      hostPath:
+        path: /etc/yandex
+    - name: var-log
+      hostPath:
+        path: /var/log
+    - name: var-log-yc-ai
+      hostPath:
+        path: /var/log/yc/ai
+    - name: var-lib-billing
+      hostPath:
+        path: /var/lib/billing
+    - name: var-spool
+      hostPath:
+        path: /var/spool
+    - name: var-log-fluent
+      hostPath:
+        path: /var/log/fluent
+    - name: var-spool-push-client
+      hostPath:
+        path: /var/spool/push-client
+    - name: push-client-config
+      hostPath:
+        path: /etc/yandex/statbox-push-client
+    - name: solomon-agent-config
+      hostPath:
+        path: /etc/solomon-agent
+    - name: logrotate-config
+      hostPath:
+        path: /etc/logrotate.d
+    - name: data-sa-keys
+      hostPath:
+        path: /etc/yc/ai/keys/data-sa
+    - name: root
+      hostPath:
+        path: /
+    - name: var-run
+      hostPath:
+        path: /var/run
+    - name: sys
+      hostPath:
+        path: /sys
+    - name: var-lib-docker
+      hostPath:
+        path: /var/lib/docker
+    - name: dev-disk
+      hostPath:
+        path: /dev/disk
+    - name: run-prometheus
+      hostPath:
+        path: /run/prometheus
+    - name: etc-secrets
+      hostPath:
+        path: /etc/secrets

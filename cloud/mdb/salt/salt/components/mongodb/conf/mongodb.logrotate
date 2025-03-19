@@ -1,0 +1,24 @@
+/var/log/mongodb/*.log {
+  daily
+  missingok
+  rotate 14
+  compress
+  delaycompress
+  notifempty
+  sharedscripts
+  create 0644 {{ mongodb.user }} {{ mongodb.group }}
+  postrotate
+{% for srv in mongodb.services_deployed %}
+{% set config = mongodb.config.get(srv) %}
+    PIDFILE_{{srv}}={{config.processManagement.pidFilePath}}
+    if [ -e $PIDFILE_{{srv}} ] && \
+           ps -p `cat $PIDFILE_{{srv}}` | grep -E 'mongo[ds]$' > /dev/null
+    then
+      kill -USR1 `cat $PIDFILE_{{srv}}`
+    fi
+    chown -R {{ mongodb.user }}:{{ mongodb.group }} /var/log/mongodb/mongo*.log
+    chmod -R g+r /var/log/mongodb/mongo*.log
+{% endfor %}
+  endscript
+}
+

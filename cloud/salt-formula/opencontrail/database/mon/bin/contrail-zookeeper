@@ -1,0 +1,63 @@
+#! /usr/bin/env python
+# -*- coding: utf-8 -*-
+
+from kazoo.client import KazooClient
+import os
+import logging
+import sys
+import introspect
+
+"""Monitoring for OpenContrail zookeeper database"""
+TIMEOUT=5
+PATH='/monitoring'
+PREFIX='check_znode_'
+TEST_DATA='very_long_check_data_string'
+STANDALONE_MODE='standalone'
+LEADER_MODE='leader'
+FOLLOWER_MODE='follower'
+
+def main():
+    # This is required to see errors from Kazoo in console or skip it if we are invoked by monrun
+    if sys.stdout.isatty():
+        logging.basicConfig()
+    else:
+        logging.getLogger().addHandler(logging.NullHandler())
+
+    try:
+        config = introspect.load_config('contrail-zookeeper.conf')
+        zk = KazooClient(hosts='{ip}:{port}'.format(**config))
+        zk.start(timeout=config.get('timeout', TIMEOUT))
+
+        check_cluster=config.get('check_cluster', True)
+        if check_cluster:
+            srvr=zk.command('srvr')
+            mode=None
+            for line in srvr.splitlines():
+                if line.startswith('Mode'):
+                    mode=line.split(':')[1].strip()
+
+            if mode is None:
+                raise RuntimeError('Cannot parse cluster mode from srvr command')
+
+            if mode == STANDALONE_MODE:
+                raise RuntimeError('In standalone mode, but cluster mode is expected')
+            elif mode not in (LEADER_MODE, FOLLOWER_MODE):
+                raise RuntimeError('Unknown cluster mode {0}'.format(mode))
+
+        path = config.get('path', PATH)
+        prefix = config.get('prefix', PREFIX)
+        if zk.exists(path) != True:
+                zk.ensure_path(path)
+        node = '{0}/{1}{2}'.format(path, prefix, os.uname()[1])
+        if zk.exists(node):
+                zk.delete(node)
+        zk.create(node, config.get('test_data', TEST_DATA))
+        data, stat = zk.get(node)
+        zk.delete(node)
+        zk.stop()
+        introspect.print_for_monitoring(os.path.basename(__file__), introspect.STATUS_OK, 'zookeeper ok')
+    except Exception as e:
+        introspect.print_for_monitoring(os.path.basename(__file__), introspect.STATUS_CRIT, 'zookeeper check failed: {0}'.format(e))
+
+if __name__ == '__main__':
+        main()

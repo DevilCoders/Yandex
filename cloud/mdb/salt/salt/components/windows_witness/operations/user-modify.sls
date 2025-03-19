@@ -1,0 +1,2 @@
+state-placeholder:
+    test.nop

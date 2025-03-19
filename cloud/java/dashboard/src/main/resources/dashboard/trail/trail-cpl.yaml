@@ -1,0 +1,228 @@
+uid: trail-cpl
+refresh: 1m
+title: Audit Trails Control Plane Dashboard — Main
+
+tags:
+  - yc-trails
+  - yc-audit-trails
+
+links:
+  - { title: 'System', url: 'https://grafana.yandex-team.ru/d/trail-cpl-system' }
+  - { title: 'Run', url: 'https://grafana.yandex-team.ru/d/trail-cpl-run-metrics' }
+  - { title: 'Dashboards', tags: [ yc-trails ] }
+
+variables:
+  ui:
+    !include include/_datasources.yaml
+    !include include/_projects.yaml
+    !include include/_clusters.yaml
+    host:
+      values:
+        - cluster-cpl
+        - cpl-vla-1
+        - cpl-sas-1
+        - cpl-myt-1
+  replacement:
+    !include ../include/errors.yaml
+  repeat:
+    control_method:
+      values:
+        - 'TrailService/Get'
+        - 'TrailService/List'
+        - 'TrailService/Create'
+        - 'TrailService/Update'
+        - 'TrailService/Delete'
+        - 'TrailService/ListAccessBindings'
+        - 'TrailService/SetAccessBindings'
+        - 'TrailService/UpdateAccessBindings'
+        - 'TrailService/ListOperations'
+        - 'OperationService/Get'
+        - 'QuotaService/Get'
+        - 'QuotaService/UpdateMetric'
+        - 'QuotaService/BatchUpdateMetric'
+        - 'QuotaService/GetDefault'
+        - 'console.TrailConsoleService/GetFolderStats'
+        - 'console.TrailConsoleService/ResolveResourcePathFilterRootsWithMissingRoles'
+        - 'console.TrailConsoleService/ListServiceAccounts'
+        - 'console.TrailConsoleService/ResolveResourcePathFilterRoots'
+        - 'console.TrailConsoleService/ListStorageDestinations'
+        - 'console.TrailConsoleService/ListLoggingDestinations'
+
+graphDefaults:
+  datasource: ${datasource}
+  width: 8
+  height: 6
+
+queryDefaults:
+  dropNan: false
+  labels: 'project=${project}, cluster=trail, service=core, host=${host}'
+  defaultTimeWindow: $__interval
+
+rows:
+  - title: Trail CPL Server
+    drilldowns:
+      - uid: yc-trail-cpl-host-server
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'cpl-myt-1',
+              'cpl-sas-1',
+              'cpl-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+    panels:
+      - type: graph
+        title: 'RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=grpc_requests, app=cloud-trail-control-plane_server, method=*, meter_type=count' }
+
+      - type: graph
+        title: 'Errors (by type)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, app=cloud-trail-control-plane_server, method=*, status!=OK' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: '0', group_by_labels: ['sum', 'status'], alias: '{{status}}' }
+        display: { decimals: 0, empty: false }
+
+      - type: graph
+        title: 'Durations'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=grpc_durations, app=cloud-trail-control-plane_server, method=*' }
+
+      - type: graph
+        title: 'GRPC Thread Pool: Task Count'
+        queries:
+          - params: { labels: 'name=cloud_trail_control_plane_running, type=running' }
+            groupByTime: { max: default }
+            select: { group_lines: 'sum', alias: 'running now count' }
+          - params: { labels: 'name=cloud_trail_control_plane_task, meter_type=count, type=*' }
+            groupByTime: { max: default }
+            select: { non_negative_derivative: [], group_by_labels: ['sum', 'type'], alias: '{{type}} RPS' }
+        yAxes: [{ decimals: 0, format: short, min: 0 }, { decimals: 1, format: short, min: 0 }]
+        draw: [{ alias: '/.* RPS/', at: right }]
+
+      - type: graph
+        title: 'GRPC Thread Pool: Task Duration'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=cloud_trail_control_plane_timings, type=duration' }
+
+      - type: graph
+        title: 'GRPC Thread Pool: Idle Time'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=cloud_trail_control_plane_timings, type=idle' }
+
+  - title: Jobs
+    panels:
+      - type: graph
+        title: Trail Corner Cases
+        queries:
+          - params: { labels: 'name=trailCornerCaseDetected' }
+            select: { group_by_labels: [ sum, trail ], diff: [ ], drop_below: '0', alias: '{{trail}}' }
+        yAxes: [ { min: 0 } ]
+
+  - title: Trails Operations
+    panels:
+      - type: graph
+        title: Trails Create Operations Count
+        display: { decimals: 0, lineModes: bars, legend: false }
+        yAxes: [{ decimals: 0, min: 0 }]
+        queries:
+          - params: { labels: 'name=trail_create_operations' }
+            groupByTime: { max: default }
+            select: { diff: [], drop_below: '0', alias: 'op count' }
+
+      - type: graph
+        title: Trails Update Operations Count
+        display: { decimals: 0, lineModes: bars, legend: false }
+        yAxes: [{ decimals: 0, min: 0 }]
+        queries:
+          - params: { labels: 'name=trail_update_operations' }
+            groupByTime: { max: default }
+            select: { diff: [], drop_below: '0', alias: 'op count' }
+
+      - type: graph
+        title: Trails Delete Operations Count
+        display: { decimals: 0, lineModes: bars, legend: false }
+        yAxes: [{ decimals: 0, min: 0 }]
+        queries:
+          - params: { labels: 'name=trail_delete_operations' }
+            groupByTime: { max: default }
+            select: { diff: [], drop_below: '0', alias: 'op count' }
+
+  - title: API @control_method
+    repeat: control_method
+    drilldowns:
+      - uid: yc-trail-api-host-control
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values:
+              - 'cpl-myt-1'
+              - 'cpl-sas-1'
+              - 'cpl-vla-1'
+        uiRepeat: host
+        labels: 'host=$host'
+
+    queryDefaults: { labels: 'app=cloud-trail-control-plane_server' }
+    panels:
+
+      - type: graph
+        templates: { name: rps, rate: rps }
+        title: '@control_method rps ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_requests, meter_type=count, method=audittrails.v1.@control_method' }
+
+      - type: graph
+        title: 'Errors (by type)'
+        templates: { name: errors }
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, status=OK, method=audittrails.v1.@control_method' }
+          - params: { labels: 'name=grpc_statuses, status=@4xx, method=audittrails.v1.@control_method' }
+          - params: { labels: 'name=grpc_statuses, status=@5xx, method=audittrails.v1.@control_method' }
+          - params: { labels: 'name=grpc_statuses, status=@503, method=audittrails.v1.@control_method' }
+        draw:
+          - { alias: 'OK', color: '#131', at: right }
+          - { alias: '4xx', color: '#147', at: right }
+          - { alias: '5xx', color: '#b20', at: left }
+          - { alias: '503', color: '#da7', at: left }
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        templates: { name: percentile, format: solomon, groupLines: true }
+        title: '@control_method response duration ($cluster)'
+        queries:
+          - params: { labels: 'name=grpc_durations, method=audittrails.v1.@control_method' }
+        yAxes: [{ min: 0 }]
+
+
+  - title: Object Storage Private API Http Client
+    panels:
+      - type: graph
+        title: 'RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=object_storage_private_api_httpclient_requests, method=*, meter_type=count' }
+
+      - type: graph
+        title: 'Errors (by type)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=object_storage_private_api_httpclient_statuses, method=*, status!=200' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: '0', group_by_labels: ['sum', 'status'], alias: '{{status}}' }
+        display: { decimals: 0, empty: false }
+
+      - type: graph
+        title: 'Durations'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=object_storage_private_api_httpclient_durations, method=*' }

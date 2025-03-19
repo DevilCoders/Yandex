@@ -1,0 +1,41 @@
+OWNER(g:cloud-nbs)
+
+RECURSE(
+    client
+    client/bench
+    client_rdma
+    client_spdk
+    common
+    common/bench
+    diagnostics
+    discovery
+    encryption
+    endpoints
+    endpoints_grpc
+    endpoints_nbd
+    endpoints_rdma
+    endpoints_spdk
+    endpoints_vhost
+    kikimr
+    logbroker
+    nbd
+    nbd/bench
+    notify
+    nvme
+    rdma
+    rdma_test
+    server
+    service
+    service_kikimr
+    service_local
+    service_throttling
+    spdk
+    storage
+    storage/init
+    storage/perf
+    storage/protos
+    throttling
+    validation
+    vhost
+    ydbstats
+)

@@ -1,0 +1,114 @@
+name: YC Core Duty
+owners:
+    - antonkuchin
+    - den-plotnikov
+    - rvkagan
+    - asmetanin
+    - arbn
+    - vsementsov
+    - d-tatianin
+    - valesini
+    - robot-vpc-solomon
+links:
+    -
+        title: Страница дежурного
+        url: 'https://wiki.yandex-team.ru/cloud/core/duty/'
+    -
+        title: Дежурный тикет
+        url: >-
+            https://st.yandex-team.ru/CLOUDDUTY/order:updated:false/filter?resolution=empty()&components=47224
+components:
+    ### Stream of event notifications
+    -
+        elements_in_row: 0
+        links: []
+        name: Notifications
+        component_type: NOTIFICATIONS
+        notifications_options:
+            filters:
+                - {login: CloudHvDuty}
+            page_size: 0
+            interval: 86400
+        col: 1
+        row: 1
+        colspan: 4
+        rowspan: 4
+        view_type: DETAILED
+
+    ### State of clusters
+    {%- for env in ['prod', 'israel', 'preprod', 'testing'] %}
+    -
+        elements_in_row: 0
+        links: []
+        name: Status {{ env|upper }}
+        component_type: AGGREGATE_CHECKS
+        aggregate_checks_options:
+            filters:
+                - {tags: [yc-core-status, yc-{{ env }}]}
+            include_mutes: false
+            project: ''
+            limit: 0
+            statuses: []
+            sort:
+                field: DEFAULT
+                order: DESC
+        col: {{ loop.index }}
+        row: 5
+        colspan: 0
+        rowspan: 0
+        view_type: DETAILED
+    -
+        elements_in_row: 0
+        links: []
+        name: DT in {{ env|upper }}
+        component_type: DOWNTIMES
+        downtimes_options:
+            filters:
+                - {host: yc_core_compute_{{ env }}}
+            include_expired: false
+            include_warnings: false
+            project: ''
+            sort_by: START_TIME
+            sort_order: DESC
+            exclude_future: false
+            page_size: 0
+            page: 0
+        col: {{ loop.index }}
+        row: 6
+        colspan: 0
+        rowspan: 0
+        view_type: DETAILED
+    {%- endfor %}
+
+    ### Nightly tests
+    {%- for test in [
+                     {'name': 'KVM HW test',
+                      'build': 'Cloud_CreateYaCloudServer_ComponentTests_TestKvmHwTestsBb',
+                      'branch': '<default>'},
+                     {'name': 'libvhost qemu2',
+                      'build': 'Cloud_CreateYaCloudServer_ComponentTests_TestLibvhostContinuousPytestQemu2',
+                      'branch': '<default>'},
+                     { 'name': 'libvhost qemu5',
+                      'build': 'Cloud_CreateYaCloudServer_ComponentTests_TestLibvhostContinuousPytestQemu5',
+                      'branch': '<default>'},
+                    ]
+    %}
+    -
+        elements_in_row: 0
+        height_px: 25
+        iframe_options:
+            url: >-
+                https://teamcity.yandex-team.ru/app/rest/builds/buildType:{{ test['build'] }},branch:{{ test['branch'] }}/statusIcon.svg
+        links:
+            -
+                title: Go to TeamCity builds
+                url: >-
+                    https://teamcity.yandex-team.ru/buildConfiguration/{{ test['build'] }}?branch={{ test['branch'] }}&mode=builds
+        name: {{ test['name'] }}
+        component_type: IFRAME
+        col: 5
+        row: 0
+        colspan: 0
+        rowspan: 0
+        view_type: DETAILED
+    {%- endfor %}

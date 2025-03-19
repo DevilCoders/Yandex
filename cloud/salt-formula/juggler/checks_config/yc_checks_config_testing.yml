@@ -1,0 +1,106 @@
+---
+- hosts: localhost
+  gather_facts: false
+  pre_tasks:
+      - juggler_facts:  jserver_api={{ jserver_api }}
+        tags:
+          - always
+  vars:
+    - env: "testing"
+    - default_notification_methods: []
+    - telegram_notification: []
+    - default_tags: "{{ check_tags }} + ['{{ common_tag }}', '{{ common_tag }}-{{ env }}']"
+    - kiki_children:
+      - CGROUP%cloud_{{ env }}_kikimr_global_storage
+      - CGROUP%cloud_{{ env }}_kikimr_sas_storage
+      - CGROUP%cloud_{{ env }}_kikimr_myt_storage
+      - CGROUP%cloud_{{ env }}_kikimr_man_storage
+
+  roles:
+    - role: head
+      vars:
+        children:
+          - CGROUP%cloud_testing_head
+        host: "yc_common_head_{{ env }}"
+        role: head
+        unreachable_host: "yc_common_head_{{ env }}"
+        check_tags: ['{{ common_tag }}-head']
+        flap: { stable: 360, critical: 1080 }
+
+    - role: snapshot
+      vars:
+        children:
+          - CGROUP%cloud_testing_snapshot
+        host: "yc_common_snapshot_{{ env }}"
+        check_tags: ['{{ common_tag }}-snapshot']
+        role: snapshot
+        unreachable_host: "yc_common_snapshot_{{ env }}"
+        flap: { stable: 360, critical: 1080 }
+
+    - role: seed
+      vars:
+        children:
+          - CGROUP%cloud_testing_seed
+        host: "yc_infra_seed_{{ env }}"
+        role: seed
+        unreachable_host: "yc_infra_seed_{{ env }}"
+        check_tags: ['{{ common_tag }}-seed']
+        flap: { stable: 360, critical: 1080 }
+
+    - role: compute
+      vars:
+        children:
+          - CGROUP%cloud_testing_compute
+        host: "yc_common_compute_{{ env }}"
+        unreachable_host: "yc_infra_compute_{{ env }}"
+        # NOTE(k-zaitsev): Only show warning if all hosts are yellow (skipped the tests)
+        e2e_behind_lock_limits:
+          - {crit: '0', day_end: 7, day_start: 1, time_end: 23, time_start: 0, warn: '99.99%'}
+        network_limits: "{{ default_limits }}"
+        check_tags: ['{{ common_tag }}-compute']
+        flap: { stable: 360, critical: 1080 }
+
+    - role: oct_head
+      vars:
+        children:
+          - CGROUP%cloud_testing_oct
+        host: "yc_network_oct_head_{{ env }}"
+        check_tags: ['{{ common_tag }}-network', '{{ common_tag }}-oct', '{{ common_tag }}-oct-head']
+        unreachable_host: "yc_network_oct_head_{{ env }}"
+        flap: { stable: 360, critical: 1080 }
+
+    - role: cloudgate
+      vars:
+        children:
+          - CGROUP%cloud_testing_cloudgate
+        host: "yc_network_cloudgate_{{ env }}"
+        unreachable_host: "yc_network_cloudgate_{{ env }}"
+        check_tags: ['{{ common_tag }}-cloudgate']
+        flap: { stable: 360, critical: 1080 }
+
+    - role: billing
+      vars:
+        children:
+          - CGROUP%cloud_testing_billing
+        host: "yc_common_billing_{{ env }}"
+        unreachable_host: "yc_common_billing_{{ env }}"
+        check_tags: ['{{ common_tag }}-billing']
+        flap: { stable: 360, critical: 1080 }
+
+    - role: lb_slb-adapter
+      vars:
+        children:
+          - CGROUP%cloud_testing_slb-adapter
+        host: "yc_loadbalancer_slb-adapter_{{ env }}"
+        unreachable_host: "yc_loadbalancer_slb-adapter_{{ env }}"
+        check_tags: ['{{ common_tag }}-slb-adapter']
+        flap: { stable: 360, critical: 1080 }
+
+    - role: iam
+      vars:
+        children:
+          - CGROUP%cloud_testing_iam
+        host: "yc_common_iam_{{ env }}"
+        unreachable_host: "yc_common_iam_{{ env }}"
+        check_tags: ['{{ common_tag }}-iam']
+        flap: { stable: 360, critical: 1080 }

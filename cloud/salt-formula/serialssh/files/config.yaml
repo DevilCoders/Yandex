@@ -1,0 +1,47 @@
+{%- set lb_endpoints = grains['cluster_map']['load_balancer']['endpoints'] -%}
+{%- set hostname = grains['nodename'] -%}
+{%- set base_role = grains['cluster_map']['hosts'][hostname]['base_role'] -%}
+{%- set environment = grains["cluster_map"]["environment"] -%}
+
+ssh:
+  address: "[::]:{{lb_endpoints.serialssh_ssh.port}}"
+  host_keys:
+   - /etc/yc/serialssh/ssh_host_rsa_key
+   - /etc/yc/serialssh/ssh_host_ed25519_key
+  max_instances: 10000
+  max_instance_connections: 5
+status:
+  address: "[::]:{{lb_endpoints.serialssh_status.port}}"
+websocket:
+{% if environment == 'prod' %}
+  address: "localhost:9680"
+{% else %}
+  address: "[::]:9680"
+{% endif %}
+  origins:
+{%- if environment == "pre-prod" %}
+    - "https://console-preprod.cloud.yandex.ru"
+    - "https://console-preprod.cloud.yandex.com"
+{% elif environment == "testing" %}
+    - "https://console-testing.cloud.yandex.ru"
+    - "https://console-testing.cloud.yandex.com"
+{% else %}
+    - "https://localhost"
+{% endif %}
+compute_client:
+  url: "http://{{ lb_endpoints.compute.host }}:{{ lb_endpoints.compute.port }}"
+proxy_client:
+  port: 9600
+  private_key: "/etc/yc/serialssh/identity_key.json"
+identity_client:
+{% if base_role == 'cloudvm' %}
+  disabled: true
+{% endif %}
+  url: "http://{{ lb_endpoints.identity_public.host }}:{{ lb_endpoints.identity_public.port }}"
+access_service_client:
+{% if base_role == 'cloudvm' %}
+  disabled: true
+{% else %}
+  tls: true
+{% endif %}
+  address: "{{ lb_endpoints.access_service_grpc.host }}:{{ lb_endpoints.access_service_grpc.port }}"

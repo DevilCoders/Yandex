@@ -1,0 +1,143 @@
+apiVersion: v1
+kind: PodList
+items:
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: api-infrastructure
+    namespace: kube-system
+    annotations:
+      config_digest: ${infra_config_digest}
+      scheduler.alpha.kubernetes.io/critical-pod: ""
+    labels:
+      role: api
+  spec:
+    priority: 2000000001
+    hostNetwork: true
+    hostPID: true
+    priorityClassName: system-cluster-critical
+    initContainers:
+    - name: deploy-infra-configs
+      image: cr.yandex/crp7nvlkttssi7kapoho/infra/metadata:${metadata_version}
+      command:
+      - /usr/bin/metadata
+      - --attribute-name
+      - infra-configs
+      imagePullPolicy: Always
+      volumeMounts:
+      - name: all-configs
+        mountPath: /etc
+        terminationGracePeriodSeconds: 30
+    containers:
+    - name: push-client
+      image: cr.yandex/crpr3khkepsccf25vvt6/push-client:${push_client_version}
+      env:
+      - name: PUSH_CLIENT_TVM_SECRET
+        value: ${push_client_tvm_secret}
+      volumeMounts:
+      - name: var-log
+        mountPath: /var/log
+        terminationGracePeriodSeconds: 30
+      - name: var-spool
+        mountPath: /var/spool
+        terminationGracePeriodSeconds: 30
+      - name: push-client-config
+        mountPath: /etc/yandex/statbox-push-client
+        readOnly: true
+    volumes:
+    - name: all-configs
+      hostPath:
+       path: /etc
+       type: DirectoryOrCreate
+    - name: var-log
+      hostPath:
+        path: /var/log
+    - name: var-spool
+      hostPath:
+        path: /var/spool
+    - name: var-spool-push-client
+      hostPath:
+        path: /var/spool/push-client
+    - name: push-client-config
+      hostPath:
+        path: /etc/yandex/statbox-push-client
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: api-static
+    namespace: kube-system
+    labels:
+      role: api
+    annotations:
+      config_digest: ${config_digest}
+      scheduler.alpha.kubernetes.io/critical-pod: ""
+  spec:
+    priority: 2000000001
+    priorityClassName: system-cluster-critical
+    hostNetwork: true
+    initContainers:
+    - name: deploy-configs
+      image: cr.yandex/crp7nvlkttssi7kapoho/infra/metadata:${metadata_version}
+      volumeMounts:
+      - name: all-configs
+        mountPath: /etc
+        terminationGracePeriodSeconds: 30
+      - name: usr-local
+        mountPath: /usr/local
+        terminationGracePeriodSeconds: 30
+    containers:
+    - name: kms-ydb-dumper
+      image: cr.yandex/crpr3khkepsccf25vvt6/ydb-dumper:${application_version}
+      env:
+      - name: APPLICATION_YAML
+        value: /etc/kms/application.yaml
+      - name: APPLICATION_LOG_DIR
+        value: /var/log/kms
+      - name: APPLICATION_LOG_FILE_MAX_FILES
+        value: "3"
+      - name: APPLICATION_ACCESS_LOG_FILE_MAX_FILES
+        value: "3"
+      - name: JAVA_TOOL_OPTIONS
+        value: "-XX:-UseContainerSupport -Djava.net.preferIPv6Addresses=true -Dfile.encoding=UTF-8 -Xlog:gc*:file=/var/log/kms/gc.log::filecount=10,filesize=100M"
+      - name: PUSH_CLIENT_TVM_SECRET
+        value: ${push_client_tvm_secret}
+      - name: CLOUD_S3_ACCESS_KEY
+        value: ${cloud_s3_access_key}
+      - name: CLOUD_S3_SECRET_KEY
+        value: ${cloud_s3_secret_key}
+      - name: MDS_S3_ACCESS_KEY
+        value: ${mds_s3_access_key}
+      - name: MDS_S3_SECRET_KEY
+        value: ${mds_s3_secret_key}
+      - name: SOLOMON_OAUTH_TOKEN
+        value: ${solomon_oauth_token}
+      volumeMounts:
+      - name: kms-configs
+        mountPath: /etc/kms
+        readOnly: true
+      - name: var-kms
+        mountPath: /var/kms
+        terminationGracePeriodSeconds: 30
+      - name: var-log-kms
+        mountPath: /var/log/kms
+    volumes:
+    - name: all-configs
+      hostPath:
+        path: /etc
+        type: DirectoryOrCreate
+    - name: kms-configs
+      hostPath:
+        path: /etc/kms
+        type: DirectoryOrCreate
+    - name: usr-local
+      hostPath:
+       path: /usr/local
+       type: DirectoryOrCreate
+    - name: var-kms
+      hostPath:
+        path: /var/kms
+        type: DirectoryOrCreate
+    - name: var-log-kms
+      hostPath:
+        path: /var/log/kms
+        type: DirectoryOrCreate

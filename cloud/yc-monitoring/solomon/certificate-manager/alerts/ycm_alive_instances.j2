@@ -1,0 +1,30 @@
+{% extends "base_alert.j2" %}
+{% set checkExpression = "avg < " + avg_value %}
+{% set description = "YCM " + env | upper + " " + service_name + " Alive instances" %}
+{% set windowSecs = 180 %}
+{% set delaySecs = 30 %}
+
+{% macro prog() %}
+let data = {
+  project='{{ project_id }}',
+  service='{{ solomon_service }}',
+  cluster='cloud_{{ env }}_ycm_cluster',
+  host='{{ host_regex }}',
+  {{ sensor_label }}='jvm_info'
+};
+let group_data = replace_nan(group_lines('sum',  data), 0);
+let value = min(group_data);
+let avg = avg(group_data);
+{% endmacro %}
+
+{% block main %}
+  "name": "YCM {{ env | upper }} {{ service_name }} Alive instances",
+  "groupByLabels": ["cluster"],
+  "annotations": {
+    "jugglerService": "[[labels.cluster]]--{{ service_name | lower }}--alive--instances",
+    "description": "[[expression.value]] instances alive",
+    "wikiUrl": "https://nda.ya.ru/t/bXSPADMK5DbCPa",
+    "jugglerTags" : "{{ jugglerTags }}"
+  },
+  "type": {{ type_expression() }}
+{% endblock %}

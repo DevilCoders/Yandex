@@ -1,0 +1,150 @@
+apiVersion: v1
+kind: PodList
+items:
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: api-infrastructure
+    namespace: kube-system
+    annotations:
+      config_digest: ${infra_config_digest}
+      scheduler.alpha.kubernetes.io/critical-pod: ""
+    labels:
+      role: api
+  spec:
+    priority: 2000000001
+    hostNetwork: true
+    hostPID: true
+    priorityClassName: system-cluster-critical
+    initContainers:
+    - name: deploy-infra-configs
+      image: cr.yandex/crp7nvlkttssi7kapoho/infra/metadata:${metadata_version}
+      command:
+      - /usr/bin/metadata
+      - --attribute-name
+      - infra-configs
+      imagePullPolicy: Always
+      volumeMounts:
+      - name: all-configs
+        mountPath: /etc
+        terminationGracePeriodSeconds: 30
+      - name: run
+        mountPath: /run
+        terminationGracePeriodSeconds: 30
+    containers:
+    - name: solomon-agent
+      image: cr.yandex/crpr3khkepsccf25vvt6/solomon-agent:${solomon_version}
+      resources:
+        requests:
+          memory: "512Mi"
+        limits:
+          memory: "512Mi"
+      volumeMounts:
+      - name: solomon-agent-config
+        mountPath: /etc/solomon-agent/
+        readOnly: true
+    - name: push-client-yc-logbroker
+      image: cr.yandex/crpr3khkepsccf25vvt6/push-client:${push_client_version}
+      command: ["/usr/bin/push-client", "-f", "-c", "/etc/yandex/statbox-push-client/push-client-yc-logbroker.yaml"]
+      resources:
+        requests:
+          memory: "256Mi"
+        limits:
+          memory: "256Mi"
+      volumeMounts:
+        - name: var-log
+          mountPath: /var/log
+          terminationGracePeriodSeconds: 30
+        - name: var-spool-push-client
+          mountPath: /var/spool/push-client
+          terminationGracePeriodSeconds: 30
+        - name: push-client-config
+          mountPath: /etc/yandex/statbox-push-client
+          readOnly: true
+        - name: run-push-client
+          mountPath: /run/push-client
+          readOnly: true
+    volumes:
+    - name: all-configs
+      hostPath:
+       path: /etc
+       type: DirectoryOrCreate
+    - name: var-log
+      hostPath:
+        path: /var/log
+    - name: var-spool-push-client
+      hostPath:
+        path: /var/spool/push-client
+    - name: push-client-config
+      hostPath:
+        path: /etc/yandex/statbox-push-client
+    - name: solomon-agent-config
+      hostPath:
+        path: /etc/solomon-agent
+    - name: run
+      hostPath:
+        path: /run
+    - name: run-push-client
+      hostPath:
+        path: /run/push-client
+- apiVersion: v1
+  kind: Pod
+  metadata:
+    name: api-static
+    namespace: kube-system
+    labels:
+      role: api
+    annotations:
+      config_digest: ${config_digest}
+      scheduler.alpha.kubernetes.io/critical-pod: ""
+  spec:
+    priority: 2000000001
+    priorityClassName: system-cluster-critical
+    hostNetwork: true
+    initContainers:
+    - name: deploy-configs
+      image: cr.yandex/crp7nvlkttssi7kapoho/infra/metadata:${metadata_version}
+      volumeMounts:
+      - name: all-configs
+        mountPath: /etc
+        terminationGracePeriodSeconds: 30
+    containers:
+    - name: kms-monitoring
+      image: cr.yandex/crpr3khkepsccf25vvt6/kms-monitoring:${application_version}
+      env:
+      - name: APPLICATION_YAML
+        value: /etc/kms/application.yaml
+      - name: APPLICATION_LOG_DIR
+        value: /var/log/kms
+      - name: APPLICATION_ACCESS_LOG_FILE_MAX_FILES
+        value: "3"
+      - name: JAVA_TOOL_OPTIONS
+        value: "-XX:-UseContainerSupport -Djava.net.preferIPv6Addresses=true -Dfile.encoding=UTF-8 -Xlog:gc*:file=/var/log/kms/gc.log::filecount=10,filesize=100M"
+      - name: YANDEX_CLOUD_LOG_LEVEL
+        value: debug
+      volumeMounts:
+      - name: kms-configs
+        mountPath: /etc/kms
+        readOnly: true
+      - name: var-kms
+        mountPath: /var/kms
+        terminationGracePeriodSeconds: 30
+      - name: var-log-kms
+        mountPath: /var/log/kms
+    volumes:
+    - name: all-configs
+      hostPath:
+        path: /etc
+        type: DirectoryOrCreate
+    - name: kms-configs
+      hostPath:
+        path: /etc/kms
+        type: DirectoryOrCreate
+    - name: var-kms
+      hostPath:
+        path: /var/kms
+        type: DirectoryOrCreate
+    - name: var-log-kms
+      hostPath:
+        path: /var/log/kms
+        type: DirectoryOrCreate

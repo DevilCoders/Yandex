@@ -1,0 +1,16 @@
+CREATE OR REPLACE FUNCTION dbaas.error_cluster_status(
+    dbaas.cluster_status
+) RETURNS bool AS $$
+SELECT $1 IN (
+    'CREATE-ERROR',
+    'MODIFY-ERROR',
+    'STOP-ERROR',
+    'START-ERROR',
+    'DELETE-ERROR',
+    'PURGE-ERROR',
+    'METADATA-DELETE-ERROR',
+    'RESTORE-ONLINE-ERROR',
+    'RESTORE-OFFLINE-ERROR',
+    'MAINTAIN-OFFLINE-ERROR'
+);
+$$ LANGUAGE SQL IMMUTABLE;

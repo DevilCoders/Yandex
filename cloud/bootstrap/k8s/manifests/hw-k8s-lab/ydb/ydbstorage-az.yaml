@@ -1,0 +1,58 @@
+apiVersion: ydb.yandex.ru/v1
+kind: YDBStorage
+metadata:
+  name: az
+  namespace: ydb
+spec:
+ update: true
+ cms:
+   endpoint: "ydb-hw-k8s-lab.ydb.cloud.yandex.net:2135"
+   username: ydb-operator
+   authsecretname: ""
+   mode: max
+   enabled: true
+ generalpodspec:
+   containers:
+   - image: registry.yandex.net/ydb_k8s/ydb-storage/ydb:trunk.7826416
+     command: ["/Berkanavt/kikimr/bin/start-storage.sh"]
+     imagePullPolicy: IfNotPresent
+     name: ydb-storage-container-name
+     resources:
+       limits:
+         memory: 32Gi
+       requests:
+         cpu: "8"
+         memory: 32Gi
+     securityContext:
+       privileged: true
+     terminationMessagePath: /dev/termination-log
+     terminationMessagePolicy: File
+     volumeMounts:
+     - mountPath: /dev
+       name: host-dev
+     - mountPath: /run/systemd/journal
+       name: host-run-systemd-journal
+     - mountPath: /Berkanavt/kikimr/cfg
+       name: ydb-storage-cfg
+       readOnly: true
+   imagePullSecrets:
+   - name: mbabich-cred
+   dnsPolicy: Default
+   hostNetwork: true
+   restartPolicy: Always
+   securityContext: {}
+   terminationGracePeriodSeconds: 20
+   volumes:
+   - hostPath:
+       path: /dev
+       type: Directory
+     name: host-dev
+   - hostPath:
+       path: /run/systemd/journal
+       type: Directory
+     name: host-run-systemd-journal
+   - name: ydb-storage-cfg
+     configMap:
+       name: ydb-storage-az-1
+   nodeSelector:
+     ydb-storage: "az"

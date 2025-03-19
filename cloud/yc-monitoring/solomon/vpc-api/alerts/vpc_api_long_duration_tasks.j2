@@ -1,0 +1,45 @@
+{% extends "vpc_api_base_alert.j2" %}
+
+{% set service = "vpc-api-long-duration-tasks" %}
+{% set red_threshold = ('250', ('500.0', '1000.0', 'inf')) %}
+{% set yellow_threshold = ('25.0', ('50.0', '75.0', '100.0', '250.0')) %}
+{% set delaySecs = 15 %}
+
+{% macro count_by_time(le) %}
+series_sum({
+    cluster='cloud_{{env}}_vpc-api'
+    ,service='vpc-config-plane'
+    ,sensor='vpctask_task_duration'
+    ,phase='total_from_submit'
+    ,host='cluster'
+    ,hist_type='bin'
+    ,job='all'
+    ,le='{{ le|join('|') }}'
+})
+{% endmacro %}
+
+{% macro prog() %}
+let red_ts = {{ count_by_time(red_threshold[1]) }};
+let yellow_ts = {{ count_by_time(yellow_threshold[1]) }};
+
+let threshold = {{ red_threshold[0] }};
+alarm_if(last(red_ts) - min(red_ts) > 0);
+
+let threshold = {{ yellow_threshold[0] }};
+warn_if(last(yellow_ts) - min(yellow_ts) > 0);
+
+let threshold = 0;
+{% endmacro %}
+
+{% block main %}
+    "name": "VPC API tasks long duration {{env}}",
+    "annotations": {
+        "threshold": "[[ expression.threshold ]]",
+        "description": "VPC API task duration hit threshold of [[ expression.threshold ]] seconds",
+        "host": "{{ solomon_host() }}",
+        "service": "{{ service }}",
+        "dashboard": "{{ vpc_api_dashboard() }}",
+        "wiki": "{{ wiki_url(service) }}" 
+    },
+    "type": {{ type_expression() }}
+{% endblock %}

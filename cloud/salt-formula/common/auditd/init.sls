@@ -1,0 +1,3 @@
+auditd:
+  pkg.purged
+

@@ -1,0 +1,22 @@
+{% extends "base_alert.j2" %}
+
+{% set name = "Compute node (go) hanging tasks" %}
+{% set jugglerService = "compute-node-hanging-tasks" %}
+{% set description = "https://docs.yandex-team.ru/yc-monitoring/compute-node/compute-node-hanging-tasks" %}
+{% set isComputeNode = True %}
+{% set windowSecs = 20 * 60 %}
+
+{% set annotations = [("hanging_task_types", "[[expression.types]]")] %}
+
+{% macro prog() %}
+let data = {
+    project='{{ project_id }}',
+    cluster='cloud_{{ env }}_compute',
+    service='compute_node',
+    sensor='hanging_tasks',
+    host='*'
+};
+let nonzero = drop_empty_lines(drop_below(data, 0.5));
+let types = map(max(nonzero) by type, x -> get_label(x, 'type'));
+alarm_if(size(types) > 0);
+{% endmacro %}

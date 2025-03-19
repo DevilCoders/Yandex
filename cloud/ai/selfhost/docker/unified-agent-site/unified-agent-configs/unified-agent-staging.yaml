@@ -1,0 +1,74 @@
+storages:
+  - name: main
+    plugin: fs
+    config:
+      directory: ./data/storage
+      max_partition_size: 10gb
+
+routes:
+  - input:
+      plugin: grpc
+      config:
+        uri: localhost:16400
+    channel:
+      pipe:
+        - storage_ref:
+            name: main
+
+      output:
+        plugin: logbroker
+        config:
+          endpoint: lb.etn03iai600jur7pipla.ydb.mdb.yandexcloud.net
+          port: 2135
+          topic: /yc.logs.cloud/yc-logging
+          database: /global/b1gvcqr959dbmi1jltep/etn03iai600jur7pipla
+          iam:
+            cloud_meta: {}
+          use_ssl: {}
+          use_ydb_discovery: true
+          codec: zstd
+
+  - input:
+      plugin: metrics_pull
+      config:
+        url: http://localhost:9090/prometheus_metrics # default prometheus port
+        format:
+          prometheus: {}
+    channel:
+      output:
+        plugin: metrics_multishard_pull
+        config:
+          port: 8004 # port that used by solomong-agent
+          reshard_metrics:
+            cluster: "{{folder_id}}"
+            project: "{{cloud_id}}"
+            service: "datasphere" # "{{service_label}}"
+            preserve_original: false
+          registration:
+            service_provider: "datasphere"
+            endpoints:
+              - installation: "cloud_prod"
+                iam:
+                  cloud_meta: {}
+  - input:
+      plugin: metrics_pull
+      config:
+        url: http://localhost:9090/solomon_json_metrics # default prometheus port
+        format:
+          solomon_json: {}
+    channel:
+      output:
+        plugin: metrics_multishard_pull
+        config:
+          port: 8005 # port that used by solomong-agent
+          reshard_metrics:
+            cluster: "{{folder_id}}"
+            project: "{{cloud_id}}"
+            service: "datasphere" # "{{service_label}}"
+            preserve_original: false
+          registration:
+            service_provider: "datasphere"
+            endpoints:
+              - installation: "cloud_prod"
+                iam:
+                  cloud_meta: {}

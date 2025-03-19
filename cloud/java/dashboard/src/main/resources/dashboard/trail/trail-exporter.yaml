@@ -1,0 +1,249 @@
+uid: trail-exporter
+refresh: 1m
+title: Audit Trails Exporter Dashboard — Main
+
+tags:
+  - yc-trails
+  - yc-audit-trails
+links:
+  - { title: 'System', url: 'https://grafana.yandex-team.ru/d/trail-exporter-system' }
+  - { title: 'Run', url: 'https://grafana.yandex-team.ru/d/trail-exporter-run-metrics' }
+  - { title: 'Dashboards', tags: [ yc-trails ] }
+
+variables:
+  ui:
+    !include include/_datasources.yaml
+    !include include/_projects.yaml
+    !include include/_clusters.yaml
+    host:
+      values:
+        - cluster-exp
+        - exp-vla-1
+        - exp-sas-1
+        - exp-myt-1
+  replacement:
+    !include ../include/errors.yaml
+  repeat:
+    host:
+      values:
+        - 'exp-vla-1'
+        - 'exp-myt-1'
+        - 'exp-sas-1'
+
+graphDefaults:
+  datasource: ${datasource}
+  width: 8
+  height: 6
+
+queryDefaults:
+  dropNan: false
+  labels: 'project=${project}, cluster=trail, service=core, host=${host}'
+  defaultTimeWindow: $__interval
+
+rows:
+  - title: Critical Failures
+    panels:
+      - type: graph
+        title: Exporter Job Critical Failures
+        templates: { name: errors, sumLines: false }
+        queries:
+          - params: { labels: 'name=exporterJobCriticalFailures' }
+            select: { alias: 'fails' }
+        draw:
+          - { color: '#f55', alias: 'fails' }
+        display: { stack: false }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Move Job Critical Failures
+        templates: { name: errors, sumLines: false }
+        queries:
+          - params: { labels: 'name=moveJobCriticalFailures' }
+            select: { alias: 'fails' }
+        draw:
+          - { color: '#f55', alias: 'fails' }
+        display: { stack: false }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Delete Job Critical Failures
+        templates: { name: errors, sumLines: false }
+        queries:
+          - params: { labels: 'name=deleteJobCriticalFailures' }
+            select: { alias: 'fails' }
+        draw:
+          - { color: '#f55', alias: 'fails' }
+        display: { stack: false }
+        yAxes: [ { min: 0 } ]
+
+  - title: Exporter Job
+    panels:
+      - type: graph
+        title: Exporter Job Records Losses
+        templates: { name: errors, sumLines: true }
+        queries:
+          - params: { labels: 'name=exporterJobRecordsLosses' }
+            select: { alias: records }
+        draw:
+          - { alias: records }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Exporter Job Trail Not Found
+        templates: { name: errors, sumLines: true }
+        queries:
+          - params: { labels: 'name=exporterJobTrailNotFound' }
+            select: { alias: errors }
+        draw:
+          - { alias: errors }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Exporter Job Wrong Destination
+        templates: { name: errors, sumLines: true }
+        queries:
+          - params: { labels: 'name=exporterJobWrongDestination' }
+            select: { alias: errors }
+        draw:
+          - { alias: errors }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Exporter Job Offset Not Found
+        templates: { name: errors, sumLines: true }
+        queries:
+          - params: { labels: 'name=exporterJobOffsetNotFound' }
+            select: { alias: errors }
+        draw:
+          - { alias: errors }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: Deduplicated events
+        queries:
+          - params: { labels: 'name=exporterJobDeduplicatedRows' }
+            select: { group_lines: [ sum ], diff: [ ], drop_below: '0', alias: 'events' }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: Event id duplicates
+        queries:
+          - params: { labels: 'name=exporterJobDuplicateEventIds' }
+            select: { group_lines: [ sum ], diff: [ ], drop_below: '0', alias: 'duplicates' }
+        yAxes: [ { min: 0 } ]
+
+      - type: graph
+        title: Elapsed deduplicate time
+        templates: [ { name: percentile, groupLines: true, format: solomon } ]
+        queries:
+          - params: { labels: 'name=exporterJobDeduplicate' }
+        yAxes: [ { min: 0, format: s } ]
+
+      - type: graph
+        title: Elapsed store event ids time
+        templates: [ { name: percentile, groupLines: true, format: solomon } ]
+        queries:
+          - params: { labels: 'name=exporterJobStoreEventIds' }
+        yAxes: [ { min: 0, format: s } ]
+
+  - title: Move Job
+    panels:
+      - type: graph
+        title: Move Job Mean Size
+        templates: [ { name: percentile, groupLines: true, format: solomon } ]
+        queries:
+          - params: { labels: 'name=moveJobBytes' }
+        yAxes: [ { min: 0, format: decbytes } ]
+      - type: graph
+        title: Move Job Bytes
+        templates: { name: errors, sumLines: true }
+        queries:
+          - params: { labels: 'name=moveJobBytes_sum' }
+            select: { alias: bytes }
+        draw:
+          - { alias: bytes }
+        yAxes: [ { min: 0, format: decbytes } ]
+
+      - type: graph
+        title: Move Job Not Found
+        templates: { name: errors, sumLines: true }
+        queries:
+          - params: { labels: 'name=moveJobNotFound' }
+            select: { alias: errors }
+        draw:
+          - { alias: errors }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Move Job Max Failures Exceeded
+        templates: { name: errors, sumLines: true }
+        queries:
+          - params: { labels: 'name=moveJobMaxFailuresExceeded' }
+            select: { alias: errors }
+        draw:
+          - { alias: errors }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        title: Move Job Terminated Reason
+        templates: { name: errors, sumLines: false }
+        queries:
+          - params: { labels: 'name=moveJobTerminatedReason' }
+        yAxes: [ { min: 0 } ]
+
+  - title: ObjectStorage Uploader
+    panels:
+      - type: graph
+        title: ObjectStorage Uploader Mean Size
+        templates: [ { name: percentile, groupLines: true, format: solomon } ]
+        queries:
+          - params: { labels: 'name=objectStorageUploaderBytes' }
+        yAxes: [ { min: 0, format: decbytes } ]
+      - type: graph
+        title: ObjectStorage Uploader Bytes
+        templates: { name: errors, sumLines: true }
+        queries:
+          - params: { labels: 'name=objectStorageUploaderBytes_sum' }
+            select: { alias: bytes }
+        draw:
+          - { alias: bytes }
+        yAxes: [ { min: 0, format: decbytes } ]
+
+  - title: Trail Pooling HttpClient Connection Manager
+    panels:
+      - type: graph
+        repeat: host
+        title: Leased|Available|Max connections for @host
+        queries:
+          - params: { labels: 'name=objectStoragePrivateApiHttpConnectionManagerMax|objectStoragePrivateApiHttpConnectionManagerAvailable|objectStoragePrivateApiHttpConnectionManagerLeased, host=@host'}
+            select: { group_by_labels: [ sum, name, route ], drop_below: '0', alias: '{{name}} {{route}}' }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        repeat: host
+        title: Leased|Released connections for @host
+        queries:
+          - params: { labels: 'name=objectStoragePrivateApiHttpConnectionManagerTotalLeased|objectStoragePrivateApiHttpConnectionManagerTotalReleased, host=@host' }
+            select: { group_by_labels: [ sum, name, route ], diff: [ ], drop_below: '0', alias: '{{name}} {{route}}' }
+        yAxes: [ { min: 0 } ]
+      - type: graph
+        repeat: host
+        title: Pending connections for @host
+        queries:
+          - params: { labels: 'name=objectStoragePrivateApiHttpConnectionManagerPending, host=@host' }
+        yAxes: [ { min: 0 } ]
+
+  - title: Object Storage Private API Http Client
+    panels:
+      - type: graph
+        title: 'RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=object_storage_private_api_httpclient_requests, method=*, meter_type=count' }
+
+      - type: graph
+        title: 'Errors (by type)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=object_storage_private_api_httpclient_statuses, method=*, status!=200' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: '0', group_by_labels: ['sum', 'status'], alias: '{{status}}' }
+        display: { decimals: 0, empty: false }
+
+      - type: graph
+        title: 'Durations'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=object_storage_private_api_httpclient_durations, method=*' }

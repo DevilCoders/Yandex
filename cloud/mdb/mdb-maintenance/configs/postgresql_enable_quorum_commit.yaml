@@ -1,0 +1,25 @@
+info: Enabling quorum synchronous replication
+disabled: true
+clusters_selection:
+  db: >-
+    SELECT c.cid FROM (
+             SELECT *
+             FROM dbaas.clusters
+             WHERE status = 'RUNNING'
+               AND type = 'postgresql_cluster'
+               AND env = 'prod'
+         ) c
+             LEFT JOIN dbaas.pillar p USING (cid)
+             JOIN dbaas.versions v ON (c.cid = v.cid AND v.edition != '1c')
+             WHERE value->'data'->'pgsync'->>'force_disable_quorum' is null
+pillar_change: >-
+  UPDATE dbaas.pillar p
+     SET value = jsonb_set(value, '{data,pgsync,quorum_commit}', to_jsonb(true))
+  WHERE p.cid = :cid
+worker:
+  operation_type: postgresql_cluster_modify
+  task_type: postgresql_cluster_maintenance
+  task_args: {}
+  timeout: 24h
+max_delay_days: 21
+min_days: 7

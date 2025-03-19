@@ -1,0 +1,18 @@
+{% from "components/postgres/pg.jinja" import pg with context %}
+#!/bin/sh
+#
+# This script will be executed *after* all the other init scripts.
+# You can put your own initialization stuff in here if you don't
+# want to do the full Sys V style init stuff.
+
+touch /var/lock/subsys/local
+
+{% if salt['grains.get']('virtual') == 'lxc' or salt['grains.get']('virtual_subtype', None) == 'Docker' %}
+mount -o remount,size=10% tmpfs /run/
+{% endif %}
+
+{% for device, size in salt['pillar.get']('data:readahead_buffer_bytes', {}).items() %}
+{{ '# https://st.yandex-team.ru/MDB-551' }}
+echo '{{ size }}' > /sys/block/{{ device }}/queue/read_ahead_kb
+echo '1' > /sys/block/{{ device }}/md/sync_speed_max
+{% endfor %}

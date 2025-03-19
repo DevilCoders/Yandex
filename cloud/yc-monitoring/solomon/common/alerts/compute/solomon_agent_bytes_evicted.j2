@@ -1,0 +1,48 @@
+{% extends "../../../base/alert.j2" %}
+
+{% set description = "https://docs.yandex-team.ru/yc-monitoring/shared/solomon-agent-bytes-evicted" %}
+{% set is_compute_node = compute_node|default(False) %}
+
+{% set windowSecs = 600 %}
+
+{% set units_filter = [] %}
+{% for unit in units %}
+{% set units_filter = units_filter.append('cloud_' + env + '_' + unit) %}
+{% endfor %}
+
+{% set excluded_shards = excluded_shards|default([]) %}
+
+{% macro prog() %}
+
+let data = {
+    project='{{ project_id }}',
+    cluster='{{ units_filter | join("|") }}',
+    service='solomon_agent',
+    sensor='storage.bytesEvicted',
+    host!='cluster',
+    storageShard!='{{ (['total'] + excluded_shards) | join("|") }}'
+};
+let data = diff(data);
+let bytesEvicted = sum(group_lines('sum', data));
+
+let is_red = bytesEvicted > {{ alarm }};
+let evicted_bytes_part_human = to_fixed(bytesEvicted, 0);
+let problem_shards = map(drop_empty_lines(drop_below(data, 0.5)), x -> get_label(x, 'storageShard'));
+let is_empty_problem_shards = size(problem_shards) == 0;
+
+{% endmacro %}
+
+{% block main %}
+    "name": "Solomon-agent evicted bytes {{ service_name }} @{{ env | upper }}",
+    "groupByLabels": ["host"],
+    "annotations": {
+        "host": "{{ compute_node_fqdn() if is_compute_node else svm_fqdn() }}",
+        "tags": "{{ tags }}",
+        "service": "solomon-agent-bytes-evicted",
+        "description": "[[ expression.evicted_bytes_part_human ]] bytes evicted in last {{ windowSecs }} sec. {{ description }}",
+        "problem_shards": "[[ expression.problem_shards ]]",
+        "excluded_shards": "{{ excluded_shards }}"
+    },
+    "description": "{{ description }}",
+    "type": {{ type_expression() }}
+{% endblock %}

@@ -1,0 +1,12 @@
+RECURSE(
+    adapters
+    cmd
+    config
+    core
+    db
+    interconnect
+    pkg
+    servers
+    tooling
+    types
+)

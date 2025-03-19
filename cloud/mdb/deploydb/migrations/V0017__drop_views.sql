@@ -1,0 +1,11 @@
+DROP VIEW deploy.groups_v1;
+DROP VIEW deploy.masters_v1;
+DROP VIEW deploy.master_aliases_v1;
+DROP VIEW deploy.masters_change_log_v1;
+DROP VIEW deploy.minions_v1;
+DROP VIEW deploy.minions_change_log_v1;
+DROP VIEW deploy.shipments_v1;
+DROP VIEW deploy.shipment_commands_v1;
+DROP VIEW deploy.commands_v1;
+DROP VIEW deploy.jobs_v1;
+DROP VIEW deploy.job_results_v1;

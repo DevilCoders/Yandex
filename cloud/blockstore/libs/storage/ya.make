@@ -1,0 +1,27 @@
+OWNER(g:cloud-nbs)
+
+RECURSE(
+    api
+    auth
+    bootstrapper
+    core
+    disk_agent
+    disk_common
+    disk_registry
+    disk_registry_proxy
+    metering
+    model
+    partition
+    partition2
+    partition_common
+    partition_nonrepl
+    protos
+    service
+    ss_proxy
+    stats_service
+    undelivered
+    user_stats
+    volume
+    volume_balancer
+    volume_proxy
+)

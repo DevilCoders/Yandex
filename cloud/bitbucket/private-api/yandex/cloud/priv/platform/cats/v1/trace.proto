@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.platform.cats.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/platform/cats/v1;cats";
+option java_outer_classname = "PCATSTR";
+
+// Reference type specified desired task lifetime/cancelation semantics.
+// It is also a transparent hint for opentracing mapping semantics.
+enum ReferenceType {
+  REFERENCE_TYPE_UNSPECIFIED = 0;
+  // Children tasks lifetime should be limited by its parent lifetime. Usually, when child-of task
+  // is initiated, its parent is interested in its completion. One may consider child-of tasks
+  // as a sort of synchronous RPC call.
+  // In most cases, when parent task is canceled, its child-of tasks should be canceled
+  // recursively. This should be a job of some 'Task Canceler' component which is not the
+  // part of the CATS core.
+  CHILD_OF = 1;
+  // Follows-from tasks used to initiate some background/long-running processes, which
+  // lifecycle becomes independent of the parent task. The examples may vary from periodic
+  // healing/sync-state operations in the system, to background GC operations, on so on.
+  FOLLOWS_FROM = 2;
+}
+
+message TraceContext {
+  ReferenceType reference_type = 1;
+  JaegerTrace jaeger_trace = 2;
+  // Debug info.
+  Caller caller = 3;
+}
+
+message Caller {
+  // Callstack.
+  repeated Location location = 1;
+}
+
+message Location {
+  // function name + arguments, if possible.
+  string signature = 1;
+  string file_line = 2;
+}
+
+message TaskEvent {
+  Caller caller = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  string event_type = 3;
+  map<string, string> fields = 4;
+}
+
+message JaegerTrace {
+  string span_context = 1;
+  map<string, string> baggage = 2;
+  string debug_id = 3;
+}
+
+message AttemptTrace {
+  JaegerTrace jaeger_trace = 1;
+}

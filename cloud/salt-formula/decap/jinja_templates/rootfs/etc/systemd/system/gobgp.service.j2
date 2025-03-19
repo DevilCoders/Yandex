@@ -1,0 +1,23 @@
+{% set decap_fv_peering_loopback_ipv4_address = pillar["specific_decap_config"][grains['nodename']]["decap_fv_peering_loopback_ipv4_address"]%}
+
+
+[Unit]
+Description="GoBGP daemon"
+ConditionPathExists=/etc/gobgp/gobgpd.conf
+StartLimitInterval=100
+StartLimitBurst=5
+After=yadecap-controlplane.service
+Requires=yadecap-controlplane.service
+
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/gobgpd -t yaml -f /etc/gobgp/gobgpd.conf
+ExecStartPost=/bin/sleep 5
+ExecStartPost=/usr/bin/gobgp global rib add -a ipv4-mpls {{ decap_fv_peering_loopback_ipv4_address }}/32 3 community 65535:65282
+Restart=always
+RestartSec=5
+
+
+[Install]
+WantedBy=multi-user.target

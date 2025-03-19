@@ -1,0 +1,50 @@
+[Unit]
+Description=Mr. Prober Agent
+After=docker.service
+Requires=docker.service
+After=skm.service
+
+[Service]
+TimeoutStartSec=0
+Restart=always
+RestartSec=5s
+
+# We do not use ConditionPathExists and use ExecStartPre here because systemd doesn't restart unit if conditions are not met.
+# See https://st.yandex-team.ru/CLOUD-90953#6205478a09dff1581a7a8870 for details.
+ExecStartPre=/usr/bin/test -f /etc/secrets/mr_prober_sa_key.prod.json
+ExecStartPre=/usr/bin/test -f /etc/secrets/mr_prober_sa_aws_access_key_id
+ExecStartPre=/usr/bin/test -f /etc/secrets/mr_prober_sa_aws_secret_access_key
+
+# We need these modules for routing traffic from probers into specific network interfaces
+ExecStartPre=/bin/bash -c "modprobe iptable_mangle; modprobe ip6table_mangle"
+
+# Authorize in cr.yandex
+ExecStartPre=-/bin/bash -c "cat /etc/secrets/mr_prober_sa_key.prod.json | docker login --username json_key --password-stdin cr.yandex"
+
+# Fetch desired Mr. Prober Agent's docker image url from metadata (if it's specified).
+# Save image url to /tmp/mr_prober_agent_docker_image, we will use it in ExecStart.
+ExecStartPre=/bin/bash -c "(curl -sS --fail 'http://169.254.169.254/computeMetadata/v1/instance/attributes/mr-prober-agent-docker-image' -H 'Metadata-Flavor: Google' || echo "cr.yandex/crpni6s1s1aujltb5vv7/agent:{{ version }}") > /tmp/mr_prober_agent_docker_image"
+
+# Start the container!
+ExecStart=/bin/bash -c '/usr/bin/docker run --net=host --privileged --rm \
+                        --name %n \
+                        --log-opt max-size=100m \
+                        --env-file /etc/default/mr_prober \
+                        -v /var/log/mr_prober:/var/log/mr_prober \
+                        -v /mnt:/mnt \
+                        -v /sys/fs/cgroup:/sys/fs/cgroup \
+                        -v /var/lib/cloud/data/:/var/lib/cloud/data/ \
+                        -v /dev/ttyS1:/dev/tty.mr-prober-agent \
+                        -e "URLLIB3_USE_ONLY_IPV6_IF_AVAILABLE=true" \
+                        -e "MR_PROBER_LOGS_PATH=/var/log/mr_prober" \
+                        -e "S3_ACCESS_KEY_ID=$(cat /etc/secrets/mr_prober_sa_aws_access_key_id)" \
+                        -e "S3_SECRET_ACCESS_KEY=$(cat /etc/secrets/mr_prober_sa_aws_secret_access_key)" \
+                        -e "AGENT_DOCKER_IMAGE=$(cat /tmp/mr_prober_agent_docker_image)" \
+                        -e "AGENT_TTY_DEVICE=/dev/tty.mr-prober-agent" \
+                        $(cat /tmp/mr_prober_agent_docker_image) \
+                       '
+
+ExecStop=/usr/bin/docker stop --time 3 %n
+
+[Install]
+WantedBy=multi-user.target

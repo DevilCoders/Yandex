@@ -1,0 +1,19 @@
+ALTER TYPE dbaas.placement_group_status RENAME TO disk_placement_group_status;
+
+ALTER TABLE dbaas.placement_groups RENAME CONSTRAINT pk_placement_groups TO pk_disk_placement_groups;
+ALTER TABLE dbaas.placement_groups RENAME CONSTRAINT fk_placement_groups_clusters TO fk_disk_placement_groups_clusters;
+ALTER TABLE dbaas.placement_groups_revs RENAME CONSTRAINT pk_placement_groups_revs TO pk_disk_placement_groups_revs;
+ALTER TABLE dbaas.placement_groups_revs RENAME CONSTRAINT fk_placement_groups_revs_clusters_revs TO fk_disk_placement_groups_revs_clusters_revs;
+ALTER TABLE dbaas.disks RENAME CONSTRAINT fk_disks_placement_groups TO fk_disks_disk_placement_groups;
+
+ALTER INDEX dbaas.uk_placement_groups_cid_local_id RENAME TO uk_disk_placement_groups_cid_local_id;
+ALTER INDEX dbaas.uk_placement_groups_disk_placement_group_id RENAME TO uk_disk_placement_groups_disk_placement_group_id;
+ALTER INDEX dbaas.i_placement_groups_revs_cid_rev RENAME TO ix_disk_placement_groups_revs_cid_rev;
+
+ALTER TABLE dbaas.placement_groups RENAME TO disk_placement_groups;
+ALTER TABLE dbaas.placement_groups_revs RENAME TO disk_placement_groups_revs;
+
+ALTER SEQUENCE dbaas.placement_groups_pg_id_seq RENAME TO disk_placement_groups_pg_id_seq;
+
+CREATE VIEW dbaas.placement_groups AS
+	SELECT * FROM dbaas.disk_placement_groups;

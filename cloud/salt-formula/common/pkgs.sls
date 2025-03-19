@@ -1,0 +1,112 @@
+include:
+  - common.repo
+
+common_pkgs:
+  yc_pkg.installed:
+    - pkgs:
+      - sysstat
+      - tcpdump
+      - iotop
+      - iperf
+      - traceroute
+      - ndisc6
+      - rsync
+      - lsscsi
+      - gdisk
+      - telnet
+      - bc
+      - screen
+      - dnsutils
+      - edac-utils
+      - strace
+      - htop
+      - jq
+      - lsof
+      - linux-tools
+      - yc-selfdns-plugins
+      - yandex-archive-keyring
+      - yandex-internal-root-ca
+      - bash
+      - bash-completion
+      - debconf-utils
+      - postfix
+      - patch
+      - vim
+      - subversion
+      - ncurses-term
+      - ntpdate
+      - pdsh
+      - athena-jot
+      - sudo
+      - tmux
+      - wget
+      - tree
+      - python-mysqldb
+      - python-memcache
+      - gdb
+      - python-dbg
+      - python3-dbg
+      - python3-yaml # for monitoring
+      - ncdu
+      - mc
+      - yc-setup-configs
+{% if grains['virtual'] == 'physical' %}
+      - yandex-wall-e-agent
+      - edac-utils
+      - mcelog
+{% endif %}
+# INFRA PKGS
+      - apt
+      - busybox-initramfs
+      - curl
+      - gettext
+      - git
+      - gnupg
+      - gpgv
+      - libcurl3
+      - libcurl3-gnutls
+      - libglib2.0-0
+      - libgnutls30
+      - libnss3
+      - libnss3-nssdb
+      - libpng12-0
+      - libpolkit-backend-1-0
+      - libseccomp2
+      - libsnmp30
+      - libsmbclient
+      - libssl1.0.0
+      - libxml2
+      - libxslt1.1
+      - libwbclient0
+      - ntp
+      - ssh
+      - openssh-server
+      - openssh-client
+      - openssh-sftp-server
+      - perl
+      - policykit-1
+      - python-lxml
+      - python-openssl
+      - python2.7
+      - python2.7-minimal
+      - python3-lxml
+      - python3.5
+      - python3.5-minimal
+      - python3-requests
+      - python3-urllib3
+      - samba-libs
+      - systemd
+      - libpam-systemd
+      - libsystemd0
+      - systemd-sysv
+      - zsh
+      - libldb1
+      - file
+      - libmagic1
+{% if grains['virtual'] == 'physical' %}
+      - intel-microcode
+{% endif %}
+    - refresh: True 
+    - require:
+      - file: /etc/apt/sources.list
+      - cmd: apt-update

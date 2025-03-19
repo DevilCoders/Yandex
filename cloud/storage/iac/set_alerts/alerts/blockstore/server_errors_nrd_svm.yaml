@@ -1,0 +1,148 @@
+definitions:
+  - &alert_id "{{.ID}}_svm_nbs_server_nrd_errors"
+  - &alert_name "{{.Name}}[SVM][NRD] NBS Server Errors"
+  - &alert_annotations_tag "yc-{{.Cluster}}-nbs-solomon"
+  - &alert_juggler_host "{{`{{labels.host}}`}}.svc.{{.SvmDomain}}"
+  - &alert_annotations_service "solomon_alert_nbs_server_nrd_errors"
+  - &alert_juggler_description "(doc: https://nda.ya.ru/t/zpg_GkyU5FnnBc)"
+  - &alert_window_secs 900
+  - &alert_debug |-
+      max_other_errors: {{expression.max_other_errors}}
+      max_session_errors: {{expression.max_session_errors}}
+      max_throttle_errors: {{expression.max_throttle_errors}}
+      max_total_errors: {{expression.max_total_errors}}
+      reassign_gauge: {{expression.reassign_gauge}}
+alerts:
+  - id: *alert_id
+    name: *alert_name
+    description: *alert_juggler_description
+    group_by_labels:
+      - host
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_juggler_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - preprod
+    expression:
+      program: |-
+        let blacklist_requests='AlterPlacementGroupMembership|StartEndpoint|StopEndpoint|ListEndpoints|KickEndpoint';
+
+        let total_errors = integrate_fn(group_lines('sum', {
+          project='{{.SolomonProjectID}}',
+          cluster='{{.SolomonCluster}}',
+          service='server',
+          host='nbs-control-*1|nbs-control-*2|nbs-control-*3',
+          request='*',
+          sensor='Errors',
+          type= 'ssd_nonrepl',
+          request!='{{`{{blacklist_requests}}`}}'
+        }));
+
+        let throttle_errors = integrate_fn(group_lines('sum', {
+          project='{{.SolomonProjectID}}',
+          cluster='{{.SolomonCluster}}',
+          service='server',
+          host='nbs-control-*1|nbs-control-*2|nbs-control-*3',
+          request='*',
+          sensor='Errors/Throttling',
+          type= 'ssd_nonrepl',
+          request!='{{`{{blacklist_requests}}`}}'
+        }));
+
+        let session_errors = integrate_fn(group_lines('sum', {
+          project='{{.SolomonProjectID}}',
+          cluster='{{.SolomonCluster}}',
+          service='server',
+          host='nbs-control-*1|nbs-control-*2|nbs-control-*3',
+          request='*',
+          sensor='Errors/Session',
+          type= 'ssd_nonrepl',
+          request!='{{`{{blacklist_requests}}`}}'
+        }));
+
+        let other_errors = total_errors - throttle_errors - session_errors;
+
+        no_data_if(count(total_errors) == 0);
+        no_data_if(count(throttle_errors) == 0);
+        no_data_if(count(session_errors) == 0);
+
+        let max_session_errors = max(session_errors);
+        let max_throttle_errors = max(throttle_errors);
+        let max_total_errors = max(total_errors);
+        let max_other_errors = max(other_errors);
+
+        warn_if(max_session_errors >= 10);
+        warn_if(max_other_errors >= 900);
+
+  - id: *alert_id
+    name: *alert_name
+    escription: *alert_juggler_description
+    window_secs: *alert_window_secs
+    group_by_labels:
+      - host
+    channels:
+      - id: juggler
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_juggler_host
+      service: *alert_annotations_service
+      juggler_description: *alert_juggler_description
+    clusters:
+      - prod_vla
+      - prod_sas
+      - prod_myt
+      - israel
+    expression:
+      program: |-
+        let blacklist_requests='AlterPlacementGroupMembership|StartEndpoint|StopEndpoint|ListEndpoints|KickEndpoint';
+
+        let total_errors = integrate_fn(group_lines('sum', {
+          project='{{.SolomonProjectID}}',
+          cluster='{{.SolomonCluster}}',
+          service='server',
+          host='nbs-control-*',
+          request='*',
+          sensor='Errors',
+          type= 'ssd_nonrepl',
+          request!='{{`{{blacklist_requests}}`}}'
+        }));
+
+        let throttle_errors = integrate_fn(group_lines('sum', {
+          project='{{.SolomonProjectID}}',
+          cluster='{{.SolomonCluster}}',
+          service='server',
+          host='nbs-control-*',
+          request='*',
+          sensor='Errors/Throttling',
+          type= 'ssd_nonrepl',
+          request!='{{`{{blacklist_requests}}`}}'
+        }));
+
+        let session_errors = integrate_fn(group_lines('sum', {
+          project='{{.SolomonProjectID}}',
+          cluster='{{.SolomonCluster}}',
+          service='server',
+          host='nbs-control-*',
+          request='*',
+          sensor='Errors/Session',
+          type= 'ssd_nonrepl',
+          request!='{{`{{blacklist_requests}}`}}'
+        }));
+
+        let other_errors = total_errors - throttle_errors - session_errors;
+        let max_session_errors = max(session_errors);
+        let max_other_errors = max(other_errors);
+
+        no_data_if(count(total_errors) == 0);
+        no_data_if(count(throttle_errors) == 0);
+        no_data_if(count(session_errors) == 0);
+
+        alarm_if(max_session_errors >= 300);
+        alarm_if(max_other_errors >= 1200);
+
+        warn_if(max_session_errors >= 10);
+        warn_if(max_other_errors >= 300);

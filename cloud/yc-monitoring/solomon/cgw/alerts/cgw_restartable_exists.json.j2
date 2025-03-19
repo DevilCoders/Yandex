@@ -1,0 +1,44 @@
+{% extends "../../base/alert.j2" %}
+
+{# set window for 2 days #}
+{% set windowSecs = 172800 %}
+{% macro prog() %}
+let all_crit_ts = {
+	cluster='cloud_{{ env }}_cloudgate',
+	service='juggler-events',
+	host='cluster',
+	juggler_service='vpp-uptime',
+	status='CRIT',
+	classified='none|-'
+};
+let all_warn_ts = {
+	cluster='cloud_{{ env }}_cloudgate',
+	service='juggler-events',
+	host='cluster',
+	juggler_service='vpp-uptime',
+	status='WARN',
+	classified='none|-'
+};
+let all_crit = sum(series_sum(all_crit_ts));
+let all_warn = sum(series_sum(all_warn_ts));
+let is_red = all_crit == 0 && all_warn == 0 ;
+let is_yellow = all_crit == 0 && all_warn > 0 ;
+alarm_if(is_red);
+warn_if(is_yellow);
+{% endmacro %}
+
+
+{% block main %}
+	"name": "CGW restartable exists @ {{ env }}",
+	"description": "No cgw restarts found for 2 days, it may be dangerous to deploy.",
+	"type": {{ type_expression() }},
+	"state": "ACTIVE",
+	"annotations": {
+		"host": "cgw-solomon-{{env}}",
+		"tags": "Solomon, yc-{{env}}, yc-cgw",
+		"service": "{{ serviceName }}",
+		"wiki": "https://docs.yandex-team.ru/yc-monitoring/cgw/{{ serviceName }}",
+		"crit_count": "[[expression.all_crit]]",
+		"warn_count": "[[expression.all_warn]]"
+	}
+{% endblock %}

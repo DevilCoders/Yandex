@@ -1,0 +1,99 @@
+id: 537277
+uid: iam-active-probes
+title: IAM Active Probes
+folderId: 412692
+refresh: 1m
+
+tags: [ 'iam', 'iam-active-probes' ]
+links:
+  !include shared/links.yaml active-probes
+
+graphDefaults: { datasource: '${ds}', width: 6, height: 7 }
+queryDefaults:
+  labels: 'project=yc.iam.service-cloud, service=active-probes, cluster=active-probes-${cluster}, host=${host:pipe}, service_name=${service_name:pipe}, test_name=${test_name:pipe}'
+  dropNan: true
+  defaultTimeWindow: '1m' # 1m Because our tests run once a minute
+
+variables:
+  replacement:
+    all_hosts: 'iam-activeprobes-*'
+  ui:
+    !include shared/datasources.yaml
+  uiQuery:
+    !include shared/clusters.yaml 'active-probes'
+    service_name:
+      labels: 'host=@all_hosts, service_name=*, test_name=*'
+      multi: true
+    host:
+      labels: 'host=@all_hosts, service_name=*, test_name=*'
+      multi: true
+    test_name:
+      labels: 'host=@all_hosts, test_name=*'
+      multi: true
+
+rows:
+  - title: 'Metrics'
+    drilldowns:
+      - subUid: dd-by-host
+        ui:
+          ds: ds
+        uiQuery:
+          cluster: cluster
+          service_name: service_name
+          host: host
+          test_name: test_name
+        uiRepeat: host
+        labels: 'host=${host}'
+
+      - subUid: dd-by-method
+        ui:
+          ds: ds
+        uiQuery:
+          cluster: cluster
+          service_name: service_name
+          host: host
+          test_name: test_name
+        uiRepeat: test_name
+        labels: 'test_name=${test_name}'
+
+    panels:
+      - type: singlestat
+        title: 'Executed'
+        params: { width: 3, height: 3 }
+        value: { valueFontSize: 150%, valueFunction: delta, decimals: 0 }
+        query:
+          params: { labels: 'sensor=counter' }
+          select: { diff: [], drop_below: '0', group_lines: [ 'sum' ], alias: 'failed count' }
+        sparkline: { show: true }
+
+      !include shared/active-probes/failed_singlestat.yaml 3 3
+
+      - type: placeholder
+        params: { width: 18, height: 3 }
+
+      !include shared/active-probes/failed-by-tests_graph.yaml bottom 12
+
+      !include shared/active-probes/duration_graph.yaml right 12
+
+      - type: graph
+        title: 'RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'sensor=counter' }
+
+      - type: graph
+        title: 'Fails'
+        templates: { name: errors }
+        queries:
+          - params: { labels: 'sensor=fail_counter' }
+        draw: [ { alias: 'fails', color: '#b20', at: left } ]
+
+      - type: graph
+        title: 'Stages Duration'
+        params: { width: 12 }
+        queries:
+          - params: { labels: 'sensor=stage_duration' }
+            groupByTime: { avg: default }
+            select: { group_by_labels: [ avg, service_name, test_name, stage_name ], alias: '{{test_name}}.{{stage_name}}' }
+        yAxes: [ { min: 0, format: ms } ]
+        display: { legend: right, stack: true, sort: decreasing }

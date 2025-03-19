@@ -1,0 +1,31 @@
+
+sla_common_checks:
+  host: '{{ host }}'
+  notifications: "{{ notifications }}"
+  aggregator: more_than_limit_is_problem
+  namespace: "{{ namespace }}"
+  aggregator_kwargs:
+    crit_limit: 10
+    mode: normal
+    warn_limit: 1
+  __force__: True
+  children:
+    type: CGROUP
+    name: '{{ cgroup }}'
+
+- juggler_check:
+  args: "{{ dict() | hash_replace(sla_common_checks, dict(aggregator='logic_or', aggregator_kwargs=dict(mode='WARN'))) | hash_merge( mysql_unreach_pass, item ) }}"
+  with_items:
+    - service: mysql-availability-warn-only
+      refresh_time: 300
+      children:
+        service: mysql-availability-warn-only
+
+- juggler_check:
+  args: "{{ dict() | hash_replace(sla_common_checks, dict(aggregator='logic_or', aggregator_kwargs=dict(mode='WARN'))) | hash_merge( pg_unreach_pass, item ) }}"
+  with_items:
+    - service: postrgesql-availability-warn-only
+      refresh_time: 300
+      children:
+        service: postrgesql-availability-warn-only
+

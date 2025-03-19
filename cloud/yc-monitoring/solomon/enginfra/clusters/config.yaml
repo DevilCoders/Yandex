@@ -1,0 +1,68 @@
+api_path: /clusters/
+entities:
+  # По имени строится кондукторная группа:
+  #   oct  => cloud_{{env}}_oct
+  #   _ALL => cloud_{{env}}
+
+  # Общий сервис.
+  #  _ALL:
+  #    template: ../../base/cluster.j2
+{% if env != "israel" %}
+  {% for cluster in kubelet_clusters %}
+  {{ cluster }}:
+    template: ../../base/cluster.j2
+  {% endfor %}
+
+  {% for cluster in kubelet_hw_clusters %}
+  {{ cluster }}:
+    template: ../../base/cluster.j2
+  {% endfor %}
+{% endif %}
+
+{% if env != "israel" %}
+  bootstrap:
+    template: bootstrap_cluster.j2
+
+  {% for az in zones_by_env[env] %}
+  bootstrap_{{ az.prefix }}:
+    template: bootstrap_cluster.j2
+    context:
+      az: {{ az.prefix }}
+  {% endfor %}
+{% else %}
+  bootstrap:
+    template: ../../base/cluster.j2
+  {% for az in zones_by_env[env] %}
+
+  bootstrap_{{ az.prefix }}:
+    template: ../../base/cluster.j2
+  {% endfor %}
+{% endif %}
+
+  {% for az in zones_by_env[ env ] %}
+  bootstrap-hw_{{ az.prefix }}:
+    template: ../../base/cluster.j2
+  {% endfor %}
+
+  {% for az in zones_by_env[env] %}
+  bootstrap_{{ az.prefix }}:
+    template: ../../base/cluster.j2
+  {% endfor %}
+
+  {% for az in zones_by_env[env] %}
+  xds-provider_{{ az.prefix }}:
+    template: ../../base/cluster.j2
+    context:
+      cloud_dns: {israel: ["xds-provider-{{ az.prefix }}*.svc.yandexcloud.co.il"]}
+  {% endfor %}
+
+  {% for cluster in locallb_clusters %}
+    {% for az in zones_by_env[env] %}
+  {{ cluster }}_{{ az.prefix }}:
+    template: ../../base/cluster.j2
+    {% if cluster == "local-proxy" %}
+    context:
+      cloud_dns: { israel: [ "local-proxy-{{ az.prefix }}*.svc.yandexcloud.co.il" ] }
+    {% endif %}
+    {% endfor %}
+  {% endfor %}

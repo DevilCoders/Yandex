@@ -1,0 +1,9 @@
+RECURSE(
+    data
+    data_pipeline
+    eval
+    experiments
+    utils
+    tmp
+    reactor
+)

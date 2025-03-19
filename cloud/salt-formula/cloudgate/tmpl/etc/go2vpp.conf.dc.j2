@@ -1,0 +1,38 @@
+log: {{ log }}
+
+peers:
+{%- for group, alist in announces.iteritems() %}
+    {{ group }}:
+        announces:
+{%-     for announce in alist %}
+          - route: {{ announce['route'] }}
+            vrf: {{ announce['vrf'] }}
+{%-     else %}
+{# empty for #}
+          []
+{%-     endfor %}
+{%- endfor %}
+
+{%- set group_host_ifaces_map = {
+    'downstream': 'DOWNSTREAM',
+    'upstream6': 'UPSTREAM_V6',
+    'upstream4': 'UPSTREAM_V4',
+} %}
+interfaces:
+{%- for pgroup, desc in peers.iteritems() %}
+{%-   if pgroup in group_host_ifaces_map %}
+    {{ pgroup }}:
+        address: {{ host['interfaces'][group_host_ifaces_map[pgroup]]['addr'].split("/")[0] }}
+{%-   endif %}
+{%- endfor %}
+    loopback:
+        address: {{ host['loopback'].split("/")[0] }}
+
+vrf-conf-file: cgw-vrfs.conf
+{%- if nat44['shared'] %}
+autovrf:
+  tenant_asns:
+{%- for asn in nat44['tenant_asn'] %}
+    - {{ asn }}
+{%- endfor %}
+{%- endif %}

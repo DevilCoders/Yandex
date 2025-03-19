@@ -1,0 +1,64 @@
+{% if restore_config and salt.pillar.get('restore-from:cid') %}
+
+{% set pgp_key_path = 'C:/ProgramData/wal-g/RESTORE_PGP_KEY' %}
+{% set s3_bucket = salt.pillar.get('data:restore-from-pillar-data:s3_bucket', 'mdb') %}
+{% set cid = salt.pillar.get('restore-from:cid') %}
+{% set ss_version = salt.pillar.get('data:restore-from-pillar-data:sqlserver:version:major_num') %} 
+
+{% else %}
+
+{% set pgp_key_path = 'C:/ProgramData/wal-g/PGP_KEY' %}
+{% set s3_bucket = salt.pillar.get('data:s3_bucket', 'mdb') %}
+{% set cid = salt.pillar.get('data:dbaas:cluster_id') %}
+{% set ss_version = salt.pillar.get('data:sqlserver:version:major_num') %} 
+
+{% endif %}
+
+{% set walg_io_limit = salt.pillar.get('data:dbaas:flavor:io_limit', salt.pillar.get('data:walg:io_limit', 536870912)) // 2 %}
+{% set walg_network_limit = salt.pillar.get('data:dbaas:flavor:network_limit', salt.pillar.get('data:walg:network_limit', 1073741824)) // 2 %}
+{% set parallel_threads = salt.pillar.get('data:dbaas:flavor:cpu_guarantee', salt.pillar.get('data:walg:parallel_workers', 1)) %}
+{% if parallel_threads < 4 %}
+{% set parallel_threads = 4 %}
+{% endif %}
+{% set memory_guarantee_gb = (salt.pillar.get('data:dbaas:flavor:memory_guarantee', 0)|int) / (1024**3) %}
+{% set space_limit_bytes = salt.pillar.get('data:dbaas:space_limit', 0)|int %}
+{% set space_limit_gb = space_limit_bytes / (1024**3) %}
+
+WALG_COMPRESSION_METHOD: sqlserver
+WALG_GPG_KEY_ID: ''
+WALG_PGP_KEY_PATH: {{ pgp_key_path }}
+
+GOMAXPROCS: {{ parallel_threads|int + 1 }}
+WALG_DISK_RATE_LIMIT: {{ walg_io_limit|int }}
+WALG_NETWORK_RATE_LIMIT: {{ walg_network_limit|int }}
+WALG_DOWNLOAD_CONCURRENCY: 1
+WALG_UPLOAD_CONCURRENCY: 1
+
+WALG_S3_MAX_PART_SIZE: 5242880
+WALG_S3_PREFIX: {{ "s3://{0}/wal-g/{1}/{2}/".format(s3_bucket, cid, ss_version) }}
+AWS_ENDPOINT: {{ salt.pillar.get('data:s3:endpoint', 'https://s3.mds.yandex.net/').replace('https+path','https').replace('http+path','http') }}
+AWS_S3_FORCE_PATH_STYLE: {{ (not salt.pillar.get('data:s3:virtual_addressing_style', False)) }}
+{% if salt.pillar.get('data:s3:access_key_id') %}
+AWS_ACCESS_KEY_ID: {{ salt.pillar.get('data:s3:access_key_id') }}
+{% endif %}
+{% if salt.pillar.get('data:s3:access_secret_key') %}
+AWS_SECRET_ACCESS_KEY: {{ salt.pillar.get('data:s3:access_secret_key') }}
+{% endif %}
+{% if salt.pillar.get('data:s3:region') %}
+AWS_REGION: {{ salt.pillar.get('data:s3:region') }}
+{% endif %}
+
+{% if restore_config and salt.pillar.get('restore-from:cid') %}
+SQLSERVER_BLOB_CERT_FILE: "C:/ProgramData/wal-g/restore.local.cert.pem"
+SQLSERVER_BLOB_KEY_FILE:  "C:/ProgramData/wal-g/restore.local.key.pem"
+SQLSERVER_BLOB_LOCK_FILE: "C:/ProgramData/wal-g/restore.lock"
+SQLSERVER_BLOB_HOSTNAME:  "restore.local"
+{% else %}
+SQLSERVER_BLOB_CERT_FILE: "C:/ProgramData/wal-g/backup.local.cert.pem"
+SQLSERVER_BLOB_KEY_FILE:  "C:/ProgramData/wal-g/backup.local.key.pem"
+SQLSERVER_BLOB_LOCK_FILE: "C:/ProgramData/wal-g/lock"
+SQLSERVER_BLOB_HOSTNAME:  "backup.local"
+SQLSERVER_REUSE_PROXY:    True
+{% endif %}
+SQLSERVER_CONNECTION_STRING: "sqlserver://sa:{{ salt['pillar.get']('data:sqlserver:users:sa:password', '') }}@localhost:1433"
+SQLSERVER_DB_CONCURRENCY: {{ (parallel_threads//2)|int }}

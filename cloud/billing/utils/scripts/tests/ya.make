@@ -1,0 +1,11 @@
+RECURSE(
+    aggregate_balance_reports
+    aggregate_billing_export_table
+    aggregate_billing_records
+    aggregate_revenue_reports
+    apply_query_to_table
+    enrich_sales_name_table
+    group_max_table_raws_by_date
+    table_from_yt_to_s3
+    upload_test_data_to_yt
+)

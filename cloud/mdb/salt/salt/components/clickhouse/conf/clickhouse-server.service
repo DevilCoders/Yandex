@@ -1,0 +1,36 @@
+{% set environment = salt.pillar.get('data:clickhouse:environment', {}) %}
+[Unit]
+Description=ClickHouse Server (analytic DBMS for big data)
+
+[Service]
+{% if salt.pillar.get('data:database_slice:enable', False) and salt.dbaas.is_dataplane() %}
+Slice=database.slice
+{% endif %}
+Type=simple
+User=clickhouse
+Group=clickhouse
+Restart=always
+RestartSec=30
+RuntimeDirectory=clickhouse-server
+RuntimeDirectoryPreserve=yes
+
+{% for envN, envV in environment | dictsort %}
+Environment='{{envN}}={{envV | replace("'", "\\'")}}'
+{% endfor %}
+
+ExecStartPre=+/usr/local/yandex/clickhouse-pre_start.sh
+ExecStart=/usr/bin/clickhouse-server --config=/etc/clickhouse-server/config.xml --pid-file=/run/clickhouse-server/clickhouse-server.pid
+
+ExecStop=/usr/bin/touch /run/clickhouse-server/wd.stop
+ExecStop=/usr/local/yandex/clickhouse-stop-wait.sh
+
+LimitCORE=0
+LimitNOFILE=500000
+TasksMax=50000
+LimitMEMLOCK=infinity
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_IPC_LOCK CAP_SYS_NICE
+
+TimeoutSec=300
+
+[Install]
+WantedBy=multi-user.target

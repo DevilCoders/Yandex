@@ -1,0 +1,59 @@
+PRAGMA yt.Auth = "default_yt";
+
+USE hahn;
+
+$billing_view = "//home/cloud_analytics/cubes/acquisition_cube/cube_dm_view";
+$mdb_tools_path = "//home/mdb/mdb-tools/";
+$base_path = "//home/mdb/mdb-tools-clients/";
+
+$today = CurrentUtcDate();
+$days_ago = 3;
+$range = ListFromRange(1, $days_ago);
+
+$shift_back_by_days = ($days_ago) -> {
+    RETURN Unwrap(
+        $today - $days_ago * Interval("P1D"),
+        "Failed to shift today back by " || CAST($days_ago AS String) || " days"
+    );
+};
+
+$dates = ListMap($range, $shift_back_by_days);
+
+DEFINE ACTION $collect_day($date) AS
+    $path = $base_path || CAST($date AS String);
+    $mdb_tools_table = $mdb_tools_path || CAST($date AS String);
+
+    INSERT INTO $path -- destination table
+    WITH TRUNCATE
+    SELECT
+        mdb_tools.dt AS dt,
+        mdb_tools.billing_account_id AS billing_account_id,
+        mdb_tools.cloud_id AS cloud_id,
+        mdb_tools.service_name AS service_name,
+        mdb_tools.service_provider AS service_provider,
+        COALESCE(billing.account_name, billing.ba_name) AS billing_account_name,
+        billing.ba_person_type AS billing_account_type,
+        billing.ba_usage_status AS billing_usage_status,
+        mdb_tools.user_id AS user_id,
+        mdb_tools.user_type AS user_type,
+        SUM(mdb_tools.request_cnt) AS request_cnt
+    FROM $mdb_tools_table AS mdb_tools
+    LEFT JOIN $billing_view AS billing
+    ON mdb_tools.billing_account_id = billing.billing_account_id
+    GROUP BY
+        mdb_tools.billing_account_id,
+        mdb_tools.cloud_id,
+        mdb_tools.dt,
+        mdb_tools.service_name,
+        mdb_tools.service_provider,
+        billing.account_name,
+        billing.ba_name,
+        billing.ba_person_type,
+        billing.ba_usage_status,
+        mdb_tools.user_id,
+        mdb_tools.user_type;
+END DEFINE;
+
+EVALUATE FOR $date IN $dates DO $collect_day($date);
+
+COMMIT;

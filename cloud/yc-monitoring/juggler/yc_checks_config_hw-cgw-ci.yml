@@ -1,0 +1,116 @@
+---
+- hosts: localhost
+  gather_facts: false
+  pre_tasks:
+    - juggler_facts:  jserver_api={{ jserver_api }}
+      tags: ["always"]
+  vars:
+    - datacenters:
+      - myt
+    - env: "hw-cgw-ci-lab"
+    - notify_tag: 'yc-temporary'
+    - network_limits: "{{ default_limits }}"
+
+  roles:
+    - role: hc-ctrl
+      vars:
+        children:
+          - "CGROUP%cloud_{{ env }}_healthcheck-ctrl{{ dc_suffix }}"
+        role: "yc_loadbalancer_hc-ctrl"
+        check_tags: ['visible', 'yc-loadbalancer', 'yc-cgw']
+        default_limits: "{{ default_limits_workday }}"
+        unreachable_host: "{{ host }}"
+        flap: ""
+        host: "{{ role }}_{{ env }}{% if dc is defined %}_{{ dc }}{% endif %}"
+        ignore_ongoing_deployment: false
+
+    - role: hc-node
+      vars:
+        children:
+          - "CGROUP%cloud_{{ env }}_healthcheck-node{{ dc_suffix }}"
+        role: "yc_loadbalancer_hc-node"
+        check_tags: ['visible', 'yc-loadbalancer', 'yc-cgw']
+        default_limits: "{{ default_limits_workday }}"
+        unreachable_host: "{{ host }}"
+        flap: ""
+        host: "{{ role }}_{{ env }}{% if dc is defined %}_{{ dc }}{% endif %}"
+        ignore_ongoing_deployment: false
+
+    - role: lb-ctrl
+      vars:
+        children:
+          - "CGROUP%cloud_{{ env }}_loadbalancer-ctrl{{ dc_suffix }}"
+        role: "yc_loadbalancer_lb-ctrl"
+        check_tags: ['visible', 'yc-loadbalancer', 'yc-cgw']
+        default_limits: "{{ default_limits_workday }}"
+        unreachable_host: "{{ host }}"
+        flap: ""
+        host: "{{ role }}_{{ env }}{% if dc is defined %}_{{ dc }}{% endif %}"
+        ignore_ongoing_deployment: false
+
+    - role: lb-node
+      vars:
+        children:
+          - "CGROUP%cloud_{{ env }}_loadbalancer-node{{ dc_suffix }}"
+        role: "yc_loadbalancer_lb-node"
+        check_tags: ['visible', 'yc-loadbalancer', 'yc-cgw']
+        default_limits: "{{ default_limits_workday }}"
+        unreachable_host: "{{ host }}"
+        flap: ""
+        host: "{{ role }}_{{ env }}{% if dc is defined %}_{{ dc }}{% endif %}"
+        ignore_ongoing_deployment: false
+
+    - role: cgw
+      vars:
+        children:
+          - CGROUP%cloud_{{ env }}_cloudgate{{ dc_suffix }}
+          - CGROUP%cloud_{{ env }}_cgw-ipv4{{ dc_suffix }}
+          - CGROUP%cloud_{{ env }}_cgw-ipv6{{ dc_suffix }}
+        role: "yc_network_cloudgate"
+        host: "yc_network_cloudgate{{ host_suffix }}"
+        unreachable_host: "yc_network_cloudgate{{ host_suffix }}"
+        telegram_chat_id: ""
+        notification_methods: "{{ default_notification_methods }}"
+        check_tags: ['visible', 'yc-network', 'yc-cgw', 'yc-cloudgate']
+        flap: ""
+        default_limits: "{{ default_limits_workday }}"
+        ignore_ongoing_deployment: false
+
+    - role: cgw-nat
+      vars:
+        children:
+          - CGROUP%cloud_{{ env }}_cgw-nat{{ dc_suffix }}
+        role: "yc_network_cgw-nat"
+        host: "yc_network_cgw-nat{{ host_suffix }}"
+        unreachable_host: "yc_network_cgw-nat{{ host_suffix }}"
+        telegram_chat_id: ""
+        notification_methods: "{{ default_notification_methods }}"
+        check_tags: ['visible', 'yc-network', 'yc-cgw', 'yc-cgw-nat']
+        flap: ""
+        default_limits: "{{ default_limits_workday }}"
+        ignore_ongoing_deployment: false
+
+    - role: cgw-dc
+      vars:
+        children:
+          - CGROUP%cloud_{{ env }}_cgw-dc{{ dc_suffix }}
+        role: "yc_network_cgw-dc"
+        host: "yc_network_cgw-dc{{ host_suffix }}"
+        unreachable_host: "yc_network_cgw-dc{{ host_suffix }}"
+        telegram_chat_id: ""
+        notification_methods: "{{ default_notification_methods }}"
+        check_tags: ['visible', 'yc-network', 'yc-cgw', 'yc-cgw-dc']
+        flap: ""
+        default_limits: "{{ default_limits_workday }}"
+        ignore_ongoing_deployment: false
+
+    - role: e2e-launcher
+      vars:
+        children:
+          - CGROUP%cloud_{{ env }}_e2e-launcher
+        host: "yc_loadbalancer_e2e-launcher_{{ env }}"
+        unreachable_host: "yc_loadbalancer_e2e-launcher_{{ env }}"
+        default_limits: "{{ default_limits_workday }}"
+        flap: ""
+        check_tags: ['yc-network', 'yc-loadbalancer', 'yc-cgw', 'yc-e2e-launcher', 'visible']
+        ignore_ongoing_deployment: true

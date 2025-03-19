@@ -1,0 +1,111 @@
+PY3_PROGRAM(qcalc)
+
+OWNER(apereshein)
+
+PEERDIR(
+    library/python/vault_client
+    contrib/python/requests
+    contrib/python/Flask
+    contrib/python/gevent
+    contrib/python/psycopg2
+    contrib/python/prettytable
+    contrib/python/PyYAML
+    contrib/python/decorator
+    contrib/python/prompt-toolkit
+    contrib/python/PyJWT
+    library/python/startrek_python_client
+    cloud/bitbucket/private-api/yandex/cloud/priv/quota
+    cloud/bitbucket/private-api/yandex/cloud/priv/console/v1
+    cloud/bitbucket/private-api/yandex/cloud/priv/serverless/functions/v1
+    cloud/bitbucket/private-api/yandex/cloud/priv/serverless/triggers/v1
+    cloud/bitbucket/private-api/yandex/cloud/priv/microcosm/instancegroup/v1
+    cloud/bitbucket/private-api/yandex/cloud/priv/k8s/v1
+    cloud/bitbucket/private-api/yandex/cloud/priv/k8s/v1/inner
+    cloud/bitbucket/private-api/yandex/cloud/priv/containerregistry/v1
+    cloud/bitbucket/private-api/yandex/cloud/priv/compute/v1
+    cloud/bitbucket/private-api/yandex/cloud/priv/vpc/v1
+    cloud/bitbucket/private-api/yandex/cloud/priv/vpc/v1/inner
+    cloud/bitbucket/private-api/yandex/cloud/priv/monitoring/v2
+    cloud/bitbucket/private-api/yandex/cloud/priv/iot/devices/v1
+    cloud/bitbucket/private-api/yandex/cloud/priv/loadbalancer/v1
+    cloud/bitbucket/private-api/yandex/cloud/priv/ydb/v1
+    cloud/bitbucket/private-api/yandex/cloud/priv/dns/v1
+    cloud/bitbucket/private-api/yandex/cloud/priv/iam/v1
+    cloud/bitbucket/private-api/yandex/cloud/priv/iam/v1/backoffice
+    cloud/bitbucket/private-api/yandex/cloud/priv/iam/v1/console
+    cloud/bitbucket/private-api/yandex/cloud/priv/resourcemanager/v1
+    cloud/bitbucket/private-api/yandex/cloud/priv/resourcemanager/v1/console
+    cloud/bitbucket/private-api/yandex/cloud/priv/quotamanager/v1
+)
+
+PY_SRCS(
+    TOP_LEVEL
+    MAIN qcalc.py
+    app/workers.py
+    app/routes.py
+    app/saint/assets.py
+    app/saint/cloudfacade.py
+    app/saint/endpoints.py
+    app/saint/grpc_gw.py
+    app/saint/helpers.py
+    app/saint/printers.py
+    app/saint/profiles.py
+    app/saint/websaint.py
+    app/helpers/__init__.py
+    app/helpers/Constants.py
+    app/helpers/Tracker.py
+    app/grpc_auth.py
+    app/saint/saint_cloud_components/st_auth.py
+    app/saint/saint_cloud_components/st_billing.py
+    app/saint/saint_cloud_components/st_cloud.py
+    app/saint/saint_cloud_components/st_disk.py
+    app/saint/saint_cloud_components/st_folder.py
+    app/saint/saint_cloud_components/st_instance.py
+    app/saint/saint_cloud_components/st_k8s.py
+    app/saint/saint_cloud_components/st_mdb.py
+    app/saint/saint_cloud_components/st_network.py
+    app/saint/saint_cloud_components/st_operation.py
+    app/saint/saint_cloud_components/st_s3.py
+    app/saint/saint_cloud_components/st_user.py
+    app/quotaservice/__init__.py
+    app/quotaservice/constants.py
+    app/quotaservice/helpers.py
+    app/quotaservice/quotaservice.py
+    app/quota/services/object_storage.py
+    app/quota/services/mdb.py
+    app/quota/services/resource_manager.py
+    app/quota/services/load_balancer.py
+    app/quota/services/container_registry.py
+    app/quota/services/serverless.py
+    app/quota/services/instance_group.py
+    app/quota/services/monitoring.py
+    app/quota/services/kubernetes.py
+    app/quota/services/compute.py
+    app/quota/services/quota_calculator.py
+    app/quota/services/kms.py
+    app/quota/services/iot.py
+    app/quota/services/__init__.py
+    app/quota/services/billing.py
+    app/quota/services/vpc.py
+    app/quota/services/ydb.py
+    app/quota/services/dns.py
+    app/quota/subject.py
+    app/quota/error.py
+    app/quota/version.py
+    app/quota/utils/autocomplete.py
+    app/quota/utils/request.py
+    app/quota/utils/helpers.py
+    app/quota/utils/validators.py
+    app/quota/utils/__init__.py
+    app/quota/utils/response.py
+    app/quota/constants.py
+    app/quota/metric.py
+    app/quota/__init__.py
+    app/quota/base.py
+    app/config.py
+    app/restapi.py
+    app/grpcapi.py
+    app/__init__.py
+)
+
+END()

@@ -1,0 +1,128 @@
+{
+  "variables": {
+    "endpoint": "{{env `YC_ENDPOINT`}}",
+    "service_account_key_file": "{{env `YC_SA_KEY_FILE`}}",
+    "ssh_private_key_file": "{{env `SSH_PRIVATE_KEY_FILE`}}",
+    "folder_id": "{{env `YC_FOLDER_ID`}}",
+    "subnet_id": "{{env `YC_SUBNET_ID`}}",
+    "commit_revision": "{{env `COMMIT_REVISION`}}",
+    "commit_author": "{{env `COMMIT_AUTHOR`}}",
+    "commit_message": "{{env `COMMIT_MESSAGE`}}",
+    "gsid": "{{env `GSID`}}",
+    "salt_version": "2018.3.4-yandex6"
+  },
+  "builders": [
+    {
+      "type": "yandex",
+      "endpoint": "{{user `endpoint`}}",
+      "service_account_key_file": "{{user `service_account_key_file`}}",
+      "folder_id": "{{user `folder_id`}}",
+      "subnet_id": "{{user `subnet_id`}}",
+      "zone": "ru-central1-c",
+      "preemptible": true,
+      "labels": {
+        "skip_update_ssh_keys": "true"
+      },
+      "metadata": {
+        "gsid": "{{user `gsid`}}"
+      },
+      "use_ipv4_nat": false,
+      "use_ipv6": true,
+      "image_name": "platform-teamcity-agent-{{isotime | clean_resource_name}}",
+      "image_family": "platform-teamcity-agent",
+      "image_labels": {
+        "commit_revision": "{{user `commit_revision`}}",
+        "commit_author": "{{user `commit_author`}}"
+      },
+      "image_description": "based on commit (https://a.yandex-team.ru/arc/commit/{{user `commit_revision`}}) by {{user `commit_author`}}@ with message '{{user `commit_message`}}'",
+      "source_image_family": "ubuntu-1604-lts",
+      "disk_type": "network-ssd",
+      "ssh_username": "ubuntu",
+      "ssh_private_key_file": "{{user `ssh_private_key_file`}}"
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "shell",
+      "inline": [
+        "sudo sed -i.orig '1i nameserver 2a02:6b8:0:3400::5005' /etc/resolv.conf",
+        "echo 'Content of /etc/resolv.conf.orig:' ; cat /etc/resolv.conf.orig",
+        "echo 'Content of /etc/resolv.conf:' ; cat /etc/resolv.conf",
+        "echo 'Content of /etc/hosts:' ; cat /etc/hosts",
+        "sudo systemctl stop apt-daily.service ; sudo systemctl kill --kill-who=all apt-daily.service",
+        "sudo systemctl disable apt-daily.timer apt-daily-upgrade.timer"
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "mkdir -p /usr/local/share/ca-certificates/",
+        "sudo wget https://crls.yandex.net/YandexInternalRootCA.crt -O /usr/local/share/ca-certificates/YandexInternalRootCA.crt",
+        "sudo update-ca-certificates"
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 7FCD11186050CD1A",
+        "apt-key list",
+        "echo \"image prepared by Packer at $(date --rfc-3339 sec)\" | sudo tee    /etc/image_description",
+        "echo | sudo tee /etc/apt/sources.list",
+        "sudo chattr +i /etc/apt/sources.list",
+        "sudo rm -rf /etc/apt/sources.list.d/*",
+        "echo 'deb http://yandex-cloud-common-secure.dist.yandex.ru/yandex-cloud-common-secure stable/all/'   | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-common-secure.list",
+        "echo 'deb http://yandex-cloud-common-secure.dist.yandex.ru/yandex-cloud-common-secure stable/amd64/' | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-common-secure.list",
+        "echo 'deb http://yandex-cloud-secure.dist.yandex.ru/yandex-cloud-secure stable/all/'   | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-secure-stable.list",
+        "echo 'deb http://yandex-cloud-secure.dist.yandex.ru/yandex-cloud-secure stable/amd64/' | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-secure-stable.list",
+        "echo 'deb http://yandex-cloud-upstream-xenial-secure.dist.yandex.ru/yandex-cloud-upstream-xenial-secure stable/all/'   | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-upstream-xenial-secure.list",
+        "echo 'deb http://yandex-cloud-upstream-xenial-secure.dist.yandex.ru/yandex-cloud-upstream-xenial-secure stable/amd64/' | sudo tee -a /etc/apt/sources.list.d/yandex-cloud-upstream-xenial-secure.list"
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "export DEBIAN_FRONTEND=noninteractive",
+        "sudo apt-get update -qq",
+        "sudo apt-get install -y --allow-unauthenticated yandex-archive-keyring",
+        "sudo apt-add-repository universe && sudo apt-get update -qq",
+        "sudo apt-get upgrade -y --option=Dpkg::Options::=--force-confold",
+        "echo 'configured deb repos:'",
+        "grep -Rno '^deb .*' /etc/apt/sources.list.d/ /etc/apt/sources.list",
+        "apt-cache policy"
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'INSTALL salt-common & salt-minion VERSION {{user `salt_version`}}'",
+        "sudo apt-get install -y salt-common={{user `salt_version`}} salt-minion={{user `salt_version`}}"
+      ]
+    },
+    {
+      "type": "salt-masterless",
+      "local_state_tree": "{{template_dir}}/../salt-masterless",
+      "custom_state": "cloud-init,network,kernel,packages,cauth,docker-and-compose,docker-weekly-cleanup,atop"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "echo 'Purge Salt packages'",
+        "sudo apt-get -y purge salt-common salt-minion",
+        "sudo apt-get -y autoremove",
+        "sudo rm -rf /srv/salt",
+        "sudo rm -rf /var/cache/salt",
+        "sudo rm -rf /etc/apt/sources.list.d/saltstack.list",
+        "echo 'Cleanup apt'",
+        "sudo apt-get clean all",
+        "sudo rm /var/lib/apt/lists/* || :",
+        "sudo rm -rf /var/lib/cloud",
+        "sudo rm -ff /var/lib/dhcp/*.leases",
+        "echo 'List of files in /root'",
+        "sudo find /root",
+        "echo 'List installed packages and versions'",
+        "dpkg -l",
+        "ls -al /var/lib/dpkg/"
+      ]
+    }
+  ]
+}

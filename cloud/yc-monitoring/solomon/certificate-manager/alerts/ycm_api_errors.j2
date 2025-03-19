@@ -1,0 +1,33 @@
+{% extends "./base_alert.j2" %}
+
+{% set checkExpression = "value > " + value_limit %}
+{% set description = "YCM " + env | upper + " API Errors" %}
+{% set windowSecs = 300 %}
+
+{% macro prog() %}
+let data = group_lines(
+  'sum',
+  non_negative_derivative({
+    project='{{ project_id }}',
+    service='{{ solomon_service }}',
+    cluster='cloud_{{ env }}_ycm_cluster',
+    host='cpl-*|dpl-*',
+    {{ sensor_label }}='grpc_statuses',
+    app='*server',
+    status='UNAVAILABLE|UNKNOWN|DEADLINE_EXCEEDED|UNIMPLEMENTED|INTERNAL|DATA_LOSS'
+  })
+);
+let value = sum(data);
+{% endmacro %}
+
+{% block main %}
+  "name": "YCM {{ env | upper }} API errors",
+  "groupByLabels": ["cluster", "host"],
+  "annotations": {
+    "jugglerService": "[[labels.cluster]]--[[labels.host]]--apiErrors",
+    "description": "[[expression.value]] GRPC errors on [[labels.host]]",
+    "wikiUrl": "https://nda.ya.ru/t/-VGHjY7g5Azn3j",
+    "jugglerTags" : "{{ jugglerTags }}"
+  },
+  "type": {{ type_expression() }}
+{% endblock %}

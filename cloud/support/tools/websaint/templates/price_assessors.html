@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Калькулятор квот</title>
+<style type ="text/css">
+table {
+  border-collapse: collapse;
+}
+
+td, th {
+  border: 1px solid #dddddd;
+  text-align: left;
+  padding: 8px;
+}
+
+.info1 {
+  float: none;
+  width: 40%
+}
+
+.info2 {
+  float: right;
+  width: 60%
+}
+
+.true {
+     bgcolor: green;
+}
+
+.more {
+     bgcolor: red;
+}
+
+.bad {
+     bgcolor: red;
+}
+
+.compute {
+float: none;
+width: 40%;
+}
+
+.other {
+float: none;
+}
+
+.quotaname {
+font-size: 20px;
+}
+
+</style>
+</head>
+<body>
+<a href="/qm?cloud_id={{ cloudid }}">Новый интерфейс</a>
+{% block content %}
+
+<div >
+    <div class="info2" >
+    <iframe width="100%" height=500px src="https://storage.yandexcloud.net/qcalc/info.html"></iframe>
+</div>
+    <div class="info1">
+<table>
+
+<tr>
+<th>Сумма стандартных грантов</th>
+<th>Сумма активных грантов</th>
+<th>Сумма пополнений</th>
+    <th>Кредитный лимит</th>
+<th>Информация о клиенте</th>
+</tr>
+
+<tr>
+    <td><input id='startgrant' type="float" value="{{balance.startgrant}}" size=10 disabled></td>
+    <td><input id='othergrants' type="float" value="{{balance.grantsumm}}" size=10 disabled></td>
+    <td>
+        <input id='money' type="float" value="{{money}}" size=5 disabled>
+
+    </td>
+    <td><input id='cr-limit' type="float" value="{{balance.credit}}" size=5 disabled>
+            <input id='balance' type="float" style="display:none" value="{{balance.balance}}" size=5>
+        <input id='grant' type="float" style="display:none" value="{{balance.grantsumm}}" size=5 disabled></td>
+    <td rowspan="3" {% if manager %} bgcolor="green" {% endif %}
+                    {% if userinfo['personType'] == 'individual' and (userinfo['displayStatus'] == 'TRIAL_ACTIVE' or
+                        userinfo['cloud_age']<3 ) or cloudid in badlist %}
+                    bgcolor="red" {% endif %}>
+        <br>
+        CloudID: <p id="cloudid">{{ cloudid }}</p>
+            {{ userinfo['personType'] }}
+            {% if userinfo['personType'] == 'company' or userinfo['personType'] == 'switzerland_nonresident_company' %}
+                    Тип аккаунта: Юр. Лицо
+                {% else %}
+                    Тип аккаунта: Личный
+            {% endif %}
+        <br>Тип оплаты: {{ userinfo['paymentType'] | replace("invoice","безнал") | replace("card","карта") }}
+        <br>Статус: {{ userinfo['displayStatus'] }}
+        <br>Валюта:<label id="currency">{{ balance['currency'] }}</label> <label id="curvalue"></label>
+        <br>Managed: <input type="checkbox" {% if manager %} checked {% endif %} disabled>
+        <br>Cloud_age: {% if  userinfo['cloud_age']<3  %} <b> {{ userinfo['cloud_age'] }} </b> {% endif %}
+        <br>{% if  cloudid in badlist  %} <b> USER IN UROD LIST!!  </b> {% endif %}
+    <!--    <input type="text" disabled id="money" value="{{ money }}">-->
+    </td>
+</tr>
+
+</table>
+    </div>
+
+</div>
+
+
+<p>
+    <div>
+        <input type="text" id="services" hidden value="{{ ';'.join(services.keys()) }}">
+        <input type="text" id="support" hidden value="{{supporttype}}">
+{% for service in services.keys() %}
+
+<table class="compute">
+<tr>
+    <th colspan="5"><p align="center">Квоты {{ service }}</p></th>
+
+</tr>
+</tr>
+
+<tr>
+    <td>Название</td>
+    <td>Целевое значение</td>
+    <td>Текущее значение</td>
+    <td>Согласовано</td>
+</tr>
+
+{% for quota in services[service] %}
+    {% if quota in bytequota %}
+<tr>
+<td class="quotaname">{{ quota }}</td>
+<td><input name="{{ service }}" id='{{ quota }}_set' type="float" value="{{services[service][quota]['limit']/1073741824}}" size=10></td>
+<td><input id='{{ quota }}' type="float" value="{{services[service][quota]['limit']/1073741824}}"  size=10 disabled></td>
+<td><input id='{{ quota }}_approved' type="checkbox"></td>
+<input id='{{ quota }}_set-ph' type="float" style="display:none" value="{{services[service][quota]['price']}}"  size=5 disabled>
+</tr>
+    {% else %}
+<tr>
+<td class="quotaname">{{ quota }}</td>
+<td><input name="{{ service }}" id='{{ quota }}_set' type="float" value="{{services[service][quota]['limit']}}" size=10></td>
+<td><input id='{{ quota }}' type="float" value="{{services[service][quota]['limit']}}"  size=10 disabled></td>
+<td><input id='{{ quota }}_approved' type="checkbox"></td>
+<input id='{{ quota }}_set-ph' type="float" style="display:none" value="{{services[service][quota]['price']}}"  size=5 disabled>
+</tr>
+    {% endif %}
+
+{% endfor %}
+{% endfor %}
+ </table>
+</div>
+
+<div>
+<button class="compute" onclick="validateForm()" id='calc'>Итого</button>
+
+<br><br>
+<p id="warning" style="color:blue;"></p>
+<p id="deny" style="color:red;"></p>
+<p id="price-ph"></p>
+<p id="price-p2d"></p>
+<p id="total-bl"></p>
+<p id="decision"></p>
+<p id="wbepaid"></p>
+<button onclick="getcode()" id='getcode' hidden>Генерировать код</button>
+<button onclick="copyLink()" id='copy' hidden>Копировать код</button>
+<input id='link' type="text" value='' size=0 hidden>
+<br>
+<label id='labeltoken' for="token" hidden>Oauth Token</label>
+<br>
+<input id="token" type="password" size="30" hidden>
+<br>
+<button id="setquotas" onclick="setquotas()" hidden>Увеличить квоты</button>
+<p id="data"></p>
+<script src="/static/limits.js"></script>
+<script type="text/javascript" src="/static/matheval.js"></script>
+<script type="text/javascript" src="/static/front.js"></script>
+
+
+{% endblock %}
+    </div>
+</body>
+</html>

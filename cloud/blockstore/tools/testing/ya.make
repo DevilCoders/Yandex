@@ -1,0 +1,19 @@
+OWNER(g:cloud-nbs)
+
+RECURSE(
+    build-fresh-blob
+    eternal-tests
+    fake-conductor
+    fake-nbs
+    generate-agents
+    loadtest
+    nbd-test
+    notify-mock
+    pd-metadata-bench
+    plugintest
+    pssh-mock
+    rdma-test
+    spdk-test
+    stable-plugin
+    verify-test
+)

@@ -1,0 +1,60 @@
+{% extends "../../base/dashboard.j2" %}
+
+{% set default_service = "contrail_api" %}
+{% set cluster = "cloud_" + env + "_oct" %}
+
+{% macro render_row_azs(title, query, number=None, subtitle=None, service=None, title2=None, query2=None, subtitle2=None) %}
+{ "panels": [
+    {% for az in zones_by_env[env] %}
+      {% set service    = service or default_service %}
+      {% set colspan    = 1 if title2 else 2 %}
+
+      {% set number_with_mask = "*" + number|string if number != "*" else number %}
+
+      {% set host       = "oct-" + az.prefix + number_with_mask|string if number else dc_aggregate_name(az.prefix) %}
+      {% set host_title = host if number else host|upper %}
+      {{ render_panel(title + " @ " + host_title, cluster, service, subtitle=subtitle, query=query + "&l.host=" + host, colspan=colspan) }}
+
+      {% if title2 %}
+      ,
+      {{ render_panel(title2 + " @ " + host_title, cluster, service, subtitle=subtitle2, query=query2 + "&l.host=" + host, colspan=colspan) }}
+      {% endif %}
+
+      {% if not loop.last %},{% endif %}
+    {% endfor %}
+]}
+{% endmacro %}
+
+{% block rows %}
+[
+    {{ render_row_azs(number="*",
+
+                      title="Errors",
+                      subtitle="(5xx, nginx https)",
+                      query="l.type=rps&l.source=nginx&l.group_by=status&graph=auto&status=5*&cs=gradient&red=0&stack=false",
+
+                      title2="Client Timeouts",
+                      subtitle2="(499, nginx https)",
+                      query2="l.type=rps&l.source=nginx&l.group_by=status&graph=auto&status=499&cs=gradient&red=0&stack=false") }},
+
+    {{ render_row_azs(title="Response Statuses",      subtitle="(nginx https)",  query="l.type=rps&l.source=nginx&l.group_by=status&graph=auto",
+                      title2="Response Statuses",     subtitle2="(nginx https)", query2="l.type=rps&l.source=nginx&l.group_by=status&graph=auto&graphMode=pieChart") }},
+
+    {{ render_row_azs(title="Response Times (ms)",    subtitle="(nginx https)",  query="l.type=rps&l.source=nginx&l.group_by=response_time_ms&graph=auto") }},
+    {{ render_row_azs(title="Response Sizes (bytes)", subtitle="(nginx https)",  query="l.type=rps&l.source=nginx&l.group_by=response_size&graph=auto") }},
+
+    {{ render_row_azs(title="Response Statuses",      subtitle="(contrail-api http)",  query="l.type=rps&l.source=contrail-api&l.group_by=status&graph=auto",
+                      title2="Response Statuses",     subtitle2="(contrail-api http)", query2="l.type=rps&l.source=contrail-api&l.group_by=status&graph=auto&graphMode=pieChart") }},
+
+    {{ render_row_azs(title="CPU Usage", service="oct_head_cgroup_metrics", subtitle="(contrail-api)", query="l.metric=cpuacct.usage&l.metric_group=CPU&l.unit=contrail-api&graph=auto&stack=false&min=0&max=1000000000&threshold=800000000", number="*") }},
+
+    {% for number in range(1, 6) %}
+        {{ render_row_azs(title="Response Time (ms) Percentiles", subtitle="(nginx https)", query="l.type=percentile&l.metric=response_time_ms&l.source=nginx&graph=auto&stack=false&threshold=7000", number=number) }},
+    {% endfor %}
+
+    {% for number in range(1, 6) %}
+        {{ render_row_azs(title="Response Size (bytes) Percentiles", subtitle="(nginx https)", query="l.type=percentile&l.metric=response_size&l.source=nginx&graph=auto&stack=false", number=number) }}
+        {% if not loop.last %},{% endif %}
+    {% endfor %}
+]
+{% endblock %}

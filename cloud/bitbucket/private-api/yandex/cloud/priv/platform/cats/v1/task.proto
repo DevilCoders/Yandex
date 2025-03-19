@@ -1,0 +1,260 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.platform.cats.v1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+import "yandex/cloud/priv/platform/cats/v1/identifier.proto";
+import "yandex/cloud/priv/platform/cats/v1/trace.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/platform/cats/v1;cats";
+option java_outer_classname = "PCATST";
+
+// Task is a unit of work in CATS system.
+// - The client arranges task execution using TaskRunnerService.EnsureTask.
+// - Some scheduling logic decides which worker should run the task and calls
+// - when ready, worker calls TaskControllerService.StartTask and starts task execution.
+// - after the task is completed, worker will call TaskControllerService.CompleteTask
+// - the client watches the task by polling TaskRunnerService.GetTask or using
+//   TaskRunnerService.WatchTask streaming method.
+message Task {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    NEW = 1;
+    // Any state in processing pipeline preceding actual execution.
+    PENDING = 2;
+    // Worker is executing the task.
+    RUNNING = 3;
+    // Task termination has been requested.
+    TERMINATING = 4;
+    // Task execution completed, but CATs is yet to determine if the task
+    // has finished properly or has to be retried.
+    EXECUTION_FINISHED = 5;
+    // Task completed and ready to be consumed.
+    COMPLETED = 6;
+  }
+
+  TaskMeta metadata = 1;
+  TaskMeta parent_metadata = 2;
+
+  map<string, string> labels = 3;
+
+  string description = 4;
+
+  google.protobuf.Any params = 5;
+
+  Status status = 6;
+
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp last_updated_at = 8;
+  google.protobuf.Timestamp completed_at = 9;
+  repeated AttemptInfo attempts = 10;
+
+  repeated string handler_queue = 11;
+  string active_handler_id = 12;
+
+  ScheduleInfo schedule_info = 13;
+  DelayOptions delay_options = 14;
+  SequenceInfo sequence_info = 15;
+  ExecutionOptions execution_options = 16;
+  RetryStatus retry_status = 17;
+  TraceContext trace_context = 18;
+  repeated CancelSelector cancel_selectors = 19;
+
+  oneof result_specifier {
+    TransientError transient_error = 20;
+    TerminalError terminal_error = 21;
+    // Most likely should not be used.
+    google.protobuf.Any result = 22;
+  }
+
+  google.protobuf.Duration retention_period = 23;
+  string resource_version = 24;
+}
+
+message AttemptInfo {
+  google.protobuf.Timestamp scheduled_at = 1;
+  google.protobuf.Timestamp started_at = 2;
+  google.protobuf.Timestamp terminated_at = 3;
+  google.protobuf.Timestamp finished_at = 4;
+
+  TransientError error = 5;
+
+  AttemptTrace trace = 6;
+}
+
+message TaskMeta {
+  // Unique persistent user-generated identifier of the task. In good case, the task which
+  // does the same job with the same parameters should use the same identifier.
+  // The task initiator in this case is allowed to be as stateless as possible.
+  //
+  // Example: suppose the client wants to start the task X with params Y,Z.
+  // They give task id X-YZ and calls TaskRunnerService.EnsureTask.
+  // If for any reason the client code will restart (panic, VM reboot), it will
+  // call TaskRunnerService.EnsureTask with the same arguments and get back already
+  // running task instead of creating another one.
+  Identifier id = 1;
+
+  // Sequence is a unit of paralellism in the CATS system.
+  // - Tasks of the different sequences may run in parallel without any ordering guarantees.
+  // - Depending on the task PreemptionPolicy (see below), tasks on the same sequence
+  //   will either run one after another (ordered by creation time perceived by the CATS system),
+  //   or the latest task will cancel the previous ones.
+  // sequence_name is a user-generated identifer of the sequence the task is related to.
+  string sequence_name = 2;
+
+  // Task family identifies what should be done for that task. The worker supporting that kind of
+  // task will be assigned to execute it. In the most primitive system, worker will contain
+  // compiled code for all the tasks types they support.
+  string task_family = 3;
+}
+
+// Delay policy determines what would be the resulting delay for a delayed task,
+// when TaskRunnerService.EnsureTask is called more than once.
+// Simple example:
+// - the client calls EnsureTask for task X with 5 minute delay.
+// - the client gets busted and lost its state.
+// - 2 minutes later restarted client again calls EnsureTask for task X with 5 minute delay.
+// Two options available when task X will run: in 3 minutes or in 5 minutes, i.e. new call
+// to EnsureTask may either renew delayed start time or not.
+// DelayPolicy determines what will happen.
+// NOTE: More exquisite case would be when the client suddenly decides that task should run
+// with smaller delay that it was planned before.
+enum DelayPolicy {
+  DELAY_POLICY_UNSPECIFIED = 0;
+  // Pick the earliest delay.
+  // - If task X is registered in the system due to run at T1, and client calls EnsureTask again with delay
+  // that results in start time T2, and T1 < T2, than T1 will remain the start time for the task X.
+  // - If task X is registered in the system due to run at T1, and client calls EnsureTask again with delay
+  // that results in start time T2, and T1 > T2, that T2 will be the new start time for the task X.
+  PICK_EARLIEST = 1;
+  // Unconditionally renew start time for the task X. No matter what, if task X is not perceived as started
+  // by the sytem, it's start time will be recalculated w.r.t. delay passed in the latest EnsureTask and
+  // current system time.
+  RENEW = 2;
+}
+
+message DelayOptions {
+  DelayPolicy delay_policy = 1;
+  google.protobuf.Duration delay = 2;
+}
+
+// Preemption policy specifies the fate of the other tasks in the sequence after
+// the described task will be accepted.
+enum PreemptionPolicy {
+  PREEMPTION_POLICY_UNSPECIFIED = 0;
+  // Task will be placed in the end of the sequence task queue and executed after
+  // all previous task s will be completed in LIFO order.
+  FOLLOW = 1;
+  // The new task will cancel any running or queued task on it's sequence.
+  CANCEL = 2;
+}
+
+message SequenceInfo {
+  PreemptionPolicy preemption_policy = 1;
+  google.protobuf.Timestamp planned_start_time = 2;
+}
+
+message SchedulerHints {
+  // User-specified key to help the system to route the task to a certain shard. Applicable
+  // for multi-hard task processors which will not happen in the near future. May be empty.
+  string shard_key = 1;
+
+  map<string, string> worker_selectors = 2;
+
+  // If |schedule_ack_timeout| is not empty, CATS will expect the worker to 'acknowledge'
+  // the scheduling decision by setting |schedule_acknowledged| flag to true if it is
+  // capable of doing so.
+  google.protobuf.Duration schedule_ack_timeout = 3;
+}
+
+message ScheduleInfo {
+  SchedulerHints active_scheduler_hints = 1;
+  // Optional flag can be set by a worker to let the system know that it is aware of the task.
+  // Might be useful when worker executors are under heavy load and will not start task soon.
+  // Some controller may also trigger reschedule if this flag is not set in |schedule_ack_timeout|.
+  bool schedule_acknowledged = 3;
+
+  repeated WorkerIdentifier blocked_workers = 4;
+
+  WorkerIdentifier nominated_worker = 5;
+}
+
+message ProbeConfiguration {
+  // The shorter the probe_timeout is, the sooner task will be rescheduled in case
+  // of the missing probes. OTOH, short timeout may lead to false-positive
+  // reschedules in case of the network problems. Choose this duration carefully, depending
+  // on how good your task is prepared to re-run and how long it should generally run -
+  // it is no need to make this timeout 500ms if the task is run for several minutes.
+  google.protobuf.Duration probe_timeout = 1;
+}
+
+message ExecutionOptions {
+  enum AbandonPolicy {
+    ABANDON_POLICY_UNSPECIFIED = 0;
+    TERMINATE = 1;
+    RETRY = 2;
+  }
+
+  google.protobuf.Duration execution_timeout = 1;
+  // Hint for how long the system should wait for the worker to confirm that task execution has stopped.
+  google.protobuf.Duration abandon_timeout = 2;
+
+  ProbeConfiguration probe_configuration = 3;
+
+  AbandonPolicy abandon_policy = 4;
+}
+
+message BackoffParams {
+  google.protobuf.Duration initial_backoff = 1;
+  // 1 means linear backoff.
+  double multiplier = 2;
+  double jitter = 3;
+  int64 max_retries = 4;
+}
+
+message RetryStatus {
+  int64 current_backoff_retries = 1;
+  BackoffParams current_backoff_params = 2;
+  google.protobuf.Timestamp backoff_until = 3;
+}
+
+message TransientError {
+  RescheduleInfo reschedule_info = 1;
+  BackoffParams backoff = 2;
+  string description = 3;
+  google.protobuf.Any error_details = 4;
+}
+
+message RescheduleInfo {
+  bool change_worker = 1;
+  bool unblock_sequence = 2;
+  SchedulerHints scheduler_hints = 3;
+}
+
+message TerminalError {
+  CancelInfo cancel_info = 1;
+  string description = 2;
+  google.protobuf.Any error_details = 3;
+}
+
+message CancelInfo {
+  enum Reason {
+    REASON_UNSPECIFIED = 0;
+    PREEMPTION = 1;
+    TIMEOUT = 2;
+    RETRIES_EXHAUSTED = 3;
+    USER_INITIATED = 4;
+    REJECTED = 5;
+    ABANDONED = 6;
+  }
+  Identifier canceler = 1;
+  Reason reason = 2;
+}
+
+message CancelSelector {
+  string sequence = 1;
+  map<string, string> labels = 2;
+}

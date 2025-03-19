@@ -1,0 +1,47 @@
+info: Minor update of Greenplum to 6.19
+repeatable: true
+priority: 1
+supports_offline: true
+clusters_selection:
+  db: >-
+    SELECT cid FROM (
+             SELECT cid,
+                    env,
+                    type,
+                    actual_rev,
+                    'greenplum' as component
+             FROM dbaas.clusters
+             WHERE status in ('RUNNING', 'STOPPED')
+               AND type = 'greenplum_cluster'
+         ) c
+             JOIN dbaas.versions USING (cid, component)
+             JOIN dbaas.pillar p USING (cid)
+                  WHERE p.value->'data'->'disable_mw'->>'greenplum_major' IS NULL
+                  AND versions.major_version != '6.19'
+
+pillar_change: >-
+  UPDATE dbaas.versions p SET minor_version = default_v.minor_version,
+      package_version = default_v.package_version,
+      major_version = '6.19'
+  FROM (
+           SELECT default_versions.minor_version,
+                  default_versions.package_version
+           FROM (
+                    SELECT *,
+                           'greenplum' AS component,
+                           '6.19' AS major_version,
+                           'default' AS edition
+                    FROM dbaas.clusters
+                    WHERE clusters.cid = :cid
+                ) c
+                    JOIN dbaas.default_versions USING (component, env, major_version, edition)
+       ) as default_v
+  WHERE p.cid = :cid AND component = 'greenplum';
+  UPDATE dbaas.versions p SET major_version = '6.19' WHERE p.cid = :cid;
+
+worker:
+  operation_type: greenplum_cluster_modify
+  task_type: greenplum_cluster_maintenance
+  task_args:
+    restart: true
+  timeout: 30m

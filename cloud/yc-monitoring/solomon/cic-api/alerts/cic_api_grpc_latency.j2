@@ -1,0 +1,36 @@
+{% extends "cic_api_base_alert.j2" %}
+
+{% set service = "cic-api-grpc-latency-" + type %}
+
+{% macro prog() %}
+let latency_perc99 = histogram_percentile(99, 'le', non_negative_derivative({
+        cluster='cloud_{{env}}_cic-api-k8s'
+        ,service='vpc-cloud-interconnect'
+        ,sensor='grpc_durations'
+        ,hist_type='bin'
+        ,host='cic-api-*'
+        ,app='vpc-cloud-interconnect_server'
+        ,method='all-{{type}}'
+    })
+);
+
+
+let max_latency_perc99 = max(moving_avg(latency_perc99, 5m));
+
+alarm_if(max_latency_perc99 > {{ alarm_limit }});
+warn_if(max_latency_perc99 > {{ warn_limit }});
+{% endmacro %}
+
+{% block main %}
+    "name": "CIC API gRPC latency {{type}} methods {{env}}",
+    "annotations": {
+        "max_latency_perc99": "[[ expression.max_latency_perc99 ]]",
+        "description": "CIC API gRPC latency {{type}} methods max 99 percentile latency: [[ expression.max_latency_perc99 ]]",
+        "host": "{{ svm_fqdn() }}",
+        "service": "{{ service }}",
+        "dashboard": "{{ cic_api_dashboard() }}",
+        "wiki": "{{ wiki_url(service) }}"
+    },
+    "groupByLabels": ["host"],
+    "type": {{ type_expression() }}
+{% endblock %}

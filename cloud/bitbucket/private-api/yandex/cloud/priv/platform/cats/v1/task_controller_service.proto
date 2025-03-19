@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.platform.cats.v1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+import "yandex/cloud/priv/platform/cats/v1/identifier.proto";
+import "yandex/cloud/priv/platform/cats/v1/task.proto";
+import "yandex/cloud/priv/platform/cats/v1/trace.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/platform/cats/v1;cats";
+option java_outer_classname = "PCATSTCS";
+
+// TaskControllerService is used by workers or schedulers to control task lifecycle or
+// report task important events (start/stop,completion).
+service TaskControllerService {
+  rpc SetupHandlers(SetupHandlersRequest) returns (Task);
+  rpc Update(UpdateTaskRequest) returns (Task);
+  rpc Start(StartTaskRequest) returns (Task);
+  rpc Terminate(TerminateTaskRequest) returns (Task);
+  // Worker calls Finish when the task is completed :) either if it is really completed
+  // or canceled.
+  rpc Finish(FinishTaskRequest) returns (Task);
+  rpc Complete(CompleteTaskRequest) returns (Task);
+  rpc Delete(DeleteTaskRequest) returns (google.protobuf.Empty);
+}
+
+message SetupHandlersRequest {
+  Identifier task_id = 1;
+  repeated string handlers = 2;
+  string resource_version = 3;
+}
+
+message UpdateTaskRequest {
+  Identifier task_id = 1;
+  google.protobuf.FieldMask update_mask = 2;
+
+  bool restart_handlers = 3;
+  ScheduleInfo schedule_info = 4;
+  RetryStatus retry_status = 5;
+  google.protobuf.Timestamp scheduled_at = 7;
+  google.protobuf.Timestamp planned_start_time = 8;
+  string complete_handler = 9;
+  bool clear_result = 10;
+
+  string resource_version = 11;
+  TerminalError terminal_error = 12;
+}
+
+message StartTaskRequest {
+  Identifier task_id = 1;
+  string resource_version = 3;
+}
+
+message FinishTaskRequest {
+  Identifier task_id = 1;
+
+  oneof result_specifier {
+    TransientError transient_error = 2;
+    TerminalError terminal_error = 3;
+    google.protobuf.Any result = 4;
+    SignaledTermination signaled = 5;
+  }
+
+  AttemptTrace trace = 6;
+  string resource_version = 7;
+}
+
+message SignaledTermination {}
+
+message TerminateTaskRequest {
+  Identifier task_id = 1;
+
+  oneof result_specifier {
+    TransientError transient_error = 2;
+    TerminalError terminal_error = 3;
+  }
+  string resource_version = 4;
+}
+
+message CompleteTaskRequest {
+  Identifier task_id = 1;
+  string resource_version = 2;
+}
+message DeleteTaskRequest {
+  Identifier task_id = 1;
+}

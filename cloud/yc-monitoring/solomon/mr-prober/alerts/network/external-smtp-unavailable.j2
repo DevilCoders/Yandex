@@ -1,0 +1,38 @@
+{% extends "../../../base/alert.j2" %}
+
+{% set idc="network-external-smtp-unavailable" %}
+{% set description="Кластеры world-*, пробер tcp-request-fail.\\n\\n" +
+"Алерт на то, что смогли хотя бы раз достучаться до smtp.gmail.com:25 (не должны, если FIP выдан не из специального пула)." %}
+
+{% set windowSecs=60 %}
+{% set delaySecs=15 %}
+{% set resolvedEmptyPolicy="RESOLVED_EMPTY_NO_DATA" %}
+{% set checkExpression="" %}
+
+{% macro prog() %}
+let fails = {project="{{ project_id }}", cluster="*", service="metrics", host!="{{ az_names }}", metric="fail", cluster_slug="world-*", prober_slug="tcp-request-fail"};
+
+let fails_count = sum(fails);
+alarm_if(fails_count >= 1);
+{% endmacro %}
+
+{% block main %}
+    "name": "[world-*] Unavailability of smtp.gmail.com:25",
+    "groupByLabels": [
+        "cluster",
+        "host",
+        "matrix_host",
+        "cluster_slug"
+	],
+    "annotations": {
+        "host": "[[labels.host]]",
+        "stand": "[[labels.cluster]]",
+        "service": "smtp-unavailable-[[labels.matrix_host]]",
+        "cluster": "[[labels.cluster_slug]]",
+        "fails graph": "{{ solomon_endpoint }}/?project={{ project_id }}&service=metrics&l.metric=fail&cluster=[[labels.cluster]]&l.prober_slug=tcp-request-fail&l.host=[[labels.host]]&l.cluster_slug=[[labels.cluster_slug]]&graph=auto&b=1h&e=&downsamplingFill=previous",
+        "logs": "{{ s3_viewer_url }}/mr-prober-logs?key=[[labels.cluster]]%2Fprobers%2F[[labels.cluster_slug]]%2F[[labels.host]]%2Ftcp-request-fail%2F",
+        "fails count": "[[expression.fails_count]]",
+        "target": "[[labels.matrix_host]]"
+    },
+    "type": {{ type_expression() }}
+{% endblock %}

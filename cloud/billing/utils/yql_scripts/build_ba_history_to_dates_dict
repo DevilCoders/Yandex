@@ -1,0 +1,172 @@
+/*
+
+Генерирует для каждого дня существования аккаунта строку с указанием
+актуальной на этот день информацией: статус, имя, карта, etc
+
+*/
+
+
+-- Input tables:
+
+$tables_billing_accounts = "//home/cloud/billing/exported-billing-tables/billing_accounts_prod";
+$tables_billing_accounts_history = "//home/cloud/billing/exported-billing-tables/billing_accounts_history_prod";
+
+-- 0. Возвращает диапазон дат по timestamp начала и конца
+
+$date_range_inclusive = ($start_date, $end_date) -> {
+    $start_date = cast($start_date as DateTime);
+    $end_date = cast($end_date as DateTime);
+    $delta = DateTime::ToDays($end_date-$start_date);
+
+    return ListCollect(ListMap(ListFromRange(0, ($delta+1) ?? 0), ($x) -> {
+        return DateTime::MakeDate($start_date + DateTime::IntervalFromDays(CAST($x AS Int16)))
+    }));
+};
+
+
+$get_feature_flag = ($feature_flags, $name) -> {
+    return NVL(Yson::LookupBool($feature_flags, $name), false)
+};
+
+
+-- 0. Генерируем список дней с 2018 года до сегодня
+
+$end_time = DateTime::ToSeconds(CurrentUtcDatetime());
+$start_time = 1514764800; -- 2018-01-01
+$dates_ranges = ListSort($date_range_inclusive($start_time, $end_time));
+
+-- 1. Для каждого аккаунта с момента его регистрации генерируем строки (billing_account_id, date)
+
+$billing_account_existing_days = (
+    SELECT billing_account_id, `date` FROM (
+        SELECT
+            id as billing_account_id,
+            DateTime::MakeDate(cast(created_at as DateTime)) as `create_date`,
+            $dates_ranges as dates
+        FROM $tables_billing_accounts
+    )
+    FLATTEN BY dates as `date`
+    WHERE create_date <= `date`
+);
+
+
+--- 2. Работа с историей аккаунта. Для каждого дня в истории нужно выбрать последнее по updated_at состояние
+
+$billing_account_distinct_history = (
+    SELECT
+        *
+    FROM (
+        SELECT
+            billing_account_id,
+            `date`,
+            FIRST_VALUE(billing_account_is_isv) over w as billing_account_is_isv,
+            FIRST_VALUE(billing_account_is_var) over w as billing_account_is_var,
+            FIRST_VALUE(billing_account_is_referrer) over w as billing_account_is_referrer,
+            FIRST_VALUE(billing_account_is_referral) over w as billing_account_is_referral,
+            FIRST_VALUE(billing_account_is_subaccount) over w as billing_account_is_subaccount,
+            FIRST_VALUE(billing_account_person_type) over w as billing_account_person_type,
+            FIRST_VALUE(billing_account_currency) over w as billing_account_currency,
+            FIRST_VALUE(billing_account_type) over w as billing_account_type,
+            FIRST_VALUE(billing_account_contract_id) over w as billing_account_contract_id,
+            FIRST_VALUE(billing_account_payment_type) over w as billing_account_payment_type,
+            FIRST_VALUE(billing_account_payment_method_id) over w as billing_account_payment_method_id,
+            FIRST_VALUE(billing_account_state) over w  as billing_account_state,
+            FIRST_VALUE(billing_account_master_account_id) over w as billing_account_master_account_id,
+            FIRST_VALUE(billing_account_name) over w as billing_account_name,
+            FIRST_VALUE(billing_account_usage_status) over w as billing_account_usage_status,
+        FROM (
+            SELECT
+                billing_account_id,
+                name as billing_account_name,
+                state as billing_account_state,
+                balance_contract_id as billing_account_contract_id,
+                payment_type as billing_account_payment_type,
+                person_type as billing_account_person_type,
+                type as billing_account_type,
+                usage_status as billing_account_usage_status,
+                currency as billing_account_currency,
+                payment_method_id as billing_account_payment_method_id,
+                updated_at as billing_account_updated_at,
+                master_account_id as billing_account_master_account_id,
+                DateTime::MakeDate(cast(updated_at as DateTime)) as `date`,
+                $get_feature_flag(feature_flags, "isv") as billing_account_is_isv,
+                $get_feature_flag(feature_flags, "var")  as billing_account_is_var,
+                if(master_account_id == Null, True, False) as billing_account_is_subaccount,
+                $get_feature_flag(feature_flags, "referrer") as billing_account_is_referrer,
+                $get_feature_flag(feature_flags, "referral") as billing_account_is_referral
+            FROM $tables_billing_accounts_history
+        )
+        WINDOW  w as (PARTITION BY billing_account_id, `date` ORDER BY billing_account_updated_at desc)
+    ) GROUP COMPACT BY
+            billing_account_id,
+            `date`,
+            billing_account_is_isv,
+            billing_account_is_var,
+            billing_account_is_referrer,
+            billing_account_is_referral,
+            billing_account_is_subaccount,
+            billing_account_person_type,
+            billing_account_currency,
+            billing_account_type,
+            billing_account_contract_id,
+            billing_account_payment_type,
+            billing_account_payment_method_id,
+            billing_account_state,
+            billing_account_master_account_id,
+            billing_account_name,
+            billing_account_usage_status
+);
+
+
+
+-- 3. Склеиваем таблицу со сгенерированными днями и историей
+
+$join_result = (
+    SELECT
+        generated_range.billing_account_id as billing_account_id,
+        generated_range.`date` as `date`,
+        history.* WITHOUT history.billing_account_id, history.`date`
+    FROM $billing_account_existing_days as generated_range
+    LEFT JOIN $billing_account_distinct_history as history
+    USING  (billing_account_id, `date`)
+
+);
+
+-- 4. Заменяем сгенерированные дни с null последний на этот момент актуальной информацией
+/*
+
+date=2018-01-01, billing_account=A, usage_status=ACTIVE
+date=2018-01-02, billing_account=A, usage_status=NULL
+date=2018-01-03, billing_account=A, usage_status=NULL
+date=2018-01-04, billing_account=A, usage_status=NULL
+
+----->
+
+date=2018-01-01, billing_account=A, usage_status=ACTIVE
+date=2018-01-02, billing_account=A, usage_status=ACTIVE
+date=2018-01-03, billing_account=A, usage_status=ACTIVE
+date=2018-01-04, billing_account=A, usage_status=ACTIVE
+
+*/
+
+$result = (
+    SELECT
+        billing_account_id,
+        cast(`date` as string) as `date`,
+        LAST_VALUE(billing_account_is_isv) IGNORE NULLS over w as billing_account_is_isv,
+        LAST_VALUE(billing_account_is_var) IGNORE NULLS over w as billing_account_is_var,
+        LAST_VALUE(billing_account_is_referrer) IGNORE NULLS over w as billing_account_is_referrer,
+        LAST_VALUE(billing_account_is_referral) IGNORE NULLS over w as billing_account_is_referral,
+        LAST_VALUE(billing_account_is_subaccount) IGNORE NULLS over w as billing_account_is_subaccount,
+        LAST_VALUE(billing_account_person_type) IGNORE NULLS over w as billing_account_person_type,
+        LAST_VALUE(billing_account_currency) IGNORE NULLS over w as billing_account_currency,
+        LAST_VALUE(billing_account_contract_id) IGNORE NULLS over w as billing_account_contract_id,
+        LAST_VALUE(billing_account_type) IGNORE NULLS over w as billing_account_type,
+        LAST_VALUE(billing_account_payment_type) IGNORE NULLS over w as billing_account_payment_type,
+        LAST_VALUE(billing_account_payment_method_id) IGNORE NULLS over w as billing_account_payment_method_id,
+        LAST_VALUE(billing_account_state) IGNORE NULLS over w as billing_account_state,
+        LAST_VALUE(billing_account_master_account_id) IGNORE NULLS over w as billing_account_master_account_id,
+        LAST_VALUE(billing_account_name) IGNORE NULLS over w as billing_account_name,
+        LAST_VALUE(billing_account_usage_status) IGNORE NULLS over w as billing_account_usage_status
+    FROM $join_result WINDOW w as (PARTITION BY billing_account_id ORDER BY `date`)
+);

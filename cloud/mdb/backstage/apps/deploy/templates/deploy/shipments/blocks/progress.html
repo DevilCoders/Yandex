@@ -1,0 +1,81 @@
+{% load lib.templatetags %}
+{% load deploy.templatetags %}
+<div class="col-lg-24">
+{% for item in data %}
+<div class="backstage-collapse">
+  <div class="backstage-collapse-header" data-toggle="collapse" href="#{{ item.minion.fqdn|to_alnum }}collapse" aria-expanded="false" aria-controls="{{ item.minion.fqdn|to_alnum }}collapse">
+    <div class="row">
+      <div class="col-lg-5">
+        {{ item.minion.self_link_c }}
+      </div>
+      <div class="col-lg-19">
+        {% for status, count in item.stats.items %}
+          <span class="label backstage-label backstage-label-default{% if count > 0 %} backstage-deploy-command-{{ status|lower }}{% endif %}">{{ status|lower|title }}: {{ count }}</span>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  <div class="collapse" id="{{ item.minion.fqdn|to_alnum }}collapse">
+    <table class="table table-hover noodle-table noodle-table-sortable">
+      <thead>
+        <tr>
+          <th>Command</th>
+          <th>Shipment Command</th>
+          <th>Status</th>
+          <th>Created at</th>
+          <th>Updated at</th>
+          <th>Last dispatch attempt at</th>
+          <th>Jobs</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for elem in item.commands %}
+        <tr>
+          <td>{{ elem.command.self_link_c }}</td>
+          <td data-order="{{ elem.command.shipment_command.pk }}">
+            {{ elem.command.shipment_command.self_link_c }}<br>
+            {{ elem.command.shipment_command.type }}<br>
+            {{ elem.command.shipment_command.arguments|join:" " }}<br>
+          </td>
+          <td data-order="{{ elem.command.status }}">{{ elem.command|command_ui_status }}</td>
+          <td data-order="{{ elem.command.created_at|date:"Uu" }}">{% dt_formatted elem.command.created_at %}</td>
+          <td data-order="{{ elem.command.updated_at|date:"Uu" }}">{% dt_formatted elem.command.updated_at %}</td>
+          <td data-order="{{ elem.command.last_dispatch_attempt_at|date:"Uu" }}">{% dt_formatted elem.command.last_dispatch_attempt_at %}</td>
+          <td style="padding: 0px">
+            <table class="table table-hover noodle-table noodle-table-inc">
+              <thead>
+                <tr>
+                  <th>Job ID</th>
+                  <th>Ext Job ID</th>
+                  <th>Status</th>
+                  <th>Created at</th>
+                  <th>Last running check at</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for job in elem.jobs %}
+                <tr>
+                  <td>{{ job.obj.pk }}</td>
+                  <td>
+                    {% if job.job_result %}
+                      <a href="/ui/deploy/job_results/{{ job.job_result.pk }}">{{ job.job_result.ext_job_id }} ({{ job.job_result.status }})</a>&nbsp;{% simple_copy job.job_result.ext_job_id %}
+                    {% else %}
+                    {{ job.obj.ext_job_id }}
+                    {% endif %}
+                  </td>
+                  <td>{{ job.obj.status|default_label }}</td>
+                  <td>{% dt_formatted job.obj.created_at %}</td>
+                  <td>{% dt_formatted job.obj.last_running_check_at %}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endfor %}
+</div>

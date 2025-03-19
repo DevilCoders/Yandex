@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SLA check</title>
+    <style>
+       table {
+  font-family: arial, sans-serif;
+  border-collapse: collapse;
+  width: 100%;
+  }
+
+  td, th {
+  border: 1px solid #dddddd;
+  text-align: center;
+  padding: 8px;
+  }
+  </style>
+</head>
+<body>
+<table id="sla">
+    <tr>
+        <th>Сервис</th>
+        <th>Описание</th>
+        <th>Отчёный период(месяц)</th>
+        <th>Время недоступности, час</th>
+        <th>% доступности</th>
+        <th>Потребление в отчётный период, руб</th>
+        <th>% компенсации</th>
+        <th>Сумма компенсации, руб.</th>
+        <th>+</th>
+    </tr>
+    <tr hidden id=0>
+        <td>
+            <select name="service" onchange=check()>
+            </select>
+        </td>
+        <td></td>
+        <td><input type="month" name="period"
+       min="2018-01" value="2020-01" onkeyup=check()></td>
+        <td><input id="natime" type="number" onkeyup=check()></td>
+        <td></td>
+        <td><input id='money' type="number" onkeyup=check()></td>
+        <td></td>
+        <td></td>
+        <td><input type="button" value="-" onclick=delrow(this)></td>
+    </tr>
+    <tr id=1>
+        <td>
+            <select name="service" onchange=check()>
+            </select>
+        </td>
+        <td></td>
+        <td><input type="month"  name="period"
+       min="2018-01" value="2020-01" onkeyup=check()></td>
+        <td><input name="natime" type="number" onkeyup=check()></td>
+        <td></td>
+        <td><input name='money' type="number" onkeyup=check()></td>
+        <td></td>
+        <td></td>
+        <td><input type="button"  value="+" onclick=addrow()> </td>
+    </tr>
+
+
+</table>
+    <script type="text/javascript">
+
+function print(data) {
+    console.log(data);
+    }
+
+function check(data) {
+    table = document.getElementById("sla");
+    for ( var row in table.rows ){
+        if (row in [0,1] ) {
+            continue;
+        }
+        service = table.rows[row].cells[0].children[0].value;
+        natime = parseFloat(table.rows[row].cells[3].lastElementChild.value);
+        money = parseInt(table.rows[row].cells[5].lastElementChild.value);
+        date = table.rows[row].cells[2].lastElementChild.value.split('-');
+        date = new Date(date[0], date[1], 0);
+        totaltime = date.getDate()*24;
+        uptime = 100 - (natime / totaltime * 100);
+        table.rows[row].cells[4].innerHTML = uptime;
+        thresholds = services[service]['threshold'];
+        thresholdsarray = Object.keys(thresholds);
+        zero = 0.0;
+        for ( var i in thresholds ) {
+            j = parseFloat(thresholdsarray.shift());
+            if (zero < uptime && uptime < j) {
+                threshold = parseInt(thresholds[i]);
+                table.rows[row].cells[6].innerHTML = thresholds[i];
+                break;
+            }
+            zero = j;
+        }
+        table.rows[row].cells[1].innerHTML = services[service]['description'];
+        table.rows[row].cells[7].innerHTML = money * (threshold/100);
+        }
+
+    }
+
+function addrow() {
+    var row = document.getElementById(0); // find row to copy
+    var table = document.getElementById("sla"); // find table to append to
+    var clone = row.cloneNode(true); // copy children too
+    var id = table.rows.length;
+    clone.id = id - 1; // change id or other attributes/contents
+    clone.hidden=false;
+    table.appendChild(clone); // add new row to end of table
+    }
+
+function delrow(e) {
+    rowid = parseInt(e.parentElement.parentElement.id);
+    document.getElementById(rowid).remove();
+    }
+
+services={'serverless':{name:'Cloud Functions',threshold:{99.90:10,99:15,95:30},description:`" - 503 и 500 коды ответа для более чем 10% запросов в период наблюдения (не менее 5 минут);
+ - Сетевая недоступность functions.yandexcloud.net"
+`},
+'s3_cold':{name:'Object storage clod',threshold:{99.95:10,98:15,90:30},description:`" - 50x коды ответа для более чем 10% запросов в период наблюдения (не менее 5 минут);
+ - Сетевая недоступность endpoint storage.cloud.api.yandex.net из-за снятого анонса или других проблем со стороны Яндекса."
+`},
+'compute':{name:'Compute Cloud',threshold:{99.95:10,99:15,95:30},description:`Потеря внешней связности или загрузочного диска Виртуальной Машины, кроме событий, независящих от Яндекса, в том числе, Dos или Ddos атак
+`},
+'registry':{name:'Container Registry',threshold:{99.95:10,98:15,90:30},description:`" - 50x коды ответа для более чем 10% запросов в период наблюдения (не менее 5 минут);
+ - Сетевая недоступность endpoint cr.yandex либо cr.cloud.yandex.net либо container-registry.cloud.yandex.net"
+`},
+'dataproc':{name:'Data Proc',threshold:{99.5:10,98:25,90:50},description:``},
+'iot':{name:'IoT Core',threshold:{99.9:10,99:15,95:30},description:`"Количество целых минут, когда в течение 5 или более минут:
+ - Сервис не ответил при отправке Пересылаемых данных от Клиента к Логическому устройству в режиме гарантируемой доставки (""At least once"");
+ - Пересылаемые данные от Сервиса не были доставлены."
+`},
+'balancer':{name:'Load Balancer',threshold:{99.9:10,95:25},description:`Потеря внешней связности из-за проблем на стороне Яндекса, в случае, когда все облачные ресурсы Платформы, находящиеся в Целевой группе, подключенной к единичному Сетевому балансировщику, находятся в рабочем состоянии и готовы принимать Обработанный входящий трафик.
+`},
+'mdb_psql_mysql_ch_r1':{name:'PostgreSQL / MySQL / ClickHouse (read) 1 node Cluster',threshold:{},description:`"Недоступность Кластера БД из 2 или более Хостов БД, в различных зонах доступности, на чтение или запись через поддерживаемые клиенты;
+При использовании Шарда
+*ClickHouse: недоступность Шарда, на 2 или более Хостах БД, в различных зонах доступности, на чтение или запись через поддерживаемые клиенты."
+`},
+'mdb_psql_mysql_ch_w1':{name:'PostgreSQL / MySQL / ClickHouse (write) 1 node Cluster',threshold:{},description:`"Недоступность Кластера БД из 2 или более Хостов БД, в различных зонах доступности, на чтение или запись через поддерживаемые клиенты;
+При использовании Шарда
+*ClickHouse: недоступность Шарда, на 2 или более Хостах БД, в различных зонах доступности, на чтение или запись через поддерживаемые клиенты."
+`},
+'mdb_psql_mysql_ch_r1':{name:'PostgreSQL / MySQL / ClickHouse (read) 2 and more nodes Cluster',threshold:{99.99:10,99:15,99:30},description:`"Недоступность Кластера БД из 2 или более Хостов БД, в различных зонах доступности, на чтение или запись через поддерживаемые клиенты;
+При использовании Шарда
+*ClickHouse: недоступность Шарда, на 2 или более Хостах БД, в различных зонах доступности, на чтение или запись через поддерживаемые клиенты."
+`},
+'mdb_psql_mysql_ch_w2':{name:'PostgreSQL / MySQL / ClickHouse (write) 2 and more nodes Cluster',threshold:{99.95:10,99:15,99:30},description:`"Недоступность Кластера БД из 2 или более Хостов БД, в различных зонах доступности, на чтение или запись через поддерживаемые клиенты;
+При использовании Шарда
+*ClickHouse: недоступность Шарда, на 2 или более Хостах БД, в различных зонах доступности, на чтение или запись через поддерживаемые клиенты."
+`},
+'mdb_mongo_redis_r1':{name:'MongoDB / Redis (read) 1 node Cluster',threshold:{},description:`"Недоступность Кластера БД из 3 или более Хостов БД, в различных зонах доступности, на чтение или запись через поддерживаемые клиенты;
+При использовании Шарда:
+*MongoDB: недоступность Шарда, на 3 или более Хостах БД, в различных зонах доступности.
+**Redis: недоступность 1 из 3 и более Шардов, при условии, что каждый Шард использует 2 или более Хоста БД, в различных зонах доступности."
+`},
+'mdb_mongo_redis_w1':{name:'MongoDB / Redis (write) 1 node Cluster',threshold:{},description:`"Недоступность Кластера БД из 3 или более Хостов БД, в различных зонах доступности, на чтение или запись через поддерживаемые клиенты;
+При использовании Шарда:
+*MongoDB: недоступность Шарда, на 3 или более Хостах БД, в различных зонах доступности.
+**Redis: недоступность 1 из 3 и более Шардов, при условии, что каждый Шард использует 2 или более Хоста БД, в различных зонах доступности."
+`},
+'mdb_mongo_redis_r2':{name:'MongoDB / Redis (read) 2 nodes Cluster',threshold:{},description:`"Недоступность Кластера БД из 3 или более Хостов БД, в различных зонах доступности, на чтение или запись через поддерживаемые клиенты;
+При использовании Шарда:
+*MongoDB: недоступность Шарда, на 3 или более Хостах БД, в различных зонах доступности.
+**Redis: недоступность 1 из 3 и более Шардов, при условии, что каждый Шард использует 2 или более Хоста БД, в различных зонах доступности."
+`},
+'mdb_mongo_redis_w2':{name:'MongoDB / Redis (write) 2 nodes Cluster',threshold:{},description:`"Недоступность Кластера БД из 3 или более Хостов БД, в различных зонах доступности, на чтение или запись через поддерживаемые клиенты;
+При использовании Шарда:
+*MongoDB: недоступность Шарда, на 3 или более Хостах БД, в различных зонах доступности.
+**Reddis: недоступность 1 из 3 и более Шардов, при условии, что каждый Шард использует 2 или более Хоста БД, в различных зонах доступности."
+`},
+'mdb_mongo_redis_r3':{name:'MongoDB / Redis (read) 3 and more nodes Cluster',threshold:{99.99:10,99:15,99:30},description:`"Недоступность Кластера БД из 3 или более Хостов БД, в различных зонах доступности, на чтение или запись через поддерживаемые клиенты;
+При использовании Шарда:
+*MongoDB: недоступность Шарда, на 3 или более Хостах БД, в различных зонах доступности.
+**Redis: недоступность 1 из 3 и более Шардов, при условии, что каждый Шард использует 2 или более Хоста БД, в различных зонах доступности."
+`},
+'mdb_mongo_redis_w3':{name:'MongoDB / Redis (write) 3 and more nodes Cluster',threshold:{99.95:10,99:15,99:30},description:`"Недоступность Кластера БД из 3 или более Хостов БД, в различных зонах доступности, на чтение или запись через поддерживаемые клиенты;
+При использовании Шарда:
+*MongoDB: недоступность Шарда, на 3 или более Хостах БД, в различных зонах доступности.
+**Redis: недоступность 1 из 3 и более Шардов, при условии, что каждый Шард использует 2 или более Хоста БД, в различных зонах доступности."
+`},
+'k8s':{name:'Managed Service for Kubernetes',threshold:{99.9:10,95:25},description:`Отсутствие доступа Клиента к Мастеру как из вне, так и внутри Платформы, в течение 5 и более минут в случаях, когда Клиент использует Региональную конфигурацию Мастера, за исключением потери доступа в связи с обстоятельствами не зависящими от Яндекса
+`},
+'ymq':{name:'Message Queue',threshold:{99.9:10,95:25},description:`"Количество целых минут, в течение которых зафиксировано превышение 5% Коэффициента ошибок на стороне сервера.
+Коэффициент ошибок = (количество запросов, вернувших код ошибки 5хx / общее количество сделанных запросов за одну минуту)."
+`},
+'monitoring':{name:'Monitoring',threshold:{99.9:10,99:15,95:30},description:`"Количество целых минут, в течение которых зафиксировано превышение 5% Коэффициента ошибок на стороне сервера.
+Коэффициент ошибок = (количество запросов, вернувших код ошибки 5хx / общее количество сделанных запросов за пятьу минут)."
+`},
+'speechkit':{name:'SpeechKit',threshold:{99.9:10,99:15,95:30},description:`"Количество целых минут, в течение которых зафиксировано превышение 5% Коэффициента ошибок на стороне сервера.
+Коэффициент ошибок = (корректные запросы, которые возвращают HTTP Status 500 с кодом ошибки ""INTERNAL_SERVER_ERROR"" или gRPC Status 13 с кодом ошибки ""INTERNAL"" / общее количество Корректных запросов за минуту)."
+`},
+'s3_standard':{name:'Object storage standard',threshold:{99.95:10,99:15,99:30},description:`" - 50x коды ответа для более чем 10% запросов в период наблюдения (не менее 5 минут);
+ - Сетевая недоступность endpoint storage.cloud.api.yandex.net из-за снятого анонса или других проблем со стороны Яндекса."
+`},
+'translate':{name:'Translate',threshold:{99.9:10,99:15,95:30},description:`"Количество целых минут, в течение которых зафиксировано превышение 5% Коэффициента ошибок на стороне сервера.
+Коэффициент ошибок = (корректные запросы, которые возвращают HTTP Status 500 с кодом ошибки ""INTERNAL_SERVER_ERROR"" или gRPC Status 13 с кодом ошибки ""INTERNAL"" / общее количество Корректных запросов за минуту)."
+`},
+'vpc':{name:'Virtual Private Cloud',threshold:{99.95:10,99:15,95:30},description:`Потеря внешней связности используемого Клиентом ресурса Платформы с предоставленным Яндексом публичным IP-адресом, в отношении которого оказывалась услуга Фильтрации входящего трафика.
+`},
+'vision':{name:'Vision',threshold:{99.9:15,95:30},description:`"Количество целых минут, в течение которых зафиксировано превышение 5% Коэффициента ошибок на стороне сервера.
+Коэффициент ошибок = (корректные запросы, которые возвращают HTTP Status 500 с кодом ошибки ""INTERNAL_SERVER_ERROR"" или gRPC Status 13 с кодом ошибки ""INTERNAL"" / общее количество Корректных запросов за минуту)."
+`}
+}
+
+elements = document.getElementsByName('service');
+for (var element in elements) {
+    for (var key in services) {
+        var opt = document.createElement('option');
+        opt.name = key;
+        opt.value = key;
+        opt.innerHTML = services[key]['name'];
+        elements[element].appendChild(opt);
+    }
+}
+
+
+</script>
+</body>
+</html>

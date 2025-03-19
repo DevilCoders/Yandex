@@ -1,0 +1,16 @@
+SHELL=/bin/sh
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
+MAILTO=mdb-root@yandex-team.ru
+LANG=C.UTF-8
+LC_ALL=C.UTF-8
+
+# m h dom mon dow user                command
+{% for ctype in salt.pillar.get('data:mdb-backup:scheduler:schedule_config:cluster_type_rules').keys() %}
+*/10 *  *   *   *  mdb-backup  sleep $((RANDOM \% 180)); /usr/local/bin/mdb-backup-scheduler-with-lock.sh {{ctype}} >/dev/null 2>&1
+{% endfor %}
+{% set environment = salt['pillar.get']('yandex:environment', 'dev') %}
+{% if environment in ('dev', 'qa', 'prod') %}
+{% for ctype, cfg in salt.pillar.get('data:mdb-backup:importer:import_config:cluster_type_rules', {}).items() %}
+*/10 *  *   *   *  mdb-backup  sleep $((RANDOM \% 180)); /usr/local/bin/mdb-backup-bulk-import-backups.sh {{ctype}} {{cfg.batch_size}} {{cfg.import_interval}} >/dev/null 2>&1
+{% endfor %}
+{% endif %}

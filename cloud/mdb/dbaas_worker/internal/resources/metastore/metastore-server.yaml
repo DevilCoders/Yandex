@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metastore-server
+  labels:
+    app: metastore-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: metastore-server
+  template:
+    metadata:
+      labels:
+        app: metastore-server
+    spec:
+      nodeSelector:
+        yandex.cloud/node-group-id: NODE_GROUP_ID
+      volumes:
+        - name: metastore-site-volume
+          configMap:
+            name: metastore-site-configmap
+      containers:
+      - name: metastore-server
+        livenessProbe:
+          tcpSocket:
+            port: 9083
+          initialDelaySeconds: 7
+          periodSeconds: 7
+        command:
+          - /bin/bash
+          - -c
+        args:
+          - "/opt/metastore/bin/start-metastore --hiveconf javax.jdo.option.ConnectionPassword=$METADB_PASSWORD --hiveconf javax.jdo.option.ConnectionUserName=$METADB_USERNAME"
+        image: cr.yandex/crp1ctmeteesp965qmg5/metastore-server@sha256:b29ce3694b875a303ededc83c52590a7f95f79e09eab6ffa0cf803abe6124426
+        ports:
+        - containerPort: 9083
+        volumeMounts:
+        - name: metastore-site-volume
+          mountPath: /opt/metastore/conf
+        env:
+        - name: METADB_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: metastore-secret
+              key: username
+        - name: METADB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: metastore-secret
+              key: password

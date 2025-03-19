@@ -1,0 +1,190 @@
+{% macro logbroker_dashboard_url() -%}
+    {{ solomon_endpoint }}/?project={{ project_id }}&dashboard=cic_api_logbroker_{{ env }}
+{%- endmacro %}
+
+{% macro wiki_url(service) -%}
+    https://wiki.yandex-team.ru/cloud/devel/sdn/duty/juggler/#{{ service }}
+{%- endmacro %}
+
+menu: "[CIC-API] Alerts"
+menu_type: admin
+api_path: /alerts/
+tags:
+  - cic-api
+
+entities:
+  #########################################################################################################################
+  # General
+  #########################################################################################################################
+
+  cic_api_errors:
+    template: cic_api_errors.j2
+    exclude: &alerts_exclude
+      env: [hw.*lab]
+      solomon: ["preprod", "prod"]
+
+  cic_api_error_in_logs:
+    template: cic_api_messages_in_logs.j2
+    context:
+      level: error
+      alarm_limit:
+        prod: 0.2
+        preprod: 0.2
+        default: 0.2
+      warn_limit:
+        prod: 0.1
+        preprod: 0.1
+        default: 0.1
+    exclude:
+      <<: *alerts_exclude
+
+  cic_api_gc_timings:
+    template: cic_api_gc_timings.j2
+    exclude:
+      <<: *alerts_exclude
+    context:
+      alarm_limit:
+        prod: 0.8
+        preprod: 0.8
+        testing: 0.8
+      warn_limit:
+        prod: 0.5
+        preprod: 0.5
+        testing: 0.5
+
+  cic_api_grpc_latency_read:
+    template: cic_api_grpc_latency.j2
+    exclude:
+      <<: *alerts_exclude
+    context:
+      type: read
+      alarm_limit:
+        prod: 5.0
+        preprod: 5.0
+        testing: 5.0
+      warn_limit:
+        prod: 2.5
+        preprod: 2.5
+        testing: 2.5
+
+  cic_api_grpc_latency_write:
+    template: cic_api_grpc_latency.j2
+    exclude:
+      <<: *alerts_exclude
+    context:
+      type: write
+      alarm_limit:
+        prod: 10.0
+        preprod: 10.0
+        testing: 10.0
+      warn_limit:
+        prod: 5.0
+        preprod: 5.0
+        testing: 5.0
+
+  #########################################################################################################################
+  # Logbroker
+  #########################################################################################################################
+  cic_api_logbroker_quota_consumed:
+    template: ../../common/alerts/logbroker/quota_consumed.j2
+    context: &logbroker_defaults
+      # -- Common parameters
+      team: CIC API
+      host: cloud_{{env}}_cic-api_solomon
+      account: yc.vpc.cic.api
+      topic_path: yc.vpc.cic.api/vpc/{% if env == 'preprod' %}pre-prod{% else %}{{ env }}{% endif %}/cic/yc-vpc-cloud-interconnect-*-log
+      quoter:
+        prod: "/global/b1gvcqr959dbmi1jltep/etn03iai600jur7pipla/PersQueue/System/Quoters/yc.vpc.cic.api"
+        preprod: "/pre-prod_global/aoeb66ftj1tbt1b2eimn/cc8035oc71oh9um52mv3/PersQueue/System/Quoters/yc.vpc.cic.api"
+      notification_channels:
+        - cic-api
+      dashboard_url: {{ logbroker_dashboard_url() }}
+      wiki_url: https://wiki.yandex-team.ru/cloud/devel/sdn/duty/juggler/
+      # -- Common parameters
+      alarm_limit:
+        prod: 1800    # real limit: 2000 (LBREQUESTS-1101)
+        preprod: 180   # real limit: 200 (LBREQUESTS-1222)
+      warn_limit:
+        prod: 1500
+        preprod: 150
+    exclude: &logbroker_alerts_exclude
+      env: [hw.*lab, testing]
+      solomon: ["preprod", "prod"]
+
+  cic_api_logbroker_messages_read:
+    template: ../../common/alerts/logbroker/messages_read.j2
+    context:
+      <<: *logbroker_defaults
+      # limits in messages/sec
+      alarm_limit:
+        prod: 0.1
+        preprod: 0.1
+      warn_limit:
+        prod: 0.2
+        preprod: 0.2
+    exclude:
+      <<: *logbroker_alerts_exclude
+
+  cic_api_logbroker_messages_written:
+    template: ../../common/alerts/logbroker/messages_written.j2
+    context:
+      <<: *logbroker_defaults
+      # limits in messages/sec
+      alarm_limit:
+        prod: 0.1
+        preprod: 0.1
+      warn_limit:
+        prod: 0.2
+        preprod: 0.2
+    exclude:
+      <<: *logbroker_alerts_exclude
+
+  cic_api_logbroker_partition_max_write_quota_used:
+    template: ../../common/alerts/logbroker/partition_max_write_quota_used.j2
+    context:
+      <<: *logbroker_defaults
+      # percent/minute
+      alarm_limit: 90
+      warn_limit: 80
+    exclude:
+      <<: *logbroker_alerts_exclude
+
+  cic_api_logbroker_partition_write_quota_wait:
+    template: ../../common/alerts/logbroker/partition_write_quota_wait.j2
+    context:
+      <<: *logbroker_defaults
+      # milliseconds
+      alarm_limit: 60
+      warn_limit: 30
+    exclude:
+      <<: *logbroker_alerts_exclude
+
+  cic_api_logbroker_topic_write_quota_wait:
+    template: ../../common/alerts/logbroker/topic_write_quota_wait.j2
+    context:
+      <<: *logbroker_defaults
+      # milliseconds
+      alarm_limit: 10000
+      warn_limit: 5000
+    exclude:
+      <<: *logbroker_alerts_exclude
+
+  cic_api_logbroker_read_time_lag:
+    template: ../../common/alerts/logbroker/read_time_lag.j2
+    context:
+      <<: *logbroker_defaults
+      # milliseconds
+      alarm_limit: 100000
+      warn_limit: 60000
+    exclude:
+      <<: *logbroker_alerts_exclude
+
+  cic_api_logbroker_time_since_last_read:
+    template: ../../common/alerts/logbroker/time_since_last_read.j2
+    context:
+      <<: *logbroker_defaults
+      # milliseconds
+      alarm_limit: 750000
+      warn_limit: 450000
+    exclude:
+      <<: *logbroker_alerts_exclude

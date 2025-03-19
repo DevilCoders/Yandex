@@ -1,0 +1,314 @@
+USE hahn;
+
+pragma yt.InferSchema = "100"; -- infer schema for non-schematized tables by first 100 rows
+pragma yt.IgnoreYamrDsv;       -- ignore YaMR schema (string key / subkey / value) proposed by yamred_dsv format on table
+
+
+$to_decimal = ($amount) -> {
+    RETURN CAST($amount AS Decimal(22,9));
+};
+
+$to_double = ($amount) -> {
+    RETURN CAST($amount AS Double);
+};
+
+-- Set thresholds
+-- Rubles, >= 0 to find consumption increase && < 0 to find decrease
+$threshold_abs = $to_decimal("500");
+-- Percents, > 1 to find consumption increase && < 1 to find decrease
+$threshold_pct = $to_decimal("0.10");
+
+-- Set timeframe
+-- As we never have full data to display today()
+$last_day = CurrentUtcDate() - DateTime::IntervalFromDays(1);
+$first_day = $last_day - DateTime::IntervalFromDays(7);
+$generated_at = AddTimezone(CurrentUtcDateTime(), "Europe/Moscow");
+
+-- Workaround Decimal <> null comparison
+$nvl = ($lead) -> {
+    RETURN $to_decimal(NVL($to_decimal($lead), $to_decimal(0)))
+};
+
+-- Workaround "Can't compare different decimals"
+$delta_abs = ($prev, $next) -> {
+    RETURN $to_decimal($prev) - NVL($to_decimal($next), $to_decimal(0));
+};
+
+-- Revenue is not falling if we have no consumption in the future
+-- but is falling if we had consumption and don't have now within the timeframe
+$fall_abs = ($prev, $next, $date) -> {
+    $fall = IF (
+        CAST($date AS date) == $last_day,
+        $to_decimal(0),
+        $delta_abs($prev, $next)
+
+    );
+    RETURN $fall;
+};
+
+$fall_pct = ($prev, $next, $date) -> {
+    RETURN IF ($to_decimal($next) > $to_decimal(0),  ABS($fall_abs($prev, $next, $date) / $to_decimal($next)), $to_decimal(0));
+};
+-- Revenue is not growing if we have no consumption in the past
+-- but is growing if we had no consumption within timeframe and now we have
+$grow_abs = ($prev, $next, $date) -> {
+    $grow = IF (
+        $date == $first_day,
+        $to_decimal(0),
+        $delta_abs($prev, $next)
+
+    );
+    RETURN $grow;
+};
+
+$grow_pct = ($prev, $next, $date) -> {
+    --RETURN IF ($to_decimal($next) > $to_decimal(0),  ABS($fall_abs($prev, $next, $date) / $to_decimal($next)), $to_decimal(0));
+    RETURN ABS($grow_abs($prev, $next, $date) / $to_decimal($prev));
+};
+
+-- Resolve folders into latest tables
+DEFINE SUBQUERY $last_non_empty_table($path) AS
+    $max_path = (
+        SELECT MAX(Path) AS Path
+        FROM FOLDER($path, "row_count")
+        WHERE Type = "table"
+            AND Yson::LookupInt64(Attributes, "row_count") > 0
+    );
+    SELECT * FROM CONCAT($max_path);
+END DEFINE;
+
+-- Export-snapshot tables
+$skus_table = "//home/logfeller/logs/yc-billing-export-sku/1h";
+$usage_reports_table = "//home/logfeller/logs/yc-billing-export-usage-reports/1h";
+$services_table = "//home/logfeller/logs/yc-billing-export-services/1h";
+$accounts_table = "//home/logfeller/logs/yc-billing-export-billing-accounts/1h";
+$clouds_table = "//home/logfeller/logs/yc-billing-export-clouds/1h";
+
+-- Join SKU with Services to enrich SKU with service name
+$skus_services = (
+    SELECT
+        skus.id AS id,
+        svcs.name AS service,
+        svcs.id
+    FROM $last_non_empty_table($skus_table) AS skus
+    JOIN $last_non_empty_table($services_table) AS svcs
+    ON skus.service_id = svcs.id
+);
+
+-- Account meta
+$accounts = (
+    SELECT
+        id,
+        name,
+        state,
+        usage_status,
+        person_type,
+        person_id
+    FROM $last_non_empty_table($accounts_table)
+    WHERE usage_status != 'service'
+);
+
+-- Group reports by service-date-account
+$grouped_reports = (
+    SELECT
+        skus.service AS service,
+        cast(usage_reports.date AS date) AS date,
+        usage_reports.billing_account_id AS billing_account_id,
+
+        SUM($to_decimal(usage_reports.cost) +  $to_decimal(usage_reports.credit)) AS total,
+        SUM($to_decimal(usage_reports.cost)) AS cost
+
+    FROM $last_non_empty_table($usage_reports_table) AS usage_reports
+
+    JOIN $skus_services AS skus
+    ON skus.id = usage_reports.sku_id
+
+    WHERE CAST(usage_reports.date AS date) BETWEEN $first_day AND $last_day
+
+    GROUP BY
+        skus.service,
+        usage_reports.date,
+        usage_reports.billing_account_id
+);
+
+
+$decreased_revenue = (
+SELECT
+    service,
+    billing_account_id,
+
+    date,
+    LEAD(date) OVER w AS date_changed,
+
+    $fall_abs(LEAD(total) OVER w, total, date) AS delta_total,
+    $fall_pct(LEAD(total) OVER w, total, date) as delta_total_pct
+
+FROM $grouped_reports
+
+WINDOW w AS (
+    PARTITION BY service, billing_account_id
+    ORDER BY date
+));
+
+$decreased_consumption = (
+SELECT
+    service,
+    billing_account_id,
+
+    date,
+    LEAD(date) OVER w AS date_changed,
+
+    $fall_abs(LEAD(cost) OVER w, cost, date) AS delta_total,
+    $fall_pct(LEAD(cost) OVER w, cost, date) as delta_total_pct
+
+FROM $grouped_reports
+
+WINDOW w AS (
+    PARTITION BY service, billing_account_id
+    ORDER BY date
+));
+
+
+$increased_revenue = (
+SELECT
+    service,
+    billing_account_id,
+
+    date as date_changed,
+
+    $grow_abs(total, LAG(total) OVER w, date) AS delta_total,
+    $grow_pct(total, LAG(total) OVER w, LAG(date) OVER w) AS delta_total_pct
+
+FROM $grouped_reports
+
+WINDOW w AS (
+    PARTITION BY service, billing_account_id
+    ORDER BY date
+));
+
+$increased_consumption = (
+SELECT
+    service,
+    billing_account_id,
+
+    date as date_changed,
+
+    $grow_abs(cost, LAG(cost) OVER w, date) AS delta_total,
+    $grow_pct(cost, LAG(cost) OVER w, LAG(date) OVER w) AS delta_total_pct
+
+FROM $grouped_reports
+
+WINDOW w AS (
+    PARTITION BY service, billing_account_id
+    ORDER BY date
+));
+
+UPSERT INTO stat.[/Cloud/sandbox/billing/deviations/revenue_decrease/daily]
+ERASE BY (fielddate, service, billing_account_id)
+
+SELECT 
+    CAST(Unwrap(r.date_changed) as string) as fielddate,
+    Unwrap(r.service) as service,
+    Unwrap(r.billing_account_id) as billing_account_id,
+    Unwrap(a.state) as status,
+    Unwrap(a.usage_status) as usage_status,
+    Unwrap(a.name) as name,
+    CAST($generated_at as string) as updated_at,
+    $to_double(r.delta_total_pct) as delta_pct,
+    $to_double(r.delta_total) as delta_abs
+
+FROM $decreased_revenue as r
+JOIN $accounts as a
+ON a.id == r.billing_account_id
+
+WHERE
+    r.delta_total < $to_decimal(0) AND
+    ABS(r.delta_total) > $threshold_abs AND r.delta_total_pct > $threshold_pct
+
+ORDER BY
+    fielddate DESC,
+    service,
+    billing_account_id;
+
+
+UPSERT INTO stat.[/Cloud/sandbox/billing/deviations/revenue_increase/daily]
+ERASE BY (fielddate, service, billing_account_id)
+
+SELECT 
+    CAST(Unwrap(r.date_changed) as string) as fielddate,
+    Unwrap(r.service) as service,
+    Unwrap(r.billing_account_id) as billing_account_id,
+    Unwrap(a.state) as status,
+    Unwrap(a.usage_status) as usage_status,
+    Unwrap(a.name) as name,
+    CAST($generated_at as string) as updated_at,
+    $to_double(r.delta_total_pct) as delta_pct,
+    $to_double(r.delta_total) as delta_abs
+
+FROM $increased_revenue as r
+JOIN $accounts as a
+ON a.id == r.billing_account_id
+
+WHERE
+    r.delta_total > $to_decimal(0) AND
+    ABS(r.delta_total) > $threshold_abs AND r.delta_total_pct > $threshold_pct
+
+ORDER BY
+    fielddate DESC,
+    service,
+    billing_account_id;
+
+UPSERT INTO stat.[/Cloud/sandbox/billing/deviations/Consumption decrease/daily]
+ERASE BY (fielddate, service, billing_account_id)
+
+SELECT 
+    CAST(Unwrap(r.date_changed) as string) as fielddate,
+    Unwrap(r.service) as service,
+    Unwrap(r.billing_account_id) as billing_account_id,
+    Unwrap(a.state) as status,
+    Unwrap(a.usage_status) as usage_status,
+    Unwrap(a.name) as name,
+    CAST($generated_at as string) as updated_at,
+    $to_double(r.delta_total_pct) as delta_pct,
+    $to_double(r.delta_total) as delta_abs
+
+FROM $decreased_consumption as r
+JOIN $accounts as a
+ON a.id == r.billing_account_id
+
+WHERE
+    r.delta_total < $to_decimal(0) AND
+    ABS(r.delta_total) > $threshold_abs AND r.delta_total_pct > $threshold_pct
+
+ORDER BY
+    fielddate DESC,
+    service,
+    billing_account_id;
+
+
+UPSERT INTO stat.[/Cloud/sandbox/billing/deviations/Consumption increase/daily]
+ERASE BY (fielddate, service, billing_account_id)
+
+SELECT 
+    CAST(Unwrap(r.date_changed) as string) as fielddate,
+    Unwrap(r.service) as service,
+    Unwrap(r.billing_account_id) as billing_account_id,
+    Unwrap(a.state) as status,
+    Unwrap(a.usage_status) as usage_status,
+    Unwrap(a.name) as name,
+    CAST($generated_at as string) as updated_at,
+    $to_double(r.delta_total_pct) as delta_pct,
+    $to_double(r.delta_total) as delta_abs
+
+FROM $increased_consumption as r
+JOIN $accounts as a
+ON a.id == r.billing_account_id
+
+WHERE
+    r.delta_total > $to_decimal(0) AND
+    ABS(r.delta_total) > $threshold_abs AND r.delta_total_pct > $threshold_pct
+
+ORDER BY
+    fielddate DESC,
+    service,
+    billing_account_id

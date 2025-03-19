@@ -1,0 +1,80 @@
+service_account_id: bfbsle5rb0iiukap9v2k # iot-deployer
+name: iot-events
+description: IG-managed IoT events backend
+scale_policy:
+  fixed_scale:
+    size: 2
+deploy_policy:
+  max_unavailable: 1
+  max_expansion: 0
+allocation_policy:
+  zones:
+    - zone_id: ru-central1-a
+    - zone_id: ru-central1-b
+    - zone_id: ru-central1-c
+health_checks_spec:
+  health_check_specs:
+    - http_options:
+        port: 443
+        path: /onlycode?labels=balancer_stopper
+      interval: 10s
+      timeout: 5s
+      unhealthy_threshold: 5
+      healthy_threshold: 2
+instance_template:
+  name: iot-events-{instance.index}-{instance.internal_dc}
+  hostname: iot-events-{instance.index}-{instance.internal_dc}
+  platform_id: standard-v2
+  service_account_id: bfb8h4cj3t2v6dfct079 # events
+  labels:
+    yandex-dns: ig
+    conductor-group: iot-events
+    layer: iaas
+    abc_svc: ycmqtt
+    env: pre-prod
+    environment: preprod
+  resources_spec:
+    memory: 2G
+    cores: 2
+    core_fraction: 20
+  boot_disk_spec:
+    mode: READ_WRITE
+    disk_spec:
+      image_id: ${IMAGE_ID}
+      type_id: network-ssd
+      size: 10g
+  secondary_disk_specs:
+    - mode: READ_WRITE
+      device_name: data
+      disk_spec:
+        type_id: network-hdd
+        size: 10g
+  network_interface_specs:
+    - subnet_ids: ['bucpba0hulgrkgpd58qp', 'bltueujt22oqg5fod2se', 'fo27jfhs8sfn4u51ak2s']
+      primary_v4_address_spec: {}
+      primary_v6_address_spec: {}
+  metadata:
+    launch_index: "{instance.index}"
+    internal_dc: "{instance.internal_dc}"
+    osquery_tag: ycloud-svc-iot
+    shortname: "iot-events-{instance.index}-{instance.internal_dc}"
+    nsdomain: "{instance.internal_dc}.ycp.cloud-preprod.yandex.net"
+    user-data: |
+      #cloud-config
+      disk_setup:
+        /dev/disk/by-id/virtio-data:
+          table_type: mbr
+          layout: [80, 20]
+          overwrite: false
+      fs_setup:
+        - filesystem: ext4
+          device: /dev/disk/by-id/virtio-data
+          partition: 1
+          overwrite: false
+        - filesystem: ext4
+          device: /dev/disk/by-id/virtio-data
+          partition: 2
+          overwrite: false
+      mounts:
+        - ["/dev/disk/by-id/virtio-data-part1", "/var/log", "auto", "defaults", "0", "0"]
+        - ["/dev/disk/by-id/virtio-data-part2", "/data", "auto", "defaults", "0", "0"]

@@ -1,0 +1,25 @@
+{%- import "common/kikimr/init.sls" as vars with context %}
+
+{%- set lb_endpoints = grains['cluster_map']['load_balancer']['endpoints'] -%}
+{%- set healthcheck_ctrl_hosts = grains['cluster_map']['roles']['healthcheck-ctrl'] -%}
+{%- set default_zone_id = pillar['placement']['dc'] %}
+{%- set zone_id = salt['grains.get']('cluster_map:hosts:%s:location:zone_id' % vars.hostname, default_zone_id) %}
+{%- if vars.subdomains|length > 1 or vars.base_role == 'cloudvm' %}
+{%-     set kikimr_loadbalancer_host = 'localhost' %}
+{%-     set kikimr_loadbalancer_port = pillar['kikimr_tenant_ports'][vars.loadbalancer_database]['grpc_port'] %}
+{%- else %}
+{%-     set kikimr_loadbalancer_host = lb_endpoints.loadbalancer_kikimr_grpc.host %}
+{%-     set kikimr_loadbalancer_port = lb_endpoints.loadbalancer_kikimr_grpc.port %}
+{%- endif %}
+
+zone-id: "{{ zone_id }}"
+addr: 0.0.0.0:50052
+healthcheck-dest: {{ healthcheck_ctrl_hosts[0] }}:50051
+insecure: true
+ydb:
+  addr: {{ salt['grains.get']('overrides:kikimr_endpoint', (kikimr_loadbalancer_host, kikimr_loadbalancer_port)|join(':')) }}
+  directory: /{{ vars.ydb_domain }}/{{ vars.loadbalancer_database }}/{{ grains['cluster_map']['stand_type'] }}/{{ salt['grains.get']('overrides:kikimr_id', salt['grains.get']('cluster_map:kikimr:shared_dir')) }}/healthcheck
+  dial_timeout:    5s
+  request_timeout: 10s
+
+discovery_config: /etc/yc/loadbalancer-ctrl/discovery.yaml

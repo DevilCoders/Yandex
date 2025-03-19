@@ -1,0 +1,47 @@
+{# FIXME: unify with cluster.j2 #}
+
+{% set conductor_group_prefix = "cloud_bootstrap_" + env if env != "prod" else "cloud_bootstrap" %}
+{% set conductor_group_suffix = "_" + az if az else "" %}
+{% set conductor_group = conductor_group_prefix + conductor_group_suffix %}
+{% set name = conductor_group %}
+
+{% set id_prefix = "" if no_project_id_prefix else project_id + "_" %} {# Legacy, should not be used in new projects #}
+{% set cluster_id = id_override | default(id_prefix + name) %}
+
+{%- macro render_cloud_dns_element(resource_name) %}
+{
+    "env": "{{ cloud_dns_env_names[env] }}",
+    "name": "{{ resource_name }}",
+    "labels": [
+        {% for label in labels %}
+            "{{ label }}"{% if not loop.last %},{% endif %}
+        {% endfor %}
+    ]
+}
+{%- endmacro %}
+
+{
+    "id": "{{ cluster_id }}",
+    "projectId": "{{ project_id }}",
+    "name": "{{ name_override|default(name) }}",
+    {% if add_conductor_group or env not in cloud_dns %}
+    "conductorGroups": [
+        {
+            "group": "{{ conductor_group }}",
+            "labels": [
+                {% for label in labels %}
+                    "{{ label }}"{% if not loop.last %},{% endif %}
+                {% endfor %}
+            ]
+        }
+    ],
+    {% endif %}
+    {% if env in cloud_dns %}"cloudDns": [
+        {% for name in cloud_dns[env] %}
+        {{ render_cloud_dns_element(name) }}{% if not loop.last %},{% endif %}
+        {% endfor %}
+    ],{% endif %}
+    {% if sensorsTtlDays %}"sensorsTtlDays": {{ sensorsTtlDays }},{% endif %}  {# Overrides metrics TTL from service #}
+    "useFqdn": {{ use_fqdn|default(False)|lower }},
+    "tvmDestId": ""
+}

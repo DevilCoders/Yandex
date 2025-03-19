@@ -1,0 +1,77 @@
+[sources]
+
+[sources.clickhouse_file_log]
+type = "file"
+glob_minimum_cooldown_ms = 10000
+line_delimiter = "\n"
+max_line_bytes = 102400
+include = ["/var/log/clickhouse-server/clickhouse-server.log"]
+read_from = "beginning"
+
+[sources.clickhouse_file_log.fingerprint]
+ignored_header_bytes = 0
+strategy = "checksum"
+
+[sources.clickhouse_file_log.multiline]
+mode = "halt_before"
+condition_pattern = "^[0-9]{4}\\."
+start_pattern = "^[0-9]{4}\\."
+timeout_ms = 1000
+
+[sinks]
+
+[sinks.to_clickhouse_dataplane]
+type = "vector"
+version = "2"
+inputs = ["clickhouse_presink_hook"]
+address = "{{ salt['dbaas.pillar']('data:vector:address') }}"
+
+[sinks.to_clickhouse_dataplane.buffer]
+type = "memory"
+max_events = 2000
+when_full = "block"
+
+[sinks.to_clickhouse_dataplane.healthcheck]
+enabled = true
+
+[transforms]
+
+[transforms.clickhouse_presink_hook]
+type = "remap"
+inputs = ["clickhouse_parsed"]
+source = """
+.context.region = "{{ salt['dbaas.pillar']('data:dbaas:region') }}"
+.context.cid = "{{ salt['dbaas.pillar']('data:dbaas:cluster_id') }}"
+"""
+
+[transforms.clickhouse_parsed]
+type = "remap"
+inputs = ["clickhouse_file_log"]
+source = """
+parsed_msg_field, err = parse_grok(.message, \"^(?<timestamp>\\\\d{4}\\\\.\\\\d{2}\\\\.\\\\d{2} \\\\d{2}:\\\\d{2}:\\\\d{2}\\\\.\\\\d{6})%{SPACE}(?<message>\\\\[ %{INT:thread} \\\\]%{SPACE}\\\\{(%{DATA:query_id})?\\\\}%{SPACE}\\\\<%{WORD:severity}\\\\>%{SPACE}%{DATA:component}:%{SPACE}(.|\\\\r|\\\\
+)*)\", false)
+if err != null {
+  .context.unparsed = true
+  .severity = \"Error\"
+} else {
+    timestamp_with_timezone = parsed_msg_field.timestamp + \" +0000\" ?? \"\"
+    .timestamp = parse_timestamp(value: timestamp_with_timezone, format: \"%Y.%m.%d %H:%M:%S.%6f %z\") ?? now()
+
+    severity_remap = { \"Information\": \"Info\" }
+    .severity = get!(severity_remap, [parsed_msg_field.severity])
+    if .severity == null {
+      .severity = parsed_msg_field.severity
+    }
+
+    .message = parsed_msg_field.message
+    .thread = parsed_msg_field.thread
+    .query_id = parsed_msg_field.query_id
+    .component = parsed_msg_field.component
+
+    .context.file = .file
+    .context.host = .host
+    del(.file)
+    del(.host)
+    del(.source_type)
+}
+"""

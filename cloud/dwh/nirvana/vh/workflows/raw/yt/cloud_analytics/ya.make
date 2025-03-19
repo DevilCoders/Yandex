@@ -1,0 +1,3 @@
+RECURSE(
+    sku_tags
+)

@@ -1,0 +1,38 @@
+OWNER(g:cloud)
+
+RECURSE(
+    ai
+    analytics
+    assembly-workshop
+    billing
+    bitbucket
+    dataplatform
+    blockstore
+    bootstrap
+    compliance
+    compute
+    disk_manager
+    docs
+    dwh
+    extservicesintegration
+    filestore
+    gauthling
+    iam
+    identity
+    infra
+    java
+    kms
+    logs
+    marketplace
+    mdb
+    netinfra
+    ps
+    salt-formula
+    storage
+    support
+    team-integration
+    tools
+    vm
+    vpc
+    yc-monitoring
+)

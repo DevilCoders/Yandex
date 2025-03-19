@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package yandex.cloud.priv.serverless.triggers.v1.inner;
+
+import "yandex/cloud/api/tools/options.proto";
+import "yandex/cloud/priv/serverless/triggers/v1/trigger.proto";
+import "yandex/cloud/priv/validation.proto";
+
+option go_package = "a.yandex-team.ru/cloud/bitbucket/private-api/yandex/cloud/priv/serverless/triggers/v1/inner;inner";
+option java_outer_classname = "PSTCS";
+
+service ControlService {
+
+  rpc ListShards(ListShardsRequest) returns (ListShardsResponse);
+
+  // deprecated, use WatchTriggers instead
+  rpc Triggers(StreamTriggersRequest) returns (stream TriggersChunk);
+
+  rpc WatchTriggers(WatchTriggersRequest) returns (stream TriggersChunk);
+
+}
+
+message Shard {
+  string id = 1;
+}
+
+message ListShardsRequest {
+
+}
+
+message ListShardsResponse {
+  repeated Shard shards = 1;
+}
+
+// deprecated, use ControlService.WatchTriggers(WatchTriggersRequest) instead
+message StreamTriggersRequest {
+  TriggerType type = 1 [(required) = true];
+  string shard_id = 2; // empty value means all shards
+}
+
+message WatchTriggersRequest {
+  repeated TriggerType type = 1; // no value means all types
+  repeated string shard_id = 2; // no value means all shards
+}
+
+message TriggersChunk {
+  repeated Action actions = 1;
+  ChunkType type = 2 [(required) = true];
+
+  message Action {
+    string id = 1;
+    oneof action {
+      option (exactly_one) = true;
+      Trigger.Rule create = 2;
+      Trigger.Rule update = 3;
+      DeleteReason delete = 4 [(yandex.cloud.api.tools.field).lint_skip.all = true];
+    }
+  }
+
+  enum ChunkType {
+    // means the chunk has no data/changes (no actions will be sent), used as a keep-alive, you have to ignore such chunks
+    CHUNK_TYPE_UNSPECIFIED = 0;
+
+    // non-last snapshot chunk: there is at least one following chunk with 'snapshot_xxx' type
+    SNAPSHOT_INCOMPLETE = 1;
+
+    // last snapshot chunk (snapshot is completed), all following changes will have 'diff' type
+    SNAPSHOT_COMPLETE = 2;
+
+    // difference to the current "aggregated" state, all following changes will have 'diff' type
+    DIFF = 3;
+  }
+
+  enum DeleteReason {
+    DELETE_REASON_UNSPECIFIED = 0;
+    DELETED = 1;
+  }
+}

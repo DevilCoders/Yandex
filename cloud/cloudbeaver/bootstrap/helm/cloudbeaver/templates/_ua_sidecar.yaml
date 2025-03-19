@@ -1,0 +1,113 @@
+{{ define "ua.volumes" }}
+- name: sa-key
+  secret:
+    secretName: monitoring-sa
+- name: config
+  configMap:
+    name: {{ .service }}-ua-config
+    items:
+      - key: config.yaml
+        path: config.yaml
+{{ end }}
+{{ define "ua.configmap" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .service }}-ua-config
+data:
+  config.yaml: |
+    status:
+      host: ""
+      port: "16241"
+
+    storages:
+      - name: main
+        plugin: fs
+        config:
+          directory: /var/lib/yandex/unified_agent/main
+          max_partition_size: 100mb
+          max_segment_size: 10mb
+
+    channels:
+      - name: cloud_monitoring
+        channel:
+          pipe:
+            - storage_ref:
+                name: main
+          output:
+            plugin: yc_metrics
+            config:
+              url: "{{ .monitoring_url }}"
+              folder_id: "{{ .folder_id }}"
+              iam:
+                jwt:
+                  file: "/etc/yandex/unified_agent/sa.json"
+                  endpoint: "{{ .iam_endpoint }}"
+
+    routes:
+      - input:
+          plugin: metrics_pull
+          config:
+            url: http://localhost:6060/metrics
+            format:
+              prometheus: {}
+            namespace: ""
+        channel:
+          pipe:
+            - filter:
+                plugin: add_metric_labels
+                config:
+                  labels:
+                    app: {{ .service }}
+                    namespace: {{ .namespace }}
+          channel_ref:
+            name: cloud_monitoring
+
+      - input:
+          plugin: agent_metrics
+          config:
+            namespace: ua
+        channel:
+          pipe:
+            - filter:
+                plugin: filter_metrics
+                config:
+                  match: "\"{scope=health}\""
+          channel_ref:
+            name: cloud_monitoring
+{{ end }}
+{{ define "ua.container" }}
+- name: unified-agent
+  image: {{ .image }}
+  ports:
+    - containerPort: 16241
+  resources:
+    requests:
+      memory: 50Mi
+      cpu: 100m
+    limits:
+      memory: 100Mi
+      cpu: 200m
+  volumeMounts:
+    - name: config
+      mountPath: /etc/yandex/unified_agent/config.tmpl.yml
+      subPath: config.yaml
+      readOnly: true
+    - name: sa-key
+      mountPath: /etc/yandex/unified_agent/sa.json
+      subPath: sa.json
+      readOnly: true
+  livenessProbe:
+    httpGet:
+      path: /status
+      port: 16241
+    initialDelaySeconds: 150
+    periodSeconds: 15
+    timeoutSeconds: 15
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: 16241
+    periodSeconds: 15
+    timeoutSeconds: 15
+{{ end }}

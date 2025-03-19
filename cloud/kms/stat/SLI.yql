@@ -1,0 +1,226 @@
+USE hahn;
+
+$cluster = "prod";
+
+$well_known_internal_billing_account_ids = [
+    "dn2955730ng0sokcsael" -- HashiCorp
+];
+
+$billing_storage_sku = "1eicgre1bd9tn9iah";
+
+-- Size of window in days.
+$num_days = 7;
+
+$today = CurrentUtcDate();
+$window = CAST("P" || CAST($num_days AS string) || "D" AS Interval);
+$first_day = $today - $window;
+$table_paths_1d = (SELECT AGGREGATE_LIST(Path) FROM (
+    SELECT Path
+    FROM FOLDER("logs/yc-kms-audit-" || $cluster || "/1d")
+    WHERE Type = "table"
+    AND CAST(TableName(Path) AS date) BETWEEN $first_day AND $today
+));
+
+$tables_paths_30min = (SELECT AGGREGATE_LIST(Path) FROM (
+    SELECT Path
+    FROM FOLDER("logs/yc-kms-audit-" || $cluster || "/30min")
+    WHERE Type = "table"
+));
+
+$cur_time = CurrentUtcDateTime();
+$last_day_time = $cur_time - CAST("P1D" AS Interval);
+$last_day_tables = (SELECT AGGREGATE_LIST(Path) FROM (
+    SELECT Path
+    FROM FOLDER("logs/yc-kms-audit-" || $cluster || "/30min")
+    WHERE Type = "table"
+    AND CAST(TableName(Path) || "Z" AS datetime) BETWEEN $last_day_time AND $cur_time 
+));
+
+$last_day_event_tables = (SELECT AGGREGATE_LIST(Path) FROM (
+    SELECT Path
+    FROM FOLDER("logs/yc-events-" || $cluster || "/30min")
+    WHERE Type = "table"
+    AND CAST(TableName(Path) || "Z" AS datetime) BETWEEN $last_day_time AND $cur_time 
+));
+
+$billing_table_name = "home/cloud/billing/analytics_cube/realtime/" || $cluster;
+
+-- Choose any billing_name, use MAX for stable results across invocations.
+$clouds_table = (
+    SELECT MAX(billing_account_id) AS billing_account_id , MAX(billing_account_usage_status) AS billing_account_usage_status, MAX(billing_name) AS billing_name, cloud_id
+    FROM (
+        SELECT DISTINCT billing_account_id, billing_account_usage_status,
+            billing_account_company_name || " (" || billing_account_name || ")" AS billing_name, billing_record_cloud_id AS cloud_id
+        FROM $billing_table_name
+    )
+    GROUP BY cloud_id
+);
+
+$internal_billing_ids = (
+    SELECT billing_account_id FROM $clouds_table
+    WHERE billing_account_usage_status = "service"
+);
+$num_internal_billing_ids = (SELECT COUNT(*) FROM $internal_billing_ids);
+
+DISCARD SELECT Ensure($num_internal_billing_ids, $num_internal_billing_ids > 0, "No internal billing accounts found, check the request");
+DISCARD SELECT Ensure($num_internal_billing_ids, $num_internal_billing_ids < 1000, "Too many internal billing accounts found, check the request");
+
+$all_internal_billing_ids = (
+    SELECT billing_account_id FROM $internal_billing_ids
+    UNION ALL (
+        SELECT * FROM (SELECT $well_known_internal_billing_account_ids AS billing_account_id) FLATTEN LIST BY billing_account_id
+    )
+);
+
+$internal_cloud_ids = (
+    SELECT cloud_id FROM $clouds_table
+    WHERE billing_account_id IN COMPACT (SELECT billing_account_id FROM $all_internal_billing_ids)
+);
+
+$top_users = (
+    SELECT cloud_id, COUNT(*) AS cnt
+    FROM EACH(ListExtend($table_paths_1d, $tables_paths_30min))
+    WHERE cloud_id NOT IN COMPACT (SELECT cloud_id FROM $internal_cloud_ids)
+    GROUP BY cloud_id
+    ORDER BY cnt DESC
+    LIMIT 10
+);
+
+$top_users_with_name = (
+    SELECT u.cloud_id AS cloud_id, u.cnt AS cnt, c.billing_name AS `name`
+    FROM $top_users AS u
+    JOIN $clouds_table AS c ON c.cloud_id = u.cloud_id
+);
+
+$top_last_day_users = (
+    SELECT cloud_id, COUNT(*) AS cnt
+    FROM EACH($last_day_tables)
+    WHERE cloud_id NOT IN COMPACT (SELECT cloud_id FROM $internal_cloud_ids)
+    GROUP BY cloud_id
+    ORDER BY cnt DESC
+    LIMIT 10
+);
+
+$top_last_day_users_with_name = (
+    SELECT u.cloud_id AS cloud_id, u.cnt AS cnt, c.billing_name AS `name`
+    FROM $top_last_day_users AS u
+    JOIN $clouds_table AS c ON c.cloud_id = u.cloud_id
+);
+
+$unique_cloud_data =
+    SELECT COUNT(DISTINCT(cloud_id))
+    FROM EACH(ListExtend($table_paths_1d, $tables_paths_30min))
+    WHERE cloud_id NOT IN COMPACT (SELECT cloud_id FROM $internal_cloud_ids);
+
+$unique_key_data =
+    SELECT COUNT(DISTINCT(key_id))
+    FROM EACH(ListExtend($table_paths_1d, $tables_paths_30min))
+    WHERE cloud_id NOT IN COMPACT (SELECT cloud_id FROM $internal_cloud_ids);
+
+$total_ops_data =
+    SELECT COUNT(*)
+    FROM EACH(ListExtend($table_paths_1d, $tables_paths_30min))
+    WHERE cloud_id NOT IN COMPACT (SELECT cloud_id FROM $internal_cloud_ids);
+
+$unique_cloud_last_day_data =
+    SELECT COUNT(DISTINCT(cloud_id))
+    FROM EACH($last_day_tables)
+    WHERE cloud_id NOT IN COMPACT (SELECT cloud_id FROM $internal_cloud_ids);
+
+$unique_key_last_day_data =
+    SELECT COUNT(DISTINCT(key_id))
+    FROM EACH($last_day_tables)
+    WHERE cloud_id NOT IN COMPACT (SELECT cloud_id FROM $internal_cloud_ids);
+
+$total_ops_last_day_data =
+    SELECT COUNT(*)
+    FROM EACH($last_day_tables)
+    WHERE cloud_id NOT IN COMPACT (SELECT cloud_id FROM $internal_cloud_ids);
+
+$unique_cloud_create_last_day_data =
+    SELECT COUNT(DISTINCT(cloud_id))
+    FROM EACH($last_day_event_tables)
+    WHERE cloud_id NOT IN COMPACT (SELECT cloud_id FROM $internal_cloud_ids)
+    AND event_type = "yandex.cloud.events.kms.CreateSymmetricKey";
+
+$key_create_last_day_data = (
+    SELECT Yson::LookupString(_rest["details"], "key_id") AS key_id
+    FROM EACH($last_day_event_tables)
+    WHERE cloud_id NOT IN COMPACT (SELECT cloud_id FROM $internal_cloud_ids)
+    AND event_type = "yandex.cloud.events.kms.CreateSymmetricKey"
+);
+
+-- SELECT DISTINCT(cloud_id)
+-- FROM EACH($last_day_event_tables)
+-- WHERE cloud_id NOT IN COMPACT (SELECT cloud_id FROM $internal_cloud_ids)
+-- AND event_type = "yandex.cloud.events.kms.CreateSymmetricKey";
+
+-- SELECT DISTINCT(key_id) FROM $key_create_last_day_data;
+
+$unique_key_create_last_day_data = SELECT COUNT(DISTINCT(key_id)) FROM $key_create_last_day_data;
+
+
+$last_day_unix_timestamp = SELECT CAST($cur_time AS Uint64) - 86400;
+
+-- pricing_quantity for storage SKU is in "key_version*hour", normalize by billing record time (should always be 3600)
+$num_versions = (
+    SELECT billing_record_cloud_id AS cloud_id, CAST(Math::Round(AVG(billing_record_pricing_quantity * (billing_record_end_time - billing_record_start_time) / 3600)) AS Uint64) as num
+    FROM $billing_table_name
+    WHERE billing_record_start_time > $last_day_unix_timestamp
+    AND billing_record_cloud_id NOT IN COMPACT (SELECT cloud_id FROM $internal_cloud_ids)
+    AND sku_id LIKE '%' || $billing_storage_sku
+    GROUP BY billing_record_cloud_id
+);
+$total_versions = SELECT SUM(num) FROM $num_versions;
+$top_versions_by_user = (
+    SELECT cloud_id, num
+    FROM $num_versions
+    ORDER BY num DESC
+    LIMIT 10
+);
+
+$top_versions_by_user_with_name = (
+    SELECT u.cloud_id AS cloud_id, u.num AS num, c.billing_name AS `name`
+    FROM $top_versions_by_user AS u
+    JOIN $clouds_table AS c ON c.cloud_id = u.cloud_id
+);
+
+
+$target_table_ops_name = "home/cloud/kms/kms-sli-ops-" || CAST($num_days AS string) || "d-" || $cluster;
+
+INSERT INTO $target_table_ops_name
+SELECT CAST($today AS string) AS cur_date, CAST($cur_time AS string) AS cur_time,
+$unique_cloud_data AS num_clouds, $unique_key_data AS num_keys, $total_ops_data AS total_ops;
+
+$target_table_ops_last_day_name = "home/cloud/kms/kms-sli-ops-1d-" || $cluster;
+
+INSERT INTO $target_table_ops_last_day_name
+SELECT CAST($today AS string) AS cur_date, CAST($cur_time AS string) AS cur_time,
+$unique_cloud_last_day_data AS num_clouds, $unique_key_last_day_data AS num_keys, $total_ops_last_day_data AS total_ops;
+
+$target_table_top_ops_name = "home/cloud/kms/kms-sli-ops-top-" || CAST($num_days AS string) || "d-" || $cluster;
+
+INSERT INTO $target_table_top_ops_name WITH TRUNCATE
+SELECT * FROM $top_users_with_name;
+
+$target_table_top_ops_last_day_name = "home/cloud/kms/kms-sli-ops-top-1d-" || $cluster;
+
+INSERT INTO $target_table_top_ops_last_day_name WITH TRUNCATE
+SELECT * FROM $top_last_day_users_with_name;
+
+$target_table_keys_last_day_name = "home/cloud/kms/kms-sli-keys-1d-" || $cluster;
+
+INSERT INTO $target_table_keys_last_day_name
+SELECT CAST($today AS string) AS cur_date, CAST($cur_time AS string) AS cur_time,
+$unique_cloud_create_last_day_data AS num_created_clouds, $unique_key_create_last_day_data AS num_created_keys;
+
+$target_table_versions_name = "home/cloud/kms/kms-sli-total-versions-" || $cluster;
+
+INSERT INTO $target_table_versions_name
+SELECT CAST($today AS string) AS cur_date, CAST($cur_time AS string) AS cur_time,
+$total_versions AS total_versions;
+
+$target_table_versions_top_name = "home/cloud/kms/kms-sli-total-versions-top-" || $cluster;
+
+INSERT INTO $target_table_versions_top_name WITH TRUNCATE
+SELECT * FROM $top_versions_by_user_with_name;

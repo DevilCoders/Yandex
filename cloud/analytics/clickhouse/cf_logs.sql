@@ -1,0 +1,38 @@
+CREATE TABLE %(table_name)s
+(
+    ba_architect String,
+    ba_block_reason String,
+    ba_board_segment String,
+    ba_channel String,
+    ba_client_name String,
+    ba_email String,
+    ba_id String,
+    ba_is_fraud Int64,
+    ba_is_service String,
+    ba_m_cohort String,
+    ba_paid_status String,
+    ba_person_type String,
+    ba_sales_name String,
+    ba_segment String,
+    ba_state String,
+    ba_type String,
+    ba_w_cohort String,
+    cf_category String,
+    cf_call_time DateTime,
+    cf_call_time_day Date,
+    cf_call_time_month Date,
+    cf_call_time_quarter Date,
+    cf_call_time_week Date,
+    cf_duration UInt64,
+    cf_http_remote_addr String,
+    cf_http_reponse_size UInt64,
+    cf_http_status_code UInt64,
+    cf_id String,
+    cf_request_id String,
+    cf_service_status_code UInt64,
+    cf_version_id String,
+    cloud_id String,
+    folder_id String
+)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/%(table_name)s', '{replica}')
+ORDER BY(cf_id,cf_call_time) PARTITION BY toYYYYMM(cf_call_time)

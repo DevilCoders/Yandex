@@ -1,0 +1,433 @@
+uid: ycm-validation-drilldown
+refresh: 1m
+title: YC Certificate Manager Validation Drilldown
+
+tags: [ 'yc-cert-manager', 'yc-cert-manager-validation-drilldown' ]
+
+variables:
+  ui:
+    !include include/_datasources.yaml
+    !include include/_projects.yaml
+    !include include/_clusters.yaml
+    host:
+      multi: true
+      values: [
+        'cluster-validation',
+        'validation-myt-1',
+        'validation-sas-1',
+        'validation-vla-1']
+  replacement:
+    !include ../include/errors.yaml
+  repeat:
+    tx_duration_sensor:
+      values: ['tx_attempt_duration_seconds', 'tx_total_duration_seconds']
+      titles: ['Tx Attempt Duration', 'Tx Total Duration']
+    jvm_memory_area:
+      values: ['heap', 'nonheap']
+      titles: ['Heap', 'Non-Heap']
+
+links:
+  - { title: 'Dashboards', tags: ['yc-cert-manager'] }
+
+graphDefaults:
+  datasource: '${datasource}'
+  width: 8
+  height: 6
+
+queryDefaults: { labels: 'project=${project}, cluster=${cluster}, service=core, host=${host}' }
+
+rows:
+  - title: Certificate Manager Validation Http Server
+    drilldowns:
+      - uid: yc-cert-manager-validation-host-server
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'validation-myt-1',
+              'validation-sas-1',
+              'validation-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+    panels:
+      - type: graph
+        title: 'RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=servlet_requests, app=certificate-manager-validation-server_server, method=*, meter_type=count' }
+
+      - type: graph
+        title: 'Errors (by type)'
+        yAxes: [{ min: 0 }]
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=servlet_statuses, app=certificate-manager-validation-server_server, method=*, status!=200' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: '0', group_by_labels: ['sum', 'status'], alias: '{{status}}' }
+        display: { decimals: 0, empty: false }
+
+      - type: graph
+        title: 'Durations'
+        yAxes: [{ min: 0 }]
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=servlet_durations, app=certificate-manager-validation-server_server, method=*' }
+
+      - type: graph
+        title: 'Utilization'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=jetty_utilization' }
+            select: { alias: 'current' }
+          - params: { labels: 'name=jetty_utilization_max' }
+            select: { alias: 'max' }
+
+      - type: graph
+        title: 'Threads'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=jetty_busy_threads' }
+            select: { alias: 'busy' }
+          - params: { labels: 'name=jetty_idle_threads' }
+            select: { alias: 'idle' }
+          - params: { labels: 'name=jetty_max_threads' }
+            select: { alias: 'max' }
+          - params: { labels: 'name=jetty_reserved_threads' }
+            select: { alias: 'reserved' }
+          - params: { labels: 'name=jetty_current_threads' }
+            select: { alias: 'current' }
+
+      - type: graph
+        title: 'Queue size'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=jetty_queue_size' }
+            select: { alias: 'size' }
+
+
+
+  - title: Certificate Manager Validation — Metrics
+    drilldowns:
+      - uid: yc-cert-manager-validation-job
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'validation-myt-1',
+              'validation-sas-1',
+              'validation-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+    queryDefaults: { defaultTimeWindow: '15s' }
+    panels:
+      - type: graph
+        title: 'Servlet fails'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=validationServerTokenServletFails' }
+            select: { alias: 'fails' }
+
+      - type: graph
+        title: 'Refresh time'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=validationTokenServiceRefreshMillis' }
+            select: { alias: 'ms' }
+
+      - type: graph
+        title: 'Refresh fails'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=validationTokenServiceRefreshFail' }
+            select: { alias: 'fails' }
+
+      - type: graph
+        title: 'Cache size'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=validationTokenServiceCacheSize' }
+            select: { alias: 'tokens' }
+
+      - type: graph
+        title: 'Cache Age'
+        yAxes: [{ min: 0 }]
+        queries:
+          - params: { labels: 'name=validationTokenServiceSecondsSinceLastRefresh' }
+            select: { alias: 'seconds' }
+
+
+  - title: 'YCM validation JVM and System'
+    drilldowns:
+      - uid: yc-cert-manager-validation-host-sys
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'validation-myt-1',
+              'validation-sas-1',
+              'validation-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+    panels:
+      - type: graph
+        title: 'Instances'
+        queries:
+          - params: { labels: 'name=jvm_info, host=validation-*' }
+        display: { empty: false, stack: true }
+        yAxes: [{ min: 0 }]
+
+      - type: graph
+        title: 'JVM @{jvm_memory_area:title} Memory'
+        repeat: jvm_memory_area
+        queries:
+          - params: { labels: 'name=jvm_memory_bytes_used|jvm_memory_bytes_committed, area=@{jvm_memory_area}' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'] }
+        yAxes: [{ format: bytes }]
+      - type: graph
+        title: 'Sum JVM @{jvm_memory_area:title} Memory'
+        repeat: jvm_memory_area
+        queries:
+          - params: { labels: 'name=jvm_memory_bytes_used|jvm_memory_bytes_committed, area=@{jvm_memory_area}' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'] }
+        yAxes: [{ format: bytes }]
+      - type: graph
+        title: 'Sys VM & RSS'
+        queries:
+          - params: { labels: 'name=process_virtual_memory_bytes|process_resident_memory_bytes' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: ['avg', 'name'] }
+      - type: graph
+        title: '% Cores'
+        queries:
+          - params: { labels: 'name=process_cpu_seconds_total' }
+            groupByTime: { max: default }
+            select: { non_negative_derivative: [] }
+        display: { empty: false }
+        yAxes: [{ format: percentunit, decimals: 0 }]
+      - type: graph
+        title: 'JVM Threads'
+        queries:
+          - params: { labels: 'name=jvm_threads_state, state=*' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'state'] }
+        display: { empty: false, stack: true }
+      - type: graph
+        title: 'Load Average (1 min)'
+        queries:
+          - params: { labels: 'service=sys, path=/Proc/LoadAverage1min' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'la' }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Sum Load Average (1 min)'
+        queries:
+          - params: { labels: 'service=sys, path=/Proc/LoadAverage1min' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'la' }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Memory'
+        queries:
+          - params: { labels: 'service=sys, path=/Memory/ActiveAnon' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'anon' }
+          - params: { labels: 'service=sys, path=/Memory/ActiveFile' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'file' }
+          - params: { labels: 'service=sys, path=/Memory/MemTotal' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'total' }
+        yAxes: [{ format: bytes, min: 0 }]
+      - type: graph
+        title: 'Sum Memory'
+        queries:
+          - params: { labels: 'service=sys, path=/Memory/ActiveAnon' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'anon' }
+          - params: { labels: 'service=sys, path=/Memory/ActiveFile' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'file' }
+          - params: { labels: 'service=sys, path=/Memory/MemTotal' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'total' }
+        yAxes: [{ format: bytes, min: 0 }]
+      - type: graph
+        title: 'Network Bytes'
+        queries:
+          - params: { labels: 'service=sys, path=/Net/Ifs/RxBytes, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'rx' }
+          - params: { labels: 'service=sys, path=/Net/Ifs/TxBytes, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'tx' }
+        display: { stack: true }
+        yAxes: [{ format: bytes, min: 0 }]
+      - type: graph
+        title: 'Network Packets'
+        queries:
+          - params: { labels: 'service=sys, path=/Net/Ifs/RxPackets, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'rx' }
+          - params: { labels: 'service=sys, path=/Net/Ifs/TxPackets, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'tx' }
+        display: { stack: true }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'Network Drop & Err'
+        queries:
+          - params: { labels: 'service=sys, path=/Net/Ifs/RxDrop, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'rx drop' }
+          - params: { labels: 'service=sys, path=/Net/Ifs/TxDrop, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'tx drop' }
+          - params: { labels: 'service=sys, path=/Net/Ifs/RxErrs, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'rx errs' }
+          - params: { labels: 'service=sys, path=/Net/Ifs/TxErrs, intf=eth0' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'tx errs' }
+        display: { stack: true }
+        yAxes: [{ min: 0 }]
+      - type: graph
+        title: 'File Descriptors'
+        queries:
+          - params: { labels: 'name=process_open_fds' }
+            groupByTime: { max: default }
+            select: { drop_below: '0', group_by_labels: ['max', 'name'], alias: 'max FDs' }
+      - type: graph
+        title: 'Free Space'
+        queries:
+          - params: { labels: 'service=sys, path=/Filesystem/FreeB' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['min', 'name'], alias: 'space' }
+        yAxes: [{ format: bytes, min: 0 }]
+      - type: graph
+        title: 'IO Ops'
+        queries:
+          - params: { labels: 'service=sys, path=/Io/Disks/Reads' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'reads' }
+          - params: { labels: 'service=sys, path=/Io/Disks/Writes' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'writes' }
+        display: { stack: true }
+      - type: graph
+        title: 'IO Bytes'
+        queries:
+          - params: { labels: 'service=sys, path=/Io/Disks/ReadBytes' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'reads' }
+          - params: { labels: 'service=sys, path=/Io/Disks/WriteBytes' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'name'], alias: 'writes' }
+        display: { stack: true }
+        yAxes: [{ format: bytes }]
+      - type: graph
+        title: 'IO Waits'
+        queries:
+          - params: { labels: 'service=sys, path=/Io/Disks/ReadWaitMillisec' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'reads msec' }
+          - params: { labels: 'service=sys, path=/Io/Disks/WriteWaitMillisec' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['max', 'name'], alias: 'writes msec' }
+        display: { stack: true }
+
+  - title: 'YCM validation KiKiMR GRPC Client'
+    queryDefaults: { labels: 'app=kikimr_client, method=*' }
+    drilldowns:
+      - uid: yc-cert-manager-validation-kikimr-grpc
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'validation-myt-1',
+              'validation-sas-1',
+              'validation-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+
+    panels:
+      - type: graph
+        title: 'KiKiMR Client Call RPS'
+        templates: { name: rps }
+        queries:
+          - params: { labels: 'name=grpc_requests, meter_type=count' }
+
+      - type: graph
+        title: 'KiKiMR Client Errors (by type)'
+        queryDefaults: { defaultTimeWindow: '15s' }
+        queries:
+          - params: { labels: 'name=grpc_statuses, status!=OK' }
+            groupByTime: { max: 'default' }
+            select: { diff: [], drop_below: '0', group_by_labels: ['sum', 'status'], alias: '{{status}}' }
+        display: { decimals: 0, empty: false }
+
+      - type: graph
+        title: 'KiKiMR Client Call Durations'
+        templates: { name: percentile, groupLines: true, format: solomon }
+        queries:
+          - params: { labels: 'name=grpc_durations' }
+
+  - title: 'YCM validation KiKiMR Tx'
+    drilldowns:
+      - uid: yc-cert-manager-validation-kikimr-tx
+        tags: [ 'yc-cert-manager', 'yc-cert-manager-host' ]
+        ui:
+          cluster: cluster
+          host:
+            multi: true
+            values: [
+              'validation-myt-1',
+              'validation-sas-1',
+              'validation-vla-1']
+        uiRepeat: host
+        labels: 'host=$host'
+
+    panels:
+      - type: graph
+        title: 'Tx Attempt Count'
+        templates: { name: percentile, format: solomon, groupLines: true }
+        yAxes: [{ decimals: 1, format: short, min: 0 }]
+        queries:
+          - params: { labels: 'tx_name=*, name=tx_attempts' }
+
+      - type: graph
+        repeat: tx_duration_sensor
+        title: '@{tx_duration_sensor:title}'
+        templates: { name: percentile, format: solomon, groupLines: true }
+        queries:
+          - params: { labels: 'tx_name=*, name=@{tx_duration_sensor}' }
+
+      - type: graph
+        title: 'Tx Result RPS'
+        queries:
+          - params: { labels: 'tx_name=*, name=tx_result, result=*' }
+            groupByTime: { max: default }
+            select: { nn_deriv: [], group_by_labels: ['sum', 'result'], alias: '{{result}} RPS' }
+
+      - type: graph
+        title: 'Session Count'
+        queries:
+          - params: { labels: 'name=sessions_count, type=active|idle' }
+            groupByTime: { max: default }
+            select: { group_by_labels: ['sum', 'type'] }
+        display: { stack: true }
+
+      - type: graph
+        title: 'Session Timings (Used)'
+        templates: { name: percentile, format: solomon, groupLines: true }
+        queries:
+          - params: { labels: 'name=sessions_timings, type=used' }

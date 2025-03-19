@@ -1,0 +1,81 @@
+storages:
+  - name: piper_logs
+    plugin: fs
+    config:
+      directory: /var/lib/yandex/unified_agent/piper_logs
+      max_partition_size: 100mb
+      max_segment_size: 10mb
+  - name: piper_metrics
+    plugin: fs
+    config:
+      directory: /var/lib/yandex/unified_agent/piper_metrics
+      max_partition_size: 100mb
+      max_segment_size: 10mb
+  - name: piper_yc_metrics_push
+    plugin: fs
+    config:
+      directory: /var/lib/yandex/unified_agent/piper_metrics_yc_push
+      max_partition_size: 100mb
+      max_segment_size: 10mb
+
+routes:
+  - input:
+      plugin: metrics_pull
+      config:
+        url: http://localhost:9741/metrics
+        format:
+          prometheus: {}
+        poll_period: 15s
+        namespace: piper
+    channel:
+      pipe:
+        - storage_ref:
+            name: piper_metrics
+      output:
+        plugin: yc_metrics
+        config:
+          url: https://monitoring.api.cloud-preprod.yandex.net/monitoring/v2/data/write
+          folder_id: yc.billing.service-folder
+          iam:
+            cloud_meta: {}
+  - input:
+      plugin: grpc
+      config:
+        uri: localhost:3113
+    channel:
+      pipe:
+        - storage_ref:
+            name: piper_logs
+      output:
+        plugin: logbroker
+        config:
+          endpoint: lb.cc8035oc71oh9um52mv3.ydb.mdb.cloud-preprod.yandex.net
+          port: 2135
+          topic: /yc.billing.service-cloud/piper/logs
+          database: /pre-prod_global/aoeb66ftj1tbt1b2eimn/cc8035oc71oh9um52mv3
+          codec: gzip
+          iam:
+            cloud_meta: {}
+          use_ssl: {}
+  - input:
+      plugin: metrics
+      config:
+        port: 22132
+        path: '/write'
+        format:
+          solomon_json: {}
+        metric_name_label: sensor
+        project: yc_billing
+        service: statistics
+        cluster: preprod
+    channel:
+      pipe:
+        - storage_ref:
+            name: piper_yc_metrics_push
+      output:
+        plugin: metrics
+        config:
+          tvm:
+            client_id: 2000508
+            secret:
+              file: /config/tvm/tvm-secret

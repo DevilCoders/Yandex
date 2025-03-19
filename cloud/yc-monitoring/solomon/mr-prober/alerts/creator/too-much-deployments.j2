@@ -1,0 +1,46 @@
+{% extends "../../../base/alert.j2" %}
+
+{% set idc="creator-too-much-deployments" %}
+{% set description="Check that COMPLETED deployments are happened not so often." %}
+{% set noPointsPolicy="NO_POINTS_OK" %}
+
+{% set windowSecs=1800 %}
+{% set delaySecs=0 %}
+
+{% block main %}
+    "name": "[Creator] Too much deployments",
+    "groupByLabels": [
+        "cluster",
+        "host",
+        "cluster_slug"
+	],
+    "annotations": {
+        "host": "[[labels.host]]",
+        "description": "Looks like cluster \"[[labels.cluster_slug]]\" is re-deployed too often. Check logs in Object Storage (look for \"forces updating/replacement/...\") and fix your recipe or cluster.",
+        "service": "creator-too-much-deployments-[[labels.cluster_slug]]",
+        "deployments graph": "{{ solomon_endpoint }}/?project={{ project_id }}&cluster=[[labels.cluster]]&service=creator&host=[[labels.host]]&l.metric=deployment&l.cluster_slug=[[labels.cluster_slug]]&graph=auto&b=2h&e=",
+        "logs": "{{ s3_viewer_url }}/mr-prober-logs?key=[[labels.cluster]]%2Fcreator%2F[[labels.cluster_slug]]%2F"
+    },
+    "type": {
+        "threshold": {
+            "selectors": "{cluster='*', service='creator', metric='deployment', status='COMPLETED', cluster_slug!='rb-*'}",
+            "timeAggregation": "SUM",
+            "predicate": "GTE",
+            "threshold": 3,
+            "predicateRules": [
+                {
+                    "thresholdType": "SUM",
+                    "comparison": "GTE",
+                    "threshold": 3,
+                    "targetStatus": "WARN"
+                },
+                {
+                    "thresholdType": "SUM",
+                    "comparison": "GTE",
+                    "threshold": 10,
+                    "targetStatus": "ALARM"
+                }
+            ]
+        }    
+    }
+{% endblock %}

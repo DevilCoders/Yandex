@@ -1,0 +1,26 @@
+{%- set this_host_roles = salt["grains.get"]("cluster_map:hosts:" ~ grains["nodename"] ~ ":roles") -%}
+
+{%- macro rule_ssh_in_alowed(hosts_class, hostname) -%}
+-A INPUT -s {{ salt["dnsutil.AAAA"](hostname)[0] }}/128 -p tcp -m tcp --dport 22 -m comment --comment "DEF_SSH_Allow {{ hosts_class }}" -m comment --comment "Host:{{ hostname }}" -j ACCEPT
+{%- endmacro -%}
+
+
+*filter
+{% if "compute" in this_host_roles %}
+-A INPUT -p tcp -m tcpmss --mss 1:56 -m comment --comment "SACK bugfix" -j DROP
+{% endif %}
+
+{% for host in pillar["service_hosts"]["bastion"] -%}
+{{ rule_ssh_in_alowed("bastions", host) }}
+{% endfor %}
+
+{% for host in pillar["service_hosts"]["bootstrap"] -%}
+{{ rule_ssh_in_alowed("bootstraps", host) }}
+{% endfor %}
+
+{% for macro_name in ("_CLOUDNETS_", "_UNIFIEDUSERNETS_") -%}
+{%   for addr in pillar["hbf_macroses"][macro_name] -%}
+-A INPUT -s {{ addr }} -p tcp -m tcp --dport 22 -m comment --comment "DEF_SSH_Block_HBF {{ macro_name }}" -j DROP
+{%   endfor %}
+{% endfor %}
+COMMIT

@@ -1,0 +1,220 @@
+PRAGMA yt.Auth = "default_yt";
+
+USE hahn;
+
+$parse = DateTime::Parse("%Y-%m-%d %H:%M:%S");
+$format = DateTime::Format("%Y-%m-%d");
+
+$gw_logs_path = "//home/logfeller/logs/yc-api-request-prod-log/1d/";
+$ui_logs_path = "//home/logfeller/logs/dataui-prod-nodejs-log/1d/";
+$python_api_path = "//home/logfeller/logs/mdb-compute-prod-iapi-log/1d/";
+$go_api_path = "//home/logfeller/logs/mdb-compute-prod-iapi-grpc-log/1d/";
+$clouds_prod = "//home/cloud/billing/exported-billing-tables/service_instance_bindings_prod";
+$base_path = "//home/mdb/mdb-tools/";
+
+$today = CurrentUtcDate();
+$days_ago = 3;
+$range = ListFromRange(1, $days_ago);
+
+$shift_back_by_days = ($days_ago) -> {
+    RETURN Unwrap(
+        $today - $days_ago * Interval("P1D"),
+        "Failed to shift today back by " || CAST($days_ago AS String) || " days"
+    );
+};
+
+$dates = ListMap($range, $shift_back_by_days);
+
+DEFINE ACTION $collect_day($date) AS
+    $path = $base_path || CAST($date AS String);
+    $gw_logs_table = $gw_logs_path || CAST($date AS String);
+    $ui_logs_table = $ui_logs_path || CAST($date AS String);
+    $python_api_table = $python_api_path || CAST($date AS String);
+    $go_api_table = $go_api_path || CAST($date AS String);
+    $diff_dates = (
+        SELECT clouds_prod.*, DateTime::FromSeconds(CAST(effective_time as UInt32)), $date,
+                (DateTime::FromSeconds(CAST(effective_time as UInt32))
+                - $date) as date_diff
+        FROM $clouds_prod as clouds_prod
+    );
+    INSERT INTO $path -- destination table
+    WITH TRUNCATE
+    SELECT
+        t.source AS source,
+        t.service_name AS service_name,
+        t.service_method AS service_method,
+        t.service_provider AS service_provider,
+        t.is_browser AS is_browser,
+        COUNT(DISTINCT t.request_id) AS request_cnt,
+        t.cloud_id AS cloud_id,
+        t.dt AS dt,
+        billing_t.billing_account_id AS billing_account_id,
+        t.user_type AS user_type,
+        t.user_id AS user_id
+    FROM (
+        SELECT
+            source,
+            service_name,
+            service_method,
+            service_provider,
+            is_browser,
+            request_id,
+            MAX(user_id) AS user_id,
+            MAX(user_type) AS user_type,
+            MAX(cloud_id) AS cloud_id,
+            MAX(endpoint) AS endpoint,
+            MAX(folder_id) AS folder_id,
+            MAX(cluster_id) AS cluster_id,
+            MAX($format($parse(iso_eventtime))) AS dt
+        FROM (
+            SELECT
+                client.source AS source,
+                client.service_name AS service_name,
+                client.service_method AS service_method,
+                client.service_provider AS service_provider,
+                client.is_browser AS is_browser,
+                client.request_id AS request_id,
+                server.user_id AS user_id,
+                server.user_type AS user_type,
+                server.cloud_id AS cloud_id,
+                server.endpoint AS endpoint,
+                server.folder_id AS folder_id,
+                server.cluster_id AS cluster_id,
+                server.iso_eventtime AS iso_eventtime
+            from (
+                select
+                    source,
+                    service_name,
+                    service_method,
+                    service_provider,
+                    is_browser,
+                    request_id
+                from (
+                    select
+                        source,
+                        service_name,
+                        service_method,
+                        service_provider,
+                        is_browser,
+                        request_id
+                    from (
+                        SELECT
+                            'UI' as source,
+                            true as is_browser,
+                            String::SplitToList(url, '/')[1] as url1,
+                            String::SplitToList(url, '/')[2] as url2,
+                            'ui console' as service_provider,
+                            String::ReplaceAll(String::ReplaceAll(String::SplitToList(url, '/')[2], 'managed', ''),'-', '') as service_name,
+                            String::SplitToList(url, '/')[3] as service_method,
+                            case when Yson::Contains(DictLookup(_rest, '@fields').req, 'user_agent')
+                                then Yson::ConvertToString(DictLookup(_rest, '@fields').req.user_agent)
+                                else null end as ua,
+                            req_id AS request_id
+                        FROM $ui_logs_table as t
+                        where method in ('GET','POST')
+                            and status = 200
+                            and url not in ('/ping')
+                    )
+                    where not UserAgent::Parse(ua).isRobot
+                        and url1 in ('api', 'gateway', 'grpc')
+                        and url2 not in ('exchanger','mdb')
+                ) as ui
+                union all
+                select
+                        source,
+                        service_name,
+                        service_method,
+                        service_provider,
+                        is_browser,
+                        request_id
+                from (
+                    select
+                        source,
+                        service_name,
+                        service_method,
+                        case when service_provider = 'yql-http-client' then 'web sql'
+                            else service_provider end as service_provider,
+                        is_browser,
+                        request_id
+                    from (
+                        select
+                            'APIGATEWAY' as source,
+                            UserAgent::Parse(user_agent).isBrowser as is_browser,
+                            case when not UserAgent::Parse(user_agent).isBrowser then String::SplitToList(String::SplitToList(user_agent, ' ')[0], '/')[0]
+                                else UserAgent::Parse(user_agent).BrowserName end as service_provider,
+                            case when grpc_service like 'yandex.cloud.dataproc%' then 'dataproc'
+                                else String::SplitToList(grpc_service, '.')[3] end as service_name,
+                            grpc_method as service_method,
+                            request_id
+                        from $gw_logs_table as t
+                        where app = 'gateway'
+                        and not UserAgent::Parse(user_agent).isRobot
+                        and status=200
+                        and (grpc_service like 'yandex.cloud.mdb.%' or grpc_service like 'yandex.cloud.dataproc.%')
+                        and grpc_status_code=0
+                        and authority not like '%yandex-team.ru%'
+                    )
+                    where service_provider not in ('dataproc-agent')
+                ) as gw
+            ) AS client
+            INNER JOIN (
+                SELECT
+                    mdb_python_api.request_id,
+                    mdb_python_api.user_id as user_id,
+                    Yson::ConvertToString(Yson::ParseJson(mdb_python_api.authentication).user_type) as user_type,
+                    mdb_python_api.cloud_ext_id as cloud_id,
+                    mdb_python_api.endpoint as endpoint,
+                    mdb_python_api.folder_ext_id as folder_id,
+                    NULL AS cluster_id,
+                    mdb_python_api.iso_eventtime as iso_eventtime
+                FROM $python_api_table AS mdb_python_api
+
+                UNION ALL
+
+                SELECT
+                    mdb_go_api.request_id,
+                    mdb_go_api.user_id AS user_id,
+                    Yson::ConvertToString(DictLookup(mdb_go_api._rest, 'user_type')) AS user_type,
+                    Yson::ConvertToString(DictLookup(mdb_go_api._rest, 'cloud.ext_id')) AS cloud_id,
+                    mdb_go_api.endpoint AS endpoint,
+                    Yson::ConvertToString(DictLookup(mdb_go_api._rest, 'folder.ext_id')) AS folder_id,
+                    Yson::ConvertToString(DictLookup(mdb_go_api._rest, 'cluster.id')) as cluster_id,
+                    mdb_go_api.iso_eventtime AS iso_eventtime
+                FROM $go_api_table AS mdb_go_api
+
+            ) AS server
+            ON client.request_id = server.request_id
+        ) AS t
+        GROUP BY source,
+            service_name,
+            service_method,
+            service_provider,
+            is_browser,
+            request_id
+    ) AS t
+    LEFT JOIN (
+        SELECT
+            service_instance_id AS cloud_id,
+            MIN_BY(billing_account_id, date_diff) AS billing_account_id
+        FROM $diff_dates as diff_dates
+        WHERE service_instance_type = 'cloud'
+        GROUP BY service_instance_id
+    ) AS billing_t ON t.cloud_id = billing_t.cloud_id
+    WHERE t.cloud_id IS NOT NULL
+        AND t.service_name IN ('kafka','redis','clickhouse','postgresql','redis','dataproc','mysql',
+        'sqlserver', 'greenplum','elasticsearch','mongodb')
+    GROUP BY t.source,
+        t.service_name,
+        t.service_method,
+        t.service_provider,
+        t.is_browser,
+        t.cloud_id,
+        t.dt,
+        billing_t.billing_account_id,
+        t.user_type,
+        t.user_id;
+END DEFINE;
+
+EVALUATE FOR $date IN $dates DO $collect_day($date);
+
+COMMIT;

@@ -1,0 +1,39 @@
+{% extends "../../base/alert.j2" %}
+
+{% macro svm_fqdn() -%}
+	[[labels.host]].{{ svm_domains[env] }}
+{%- endmacro %}
+
+{% macro prog() %}
+let metric = moving_avg({
+	cluster="cloud_{{ env }}_ylb",
+	service="{{ service }}",
+	name="heap_obj_lives",
+	host!="cluster",
+	env="{{ env }}"
+	}, 1h);
+
+let trend = linear_trend(metric, 0d, 6h);
+let errors = last(trend);
+let description = 'Too much lives objs in heap';
+
+let is_red = errors >= 400000;
+alarm_if(is_red);
+
+let is_yellow = errors >= 300000;
+warn_if(is_yellow);
+{% endmacro %}
+
+{% block main %}
+	"id": "{{ id }}",
+	"name": "{{ name }}",
+	"description": "",
+	"groupByLabels": ["host"],
+	"annotations": {
+		"details": "[[expression.description]]",
+		"host": "{{ svm_fqdn() }}",
+		"service": "{{ serviceName }}",
+		"wiki": "https://docs.yandex-team.ru/yc-monitoring/cgw/{{ serviceName }}"
+	},
+	"type": {{ type_expression() }}
+{% endblock %}

@@ -1,0 +1,194 @@
+{
+    "appConfig": {},
+    "application": "salt-operator",
+    "id": "2f41ea20-1d1f-4878-9d7b-600e29125c08",
+    "index": 0,
+    "keepWaitingPipelines": false,
+    "limitConcurrent": false,
+    "name": "apply-az(WIP)",
+    "parameterConfig": [
+        {
+            "default": "",
+            "description": "CLOUD-XXXXXX",
+            "hasOptions": false,
+            "label": "Existing release ticket",
+            "name": "releaseTicket",
+            "options": [
+                {
+                    "value": ""
+                }
+            ],
+            "pinned": true,
+            "required": true
+        },
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": true,
+            "label": "Stand",
+            "name": "stand",
+            "options": [
+                {
+                    "value": "testing"
+                },
+                {
+                    "value": "preprod"
+                },
+                {
+                    "value": "prod"
+                }
+            ],
+            "pinned": true,
+            "required": true
+        },
+        {
+            "default": "",
+            "description": "",
+            "hasOptions": true,
+            "label": "AZ",
+            "name": "az",
+            "options": [
+                {
+                    "value": "a"
+                },
+                {
+                    "value": "b"
+                },
+                {
+                    "value": "c"
+                }
+            ],
+            "pinned": true,
+            "required": true
+        }
+    ],
+    "spelEvaluator": "v4",
+    "stages": [
+        {
+            "failOnFailedExpressions": true,
+            "name": "Configure context",
+            "refId": "1",
+            "requisiteStageRefIds": [],
+            "type": "evaluateVariables",
+            "variables": [
+                {
+                    "key": "spinnakerExecutionURL",
+                    "value": "https://spinnaker.cloud.yandex.net/#/applications/salt-operator/executions/${execution.Id}"
+                },
+                {
+                    "key": "spinnakerExecutionMD",
+                    "value": "[${execution.Id}](https://spinnaker.cloud.yandex.net/#/applications/salt-operator/executions/${execution.Id})"
+                },
+                {
+                    "key": "today",
+                    "value": "${new java.text.SimpleDateFormat(\"dd.MM.yyyy\").format(new java.util.Date())}"
+                },
+                {
+                    "key": "triggerUserLogin",
+                    "value": "${trigger.user.replace(\"@yandex-team.ru\", \"\")}"
+                },
+                {
+                    "key": "infraEnvironmentID",
+                    "value": "${parameters.stand == \"testing\" ? 6083 : parameters.stand == \"preprod\" ? 6084 : parameters.stand == \"prod\" ? 6085 : FAIL }"
+                },
+                {
+                    "key": "namespace",
+                    "value": "salt-operator-system"
+                },
+                {
+                    "key": "az",
+                    "value": "${parameters.az}"
+                },
+                {
+                    "key": "dc",
+                    "value": "${parameters.az == \"a\" ? \"vla\" : parameters.az == \"b\" ? \"sas\" : parameters.az == \"c\" ? \"myt\" : FAIL }"
+                },
+                {
+                    "key": "stand",
+                    "value": "${parameters.stand}"
+                },
+                {
+                    "key": "releaseTicket",
+                    "value": "${parameters.releaseTicket}"
+                }
+            ]
+        },
+        {
+            "account": "kten_${stand}-${az}-svm_bootstrap",
+            "cloudProvider": "kubernetes",
+            "completeOtherBranchesThenFail": false,
+            "continuePipeline": true,
+            "failPipeline": false,
+            "manifestArtifact": {
+                "artifactAccount": "bb.yandex-team.ru",
+                "id": "121a759b-7739-4c70-acfb-1af06a17c9d7",
+                "name": "${stand}/ru-central1-${az}-svm/manifests/salt-operator-system/salt-operator/salt-operator/templates/",
+                "reference": "https://bb.yandex-team.ru/projects/CLOUD/repos/k8s-deploy/raw/${stand}/ru-central1-${az}-svm/manifests/salt-operator-system/salt-operator/salt-operator/templates/",
+                "type": "bitbucket/file"
+            },
+            "moniker": {
+                "app": "salt-operator"
+            },
+            "name": "Deploy k8s SVM",
+            "namespaceOverride": "salt-operator-system",
+            "refId": "8",
+            "requisiteStageRefIds": [
+                "37"
+            ],
+            "skipExpressionEvaluation": true,
+            "source": "artifact",
+            "trafficManagement": {
+                "enabled": false,
+                "options": {
+                    "enableTraffic": false
+                }
+            },
+            "type": "deployManifest"
+        },
+        {
+            "name": "Close Infra event",
+            "refId": "12",
+            "requisiteStageRefIds": [
+                "8"
+            ],
+            "type": "closeInfraEvent"
+        },
+        {
+            "description": "Started by: ${triggerUserLogin} Execution: ${spinnakerExecutionURL}",
+            "environmentId": "${infraEnvironmentID}",
+            "eventType": "maintenance",
+            "myt": "${dc == \"myt\"}",
+            "name": "Create Infra event",
+            "refId": "37",
+            "requisiteStageRefIds": [
+                "1"
+            ],
+            "sas": "${dc == \"sas\"}",
+            "serviceId": 4012,
+            "severity": "major",
+            "tickets": "${releaseTicket}",
+            "title": "Release",
+            "type": "createInfraEvent",
+            "vla": "${dc == \"vla\"}"
+        },
+        {
+            "name": "Check Preconditions",
+            "preconditions": [
+                {
+                    "context": {
+                        "stageName": "Deploy k8s SVM",
+                        "stageStatus": "SUCCEEDED"
+                    },
+                    "failPipeline": true,
+                    "type": "stageStatus"
+                }
+            ],
+            "refId": "38",
+            "requisiteStageRefIds": [
+                "12"
+            ],
+            "type": "checkPreconditions"
+        }
+    ],
+    "triggers": []
+}

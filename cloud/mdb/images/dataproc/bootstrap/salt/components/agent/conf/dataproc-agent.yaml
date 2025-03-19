@@ -1,0 +1,56 @@
+{%- set masternode = salt['ydputils.get_masternodes']()[0] -%}
+{%- set config_agent = salt['pillar.get']('data:agent', {}) -%}
+{%- set s3 = salt['pillar.get']('data:s3', {}) -%}
+{%- set s3_bucket = salt['pillar.get']('data:s3_bucket', '') -%}
+{%- set dataproc_properties = salt['pillar.get']('data:properties:dataproc', {}) -%}
+
+{%- set min_free_memory_to_enqueue_new_job = dataproc_properties.get('min-free-memory-to-enqueue-new-job', 1073741824) -%}
+{%- set reserved_memory_for_services = dataproc_properties.get('reserved-memory-for-services', 5368709120) -%}
+{%- set job_memory_footprint = dataproc_properties.get('job-memory-footprint', 536870912) -%}
+{%- set max_concurrent_jobs = salt['dataproc-agent.get_max_concurrent_jobs'](reserved_memory_for_services, job_memory_footprint) -%}
+
+agent:
+    timeout: 10s
+    cid: "{{ config_agent.get('cid', 'nocid') }}"
+    systemd: {{ config_agent.get('systemd', 'true') }}
+    health:
+        hdfs_api_url: "http://{{ masternode }}:9870"
+        yarn_api_url: "http://{{ masternode }}:8088"
+        hive_api_url: "http://{{ masternode }}:10002"
+        hbase_api_url: "http://{{ masternode }}:8070"
+        zookeeper_url: "{{ masternode }}:2181"
+        oozie_url: "http://{{ masternode }}:11000"
+grpc:
+    dataproc_api_url: "{{ config_agent.get('manager_url', 'dataproc-manager.api.cloud.yandex.net:443') }}"
+    cert:
+        server_name: "{{ config_agent.get('cert_server_name', '') }}"
+        file: "{{ config_agent.get('cert_file', '') }}"
+meta_timeout: 3s
+jobs:
+    enabled: true
+    min_free_memory_to_enqueue_new_job: {{ min_free_memory_to_enqueue_new_job }}
+    max_concurrent_jobs: {{ max_concurrent_jobs }}
+    job_output_directory: /var/log/yandex/dataproc-agent/jobs
+    yarn:
+        request_timeout: 5s
+        check_job_status_interval: 5s
+        repeat_on_failure_interval: 30s
+    dataproc_manager:
+        request_timeout: 5s
+        get_new_jobs_interval: 5s
+        retry_failed_request_interval: 30s
+    s3logger:
+        endpoint: "https://{{ s3.get('endpoint_url') }}"
+        region_name: {{ s3.get('region_name') }}
+        bucket_name: {{ s3_bucket }}
+        chunk_size: 4096
+        max_pool_size: 1048576
+        sync_interval: 1s
+        upload_timeout: 5s
+        flush_timeout: 60s
+uiproxy:
+    proxy_server_url: "{{ config_agent.get('ui_proxy_url', 'https://dataproc-ui.yandexcloud.net/') }}"
+    proxy_server_timeout: 60s
+    upstream_url: http://localhost:8443
+    ca_file: "{{ config_agent.get('cert_file', '') }}"
+    websocket_shim_path: /ws

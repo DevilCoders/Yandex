@@ -1,0 +1,30 @@
+{% extends "vpc_api_base_alert.j2" %}
+
+{% set service = "vpc-api-ready-tasks" %}
+
+{% macro prog() %}
+let ts = series_avg({
+    cluster='cloud_{{env}}_vpc-api'
+    ,service='vpc-config-plane'
+    ,sensor='tasks_task_ready'
+    ,host='cluster'
+});
+
+let ready_tasks_count = avg(ts);
+
+alarm_if(ready_tasks_count > {{ alarm_limit }});
+warn_if(ready_tasks_count > {{ warn_limit }});
+{% endmacro %}
+
+{% block main %}
+    "name": "VPC API ready tasks {{env}}",
+    "annotations": {
+        "ready_tasks_count": "[[ expression.ready_tasks_count ]]",
+        "description": "VPC API ready tasks in DB: [[ expression.ready_tasks_count ]]",
+        "host": "{{ solomon_host() }}",
+        "service": "{{ service }}",
+        "dashboard": "{{ vpc_api_dashboard() }}",
+        "wiki": "{{ wiki_url(service) }}"
+    },
+    "type": {{ type_expression() }}
+{% endblock %}

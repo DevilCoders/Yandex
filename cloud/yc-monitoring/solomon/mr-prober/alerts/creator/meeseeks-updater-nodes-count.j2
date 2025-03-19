@@ -1,0 +1,27 @@
+{% extends "../../../base/alert.j2" %}
+
+{% set idc="meeseeks-updater-nodes-count" %}
+{% set description="Check that compute nodes count for meeseeks cluster isn't changed too intense" %}
+
+{% set windowSecs=1800 %}
+{% set delaySecs=0 %}
+
+{% macro prog() %}
+let max_changes = max(abs(derivative(drop_nan({cluster="*", service="creator", host="*", subservice="meeseeks-updater", metric="compute_nodes_count"}))));
+{% endmacro %}
+{% set checkExpression="max_changes > 10" %}
+
+{% block main %}
+    "name": "[Meeseeks Updater] Meeseeks nodes count",
+    "groupByLabels": [
+        "cluster",
+        "host"
+	],
+    "annotations": {
+        "host": "[[labels.host]]",
+        "description": "Looks like compute nodes list for \"meeseeks\" cluster is updated too much. Ensure that there is no problem here. Check logs at `journalctl -u meeseeks-updater -f`.",
+        "service": "meeseeks-updater-too-intense-changes",
+        "nodes count graph": "{{ solomon_endpoint }}/?project={{ project_id }}&cluster=[[labels.cluster]]&service=creator&l.subservice=meeseeks-updater&l.metric=compute_nodes_count&graph=auto&l.host=[[labels.host]]"
+    },
+    "type": {{ type_expression() }}
+{% endblock %}

@@ -1,0 +1,34 @@
+alerts:
+  - id: "{{.ID}}_disk_agent_server_version"
+    name: "{{.Name}} DiskAgent Server Version"
+    window_secs: 300
+    group_by_labels:
+      - host
+    channels:
+      - id: juggler
+    annotations:
+      tags: "yc-{{.Cluster}}-disk-agent-solomon"
+      host: "{{`{{labels.host}}`}}.cloud.yandex.net"
+      service: "solomon_alert_disk_agent_server_version"
+      juggler_description: |-
+        cluster: {{expression.cluster_rev}}
+        host: {{expression.host_rev}}
+    clusters:
+      - testing
+      - preprod_vla
+      - preprod_sas
+      - preprod_myt
+      - prod_vla
+      - prod_sas
+      - prod_myt
+    expression:
+      program: |-
+        let cluster = top_max(1, {cluster="{{.SolomonCluster}}", service="server", host=="cluster-{{.Zone}}", sensor="version"});
+        let host = top_max(1, {cluster="{{.SolomonCluster}}", service="server", host="{{.Hosts}}", sensor="version"});
+
+        no_data_if(count(host) == 0);
+
+        let cluster_rev = get_label(cluster, 'revision');
+        let host_rev = get_label(host, 'revision');
+
+        warn_if(cluster_rev != host_rev);

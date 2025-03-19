@@ -1,0 +1,44 @@
+definitions:
+  - &alert_id "yc-disk-manager-grpc-facade-errors-{{.ID}}"
+  - &alert_name "{{.Name}} Disk Manager gRPC Facade Errors"
+  - &alert_annotations_tag "yc-{{.Cluster}}-disk-manager-solomon"
+  - &alert_annotations_host "{{`{{labels.host}}`}}.svc.{{.SvmDomain}}"
+  - &alert_annotations_service "solomon_alert_disk-manager_grpc-facade_errors"
+alerts:
+  - id: *alert_id
+    name: *alert_name
+    group_by_labels:
+      - host
+      - request
+    channels:
+      - id: juggler
+        notify_about_statuses:
+          - OK
+          - ERROR
+          - ALARM
+          - NO_DATA
+          - WARN
+    annotations:
+      tags: *alert_annotations_tag
+      host: *alert_annotations_host
+      service: *alert_annotations_service
+    clusters:
+      - testing
+      - preprod
+      - prod
+      - israel
+    expression:
+      program: |-
+        let grpc_facade_errors = {
+        project='{{.SolomonProjectID}}',
+        cluster='{{.Cluster}}',
+        service='grpc_facade',
+        host='*',
+        sensor='errors',
+        request='-'
+        };
+
+        no_data_if(count(grpc_facade_errors) == 0);
+
+        alarm_if(integrate(grpc_facade_errors) >= 20);
+        warn_if(integrate(grpc_facade_errors) >= 10);
